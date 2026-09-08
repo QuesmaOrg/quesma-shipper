@@ -203,7 +203,7 @@ licenses-check: ## Fail on a non-permissive dependency, or when the embedded not
 		echo "embedded notices are stale: run make licenses and commit"; exit 1; fi
 
 .PHONY: licenses
-licenses: ## Regenerate the embedded notices: LICENSE and NOTICE copies, third-party texts and the inventory for every target OS (references/ is hand-maintained)
+licenses: ## Regenerate the embedded notices: LICENSE and NOTICE copies, third-party texts and the package,license inventory for every target OS (references/ is hand-maintained; no versions, so a plain bump does not change it)
 	@set -e; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
 	mkdir -p $(LEGAL_DIR); \
 	cd $(MODULE) && GOTOOLCHAIN=$$(go env GOVERSION) GOBIN=$$tmp/bin go install $(GOLICENSES) 2>/dev/null; \
@@ -213,7 +213,8 @@ licenses: ## Regenerate the embedded notices: LICENSE and NOTICE copies, third-p
 		GOOS=$$os GOARCH=amd64 $$tmp/bin/go-licenses report ./cmd/shipper 2>/dev/null > $$tmp/report-$$os.csv \
 			|| { echo "go-licenses report failed for $$os"; exit 1; }; \
 	done; \
-	cat $$tmp/report-*.csv | grep -v '^github.com/QuesmaOrg/' | LC_ALL=C sort -u > $$tmp/licenses.csv; \
+	cat $$tmp/report-*.csv | grep -v '^github.com/QuesmaOrg/' \
+		| awk -F, 'BEGIN{OFS=","}{print $$1,$$3}' | LC_ALL=C sort -u > $$tmp/licenses.csv; \
 	cd ..; rm -rf $(LEGAL_DIR)/third_party; mkdir -p $(LEGAL_DIR)/third_party/licenses; \
 	for os in $(LICENSE_OSES); do \
 		chmod -R u+w $(LEGAL_DIR)/third_party; cp -Rf $$tmp/save-$$os/. $(LEGAL_DIR)/third_party/licenses/; \
