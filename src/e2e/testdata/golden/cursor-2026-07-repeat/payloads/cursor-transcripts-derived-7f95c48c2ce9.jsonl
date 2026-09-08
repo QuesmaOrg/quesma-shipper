@@ -1,0 +1,5 @@
+{"native":{"role":"user","message":{"content":[{"type":"text","text":"run the tests, then run them again"}]}},"_enrich":[{"bubbleId":"r1","createdAt":"2026-07-01T09:00:00.000Z","requestId":"req-r1"}]}
+{"native":{"role":"assistant","message":{"content":[{"type":"tool_use","name":"Shell","input":{"command":"go test ./internal/..."}}]}},"_enrich":[{"bubbleId":"r2","tool_call_id":"call_r2","tool_name":"run_terminal_cmd","status":"completed","result":"ok  \tdemo/internal/api\t0.24s","createdAt":"2026-07-01T09:01:00.000Z"}]}
+{"native":{"role":"assistant","message":{"content":[{"type":"tool_use","name":"Shell","input":{"command":"go test ./internal/..."}}]}}}
+{"native":{"role":"assistant","message":{"content":[{"type":"text","text":"Both runs passed."}]}},"_enrich":[{"bubbleId":"r4","createdAt":"2026-07-01T09:03:00.000Z","requestId":"req-r4","modelName":"claude-opus-5"}]}
+{"native":{"type":"turn_ended","status":"success"}}

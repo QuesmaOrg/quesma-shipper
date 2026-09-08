@@ -1,0 +1,28 @@
+[
+  {
+    "key": "v1/organization=default/install=00000000-0000-4000-8000-000000000001/mirror/source=claude-code-transcripts/f91631a3882c7956a9d2061b96ea38fd75bc77549b85cab26c7b2b63db21ed73.age",
+    "source_id": "claude-code-transcripts",
+    "source_family": "claude-code",
+    "artifact_class": "trajectory",
+    "gather": "file_glob",
+    "native_path": "\u003cHOME\u003e/.claude/projects/-Users-__USER__-work-demo/9f8b7c6d-4e3a-4b2c-8d1e-0f9a8b7c6d5e.jsonl",
+    "shape_sniff": "ok",
+    "source_hash": "\u003cSOURCE-HASH\u003e",
+    "shipped_hash": "625f1cf52315d06ccda073ee986db2cb832914023eab1d17286dbde62a6498e8",
+    "payload_size": 1110,
+    "payload_lines": 4,
+    "payload_mtime": "2026-07-01T12:00:00Z",
+    "redaction": {
+      "rules": {
+        "aws-access-key-id": 1,
+        "github-pat": 1,
+        "key-name": 2,
+        "path-user": 4
+      }
+    },
+    "recipients": [
+      "age1znjzeraljgqt2dwmcjf0gvjz4984v9mega4rnykjwhxf3rl4lsjs35afyt"
+    ],
+    "payload_file": "claude-code-transcripts-f91631a3882c.jsonl"
+  }
+]

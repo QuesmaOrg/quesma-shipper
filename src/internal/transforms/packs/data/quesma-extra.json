@@ -1,0 +1,191 @@
+{
+  "pack": "quesma-extra",
+  "description": "Provider key shapes, second tranche, additive to gitleaks-core, which stays byte-frozen so it can still be diffed against. Each rule encodes a credential token format: an observed prefix, alphabet and length, in the shape of the gitleaks default ruleset (MIT). Curated to prefix-anchored, fixed-shape tokens that agent trajectories actually carry (CLI output, curl -H, .env dumps), with keyword-proximity heuristics deliberately left to the generic-entropy pack.",
+  "rules": [
+    {
+      "id": "secret-access-key",
+      "regex": "(?:SecretAccessKey|secretAccessKey|secret_access_key|SECRET_ACCESS_KEY)[\"'\\s]*[:=][\"'\\s]*([A-Za-z0-9/+=]{12,128})",
+      "keywords": ["SecretAccessKey", "secretAccessKey", "secret_access_key", "SECRET_ACCESS_KEY"],
+      "capture": 1
+    },
+    {
+      "id": "digitalocean-token",
+      "regex": "\\b((?:dop_v1_|doo_v1_|dor_v1_)[a-f0-9]{64})\\b",
+      "keywords": ["dop_v1_", "doo_v1_", "dor_v1_"]
+    },
+    {
+      "id": "databricks-api-token",
+      "regex": "\\b(dapi[a-f0-9]{32})\\b",
+      "keywords": ["dapi"]
+    },
+    {
+      "id": "huggingface-access-token",
+      "regex": "\\b(hf_[A-Za-z0-9]{34})\\b",
+      "keywords": ["hf_"]
+    },
+    {
+      "id": "shopify-token",
+      "regex": "\\b((?:shpat_|shpca_|shppa_|shpss_)[a-fA-F0-9]{32})\\b",
+      "keywords": ["shpat_", "shpca_", "shppa_", "shpss_"]
+    },
+    {
+      "id": "linear-api-key",
+      "regex": "\\b(lin_api_[A-Za-z0-9]{40})\\b",
+      "keywords": ["lin_api_"]
+    },
+    {
+      "id": "notion-token",
+      "regex": "\\b(ntn_[0-9]{11}[A-Za-z0-9]{35})\\b",
+      "keywords": ["ntn_"]
+    },
+    {
+      "id": "postman-api-token",
+      "regex": "\\b(PMAK-[a-f0-9]{24}-[a-f0-9]{34})\\b",
+      "keywords": ["PMAK-"]
+    },
+    {
+      "id": "grafana-token",
+      "regex": "\\b(?:glc_[A-Za-z0-9+/]{32,400}={0,3}|glsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8}|eyJrIjoi[A-Za-z0-9+/=]{60,400})",
+      "keywords": ["glc_", "glsa_", "eyJrIjoi"]
+    },
+    {
+      "id": "doppler-api-token",
+      "regex": "\\b(dp\\.pt\\.[A-Za-z0-9]{40,44})\\b",
+      "keywords": ["dp.pt."]
+    },
+    {
+      "id": "flyio-access-token",
+      "regex": "\\b(?:fo1_[A-Za-z0-9_-]{43}|fm1[ar]_[A-Za-z0-9+/]{100,}={0,3}|fm2_[A-Za-z0-9+/]{100,}={0,3})",
+      "keywords": ["fo1_", "fm1", "fm2_"]
+    },
+    {
+      "id": "planetscale-token",
+      "regex": "\\b(?:pscale_tkn_|pscale_oauth_|pscale_pw_)[A-Za-z0-9=._-]{32,64}",
+      "keywords": ["pscale_tkn_", "pscale_oauth_", "pscale_pw_"]
+    },
+    {
+      "id": "pulumi-api-token",
+      "regex": "\\b(pul-[a-f0-9]{40})\\b",
+      "keywords": ["pul-"]
+    },
+    {
+      "id": "rubygems-api-token",
+      "regex": "\\b(rubygems_[a-f0-9]{48})\\b",
+      "keywords": ["rubygems_"]
+    },
+    {
+      "id": "hashicorp-tf-api-token",
+      "regex": "\\b[A-Za-z0-9]{14}\\.atlasv1\\.[A-Za-z0-9_=-]{60,70}",
+      "keywords": ["atlasv1"],
+      "sweep": true
+    },
+    {
+      "id": "vault-token",
+      "regex": "\\b(?:hvs\\.|hvb\\.)[A-Za-z0-9_-]{24,300}",
+      "keywords": ["hvs.", "hvb."]
+    },
+    {
+      "id": "azure-ad-client-secret",
+      "regex": "(?:^|[^A-Za-z0-9_~.-])([A-Za-z0-9_~.-]{3}[0-9]Q~[A-Za-z0-9_~.-]{31,34})(?:$|[^A-Za-z0-9_~.-])",
+      "keywords": ["Q~"],
+      "capture": 1,
+      "sweep": true
+    },
+    {
+      "id": "age-secret-key",
+      "regex": "\\b(AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58})\\b",
+      "keywords": ["AGE-SECRET-KEY-1"]
+    },
+    {
+      "id": "sentry-token",
+      "regex": "\\b(?:sntrys_|sntryu_)[A-Za-z0-9+/=_-]{40,400}",
+      "keywords": ["sntrys_", "sntryu_"]
+    },
+    {
+      "id": "1password-service-account-token",
+      "regex": "\\bops_eyJ[A-Za-z0-9+/]{200,}={0,3}",
+      "keywords": ["ops_eyJ"]
+    },
+    {
+      "id": "perplexity-api-key",
+      "regex": "\\b(pplx-[A-Za-z0-9]{48})\\b",
+      "keywords": ["pplx-"]
+    },
+    {
+      "id": "heroku-api-key",
+      "regex": "\\b(HRKU-AA[A-Za-z0-9_-]{58})",
+      "keywords": ["HRKU-AA"]
+    },
+    {
+      "id": "gitlab-token-family",
+      "regex": "\\b(?:gldt-|glimt-|glagent-|gloas-|glptt-|glrt-|glsoat-)[A-Za-z0-9_-]{20,300}",
+      "keywords": ["gldt-", "glimt-", "glagent-", "gloas-", "glptt-", "glrt-", "glsoat-"]
+    },
+    {
+      "id": "stripe-webhook-secret",
+      "regex": "\\b(whsec_[A-Za-z0-9+/]{32,64})",
+      "keywords": ["whsec_"]
+    },
+    {
+      "id": "groq-api-key",
+      "regex": "\\b(gsk_[A-Za-z0-9]{52})\\b",
+      "keywords": ["gsk_"]
+    },
+    {
+      "id": "xai-api-key",
+      "regex": "\\b(xai-[A-Za-z0-9_]{80})\\b",
+      "keywords": ["xai-"]
+    },
+    {
+      "id": "replicate-api-token",
+      "regex": "\\b(r8_[A-Za-z0-9_-]{37})",
+      "keywords": ["r8_"]
+    },
+    {
+      "id": "dockerhub-token",
+      "regex": "\\b(?:dckr_pat_[A-Za-z0-9_-]{27}|dckr_oat_[A-Za-z0-9_-]{32})",
+      "keywords": ["dckr_pat_", "dckr_oat_"]
+    },
+    {
+      "id": "tailscale-key",
+      "regex": "\\b(tskey-[a-z]{1,16}-[A-Za-z0-9_]{4,64}-[A-Za-z0-9_]{16,64})\\b",
+      "keywords": ["tskey-"]
+    },
+    {
+      "id": "supabase-token",
+      "regex": "\\b(sbp_[a-f0-9]{40})\\b",
+      "keywords": ["sbp_"]
+    },
+    {
+      "id": "netlify-pat",
+      "regex": "\\b(nfp_[A-Za-z0-9_]{36})\\b",
+      "keywords": ["nfp_"]
+    },
+    {
+      "id": "atlassian-api-token",
+      "regex": "\\b(ATATT3[A-Za-z0-9_=-]{100,250})",
+      "keywords": ["ATATT3"]
+    },
+    {
+      "id": "artifactory-token",
+      "regex": "\\b(?:AKCp[A-Za-z0-9]{69}|cmVmd[A-Za-z0-9]{59})\\b",
+      "keywords": ["AKCp", "cmVmd"]
+    },
+    {
+      "id": "langsmith-api-key",
+      "regex": "\\b(lsv2_(?:pt|sk)_[a-f0-9]{32}_[a-f0-9]{10})\\b",
+      "keywords": ["lsv2_pt_", "lsv2_sk_"]
+    },
+    {
+      "id": "pinecone-api-key",
+      "regex": "\\b(pcsk_[A-Za-z0-9]{5,6}_[A-Za-z0-9]{63})\\b",
+      "keywords": ["pcsk_"]
+    },
+    {
+      "id": "azure-sas-token",
+      "regex": "\\bsig=([A-Za-z0-9%+/]{40,}={0,2})",
+      "keywords": ["sig="],
+      "capture": 1
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "pack": "cloud-keys",
+  "description": "Key material and credentials that arrive as blocks or URLs rather than as fixed-shape provider tokens. These are the shapes trajectories carry that source code does not: a PEM block pasted into a chat, a JWT copied from a curl -H header, a connection string printed by a failing test.",
+  "rules": [
+    {
+      "id": "private-key-block",
+      "regex": "-----BEGIN[A-Z ]*PRIVATE KEY(?: BLOCK)?-----[\\s\\S]*?-----END[A-Z ]*PRIVATE KEY(?: BLOCK)?-----",
+      "keywords": ["PRIVATE KEY"],
+      "sweep": true
+    },
+    {
+      "id": "jwt",
+      "regex": "\\b(eyJ[A-Za-z0-9_-]{8,}\\.eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,})\\b",
+      "keywords": ["eyJ"]
+    },
+    {
+      "id": "authorization-bearer",
+      "regex": "(?i)authorization\\s*:\\s*(?:bearer|token)\\s+([A-Za-z0-9._~+/=-]{16,})",
+      "keywords": ["authorization"],
+      "capture": 1
+    },
+    {
+      "id": "basic-auth-header",
+      "regex": "(?i)authorization\\s*:\\s*basic\\s+([A-Za-z0-9+/=]{16,})",
+      "keywords": ["authorization"],
+      "capture": 1
+    },
+    {
+      "id": "url-userinfo-credentials",
+      "regex": "\\b[a-z][a-z0-9+.-]*://[^/\\s:@]+:([^/\\s@]{3,})@",
+      "keywords": ["://"],
+      "capture": 1,
+      "sweep": true
+    },
+    {
+      "id": "kubeconfig-token",
+      "regex": "(?i)\\btoken\\s*:\\s*([A-Za-z0-9._-]{20,})",
+      "keywords": ["token"],
+      "capture": 1
+    },
+    {
+      "id": "ssh-private-key-openssh",
+      "regex": "\\b(OPENSSH PRIVATE KEY)\\b",
+      "keywords": ["OPENSSH PRIVATE KEY"]
+    }
+  ]
+}

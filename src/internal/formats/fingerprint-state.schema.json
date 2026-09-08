@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/QuesmaOrg/quesma-shipper/schemas/fingerprint-state.schema.json",
+  "title": "Fingerprint state document",
+  "description": "The whole of the shipper's local upload state: state/fingerprints.json, replaced atomically on every commit (write-temp + fsync + rename) under the process flock. Authoritative for upload progress -- no backend tracks it. A rejected or wiped document is cheap by design: everything re-uploads once onto its existing path-derived keys. state_schema is checked on load and a mismatch is rejected, never guessed at.",
+  "type": "object",
+  "required": ["state_schema", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "state_schema": {
+      "description": "Document version. A value this client does not know means downgrade or corruption: reject and rebuild.",
+      "const": 1
+    },
+    "install_id": {
+      "description": "The install this state belongs to. Present so a state file that travels with the wrong identity unit is detectable rather than silently adopted.",
+      "$ref": "#/$defs/uuid"
+    },
+    "updated_at": {
+      "description": "When this document was last replaced, UTC.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_specs": {
+      "description": "Per source, the spec fingerprint its entries were recorded under: a hash over only the spec fields that affect how bytes are read (root, glob, primitive), never the global config_version -- an unrelated push must not re-ship history. A mismatch with the current spec drops that source's entries so it re-ships under the new reading.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/sha256" }
+    },
+    "checksum": {
+      "description": "Hash over every other field, computed with this one cleared. The schema proves the document's shape; this proves its values. A source_hash corrupted in place still parses and reads as a completed ship, which is silent permanent loss -- the store's \"a lost document only costs a re-ship\" argument covers forgetting a ship, never falsely remembering one. Absent on documents written before this field existed; they earn one on the next rewrite.",
+      "$ref": "#/$defs/sha256"
+    },
+    "entries": {
+      "description": "One entry per (source_id, native_path). Kept sorted by that key so the serialized document is deterministic.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": ["source_id", "native_path"],
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "description": "Catalog source that discovered the file.",
+          "$ref": "#/$defs/identifier"
+        },
+        "native_path": {
+          "description": "Absolute path of the source file as read. Local state only -- on the wire the path exists solely inside the age-encrypted manifest.",
+          "type": "string",
+          "minLength": 1
+        },
+        "source_spec_fingerprint": {
+          "description": "Legacy: older builds recorded the spec generation on every entry. Read to seed source_specs, never written.",
+          "$ref": "#/$defs/sha256"
+        },
+
+        "source_size": {
+          "description": "Size at the last commit. Cheap pre-filter only.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_mtime": {
+          "description": "Mtime at the last commit. Cheap pre-filter only -- one measured session produced 107 new-mtime, byte-identical files.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_hash": {
+          "description": "sha256 of the raw pre-redaction bytes last shipped. The authority for change detection and the ETL dedupe identity together with the path.",
+          "$ref": "#/$defs/sha256"
+        },
+
+        "sink_etag": {
+          "description": "Legacy: builds with a conditional write path persisted the last verified PUT's ETag here. Read-tolerated so an existing document still loads, never written -- the upload path is unconditional and the local fingerprint is the only progress authority.",
+          "type": "string",
+          "minLength": 1
+        },
+
+        "enricher": {
+          "description": "Present only on derived entries.",
+          "$ref": "#/$defs/enricher_ref"
+        },
+        "output_hash": {
+          "description": "Hash of the enricher's deterministic output. The change signal for a derived object: equal hash means no re-ship.",
+          "$ref": "#/$defs/sha256"
+        },
+
+        "attempts": {
+          "description": "Consecutive failed attempts on this file. Drives the backoff that keeps one unreadable file from consuming the run budget on every tick; reset to zero the moment the file is handled successfully.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "parked": {
+          "description": "True when an anomaly halted this entry (a 412 on overwrite, a scrub engine error). Cleared by operator action or a successful run after backoff; never by an unconditional retry.",
+          "type": "boolean"
+        },
+        "last_error": {
+          "description": "Human-readable reason the entry parked. Never carries payload content or a redacted value.",
+          "type": "string"
+        },
+        "backoff_until": {
+          "description": "Earliest next attempt for a parked or failing entry. Exponential with jitter, capped at one hour, no max-retry.",
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+
+    "enricher_ref": {
+      "type": "object",
+      "required": ["id", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "maxLength": 64
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "signed": {
+    "_type": "root",
+    "spec_version": "1.0.0",
+    "consistent_snapshot": true,
+    "version": 1,
+    "expires": "2027-09-04T15:14:59Z",
+    "keys": {
+      "def0b4f647c6e5d86c0156843b5e82914afd3c9997454fed4382d185763663b4": {
+        "keytype": "rsa",
+        "keyval": {
+          "public": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3OPNkgnG5pP273DPmWCk\nSm2Q4Ty24kS3OQ6RP5ckei9z+XSK/6g/CT6YiUHEBNVSqNOVu8Kt8csicPA5TmXW\nHwxSw/zAMgvShfi1TtYc1o3fBNGcTYOnj0+glJLNqbcksgij5wWwg3APbQRSlY2Z\n5LRHx8lTxZWVf2rSfivA35whA9dIVEdhTwPR3/3adbPkwQO3/7/jVdM3/LBg89oU\nZBCWfPWOQMRSkLZCOltqHl3kEPeIzibzMiSTcxuR8sxc89HTxHVoO8lahBQlaTXy\nKbdd/FE/IZ1CJmhuGmSl3xxvETgBDQ+JbkBF5itX0PnCWpIMx/mhmvmCJdDX/28n\nywIDAQAB\n-----END PUBLIC KEY-----"
+        },
+        "scheme": "rsassa-pss-sha256"
+      },
+      "83eed5d92a8060d02abefaff683edc3bafb884668d5248327e95149c753f598e": {
+        "keytype": "rsa",
+        "keyval": {
+          "public": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxKq0TKwDiKa+WOKP3K59\nrPF/GOr32yCaci1iGPamqD2iOfiDIf1cdMHgRRpZS4Q2lRXR+JyzL0OrFlaEYKWW\nZvBQLp38U1+Xj2s/3h0E6SOdu3vgOLJYzeDH5AhSy+/rkMeCjjYyCIqbcytTuqqJ\nTRLhPaQ7lRslhKkOPLMxupEZ3joC1VNVrgFkj3Nuxqw1j8tJ3vpkSv6HQsalZJ2h\n7Uz36MAUjR+5bC4I50F3AHnSbX9lbksBhPGzn/byvolMnvDG4Zud+hyPfm8OlEFO\n333ejOYsGMr6cpWb6fz0z6nNykKFuQyYFWHQ4BbD2TElhNiQ3Nf55TPwziBDOoO0\nVwIDAQAB\n-----END PUBLIC KEY-----"
+        },
+        "scheme": "rsassa-pss-sha256"
+      }
+    },
+    "roles": {
+      "targets": {
+        "keyids": [
+          "83eed5d92a8060d02abefaff683edc3bafb884668d5248327e95149c753f598e"
+        ],
+        "threshold": 1
+      },
+      "snapshot": {
+        "keyids": [
+          "83eed5d92a8060d02abefaff683edc3bafb884668d5248327e95149c753f598e"
+        ],
+        "threshold": 1
+      },
+      "timestamp": {
+        "keyids": [
+          "83eed5d92a8060d02abefaff683edc3bafb884668d5248327e95149c753f598e"
+        ],
+        "threshold": 1
+      },
+      "root": {
+        "keyids": [
+          "def0b4f647c6e5d86c0156843b5e82914afd3c9997454fed4382d185763663b4"
+        ],
+        "threshold": 1
+      }
+    }
+  },
+  "signatures": [
+    {
+      "keyid": "def0b4f647c6e5d86c0156843b5e82914afd3c9997454fed4382d185763663b4",
+      "sig": "cc766f4afe37cb454afc427e98bb6e2d887064b407ef1a6cad9852b962d31f5520f8a00c3483a60f93af9f6ab678a229402fb0d625f06791cc29e39e692571d6982ec403a722e272f4b4fed0a97084b606e1099d0cdbddd2f1f072112f82e0e4e1153ce83b4fea5c122efd31a9db3bb3542021dab46fca30db12f0202cbda7581bd483756a22f63acab64a2c9214dd4af63bdfd8b13c393928713df94f455de00149889c633698051a4675bdc9e299418177ec5a9033cb15a417df02982f906114c43fe7a534c526b3cf138d3d477f8608a6d734bc56be4187b800816c43367121584f0323c4c7672ea37be65a577a242a46bea4286c7cb93079b936841d35b3"
+    }
+  ]
+}

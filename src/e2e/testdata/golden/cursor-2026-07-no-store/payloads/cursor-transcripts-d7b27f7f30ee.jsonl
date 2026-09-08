@@ -1,0 +1,4 @@
+{"role":"user","message":{"content":[{"type":"text","text":"list the workspace"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Listing the workspace folder contents."}]}}
+{"role":"assistant","message":{"content":[{"type":"tool_use","name":"Shell","input":{"command":"ls -la /work/api"}}]}}
+{"type":"turn_ended","status":"success"}

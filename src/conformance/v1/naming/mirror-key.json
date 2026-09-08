@@ -1,0 +1,71 @@
+{
+  "vector_set": "mirror-key",
+  "vector_version": 1,
+  "description": "mirror_name = lowercase-hex HMAC-SHA256(name_key, \"mirror:\" + canonical_path). Keyed rather than a bare hash, so a name is blinded against anyone holding bucket-list rights. Derived from the path and never from content, so a file's whole history lands on one key as object versions and a re-ship after state loss converges onto it. Fixed length, so a pathological path has no key-length edge case. Note key_a and key_b over the same path: blinding is keyed.",
+  "keys": {
+    "key_a": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "key_b": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "vectors": [
+    {
+      "name": "empty canonical path still yields a full-length name",
+      "key": "key_a",
+      "canonical_path": "",
+      "mirror_name": "715a611a311d082923742c8de26d7a25703ea3aab1b5bdc726fefabca4778e3a"
+    },
+    {
+      "name": "claude code transcript",
+      "key": "key_a",
+      "canonical_path": "projects/proj/a.jsonl",
+      "mirror_name": "28547a64a206a3b4d14d27ccbf75019e758fc176524ac0ea7b0a83ef7df78ef4"
+    },
+    {
+      "name": "claude code transcript under a pseudonymized slug",
+      "key": "key_a",
+      "canonical_path": "projects/-Users-__USER__-work-api/3f2504e0.jsonl",
+      "mirror_name": "3a934040716dcb9ab76ccc6b12a35768f72fe1a4e57a6f50d5bb8f6d080dafb2"
+    },
+    {
+      "name": "claude code subagent transcript",
+      "key": "key_a",
+      "canonical_path": "projects/-Users-__USER__-work-api/3f2504e0/subagents/agent-9f2c.jsonl",
+      "mirror_name": "728ad925fa53a89223778ce3d08d224ff868981e11bfb3d9faccd5e70d30ace1"
+    },
+    {
+      "name": "codex rollout",
+      "key": "key_a",
+      "canonical_path": "sessions/2026/07/30/rollout-2026-07-30T10-00-00-0199.jsonl",
+      "mirror_name": "3c2eac55962b355a8a8105b44b3b26fefa9a8c5ba5b3ef7efe309ddf09dcb630"
+    },
+    {
+      "name": "codex cold rollout is a different file from its plaintext form",
+      "key": "key_a",
+      "canonical_path": "sessions/2026/07/30/rollout-2026-07-30T10-00-00-0199.jsonl.zst",
+      "mirror_name": "e327b3a3c4aecb460f90e4ddc62cc4b735655e7552265ece1317b64c14d89a9e"
+    },
+    {
+      "name": "cursor transcript",
+      "key": "key_a",
+      "canonical_path": "c8cbeb0b/c8cbeb0b.jsonl",
+      "mirror_name": "c8c21bb1b265a462f748127cde56819da986c01055dd3144ae01c0db18f73da2"
+    },
+    {
+      "name": "enricher output is its own object",
+      "key": "key_a",
+      "canonical_path": "c8cbeb0b/c8cbeb0b.jsonl.enriched.jsonl",
+      "mirror_name": "925fa2483425d8c867a0dafffa5d23a519167f53e4871b7bf15ccb98729cb6eb"
+    },
+    {
+      "name": "percent-encoded segment",
+      "key": "key_a",
+      "canonical_path": "images/Screenshot%202026-07-27%20at%2014.32.36.png",
+      "mirror_name": "25b6dc7909c9d18e909e118d468ff3a1a36ccba1ae077558771c9cf4255163cd"
+    },
+    {
+      "name": "same path under a second name key gives an unrelated name",
+      "key": "key_b",
+      "canonical_path": "projects/proj/a.jsonl",
+      "mirror_name": "05882aae87b734b9645c948904fb5f2bd40dcc128a6d63c8aacc35f3b2dea98a"
+    }
+  ]
+}

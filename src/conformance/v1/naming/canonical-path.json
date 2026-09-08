@@ -1,0 +1,91 @@
+{
+  "vector_set": "canonical-path",
+  "vector_version": 1,
+  "description": "Source-relative path -> canonical path: user placeholder applied, then each segment percent-encoded to the unreserved set [A-Za-z0-9._~-] with upper-case hex. The output is the HMAC input for a mirror name, so any implementation that disagrees here produces different object keys for the same file.",
+  "vectors": [
+    {
+      "name": "plain nested path is unchanged",
+      "source_rel_path": "projects/proj/a.jsonl",
+      "username": "jane",
+      "canonical_path": "projects/proj/a.jsonl"
+    },
+    {
+      "name": "leading slash is dropped so absolute and relative forms agree",
+      "source_rel_path": "/projects/proj/a.jsonl",
+      "username": "jane",
+      "canonical_path": "projects/proj/a.jsonl"
+    },
+    {
+      "name": "encoded-cwd slug carries the username between dashes",
+      "source_rel_path": "projects/-Users-jane-work-foo/s.jsonl",
+      "username": "jane",
+      "canonical_path": "projects/-Users-__USER__-work-foo/s.jsonl"
+    },
+    {
+      "name": "home segment inside a path value",
+      "source_rel_path": "Users/jane/work/api/db.go",
+      "username": "jane",
+      "canonical_path": "Users/__USER__/work/api/db.go"
+    },
+    {
+      "name": "a name merely containing the username is left alone",
+      "source_rel_path": "notes/janes-notes.md",
+      "username": "jane",
+      "canonical_path": "notes/janes-notes.md"
+    },
+    {
+      "name": "every delimited occurrence is replaced",
+      "source_rel_path": "jane/x/jane.txt",
+      "username": "jane",
+      "canonical_path": "__USER__/x/__USER__.txt"
+    },
+    {
+      "name": "one-character usernames are ignored: too many false positives",
+      "source_rel_path": "a/b/c.jsonl",
+      "username": "a",
+      "canonical_path": "a/b/c.jsonl"
+    },
+    {
+      "name": "empty username is a no-op",
+      "source_rel_path": "projects/proj/a.jsonl",
+      "username": "",
+      "canonical_path": "projects/proj/a.jsonl"
+    },
+    {
+      "name": "spaces and colons percent-encode; separators survive",
+      "source_rel_path": "images/Screenshot 2026-07-27 at 14.32.36.png",
+      "username": "jane",
+      "canonical_path": "images/Screenshot%202026-07-27%20at%2014.32.36.png"
+    },
+    {
+      "name": "percent is itself encoded, so the encoding stays injective",
+      "source_rel_path": "weird/100%25.txt",
+      "username": "jane",
+      "canonical_path": "weird/100%2525.txt"
+    },
+    {
+      "name": "non-ASCII bytes encode per byte",
+      "source_rel_path": "proj/été.md",
+      "username": "jane",
+      "canonical_path": "proj/%C3%A9t%C3%A9.md"
+    },
+    {
+      "name": "dot segments are cleaned before hashing",
+      "source_rel_path": "projects/./proj/../proj/a.jsonl",
+      "username": "jane",
+      "canonical_path": "projects/proj/a.jsonl"
+    },
+    {
+      "name": "subagent transcript beside its meta sibling",
+      "source_rel_path": "projects/-Users-jane-work-api/3f2504e0/subagents/agent-9f2c.jsonl",
+      "username": "jane",
+      "canonical_path": "projects/-Users-__USER__-work-api/3f2504e0/subagents/agent-9f2c.jsonl"
+    },
+    {
+      "name": "derived enricher output sits beside its input",
+      "source_rel_path": "c8cbeb0b/c8cbeb0b.jsonl.enriched.jsonl",
+      "username": "jane",
+      "canonical_path": "c8cbeb0b/c8cbeb0b.jsonl.enriched.jsonl"
+    }
+  ]
+}

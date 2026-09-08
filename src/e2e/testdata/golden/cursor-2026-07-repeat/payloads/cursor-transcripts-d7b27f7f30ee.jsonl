@@ -1,0 +1,5 @@
+{"role":"user","message":{"content":[{"type":"text","text":"run the tests, then run them again"}]}}
+{"role":"assistant","message":{"content":[{"type":"tool_use","name":"Shell","input":{"command":"go test ./internal/..."}}]}}
+{"role":"assistant","message":{"content":[{"type":"tool_use","name":"Shell","input":{"command":"go test ./internal/..."}}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Both runs passed."}]}}
+{"type":"turn_ended","status":"success"}

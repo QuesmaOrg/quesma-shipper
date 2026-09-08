@@ -1,0 +1,4 @@
+{"native":{"role":"user","message":{"content":[{"type":"text","text":"list the workspace"}]}},"_enrich":[{"bubbleId":"b1","createdAt":"2026-07-01T09:00:00.000Z","requestId":"req-b1"}]}
+{"native":{"role":"assistant","message":{"content":[{"type":"text","text":"Listing the workspace folder contents."}]}},"_enrich":[{"bubbleId":"b2","createdAt":"2026-07-01T09:01:00.000Z","requestId":"req-b2","modelName":"claude-opus-5"}]}
+{"native":{"role":"assistant","message":{"content":[{"type":"tool_use","name":"Shell","input":{"command":"ls -la /work/api"}}]}},"_enrich":[{"bubbleId":"b3","tool_call_id":"call_b3","tool_name":"run_terminal_cmd","status":"completed","result":"total 24\n-rw-r--r--  1 dev staff  812 Jul  1 09:58 main.go","createdAt":"2026-07-01T09:02:00.000Z"}]}
+{"native":{"type":"turn_ended","status":"success"}}

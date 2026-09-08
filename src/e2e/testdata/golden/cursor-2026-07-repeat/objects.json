@@ -1,0 +1,44 @@
+[
+  {
+    "key": "v1/organization=default/install=00000000-0000-4000-8000-000000000001/mirror/source=cursor-transcripts/7f95c48c2ce9a6cfc0ae0e5beb04a30de5091ef4c2b4f32a7d272a96f95e8be3.age",
+    "source_id": "cursor-transcripts",
+    "source_family": "cursor",
+    "artifact_class": "trajectory",
+    "gather": "file_glob",
+    "native_path": "\u003cHOME\u003e/.cursor/projects/Users-__USER__-work-demo/agent-transcripts/c8cbeb0b-7950-4b1d-a202-dc3351032bfa/c8cbeb0b-7950-4b1d-a202-dc3351032bfa.jsonl.enriched.jsonl",
+    "shape_sniff": "ok",
+    "source_hash": "\u003cSOURCE-HASH\u003e",
+    "shipped_hash": "42467e579640ba7030debbd062ad7057a36d5b6985aa56f3b2df158833b2ea16",
+    "payload_size": 930,
+    "payload_lines": 5,
+    "derived": true,
+    "enricher": "cursor-transcript-join@4",
+    "derived_from": [
+      "99b5b1441a7a9fa553fe6fbe66d3e6c7f4ef6f7e4e5db83c3f00fd3c3c36e97d"
+    ],
+    "enrich_status": "ok",
+    "enrich_repeats": 1,
+    "recipients": [
+      "age1znjzeraljgqt2dwmcjf0gvjz4984v9mega4rnykjwhxf3rl4lsjs35afyt"
+    ],
+    "payload_file": "cursor-transcripts-derived-7f95c48c2ce9.jsonl"
+  },
+  {
+    "key": "v1/organization=default/install=00000000-0000-4000-8000-000000000001/mirror/source=cursor-transcripts/d7b27f7f30ee4f943601d503e69c6fe045baffe1b7d0ff0738ec49220526f5ce.age",
+    "source_id": "cursor-transcripts",
+    "source_family": "cursor",
+    "artifact_class": "trajectory",
+    "gather": "file_glob",
+    "native_path": "\u003cHOME\u003e/.cursor/projects/Users-__USER__-work-demo/agent-transcripts/c8cbeb0b-7950-4b1d-a202-dc3351032bfa/c8cbeb0b-7950-4b1d-a202-dc3351032bfa.jsonl",
+    "shape_sniff": "ok",
+    "source_hash": "\u003cSOURCE-HASH\u003e",
+    "shipped_hash": "99b5b1441a7a9fa553fe6fbe66d3e6c7f4ef6f7e4e5db83c3f00fd3c3c36e97d",
+    "payload_size": 479,
+    "payload_lines": 5,
+    "payload_mtime": "2026-07-01T12:00:00Z",
+    "recipients": [
+      "age1znjzeraljgqt2dwmcjf0gvjz4984v9mega4rnykjwhxf3rl4lsjs35afyt"
+    ],
+    "payload_file": "cursor-transcripts-d7b27f7f30ee.jsonl"
+  }
+]

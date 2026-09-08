@@ -1,0 +1,75 @@
+# Cursor (IDE) — the one Group-1 source whose trajectory is split across stores of
+# unequal fidelity. What ships is the native JSONL transcript: real NDJSON, one
+# file per conversation, repo path recoverable from the directory slug, appended
+# cleanly enough that a byte-offset cursor is safe (measured).
+#
+# What it lacks is the point of the enricher: zero tool_result blocks, no tool-call
+# ids, no per-row timestamps, no usage, reasoning written as a literal [REDACTED].
+# A record of intent with no outcomes.
+#
+# The global state.vscdb is ENRICHER INPUT ONLY — no rows ever ship. The
+# enricher reads it through the SQLite ladder and its derived JSONL is the sole
+# carrier of the DB-side fields. The key-level deny is COMPILED, not config:
+# cursorAuth/* keys and the blobEncryptionKey /
+# speculativeSummarizationEncryptionKey fields are stripped from every enricher
+# read, and no config layer can disable that filter. Auth material lives inside
+# the same database as the trajectories, so it is a row-level exclude that a path
+# deny list structurally cannot express.
+#
+# Deferred to v1.1: workspace state.vscdb, conversation-search.db, workspaceStorage
+# images, the composerHeaders table.
+spec_version: 1
+family: cursor
+display_name: Cursor
+
+sources:
+  - id: cursor-transcripts
+    description: >-
+      Native agent transcripts, including one nested subagent file per Task call.
+      Writes are not atomic — the vendor confirms a transcript can end up empty or
+      lost if the machine reboots mid-write — so empty and truncated tails are
+      expected and ship byte-exact. Coverage is not universal either: conversations
+      predating the transcript feature exist only in the database.
+    gather: file_glob
+    artifact_class: trajectory
+    roots:
+      - $CURSOR_PROJECTS_DIR
+      - ~/.cursor/projects
+    # Cursor writes one transcript per conversation and its own store caps what it keeps.
+    # Same ceiling as the other transcript sources: this bounds what the pipeline can be
+    # asked to hold, not what Cursor is expected to produce.
+    max_file_bytes: 268435456
+    include:
+      - "**/agent-transcripts/**/*.jsonl"
+    enrichers:
+      cursor-transcript-join: true
+      # Which account and plan produced these transcripts, from four exact
+      # display keys in the same store's cursorAuth keyspace. The keyspace
+      # stays prefix-denied inside sqliteread; the four keys are the compiled
+      # exceptions, named one by one.
+      cursor-account: true
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 65536
+
+  - id: cursor-agent-outputs
+    description: >-
+      Siblings the transcript points at rather than inlines: spilled large tool
+      output, terminal captures, and the shared agent scratchpad. Collected as
+      context artifacts. The vendor's own managed .gitignore block re-allows exactly
+      these paths as durable artifacts, which makes drift here visible as a diff in
+      a file Cursor ships.
+    gather: file_glob
+    artifact_class: context
+    roots:
+      - $CURSOR_PROJECTS_DIR
+      - ~/.cursor/projects
+    include:
+      - "**/agent-tools/**"
+      - "**/terminals/**"
+      - "**/agent-notes/**"
+    exclude:
+      - "**/canvases/**"
+    max_file_bytes: 8388608
+    sniff:
+      kind: none

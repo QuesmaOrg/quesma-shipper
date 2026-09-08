@@ -1,0 +1,10 @@
+{
+  "vector_set": "recipients",
+  "vector_version": 1,
+  "description": "Multi-recipient encryption contract. An object is sealed to a SET of age recipients — the install's own key, an org reader, an offline escrow key — and age's envelope construction makes any single matching identity sufficient to open it. The manifest records the set in encryption.recipient_key_ids so a reader can audit who an object was made readable to; an unexpected id there is a finding. No byte vectors here: age is nondeterministic by design, so the contract is behavioral and every field below is asserted by the conformance test against the real seal implementation.",
+  "scheme": "age",
+  "key_id_source": "the age recipient string (bech32-encoded public half, age1...)",
+  "key_id_order": "seal argument order",
+  "min_recipients": 1,
+  "any_single_identity_suffices": true
+}

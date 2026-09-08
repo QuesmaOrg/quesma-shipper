@@ -1,0 +1,36 @@
+# The directory-to-git-repository mapping, emitted at gather time because it is
+# unrecoverable later.
+#
+# Claude Code records cwd and gitBranch but no remote, and of the surveyed agents only
+# Codex carries a git object at all. Once a session has been collected — or reaped by the
+# agent's own 30-day cleanup — nothing downstream can work out which repository it
+# belonged to. So this is captured while both halves are still on disk, or never.
+#
+# The probe is deliberately lousy and that is the point: a head-of-file byte budget, the
+# first cwd-shaped match, no record types, no schema. Field names live here rather than in
+# code, so an agent renaming its cwd field is a data fix. A miss yields project = none,
+# which is a legal value — Cowork conversations are not tied to a repository unless the
+# user attached folders, and for non-dev agents there may be no repository by design.
+spec_version: 1
+family: project-map
+display_name: Collection-time project mapping
+
+sources:
+  - id: project-map
+    description: >-
+      One record per agent-encoded project directory: the directory name (the only join
+      key present in trajectory paths), the cwd the probe found, and the git remote
+      normalised to host/path. Userinfo is stripped unconditionally before the value is
+      written anywhere — a remote can be https://user:ghp_xxx@github.com/org/repo, a live
+      credential, and .git/config is one of the likelier places to find one.
+    gather: sidecar
+    artifact_class: context
+    emit: git_project_map
+    cwd_probe:
+      from: [claude-code-transcripts, codex-rollouts]
+      fields: ["cwd", "payload.cwd"]
+      scan_bytes: 65536
+    git_read:
+      walk_up: true
+      follow_gitdir_file: true
+      take: ["remote.*.url"]

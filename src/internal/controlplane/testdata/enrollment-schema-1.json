@@ -1,0 +1,16 @@
+{
+  "enrollment_schema": 1,
+  "install_id": "0f5a6b3c-1d2e-4f60-8a9b-1c2d3e4f5061",
+  "organization": "acme",
+  "endpoint": "https://cp.example.com",
+  "root_key_fingerprint": "9f2c1a4e8b7d3056c1e9fa4b2d8073e5a1c6b904f7e2d3856ab19c04e7f3d2b8",
+  "root_key": "2inpWwLgD/oVZFd1+x0roiKhlDOV7qBrlOLAV7e+adA=",
+  "device_key": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyB5tVYuj+ZU+UB4sRLoqYunkB+FOuaVvtfg45ELrQSWZA==",
+  "sink": {
+    "adapter": "s3",
+    "bucket": "acme-trajectories",
+    "region": "eu-central-1",
+    "key_root": "v1/organization=acme/install=0f5a6b3c-1d2e-4f60-8a9b-1c2d3e4f5061"
+  },
+  "enrolled_at": "2026-08-03T14:22:51Z"
+}

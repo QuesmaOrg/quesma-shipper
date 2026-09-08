@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/QuesmaOrg/quesma-shipper/schemas/manifest.schema.json",
+  "title": "Mirror object manifest",
+  "description": "manifest.json, the FIRST tar entry of every mirror object, before zstd and age. Manifest-first is required: a ranged GET of the object's head decodes through age -> zstd -> tar and yields the whole manifest, which is why no manifest sidecar object exists. This is the only place the native path exists on the wire -- object keys are blinded path HMACs and plaintext object metadata carries hashes and versions only.",
+  "type": "object",
+  "required": [
+    "manifest_version",
+    "organization_id",
+    "install_id",
+    "source_id",
+    "native_path",
+    "gather",
+    "source_hash",
+    "shipped_hash",
+    "payload_size",
+    "artifact_class",
+    "sealed_at",
+    "client"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "manifest_version": {
+      "description": "Wire-contract version. Unknown values are a downstream hard error, not a partial read.",
+      "const": 1
+    },
+
+    "organization_id": {
+      "description": "Standalone installs carry the fixed placeholder \"default\", so every deployment produces keys of the same depth.",
+      "type": "string",
+      "minLength": 1
+    },
+    "install_id": {
+      "description": "The machine pseudonym IS the install_id; a UUID minted at enrollment (`shipper enroll`) alongside the age identity and name_key.",
+      "$ref": "#/$defs/uuid"
+    },
+
+    "source_id": { "$ref": "#/$defs/identifier" },
+    "source_family": { "$ref": "#/$defs/identifier" },
+    "native_path": {
+      "description": "Path of the collected file with the username placeholder applied. The only carrier of the path anywhere in the object.",
+      "type": "string",
+      "minLength": 1
+    },
+    "gather": {
+      "description": "Collection primitive that produced the payload.",
+      "$ref": "#/$defs/gather_name"
+    },
+    "artifact_class": {
+      "description": "Artifact class, assigned per source in the catalog. Classification metadata only: per-class retention was retired, so nothing downstream consumes it, but a future decision may.",
+      "$ref": "#/$defs/artifact_class"
+    },
+
+    "source_hash": {
+      "description": "sha256 of the raw pre-redaction bytes. Change detection, fingerprint identity, ETL dedupe key with the path, and enricher derived_from all key on this.",
+      "$ref": "#/$defs/sha256"
+    },
+    "shipped_hash": {
+      "description": "sha256 of the post-redaction bytes as archived. Integrity verification only.",
+      "$ref": "#/$defs/sha256"
+    },
+    "payload_size": {
+      "description": "Size in bytes of the payload tar entry.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "payload_mtime": {
+      "type": "string",
+      "format": "date-time"
+    },
+
+    "agent_version": {
+      "description": "Version observed in the store itself, so a downstream parse-failure spike is attributable to an agent release.",
+      "type": "string"
+    },
+    "shape_sniff": {
+      "description": "Cheap structural assertion result -- shape, never semantics.",
+      "$ref": "#/$defs/shape_sniff"
+    },
+
+    "redaction": { "$ref": "#/$defs/redaction_summary" },
+
+    "encryption": {
+      "type": "object",
+      "required": ["scheme", "recipient_key_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "scheme": { "const": "age" },
+        "recipient_key_ids": {
+          "description": "Public recipient key IDs the object was encrypted to. No private key material is ever recorded here or anywhere else.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+
+    "client": {
+      "type": "object",
+      "required": ["version"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "type": "string", "minLength": 1 },
+        "commit": {
+          "description": "Full VCS revision of the build that sealed this object. Present when the toolchain recorded one; absent for a build with no VCS stamping (a worktree, a source tarball). The version string embeds a short form of this, but a reader grouping objects by build should use this field rather than parse that convention.",
+          "type": "string"
+        },
+        "modified": {
+          "description": "The build came from a tree with uncommitted changes, so its code cannot be recovered from the commit alone. Absent means clean.",
+          "type": "boolean"
+        },
+        "go_version": {
+          "description": "Toolchain that built the client. Recorded because a runtime-level defect -- a regression in compress, crypto or the JSON decoder -- is a property of this and of nothing else in the manifest.",
+          "type": "string"
+        },
+        "os": { "type": "string" },
+        "arch": { "type": "string" }
+      }
+    },
+    "config_version": {
+      "description": "Config version in force when the object was sealed.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "config_expired": {
+      "description": "True when collection continued under a cached config past its expiry. Expiry fails toward collecting; the flag is how downstream and health learn it happened.",
+      "type": "boolean"
+    },
+    "sealed_at": {
+      "description": "UTC seal time. Deliberately NOT part of the object key -- keys are path-derived so re-shipping converges onto the same key.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "run_id": {
+      "description": "The sealing process's flight-recorder run id: joins this object to the audit entries, flight journal and heartbeat the same process wrote. Absent on objects from clients that predate it.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+
+    "derived": {
+      "description": "True on enricher output. Such objects also carry the derived=true tag.",
+      "type": "boolean"
+    },
+    "enricher": { "$ref": "#/$defs/enricher_ref" },
+    "derived_from": {
+      "description": "source_hash of each raw input the derived payload was computed from, so downstream can verify it against the raw file.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/sha256" }
+    },
+    "enrich_status": {
+      "description": "For DB-backed sources the derived view is the ONLY carrier of the DB-side fields, so anything but ok means those fields are lost until a release fixes the join. Mismatch is a top-level alarm, not a diagnostic.",
+      "enum": ["ok", "skipped", "mismatch", "error"]
+    },
+    "enrich_mismatches": { "type": "integer", "minimum": 0 },
+    "enrich_repeats": {
+      "description": "Events carried native-only because the store deduplicated a repeated call. Explained shortfall on an ok object, not loss; absent means none.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "enrich_tail": {
+      "description": "Events past the store's last bubble, carried native-only. Explained shortfall on an ok object, not loss; absent means none.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "enrich_ambiguous": {
+      "description": "Events whose evidence fits both a deduped re-run and a second unrecorded call; the join attached nothing rather than guess. Absent means none.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "enrich_line_decode_errors": {
+      "description": "Mid-file transcript lines that did not decode, so their blocks never reached the join and their enrichment is LOST from an object that says ok. The torn final line is excluded. Absent means none.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "db_provenance": { "$ref": "#/$defs/db_provenance" }
+  },
+
+  "allOf": [
+    {
+      "$comment": "Derived objects must name the enricher that produced them and what they were derived from.",
+      "if": { "properties": { "derived": { "const": true } }, "required": ["derived"] },
+      "then": { "required": ["enricher", "derived_from", "enrich_status"] }
+    }
+  ],
+
+  "$defs": {
+    "redaction_summary": {
+      "description": "Rule-id and count granularity, never byte ranges: recorded positions would fingerprint where and how large a secret was.",
+      "type": "object",
+      "required": ["density"],
+      "additionalProperties": false,
+      "properties": {
+        "density": {
+          "description": "Bytes redacted / bytes total. Downstream drops objects shredded past usefulness; a fleet-wide spike is the rule-drift alarm.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "bytes_redacted": { "type": "integer", "minimum": 0 },
+        "rule_hits": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/rule_id" },
+          "additionalProperties": { "type": "integer", "minimum": 1 }
+        },
+        "scan_mode": {
+          "description": "decoded_json_values is the normal path; raw_text is the fallback for non-JSON payloads and parse-misses such as a torn tail.",
+          "enum": ["decoded_json_values", "raw_text", "mixed"]
+        }
+      }
+    },
+    "db_provenance": {
+      "description": "What an enricher read from a local agent database. The rows themselves never ship.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "db_path": { "type": "string" },
+        "read_method": {
+          "description": "How the SQLite database was read. Snapshot bytes never ship and never enter dedupe.",
+          "enum": ["readonly_open", "scratch_snapshot", "cold_copy"]
+        },
+        "keyspaces": {
+          "description": "Keyspaces declared in the enricher's registration -- scope is declared, not requested.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "rows_read": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "enricher_ref": {
+      "type": "object",
+      "required": ["id", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "gather_name": {
+      "enum": [
+        "file_glob",
+        "dir_tree",
+        "snapshot_dir",
+        "sidecar",
+        "compressed_file",
+        "hook_spool_dir",
+        "metadata_only"
+      ]
+    },
+    "artifact_class": { "enum": ["trajectory", "context"] },
+    "shape_sniff": { "enum": ["ok", "empty", "unexpected_shape", "unreadable"] },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "identifier": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 64 },
+    "rule_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 64 }
+  }
+}

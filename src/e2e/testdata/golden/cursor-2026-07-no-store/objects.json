@@ -1,0 +1,20 @@
+[
+  {
+    "key": "v1/organization=default/install=00000000-0000-4000-8000-000000000001/mirror/source=cursor-transcripts/d7b27f7f30ee4f943601d503e69c6fe045baffe1b7d0ff0738ec49220526f5ce.age",
+    "source_id": "cursor-transcripts",
+    "source_family": "cursor",
+    "artifact_class": "trajectory",
+    "gather": "file_glob",
+    "native_path": "\u003cHOME\u003e/.cursor/projects/Users-__USER__-work-demo/agent-transcripts/c8cbeb0b-7950-4b1d-a202-dc3351032bfa/c8cbeb0b-7950-4b1d-a202-dc3351032bfa.jsonl",
+    "shape_sniff": "ok",
+    "source_hash": "\u003cSOURCE-HASH\u003e",
+    "shipped_hash": "1a80ddcd7c584e7158c5ff65f494f9174d5261926f2904145cff064c122e8d83",
+    "payload_size": 353,
+    "payload_lines": 4,
+    "payload_mtime": "2026-07-01T12:00:00Z",
+    "recipients": [
+      "age1znjzeraljgqt2dwmcjf0gvjz4984v9mega4rnykjwhxf3rl4lsjs35afyt"
+    ],
+    "payload_file": "cursor-transcripts-d7b27f7f30ee.jsonl"
+  }
+]

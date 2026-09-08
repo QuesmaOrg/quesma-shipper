@@ -1,0 +1,95 @@
+{
+  "pack": "gitleaks-core",
+  "description": "Provider key shapes, first tranche. Each rule encodes a credential token format: an observed prefix, alphabet and length. Rule shapes follow the {id, regex, keywords} form of the gitleaks default ruleset (MIT), the reference the packs are checked against, so a rule can be compared with or swapped for the upstream corpus without touching code. Two deliberate properties: this is ONE compiled pack of four rather than the engine, because a repo-tuned ruleset is structurally insufficient for trajectories — they carry printenv, curl -H and kubectl output at higher secret density than source code, with no git history to bound the search; and the corpus is data rather than an imported library, which keeps the dependency tree small enough to audit.",
+  "rules": [
+    {
+      "id": "aws-access-key-id",
+      "regex": "\\b((?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16})\\b",
+      "keywords": ["AKIA", "ASIA", "ABIA", "ACCA"]
+    },
+    {
+      "id": "aws-secret-key",
+      "regex": "(?i)aws[_.-]?(?:secret[_.-]?)?access[_.-]?key(?:[_.-]?id)?[\"'\\s]*[:=][\"'\\s]*([A-Za-z0-9/+=]{40})",
+      "keywords": ["aws"],
+      "capture": 1
+    },
+    {
+      "id": "github-pat",
+      "regex": "\\b(gh[pousr]_[A-Za-z0-9]{36,})\\b",
+      "keywords": ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
+    },
+    {
+      "id": "github-fine-grained-pat",
+      "regex": "\\b(github_pat_[A-Za-z0-9_]{22,255})\\b",
+      "keywords": ["github_pat_"]
+    },
+    {
+      "id": "gitlab-pat",
+      "regex": "\\b(glpat-[A-Za-z0-9_-]{20,})\\b",
+      "keywords": ["glpat-"]
+    },
+    {
+      "id": "slack-token",
+      "regex": "\\b(xox[baprs]-[A-Za-z0-9-]{10,})\\b",
+      "keywords": ["xoxb-", "xoxa-", "xoxp-", "xoxr-", "xoxs-"]
+    },
+    {
+      "id": "slack-webhook",
+      "regex": "(https://hooks\\.slack\\.com/services/T[A-Za-z0-9_]+/B[A-Za-z0-9_]+/[A-Za-z0-9_]+)",
+      "keywords": ["hooks.slack.com"],
+      "sweep": true
+    },
+    {
+      "id": "stripe-secret-key",
+      "regex": "\\b((?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,})\\b",
+      "keywords": ["sk_live_", "rk_live_", "sk_test_", "rk_test_"]
+    },
+    {
+      "id": "openai-api-key",
+      "regex": "\\b(sk-(?:proj-)?[A-Za-z0-9_-]{20,})\\b",
+      "keywords": ["sk-"]
+    },
+    {
+      "id": "anthropic-api-key",
+      "regex": "\\b(sk-ant-[A-Za-z0-9_-]{20,})\\b",
+      "keywords": ["sk-ant-"]
+    },
+    {
+      "id": "google-api-key",
+      "regex": "\\b(AIza[0-9A-Za-z_-]{35})\\b",
+      "keywords": ["AIza"]
+    },
+    {
+      "id": "npm-token",
+      "regex": "\\b(npm_[A-Za-z0-9]{36})\\b",
+      "keywords": ["npm_"]
+    },
+    {
+      "id": "pypi-token",
+      "regex": "\\b(pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,})\\b",
+      "keywords": ["pypi-AgEI"]
+    },
+    {
+      "id": "sendgrid-key",
+      "regex": "\\b(SG\\.[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]{43})\\b",
+      "keywords": ["SG."]
+    },
+    {
+      "id": "twilio-key",
+      "regex": "\\b(SK[0-9a-fA-F]{32})\\b",
+      "keywords": ["SK"]
+    },
+    {
+      "id": "azure-storage-key",
+      "regex": "AccountKey=([A-Za-z0-9+/=]{60,})",
+      "keywords": ["AccountKey="],
+      "capture": 1
+    },
+    {
+      "id": "gcp-service-account-key",
+      "regex": "\"type\"\\s*:\\s*\"service_account\"",
+      "keywords": ["service_account"],
+      "sweep": true
+    }
+  ]
+}

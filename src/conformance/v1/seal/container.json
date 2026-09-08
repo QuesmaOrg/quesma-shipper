@@ -1,0 +1,41 @@
+{
+  "vector_set": "container",
+  "vector_version": 1,
+  "description": "Object container layout: tar(manifest.json FIRST, payload) -\u003e zstd level 3 -\u003e age. Manifest-first is what makes a ranged GET of the object head yield the whole manifest, which is why no manifest sidecar object exists. Only the tar layer is byte-pinned here: zstd output depends on the encoder version and age is nondeterministic by design, so those layers are covered by round-trip and opacity tests instead. The manifest's encryption block is removed before hashing because recipient key IDs differ per run.",
+  "layer_order": [
+    "tar",
+    "zstd",
+    "age"
+  ],
+  "entry_order": [
+    "manifest.json",
+    "payload"
+  ],
+  "zstd_level": 3,
+  "tar_header_normalization": {
+    "mode": "0600",
+    "uid_gid": 0,
+    "format": "USTAR",
+    "manifest_mod_time": "1970-01-01T00:00:00Z"
+  },
+  "vectors": [
+    {
+      "name": "jsonl transcript",
+      "manifest_json": "{\"manifest_version\":1,\"organization_id\":\"default\",\"install_id\":\"3f2504e0-4f89-41d3-9a0c-0305e82c3301\",\"source_id\":\"claude-code-transcripts\",\"native_path\":\"/Users/__USER__/.claude/projects/-Users-__USER__-work-api/s.jsonl\",\"gather\":\"file_glob\",\"artifact_class\":\"trajectory\",\"source_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"shipped_hash\":\"9579bd50c280128398c5bb18899f827ce002f573b893a6ce39a036e632969d64\",\"payload_size\":37,\"shape_sniff\":\"ok\",\"client\":{\"version\":\"0.1.0\",\"os\":\"darwin\",\"arch\":\"arm64\"},\"sealed_at\":\"2026-07-30T10:00:00Z\"}",
+      "payload_hex": "7b2274797065223a2275736572227d0a7b2274797065223a22617373697374616e74227d0a",
+      "tar_sha256": "9e443c274e0c0e10474d72e8dc622e906906ff31d03ea1051deb3f39d527431e"
+    },
+    {
+      "name": "empty payload",
+      "manifest_json": "{\"manifest_version\":1,\"organization_id\":\"default\",\"install_id\":\"3f2504e0-4f89-41d3-9a0c-0305e82c3301\",\"source_id\":\"claude-code-transcripts\",\"native_path\":\"/Users/__USER__/.claude/projects/-Users-__USER__-work-api/s.jsonl\",\"gather\":\"file_glob\",\"artifact_class\":\"trajectory\",\"source_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"shipped_hash\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"payload_size\":0,\"shape_sniff\":\"ok\",\"client\":{\"version\":\"0.1.0\",\"os\":\"darwin\",\"arch\":\"arm64\"},\"sealed_at\":\"2026-07-30T10:00:00Z\"}",
+      "payload_hex": "",
+      "tar_sha256": "930a6c1f88d521876cabda28b9e5f4e9beb685b8c43d969f3d60c40b5f4494cf"
+    },
+    {
+      "name": "derived enricher output",
+      "manifest_json": "{\"manifest_version\":1,\"organization_id\":\"default\",\"install_id\":\"3f2504e0-4f89-41d3-9a0c-0305e82c3301\",\"source_id\":\"claude-code-transcripts\",\"native_path\":\"/c8cbeb0b/c8cbeb0b.jsonl.enriched.jsonl\",\"gather\":\"file_glob\",\"artifact_class\":\"trajectory\",\"source_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"shipped_hash\":\"dd98613e090dc5d4217b416f28b08b937b274467bb50fe2efffb68f55bf8762e\",\"payload_size\":15,\"shape_sniff\":\"ok\",\"client\":{\"version\":\"0.1.0\",\"os\":\"darwin\",\"arch\":\"arm64\"},\"sealed_at\":\"2026-07-30T10:00:00Z\",\"derived\":true,\"enricher\":{\"id\":\"cursor-transcript-join\",\"version\":1},\"derived_from\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"enrich_status\":\"ok\"}",
+      "payload_hex": "7b225f656e72696368223a7b7d7d0a",
+      "tar_sha256": "309f2694282337c3246a46468e70ff577675d70183bba4c2bc10b31301742abf"
+    }
+  ]
+}

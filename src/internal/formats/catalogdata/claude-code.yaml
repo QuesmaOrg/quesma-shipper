@@ -1,0 +1,100 @@
+# Claude Code (CLI + Agent SDK) — the richest local trajectory store, and the
+# highest-value family: nine agents share its <root>/projects/<encoded-cwd>/
+# path grammar and at least two emit its own compaction marker, so one decoder
+# amortizes across the family.
+#
+# Scope is v1 row. Deferred to v1.1: repo-local CLAUDE.md and
+# .cursor/rules, which sit outside the compiled roots.
+#
+# Retention trap this source exists to beat: cleanupPeriodDays defaults to 30
+# and deletion runs silently at startup, so a first sync must backfill
+# immediately or the reaper wins the race for everything older than install.
+spec_version: 1
+family: claude-code
+display_name: Claude Code
+
+sources:
+  - id: claude-code-transcripts
+    description: >-
+      Session and subagent transcripts. The .meta.json siblings are the spawn-tree
+      join key (toolUseId -> the parent tool_use block) and were observed beside
+      every subagent transcript; globbing only *.jsonl orphans every subagent.
+      tool-results/ spill files are IN scope because redact-always makes them safe,
+      and they hold the largest tool outputs analysis wants.
+    gather: file_glob
+    artifact_class: trajectory
+    roots:
+      - $CLAUDE_CONFIG_DIR
+      - ~/.claude
+      - $XDG_CONFIG_HOME/claude
+    require_subdir: projects
+    # A hard ceiling on what will be READ, checked against the stat before the file is
+    # opened. Measured on a working machine: p50 34 KB, p95 599 KB, p99 15.4 MB, largest
+    # 60.9 MB. This is four times that largest, and two orders below the failure it exists
+    # to prevent — sessions that reach multi-GB through a writer defect that re-serialises
+    # the whole conversation into every "progress" entry (anthropics/claude-code#18905),
+    # one of which reached 3.8 GB and hangs the agent that wrote it (#22365). The pipeline
+    # holds the payload several times over, so reading one of those needs tens of GB and
+    # takes the daemon with it. A file above the line is skipped, counted and reported.
+    max_file_bytes: 268435456
+    include:
+      - "projects/**/*.jsonl"
+      - "projects/**/*.meta.json"
+      - "projects/**/tool-results/**"
+    # Which account and plan produced these transcripts. The fields live in
+    # ~/.claude.json — ABOVE the root, beside auth state no glob may touch — so
+    # the answer is a compiled probe, not a wider include.
+    enrichers:
+      claude-account: true
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 65536
+
+  - id: claude-code-context
+    description: >-
+      Context artifacts, not trajectory turns: per-project memory files and their
+      MEMORY.md index, plans, todos, and file-history checkpoint metadata. Longer
+      retention than trajectories because these are mutated in place — a shared
+      window can expire the only historical copy of a file that still exists.
+    gather: file_glob
+    artifact_class: context
+    roots:
+      - $CLAUDE_CONFIG_DIR
+      - ~/.claude
+      - $XDG_CONFIG_HOME/claude
+    require_subdir: projects
+    # Context artifacts are ordinary files a developer edited — a file-history snapshot is a
+    # copy of whatever was open. Measured here: 1457 files, p95 39 KB, largest 0.1 MB. 64 MiB
+    # is far above anything observed and still bounds what one bad file can make the pipeline
+    # hold; a checkpoint of a huge generated file is the realistic way this gets hit.
+    max_file_bytes: 67108864
+    include:
+      - "projects/**/memory/**"
+      - "todos/**"
+      - "plans/**"
+      - "file-history/**"
+    sniff:
+      kind: none
+
+  - id: claude-code-settings
+    description: >-
+      User-level CLAUDE.md and settings only. The agent root holds credentials
+      (.credentials.json, and ~/.claude.json above it), which is why collection
+      allow-lists specific files here and the compiled deny list backs it up:
+      within an allowed root the deny list is the only thing between a widened
+      glob and an OAuth token.
+    gather: file_glob
+    artifact_class: context
+    roots:
+      - $CLAUDE_CONFIG_DIR
+      - ~/.claude
+      - $XDG_CONFIG_HOME/claude
+    require_subdir: projects
+    # CLAUDE.md and settings.json. Kilobytes in every install anyone has looked at; the cap
+    # exists so an accident in that directory cannot become an OOM.
+    max_file_bytes: 8388608
+    include:
+      - "CLAUDE.md"
+      - "settings.json"
+    sniff:
+      kind: none

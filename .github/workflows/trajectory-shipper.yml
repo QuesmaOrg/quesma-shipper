@@ -1,0 +1,98 @@
+name: trajectory-shipper
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - "VERSION"
+      - "Makefile"
+      - ".github/workflows/trajectory-shipper.yml"
+  # Required checks must be reported for every PR. Filtering the entire workflow
+  # leaves unmatched PRs permanently waiting for statuses that can never arrive.
+  pull_request: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+      - run: make check
+      - run: make tidy
+      - run: make build
+
+  perf-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SHIPPER_PERF_RESULTS: ${{ github.workspace }}/perf-results.ndjson
+      SHIPPER_PERF_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+      - name: Compile while pulling the pinned test images
+        run: |
+          docker pull -q minio/minio:RELEASE.2025-04-22T22-12-26Z & minio=$!
+          docker pull -q ghcr.io/shopify/toxiproxy:2.12.0 & toxiproxy=$!
+          (cd src && go test -tags perf -c -o /dev/null ./perf/)
+          wait $minio
+          wait $toxiproxy
+      - name: Run performance smoke tests
+        run: make perf-smoke
+      - name: Upload performance results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-smoke-results
+          path: perf-results.ndjson
+          if-no-files-found: warn
+          retention-days: 30
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - run: git config --system core.longpaths true
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+      - run: go test ./...
+        working-directory: src
+
+  macos-package:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+      - name: Build and inspect the rootless package
+        run: |
+          make macos-pkg RELEASE_VERSION="$(sh scripts/release-version.sh)"
+          pkgutil --payload-files bin/dist/Shipper-macos-universal.pkg | grep -q 'Applications/Shipper.app/Contents/MacOS/shipper'

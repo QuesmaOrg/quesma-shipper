@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+	<title>Shipper</title>
+	<options customize="never" hostArchitectures="arm64,x86_64"/>
+	<domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="false"/>
+	<allowed-os-versions>
+		<os-version min="13.0"/>
+	</allowed-os-versions>
+	<choices-outline>
+		<line choice="default">
+			<line choice="com.quesma.trajectory-shipper"/>
+		</line>
+	</choices-outline>
+	<choice id="default"/>
+	<choice id="com.quesma.trajectory-shipper" visible="false">
+		<pkg-ref id="com.quesma.trajectory-shipper"/>
+	</choice>
+	<pkg-ref id="com.quesma.trajectory-shipper" version="0">Shipper-component.pkg</pkg-ref>
+</installer-gui-script>

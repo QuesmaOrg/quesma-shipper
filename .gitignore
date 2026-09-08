@@ -1,0 +1,41 @@
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build and coverage output.
+bin/
+/src/shipper
+/src/cmd/shipper/shipper
+*.test
+/src/coverage.out
+/src/coverage.html
+/coverage-review.md
+
+# Local scratch.
+tmp/
+out/
+dist/
+.cache/
+
+# Environment files hold live credentials.
+.env
+.env.*
+!.env.example
+
+# Collected trajectories, credentials, and raw objects must never be committed.
+# See SECURITY.md and CONTRIBUTING.md. Only the synthetic fixtures below may override these rules.
+*.age
+*.jsonl
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.zst
+*.zip
+*.tar
+*.tar.gz
+*.log
+!src/**/testdata/**
+!src/conformance/**

@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/QuesmaOrg/quesma-shipper/schemas/source-spec.schema.json",
+  "title": "Source-spec catalog document",
+  "description": "One catalog file per agent family, embedded in the binary. The catalog is the Compiled tier and therefore carries the scope ceiling: roots resolve only within the agent-owned directories named here plus their documented env-var overrides, and no config layer can add a root. The ceiling is root-granular by design -- glob subsumption is deliberately not computed -- so the airtight path floor is the compiled deny list (applied after env expansion and symlink resolution) plus require_subdir. Primitives are code; sources are data: new agent coverage within an already-compiled root family is a data-file change, a genuinely new root is a release.",
+  "type": "object",
+  "required": ["spec_version", "family", "sources"],
+  "additionalProperties": false,
+  "properties": {
+    "spec_version": {
+      "description": "Catalog document version. Unknown values are a hard error at load.",
+      "const": 1
+    },
+    "family": {
+      "description": "Storage family this file covers. ~70 known agents collapse into ~8 families; a family is the unit of coverage work.",
+      "$ref": "#/$defs/identifier"
+    },
+    "display_name": { "type": "string", "minLength": 1 },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/source" }
+    }
+  },
+
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": ["id", "gather", "artifact_class"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable source identity. Config merges per-source on this id, it keys the fingerprint state, and it appears in the object key as source=<id>, so renaming one re-ships its history.",
+          "$ref": "#/$defs/identifier"
+        },
+        "description": { "type": "string" },
+        "enabled": {
+          "description": "Default enablement. `enabled: false` at any local layer is the concrete local-deny-beats-remote-allow surface and no remote layer can undo it.",
+          "type": "boolean",
+          "default": true
+        },
+        "gather": {
+          "description": "Compiled collection primitive. The registry also claims the names `acp` and `cloud_pull`, deliberately absent from this enum: they are reserved so config can never introduce them, and a spec naming one fails validation until they are implemented.",
+          "$ref": "#/$defs/gather_name"
+        },
+        "artifact_class": {
+          "description": "Artifact class: trajectories age out safely; context artifacts are long-lived and mutated in place. Classification metadata only: retention collapsed to a single noncurrent-version window sized to the context need, so nothing downstream consumes it, but a future decision may.",
+          "$ref": "#/$defs/artifact_class"
+        },
+
+        "roots": {
+          "description": "Candidate roots, first existing wins unless the primitive unions them. Entries may name env vars ($CLAUDE_CONFIG_DIR, $CODEX_HOME) and ~. Expansion happens in the client and the deny list applies to the expanded, symlink-resolved path -- never to this template, because env vars are attacker-influenceable on a compromised machine.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "require_subdir": {
+          "description": "Refuse a root that does not look like the store it claims to be (a claimed Claude Code root with no projects/ dir). Half of the airtight path floor.",
+          "type": "string",
+          "minLength": 1
+        },
+        "include": {
+          "description": "Globs relative to the resolved root, ** per the doublestar contract. Walks never follow symlinks, pairing with O_NOFOLLOW at open time.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "exclude": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "max_file_bytes": {
+          "description": "Files above this ship as metadata_only inventory records instead of content.",
+          "type": "integer",
+          "minimum": 1
+        },
+
+        "sniff": {
+          "description": "Declarative structural assertion, so a drifted format is a catalog fix rather than a release. Shape only, never semantics.",
+          "$ref": "#/$defs/sniff"
+        },
+
+        "enrichers": {
+          "description": "Registered enrichers to run for this source. Config can only enable or disable a compiled enricher -- no layer can install transformation code. For DB-backed inputs the derived view is the only carrier of the DB-side fields, so disabling one stops that capture entirely.",
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/identifier" },
+          "additionalProperties": { "type": "boolean" }
+        },
+
+        "emit": {
+          "description": "sidecar only: the record kind this source emits.",
+          "type": "string",
+          "minLength": 1
+        },
+        "cwd_probe": {
+          "description": "sidecar only: a bounded probe, NOT a parser. Head-of-file budget, first match wins, no record types, no version awareness, never errors, never retries.",
+          "type": "object",
+          "required": ["from", "fields", "scan_bytes"],
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/identifier" }
+            },
+            "fields": {
+              "description": "Field names live in config so a renamed field is a config fix, not a release.",
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "scan_bytes": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "git_read": {
+          "description": "sidecar only: equally bounded .git handling.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "walk_up": { "type": "boolean" },
+            "follow_gitdir_file": {
+              "description": "Worktrees: .git is a file holding a gitdir: pointer.",
+              "type": "boolean"
+            },
+            "take": {
+              "description": "Scan .git/config for these keys only, ignoring insteadOf, credential helpers, everything else.",
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      },
+
+      "allOf": [
+        {
+          "$comment": "Every primitive that walks the filesystem needs a root and at least one include glob.",
+          "if": {
+            "properties": {
+              "gather": {
+                "enum": ["file_glob", "compressed_file"]
+              }
+            },
+            "required": ["gather"]
+          },
+          "then": { "required": ["roots", "include"] }
+        },
+        {
+          "$comment": "A sidecar source derives its records from other sources, so it takes a probe rather than globs.",
+          "if": {
+            "properties": { "gather": { "const": "sidecar" } },
+            "required": ["gather"]
+          },
+          "then": { "required": ["emit", "cwd_probe"] }
+        }
+      ]
+    },
+
+    "sniff": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "jsonl: the first non-empty line parses as JSON. json: the whole file parses. magic: the leading bytes match. text: decodes as UTF-8 and is not high-entropy. none: no assertion.",
+          "enum": ["jsonl", "json", "magic", "text", "none"]
+        },
+        "magic_hex": {
+          "description": "magic only: expected leading bytes, lowercase hex. Catches a store that started shipping compressed or encrypted at rest.",
+          "type": "string",
+          "pattern": "^([0-9a-f]{2})+$"
+        },
+        "max_scan_bytes": { "type": "integer", "minimum": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "magic" } }, "required": ["kind"] },
+          "then": { "required": ["magic_hex"] }
+        }
+      ]
+    },
+
+    "gather_name": {
+      "enum": [
+        "file_glob",
+        "sidecar",
+        "compressed_file"
+      ]
+    },
+    "artifact_class": { "enum": ["trajectory", "context"] },
+    "identifier": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 64 }
+  }
+}

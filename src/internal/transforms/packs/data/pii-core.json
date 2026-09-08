@@ -1,0 +1,34 @@
+{
+  "pack": "pii-core",
+  "description": "Personal data. Secrets and PII are ONE must-not-leak class here and the action on any match is redaction, because the downstream use is semantic analysis at scale: a false positive is cheap and a false negative is catastrophic. That inverts the usual tuning direction — recall over precision — and it is only affordable because redact-always removes the machinery a blocking policy needs (no quarantine, no held-back files, no operator retry loop).",
+  "rules": [
+    {
+      "id": "email",
+      "regex": "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b",
+      "keywords": ["@"],
+      "scanner": "email"
+    },
+    {
+      "id": "iban",
+      "regex": "\\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\\b",
+      "keywords": [],
+      "checksum": "iban",
+      "scanner": "iban"
+    },
+    {
+      "id": "card-pan",
+      "regex": "\\b(?:[0-9][ -]?){12,18}[0-9]\\b",
+      "keywords": [],
+      "checksum": "pan",
+      "guard": "no-decimal-neighbor",
+      "scanner": "card-pan"
+    },
+    {
+      "id": "pesel",
+      "regex": "\\b[0-9]{11}\\b",
+      "keywords": [],
+      "checksum": "pesel",
+      "scanner": "pesel"
+    }
+  ]
+}

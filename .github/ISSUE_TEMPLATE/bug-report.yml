@@ -1,0 +1,30 @@
+name: Bug report
+description: The shipper does something wrong on your machine
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Shipper version
+      description: Output of `shipper --version`.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and agent
+      description: For example "macOS 15.1, Claude Code" or "Ubuntu 24.04, Cursor".
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong
+      description: What you did, what happened, what you expected. Use synthetic data only. Do not paste trajectories, logs with real content, credentials, or presigned URLs.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `shipper doctor`
+      description: Remove hostnames or paths you do not want public.

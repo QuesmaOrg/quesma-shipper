@@ -1,0 +1,106 @@
+//go:build darwin
+
+package macos
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
+	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
+	"golang.org/x/sys/unix"
+)
+
+const macPackageTarget = "darwin/pkg"
+
+func appUpdateTarget(release common.Release) string { return release.Targets[macPackageTarget] }
+
+func currentAppBundle() (string, bool) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", false
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return shipperAppForExecutable(exe)
+}
+
+func containingApp(exe string) (string, bool) {
+	macOS := filepath.Dir(exe)
+	contents := filepath.Dir(macOS)
+	app := filepath.Dir(contents)
+	if filepath.Base(macOS) != "MacOS" || filepath.Base(contents) != "Contents" || filepath.Ext(app) != ".app" {
+		return "", false
+	}
+	return app, true
+}
+
+func shipperAppForExecutable(exe string) (string, bool) {
+	app, ok := containingApp(exe)
+	if !ok || filepath.Base(exe) != "shipper" {
+		return "", false
+	}
+	out, err := exec.Command("/usr/bin/plutil", "-extract", "CFBundleIdentifier", "raw", "-o", "-",
+		filepath.Join(app, "Contents", "Info.plist")).Output()
+	return app, err == nil && strings.TrimSpace(string(out)) == common.Label
+}
+
+func applyAppPackage(raw []byte, app, version string) error {
+	parent := filepath.Dir(app)
+	stage, err := os.MkdirTemp(parent, ".shipper-update-")
+	if err != nil {
+		return fmt.Errorf("staging beside %s: %w", app, err)
+	}
+	defer os.RemoveAll(stage)
+
+	pkg := filepath.Join(stage, "Shipper.pkg")
+	if err := platform.WriteAtomic(pkg, raw, 0o600); err != nil {
+		return fmt.Errorf("writing staged package: %w", err)
+	}
+	expanded := filepath.Join(stage, "expanded")
+	if out, err := exec.Command("/usr/sbin/pkgutil", "--expand-full", pkg, expanded).CombinedOutput(); err != nil {
+		return fmt.Errorf("extracting package: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	stagedApp := filepath.Join(expanded, "Shipper-component.pkg", "Payload", "Applications", "Shipper.app")
+	if err := validateAppBundle(stagedApp, version); err != nil {
+		return err
+	}
+	if err := unix.RenamexNp(app, stagedApp, unix.RENAME_SWAP); err != nil {
+		return fmt.Errorf("replacing %s: %w", app, err)
+	}
+	return nil
+}
+
+func validateAppBundle(app, version string) error {
+	info, err := os.Lstat(app)
+	if err != nil {
+		return fmt.Errorf("update does not contain Shipper.app: %w", err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("update Shipper.app is not a directory")
+	}
+	plist := filepath.Join(app, "Contents", "Info.plist")
+	checks := map[string]string{
+		"CFBundleIdentifier":    common.Label,
+		"ShipperReleaseVersion": version,
+	}
+	for key, want := range checks {
+		out, err := exec.Command("/usr/bin/plutil", "-extract", key, "raw", "-o", "-", plist).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("reading %s from update: %w: %s", key, err, strings.TrimSpace(string(out)))
+		}
+		if got := strings.TrimSpace(string(out)); got != want {
+			return fmt.Errorf("update %s is %q, want %q", key, got, want)
+		}
+	}
+	executable := filepath.Join(app, "Contents", "MacOS", "shipper")
+	if info, err := os.Stat(executable); err != nil || info.Mode()&0o111 == 0 {
+		return fmt.Errorf("update has no executable Contents/MacOS/shipper")
+	}
+	return nil
+}
