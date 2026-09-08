@@ -102,26 +102,37 @@ Everything derived this way passes through the scrub stage like any other file.
 
 **macOS**
 
-Install the signed `Shipper-macos-universal.pkg`. It installs `Shipper.app` for the current user and
-registers a launchd agent. It does not need administrator rights.
+Download and install the signed
+[`Shipper-macos-universal.pkg`](https://updates.quesma.dev/targets/bf5594a018d8a44ea00a2b66c174208993e6cf8dc5757a6cac1a590f92a800fd.Shipper-macos-universal.pkg).
+It installs `Shipper.app` for the current user and registers a launchd agent. It does not need
+administrator rights.
 
 **Linux**
 
 ```sh
-sh src/packaging/linux/install.sh
+curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/src/packaging/linux/install.sh
+sh install.sh
 ```
 
 The script downloads a hash-pinned bootstrap binary and installs a systemd user service. Run it
 again to upgrade. Existing enrollment is kept. Use `--no-service` to skip the service.
+
+The released binaries are also available directly for
+[AMD64](https://updates.quesma.dev/targets/3ae805e2d630af5cb52fff51a5c8ae77aeb7b12f2d73a56fd7723698e9bfe48e.shipper-linux-amd64)
+and
+[ARM64](https://updates.quesma.dev/targets/78f0c89019d8a2f86fe3723359c00082ba9ec6ddedfc5fde1709f7516c33a3b0.shipper-linux-arm64).
 
 Existing installations named `shipper` keep self-updating at that path so their service is not
 orphaned. Re-run the installer to move the command and service to `quesma-shipper`.
 
 **Windows**
 
-Download `quesma-shipper-windows-<arch>.exe` from a release, rename it to `quesma-shipper.exe`, and
-put it in a directory on `PATH`. Run `quesma-shipper run` from a scheduler of your choice. There is
-no service integration yet.
+Download the released binary for
+[AMD64](https://updates.quesma.dev/targets/350d0996b4275e7b6d9570dbd852ca47dfa49a75ad0695cba0e2d1774c48712c.shipper-windows-amd64.exe)
+or
+[ARM64](https://updates.quesma.dev/targets/40b608fb37e30bd5254028a761d45124ebd80211aa891d755266546fa9d32521.shipper-windows-arm64.exe),
+rename it to `quesma-shipper.exe`, and put it in a directory on `PATH`. Run `quesma-shipper run`
+from a scheduler of your choice. There is no service integration yet.
 
 ### From source
 
