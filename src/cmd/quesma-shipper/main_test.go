@@ -16,11 +16,11 @@ func TestVerbOfNamesTheFirstNonFlagArgument(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"shipper", "sync"}, "sync"},
-		{[]string{"shipper", "-q", "sync"}, "sync"},
-		{[]string{"shipper", "state", "prune"}, "state"},
-		{[]string{"shipper", "--version"}, "shipper"},
-		{[]string{"shipper"}, "shipper"},
+		{[]string{"quesma-shipper", "sync"}, "sync"},
+		{[]string{"quesma-shipper", "-q", "sync"}, "sync"},
+		{[]string{"quesma-shipper", "state", "prune"}, "state"},
+		{[]string{"quesma-shipper", "--version"}, "quesma-shipper"},
+		{[]string{"quesma-shipper"}, "quesma-shipper"},
 	} {
 		if got := verbOf(tc.args); got != tc.want {
 			t.Errorf("verbOf(%q) = %q, want %q", tc.args, got, tc.want)
@@ -34,7 +34,7 @@ func TestReportPanicPrintsTheStackAndPersistsTheFact(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
 	var errOut bytes.Buffer
-	reportPanic(&errOut, []string{"shipper", "enroll", "--invite", "x"}, "boom")
+	reportPanic(&errOut, []string{"quesma-shipper", "enroll", "--invite", "x"}, "boom")
 
 	if !strings.Contains(errOut.String(), "panic: boom") {
 		t.Errorf("the panic did not reach stderr:\n%s", errOut.String())

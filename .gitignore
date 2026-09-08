@@ -6,8 +6,8 @@
 
 # Build and coverage output.
 bin/
-/src/shipper
-/src/cmd/shipper/shipper
+/src/quesma-shipper
+/src/cmd/quesma-shipper/quesma-shipper
 *.test
 /src/coverage.out
 /src/coverage.html

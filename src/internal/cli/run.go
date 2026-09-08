@@ -125,7 +125,7 @@ func runCmd(build app.Build) *cobra.Command {
 					break
 				}
 				if !waiting {
-					fmt.Fprintln(cmd.ErrOrStderr(), "waiting for enrollment; run `shipper login` to continue")
+					fmt.Fprintln(cmd.ErrOrStderr(), "waiting for enrollment; run `quesma-shipper login` to continue")
 					waiting = true
 				}
 				select {

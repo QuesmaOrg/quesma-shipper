@@ -118,7 +118,7 @@ func (i Info) String() string {
 
 // Line is the human form, for `version` and for the root help.
 func (i Info) Line() string {
-	out := fmt.Sprintf("shipper %s %s/%s", i, i.OS, i.Arch)
+	out := fmt.Sprintf("quesma-shipper %s %s/%s", i, i.OS, i.Arch)
 	if i.Revision != "" {
 		out += " commit=" + ShortRev(i.Revision)
 	}

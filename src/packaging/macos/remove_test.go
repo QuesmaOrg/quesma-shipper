@@ -15,11 +15,15 @@ func TestRemoveProgramRemovesAppAndItsCLILink(t *testing.T) {
 	t.Setenv("HOME", home)
 	app := filepath.Join(home, "Applications", "Shipper.app")
 	executable := writeTestApp(t, app, common.Label, "shipper")
-	link := filepath.Join(home, ".local", "bin", "shipper")
+	link := filepath.Join(home, ".local", "bin", "quesma-shipper")
+	legacyLink := filepath.Join(home, ".local", "bin", "shipper")
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(executable, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(executable, legacyLink); err != nil {
 		t.Fatal(err)
 	}
 
@@ -30,7 +34,7 @@ func TestRemoveProgramRemovesAppAndItsCLILink(t *testing.T) {
 	if removed != app {
 		t.Fatalf("removed path = %q, want %q", removed, app)
 	}
-	for _, path := range []string{app, link} {
+	for _, path := range []string{app, link, legacyLink} {
 		if _, err := os.Lstat(path); !os.IsNotExist(err) {
 			t.Errorf("%s still exists: %v", path, err)
 		}

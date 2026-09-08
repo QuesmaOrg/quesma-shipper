@@ -73,12 +73,12 @@ jobs:
               version: $version,
               published_at: $published_at,
               targets: {
-                "linux/amd64": "shipper-linux-amd64",
-                "linux/arm64": "shipper-linux-arm64",
-                "darwin/amd64": "shipper-darwin-amd64",
-                "darwin/arm64": "shipper-darwin-arm64",
-                "windows/amd64": "shipper-windows-amd64.exe",
-                "windows/arm64": "shipper-windows-arm64.exe",
+                "linux/amd64": "quesma-shipper-linux-amd64",
+                "linux/arm64": "quesma-shipper-linux-arm64",
+                "darwin/amd64": "quesma-shipper-darwin-amd64",
+                "darwin/arm64": "quesma-shipper-darwin-arm64",
+                "windows/amd64": "quesma-shipper-windows-amd64.exe",
+                "windows/arm64": "quesma-shipper-windows-arm64.exe",
                 "darwin/pkg": "Shipper-macos-universal.pkg"
               }
             }' > bin/dist/release.json
@@ -87,8 +87,8 @@ jobs:
         with:
           name: shipper-release-binaries
           path: |
-            bin/dist/shipper-linux-*
-            bin/dist/shipper-windows-*
+            bin/dist/quesma-shipper-linux-*
+            bin/dist/quesma-shipper-windows-*
             bin/dist/release.json
           compression-level: 0
           retention-days: 7
@@ -141,8 +141,8 @@ jobs:
           name: shipper-release-macos
           path: |
             bin/dist/Shipper-macos-universal.pkg
-            bin/dist/shipper-darwin-amd64
-            bin/dist/shipper-darwin-arm64
+            bin/dist/quesma-shipper-darwin-amd64
+            bin/dist/quesma-shipper-darwin-arm64
           compression-level: 0
           retention-days: 7
 

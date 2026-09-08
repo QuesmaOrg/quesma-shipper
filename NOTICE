@@ -6,7 +6,7 @@ Licensed under the Apache License, Version 2.0. See LICENSE.
 Quesma, Quesma Shipper, and the Quesma logo are trademarks of Quesma Inc.
 The license does not grant trademark rights. See TRADEMARKS.md.
 
-This product bundles third-party software. `shipper licenses` prints every license text;
+This product bundles third-party software. `quesma-shipper licenses` prints every license text;
 the texts are kept in src/internal/legal/third_party/.
 
 The shapes of the credential-detection rules in the scrub packs were checked against the

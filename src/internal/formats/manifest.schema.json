@@ -31,7 +31,7 @@
       "minLength": 1
     },
     "install_id": {
-      "description": "The machine pseudonym IS the install_id; a UUID minted at enrollment (`shipper enroll`) alongside the age identity and name_key.",
+      "description": "The machine pseudonym IS the install_id; a UUID minted at enrollment (`quesma-shipper enroll`) alongside the age identity and name_key.",
       "$ref": "#/$defs/uuid"
     },
 

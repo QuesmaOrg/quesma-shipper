@@ -13,7 +13,7 @@ import (
 // help templates. The linker tags such calls <ReflectMethod> in -dumpdep
 // (constant-name lookups it can track are not tagged and stay harmless).
 func TestNoDynamicMethodByName(t *testing.T) {
-	build := exec.Command("go", "build", "-o", filepath.Join(t.TempDir(), "shipper"), "-ldflags=-dumpdep", ".")
+	build := exec.Command("go", "build", "-o", filepath.Join(t.TempDir(), "quesma-shipper"), "-ldflags=-dumpdep", ".")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	out, err := build.CombinedOutput()
 	if err != nil {

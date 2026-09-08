@@ -9,7 +9,7 @@ import (
 )
 
 func testSpec() Spec {
-	return Spec{Executable: "/usr/local/bin/shipper", Args: []string{"run"},
+	return Spec{Executable: "/usr/local/bin/quesma-shipper", Args: []string{"run"},
 		Home: "/Users/jane", StateDir: "/Users/jane/.local/state/trajectory-shipper",
 		LogDir: "/Users/jane/.local/state/trajectory-shipper/logs"}
 }

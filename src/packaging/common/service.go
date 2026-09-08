@@ -27,7 +27,7 @@ const (
 	// KindCron is the non-systemd Linux fallback: the client prints a crontab line, never edits one.
 	KindCron Kind = "cron"
 
-	// KindUnsupported means no supervision here; `shipper run` still works in the foreground.
+	// KindUnsupported means no supervision here; `quesma-shipper run` still works in the foreground.
 	KindUnsupported Kind = "unsupported"
 )
 

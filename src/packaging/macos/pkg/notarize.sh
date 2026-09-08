@@ -8,8 +8,8 @@ main() {
 
 	OUT=${1:-bin/dist}
 	PKG=$OUT/Shipper-macos-universal.pkg
-	RAW_ARM64=$OUT/shipper-darwin-arm64
-	RAW_AMD64=$OUT/shipper-darwin-amd64
+	RAW_ARM64=$OUT/quesma-shipper-darwin-arm64
+	RAW_AMD64=$OUT/quesma-shipper-darwin-amd64
 	for artifact in "$PKG" "$RAW_ARM64" "$RAW_AMD64"; do
 		[ -f "$artifact" ] || die "missing artifact: $artifact"
 	done

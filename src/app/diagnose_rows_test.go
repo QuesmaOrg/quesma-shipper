@@ -28,7 +28,7 @@ func TestDiscoveryRowsSeverity(t *testing.T) {
 		{"collected", sources.Discovery{Health: sources.Collected, Sniff: sources.SniffOK}, SevOK, ""},
 		{"collected_bad_sniff",
 			sources.Discovery{Health: sources.Collected, Sniff: sources.SniffUnexpectedShape},
-			SevWarn, "shipper preview"},
+			SevWarn, "quesma-shipper preview"},
 		{"agent_absent", sources.Discovery{Health: sources.AgentAbsent, Reason: "no root"}, SevDim, ""},
 		{"moved", sources.Discovery{Health: sources.RootPresentNoMatch, Reason: "root exists"},
 			SevWarn, "moved"},
@@ -117,7 +117,7 @@ func TestCheckUpdate(t *testing.T) {
 		t.Errorf("transport error: state %q", got.State)
 	}
 	got := checkUpdate(ctx, Build{Release: true, Version: "1.0.0"}, true, noEnv, fixed("1.1.0", true, nil))
-	if got.State != "available" || got.Fix != "shipper update" {
+	if got.State != "available" || got.Fix != "quesma-shipper update" {
 		t.Errorf("available: %+v must name the command to run", got)
 	}
 	if !strings.Contains(got.Detail, "2026-08-18") {

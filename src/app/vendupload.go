@@ -40,11 +40,11 @@ func newUploadPort(stateDir string, eff *config.Effective) (*vendPort, error) {
 	enrollment, err := controlplane.LoadEnrollment(stateDir)
 	if err != nil {
 		return nil, fmt.Errorf("%w\n\nEvery upload is authorized by the control plane named in "+
-			"the enrollment record. Fix it or log in again with `shipper login`", err)
+			"the enrollment record. Fix it or log in again with `quesma-shipper login`", err)
 	}
 	if enrollment == nil || enrollment.Endpoint == "" {
 		return nil, errors.New("uploading needs an enrolled control plane to authorize every object; " +
-			"`shipper login` first (`shipper preview` works without it)")
+			"`quesma-shipper login` first (`quesma-shipper preview` works without it)")
 	}
 	targets, err := uploadTargets(eff)
 	if err != nil {

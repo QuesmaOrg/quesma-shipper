@@ -1,12 +1,12 @@
 #!/bin/sh
-# Installs or upgrades shipper: TUF-capable bootstrap, optional login, background service.
+# Installs or upgrades quesma-shipper: TUF-capable bootstrap, optional login, background service.
 # Re-running upgrades and keeps the login. Usage: install.sh [token --server URL] [--no-service]
 set -eu
 
 main() {
 	BIN_DIR=$HOME/.local/bin
 	STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/trajectory-shipper
-	NAME=shipper
+	NAME=quesma-shipper
 	TOKEN=${SHIPPER_AUTH_KEY:-} SERVER= NO_SERVICE= FROM=
 
 	while [ $# -gt 0 ]; do
@@ -52,6 +52,19 @@ main() {
 		say "not enrolled; run \`$bin login <token> --server URL\`"
 	fi
 	[ -n "$NO_SERVICE" ] || "$bin" postinstall >/dev/null
+	# A reinstall retires the former command, but only once postinstall has repointed the service
+	# entry at the new executable: --no-service leaves an entry that may still name the old path,
+	# and removing the file it names would stop collection silently. An install that already
+	# self-updated answers with the new name at the old path, so accept either banner - but not an
+	# unrelated program that merely has the old name.
+	legacy=$BIN_DIR/shipper
+	if [ -x "$legacy" ] && "$legacy" --version 2>/dev/null | grep -qE '^(quesma-)?shipper '; then
+		if [ -n "$NO_SERVICE" ]; then
+			say "kept $legacy: a service entry may still name it; re-run without --no-service to retire it"
+		else
+			rm -f "$legacy"
+		fi
+	fi
 
 	case ":$PATH:" in
 	*":$BIN_DIR:"*) ;;
@@ -72,6 +85,8 @@ download() {
 	linux) ;;
 	*) die "unsupported OS $os" ;;
 	esac
+	# The bootstrap keeps its published target name; after launch its TUF client follows the
+	# release manifest to quesma-shipper-* assets. Removing this target would strand old scripts.
 	asset=shipper-$os-$arch
 	case $os/$arch in
 	linux/amd64) want=e15ae94795e1f8f00523a3874930b12494be0d568d67405e65abb59d323497ef ;;
@@ -89,7 +104,7 @@ download() {
 
 usage() {
 	cat <<EOF
-Installs or upgrades shipper into ~/.local/bin and turns on its background service.
+Installs or upgrades quesma-shipper into ~/.local/bin and turns on its background service.
 
   install.sh                    install or upgrade; an existing login is kept
   install.sh <token> --server URL

@@ -154,7 +154,7 @@ func TestRunOnceOnVirginMachineWaitsForLogin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cancelled wait failed: %v", err)
 	}
-	if !strings.Contains(out, "waiting for enrollment") || !strings.Contains(out, "shipper login") {
+	if !strings.Contains(out, "waiting for enrollment") || !strings.Contains(out, "quesma-shipper login") {
 		t.Errorf("the enrollment wait was not logged:\n%s", out)
 	}
 }
@@ -163,7 +163,7 @@ func TestStatusBeforeAndAfterLocalDevSetup(t *testing.T) {
 	w := stageBareWorld(t)
 
 	before, err := runExpectingFailure(t, "status")
-	if err == nil || !strings.Contains(before, "not logged in") || !strings.Contains(before, "shipper login") {
+	if err == nil || !strings.Contains(before, "not logged in") || !strings.Contains(before, "quesma-shipper login") {
 		t.Errorf("status on a virgin machine does not point at login (err %v):\n%s", err, before)
 	}
 
@@ -192,7 +192,7 @@ func TestLocalDevPreviewsButRunStillWaitsForEnrollment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cancelled wait failed: %v", err)
 	}
-	if !strings.Contains(out, "waiting for enrollment") || !strings.Contains(out, "shipper login") {
+	if !strings.Contains(out, "waiting for enrollment") || !strings.Contains(out, "quesma-shipper login") {
 		t.Errorf("the enrollment wait was not logged:\n%s", out)
 	}
 }
