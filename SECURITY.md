@@ -8,7 +8,7 @@ Use GitHub's private vulnerability reporting at
 <https://github.com/QuesmaOrg/quesma-shipper/security/advisories/new>, or email
 `contact@quesma.com` with the subject `Security: quesma-shipper`. Include:
 
-- the shipper version, from `shipper --version`, and the OS;
+- the shipper version, from `quesma-shipper --version`, and the OS;
 - the impact and the conditions needed to reproduce it;
 - minimal reproduction steps that use synthetic data;
 - a suggested mitigation, if you have one.
@@ -55,7 +55,7 @@ encrypted bundles as confidential.
 ## Supported versions
 
 Only the newest release receives fixes. Release builds self-update. If you disabled self-update
-with `SHIPPER_NO_SELFUPDATE`, run `shipper update` after a security release.
+with `SHIPPER_NO_SELFUPDATE`, run `quesma-shipper update` after a security release.
 
 ## Design guarantees
 

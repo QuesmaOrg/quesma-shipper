@@ -8,14 +8,14 @@ import (
 )
 
 func testSpec() Spec {
-	return Spec{Executable: "/usr/local/bin/shipper", Args: []string{"run"},
+	return Spec{Executable: "/usr/local/bin/quesma-shipper", Args: []string{"run"},
 		Home: "/home/jane", StateDir: "/home/jane/.local/state/trajectory-shipper",
 		LogDir: "/home/jane/.local/state/trajectory-shipper/logs"}
 }
 
 func TestUnitCarriesRestartEnvironmentAndLoginStart(t *testing.T) {
 	got := renderUnit(testSpec())
-	for _, want := range []string{"ExecStart=/usr/local/bin/shipper run", "Restart=always",
+	for _, want := range []string{"ExecStart=/usr/local/bin/quesma-shipper run", "Restart=always",
 		"WantedBy=default.target", "Environment=HOME=/home/jane"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("unit is missing %q:\n%s", want, got)

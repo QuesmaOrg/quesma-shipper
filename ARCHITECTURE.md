@@ -14,7 +14,7 @@ three triggers that differ only in *when*.
 ```
 quesma-shipper/
   src/                    Go module root
-    cmd/shipper/          main
+    cmd/quesma-shipper/   main
     app/                  the facade: resolve config into a run, flush it — the one public package
     packaging/            install, update, service lifecycle; thin current-OS dispatch
       common/             TUF verification, re-exec, shared service types and run markers
@@ -54,7 +54,7 @@ would compile, so the table is the reference for what direction is intended.
 | Package | May import |
 | --- | --- |
 | `src/app` | `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/identity`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/sources`, `src/internal/transforms`, `src/internal/transforms/accountprobe`, `src/internal/transforms/cursorjoin`, `src/internal/upload`, `src/packaging` |
-| `src/cmd/shipper` | `src/app`, `src/internal/cli`, `src/internal/platform` |
+| `src/cmd/quesma-shipper` | `src/app`, `src/internal/cli`, `src/internal/platform` |
 | `src/e2e` | — |
 | `src/internal/cli` | `src/app`, `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/identity`, `src/internal/legal`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/platform/crashjournal`, `src/internal/sources`, `src/packaging` |
 | `src/internal/config` | `src/internal/platform`, `src/internal/sources`, `src/internal/transforms`, `src/internal/transforms/packs` |
@@ -110,7 +110,7 @@ These are checked by tests or held in review, because no directory layout can ex
   (the `-tags perf` harness in `src/perf` is the sole importer of the S3 SDK, as a test
   peer): the only route to object storage is a presigned ticket spent over `net/http`,
   and a credential this binary never holds cannot be misdirected. `go list -deps
-  ./cmd/shipper` is the check that nothing from the harness reaches the binary.
+  ./cmd/quesma-shipper` is the check that nothing from the harness reaches the binary.
 - **Surface caps**: platform and formats are importable from everywhere, so their
   exported surfaces stay small; growth there is a decision, not an accident.
 

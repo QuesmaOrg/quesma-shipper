@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	Name    = "shipper"
+	Name    = "quesma-shipper"
 	Title   = "shipper"
 	AuthEnv = "SHIPPER_AUTH_KEY"
 )

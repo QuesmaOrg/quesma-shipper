@@ -1,12 +1,12 @@
 #!/bin/sh
-# Installs or upgrades shipper: TUF-capable bootstrap, optional login, background service.
+# Installs or upgrades quesma-shipper: TUF-capable bootstrap, optional login, background service.
 # Re-running upgrades and keeps the login. Usage: install.sh [token --server URL] [--no-service]
 set -eu
 
 main() {
 	BIN_DIR=$HOME/.local/bin
 	STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/trajectory-shipper
-	NAME=shipper
+	NAME=quesma-shipper
 	TOKEN=${SHIPPER_AUTH_KEY:-} SERVER= NO_SERVICE= FROM=
 
 	while [ $# -gt 0 ]; do
@@ -52,6 +52,12 @@ main() {
 		say "not enrolled; run \`$bin login <token> --server URL\`"
 	fi
 	[ -n "$NO_SERVICE" ] || "$bin" postinstall >/dev/null
+	# A reinstall is the safe point to retire the former command: the service now points at the
+	# new executable. Do not remove an unrelated program that happens to have the old name.
+	legacy=$BIN_DIR/shipper
+	if [ -x "$legacy" ] && "$legacy" --version 2>/dev/null | grep -q '^shipper '; then
+		rm -f "$legacy"
+	fi
 
 	case ":$PATH:" in
 	*":$BIN_DIR:"*) ;;
@@ -72,6 +78,8 @@ download() {
 	linux) ;;
 	*) die "unsupported OS $os" ;;
 	esac
+	# The bootstrap keeps its published target name; after launch its TUF client follows the
+	# release manifest to quesma-shipper-* assets. Removing this target would strand old scripts.
 	asset=shipper-$os-$arch
 	case $os/$arch in
 	linux/amd64) want=e15ae94795e1f8f00523a3874930b12494be0d568d67405e65abb59d323497ef ;;
@@ -89,7 +97,7 @@ download() {
 
 usage() {
 	cat <<EOF
-Installs or upgrades shipper into ~/.local/bin and turns on its background service.
+Installs or upgrades quesma-shipper into ~/.local/bin and turns on its background service.
 
   install.sh                    install or upgrade; an existing login is kept
   install.sh <token> --server URL

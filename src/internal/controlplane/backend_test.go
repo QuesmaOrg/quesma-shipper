@@ -113,7 +113,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// enrolled returns a record pointing at the plane, as `shipper enroll` would have written it.
+// enrolled returns a record pointing at the plane, as `quesma-shipper enroll` would have written it.
 func (p *fakePlane) enrolled(t *testing.T, endpoint, installID string) *controlplane.Enrollment {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(nil)

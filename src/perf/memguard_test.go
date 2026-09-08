@@ -238,7 +238,7 @@ func runUnderBudget(t *testing.T, w *world, scenario string, budget resourceBudg
 			scenario, logical, files, budget.memory, obs.PeakRSS, obs.PeakRSSSource)
 	}
 	if obs.Err != nil {
-		t.Fatalf("%s: shipper run --once ended %s: %v\n%s", scenario, obs.exitStatus(), obs.Err, obs.Output)
+		t.Fatalf("%s: quesma-shipper run --once ended %s: %v\n%s", scenario, obs.exitStatus(), obs.Err, obs.Output)
 	}
 
 	counts := summary(t, obs.Output)

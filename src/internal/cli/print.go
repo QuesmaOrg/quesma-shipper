@@ -43,7 +43,7 @@ func printRunSummary(out io.Writer, rep formats.Report, adviseDrain bool) {
 	if rep.Paused {
 		fmt.Fprintf(w, "%s\tpaused - nothing collected\t%s\n",
 			rep.StartedAt.Local().Format("15:04:05"), rep.PauseReason)
-		fmt.Fprintf(w, "  note\tclear it with `shipper resume`\n")
+		fmt.Fprintf(w, "  note\tclear it with `quesma-shipper resume`\n")
 		return
 	}
 
@@ -62,7 +62,7 @@ func printRunSummary(out io.Writer, rep formats.Report, adviseDrain bool) {
 		fmt.Fprintf(w, "  note\tmax_files_per_run reached; %d left, %.0f%% of this tick's work shipped\n",
 			rep.Remaining, completeness(rep.Shipped, rep.Remaining))
 		if adviseDrain && rep.Shipped > 0 {
-			fmt.Fprintf(w, "  \tflush the rest now with `shipper run --once --drain`\n")
+			fmt.Fprintf(w, "  \tflush the rest now with `quesma-shipper run --once --drain`\n")
 		}
 	}
 	for _, s := range rep.Sources {
@@ -83,7 +83,7 @@ func printRunSummary(out io.Writer, rep formats.Report, adviseDrain bool) {
 			s.SourceID)
 	}
 	if rep.Parked > 0 {
-		fmt.Fprintf(w, "  note\tparked entries need attention: see `shipper doctor`\n")
+		fmt.Fprintf(w, "  note\tparked entries need attention: see `quesma-shipper doctor`\n")
 	}
 	for _, s := range rep.Sources {
 		if s.Enriched > 0 {

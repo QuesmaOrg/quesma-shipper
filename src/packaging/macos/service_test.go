@@ -11,7 +11,7 @@ import (
 )
 
 func testSpec() Spec {
-	return Spec{Executable: "/usr/local/bin/shipper", Args: []string{"run"},
+	return Spec{Executable: "/usr/local/bin/quesma-shipper", Args: []string{"run"},
 		Home: "/Users/jane", StateDir: "/Users/jane/.local/state/trajectory-shipper",
 		LogDir: "/Users/jane/.local/state/trajectory-shipper/logs"}
 }
@@ -23,7 +23,7 @@ func TestPlistIsWellFormedAndKeepsTheAgentAlive(t *testing.T) {
 		t.Fatalf("invalid plist XML: %v", err)
 	}
 	for _, want := range []string{"<key>RunAtLoad</key>\n\t<true/>", "<key>KeepAlive</key>\n\t<true/>",
-		"<string>" + common.Label + "</string>", "<string>/usr/local/bin/shipper</string>",
+		"<string>" + common.Label + "</string>", "<string>/usr/local/bin/quesma-shipper</string>",
 		"<key>HOME</key>", "XDG_STATE_HOME", "StandardOutPath", "StandardErrorPath"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("plist is missing %q:\n%s", want, got)

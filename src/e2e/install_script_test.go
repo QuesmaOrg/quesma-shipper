@@ -14,7 +14,7 @@ import (
 
 const stubShipper = `#!/bin/sh
 echo "$@" >> "$SHIPPER_STUB_LOG"
-[ "$1" = --version ] && echo "shipper 0.0.0-stub"
+[ "$1" = --version ] && echo "quesma-shipper 0.0.0-stub"
 exit 0
 `
 
@@ -29,7 +29,8 @@ func stageInstall(t *testing.T) installWorld {
 }
 
 func (w installWorld) bin() string     { return filepath.Join(w.Home, "bin") }
-func (w installWorld) shipper() string { return filepath.Join(w.bin(), "shipper") }
+func (w installWorld) shipper() string { return filepath.Join(w.bin(), "quesma-shipper") }
+func (w installWorld) legacy() string  { return filepath.Join(w.bin(), "shipper") }
 func (w installWorld) stubLog() string { return filepath.Join(w.Home, "stub.log") }
 
 func stageStub(t *testing.T) string {
@@ -110,6 +111,27 @@ func TestInstallScriptKeepsAnExistingLogin(t *testing.T) {
 	}
 	if calls := stubCalls(t, w); !slices.Equal(calls, []string{"--version"}) {
 		t.Errorf("stub calls = %v", calls)
+	}
+}
+
+func TestInstallScriptRemovesTheFormerBinaryAfterInstalling(t *testing.T) {
+	w := stageInstall(t)
+	if err := os.MkdirAll(w.bin(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := strings.Replace(stubShipper, "quesma-shipper 0.0.0-stub", "shipper 0.0.0-stub", 1)
+	if err := os.WriteFile(w.legacy(), []byte(legacy), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runInstall(t, w, "--from", stageStub(t), "--no-service")
+	if err != nil {
+		t.Fatalf("install.sh failed: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(w.legacy()); !os.IsNotExist(err) {
+		t.Fatalf("former binary still exists: %v", err)
+	}
+	if _, err := os.Stat(w.shipper()); err != nil {
+		t.Fatalf("renamed binary is missing: %v", err)
 	}
 }
 

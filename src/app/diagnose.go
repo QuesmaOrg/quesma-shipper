@@ -20,7 +20,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 	if err != nil {
 		rep.Sections = []Section{{Title: "Configuration", Rows: []Row{{
 			Sev: SevFail, Label: "config", Detail: fmt.Sprintf("refused: %v", err),
-			Fix: "nothing runs until this resolves, `shipper config` walks the layers",
+			Fix: "nothing runs until this resolves, `quesma-shipper config` walks the layers",
 		}}}}
 		rep.Update = UpdateStatus{State: "skipped", Detail: "not checked - config did not resolve"}
 		return rep
@@ -116,7 +116,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		}
 		conf := []Row{{Sev: SevDim, Label: "build", Detail: VersionLine(build)}}
 		if unitErr != nil {
-			conf = append(conf, Row{Sev: SevFail, Label: "identity", Detail: fmt.Sprintf("missing: %v", unitErr), Fix: "`shipper login`"})
+			conf = append(conf, Row{Sev: SevFail, Label: "identity", Detail: fmt.Sprintf("missing: %v", unitErr), Fix: "`quesma-shipper login`"})
 		} else {
 			conf = append(conf, Row{Sev: SevDim, Label: "install_id", Detail: unit.InstallID.String()})
 		}
@@ -141,7 +141,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		}
 	} else if unitErr != nil {
 		rep.Sections[1].Rows = append(rep.Sections[1].Rows, Row{Sev: SevFail, Label: "identity",
-			Detail: fmt.Sprintf("missing: %v", unitErr), Fix: "`shipper login`"})
+			Detail: fmt.Sprintf("missing: %v", unitErr), Fix: "`quesma-shipper login`"})
 	}
 	rep.Update = <-updCh
 	return rep
@@ -150,7 +150,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 func stateRowsFrom(doc engine.Document, err error) []Row {
 	if err != nil {
 		return []Row{{Sev: SevWarn, Label: "local state", Brief: "local state unreadable",
-			Detail: fmt.Sprintf("unreadable: %v", err), Fix: "`shipper state` inspects and repairs it"}}
+			Detail: fmt.Sprintf("unreadable: %v", err), Fix: "`quesma-shipper state` inspects and repairs it"}}
 	}
 	rows := []Row{{Sev: SevDim, Label: "tracked_files", Detail: fmt.Sprintf("%d", len(doc.Entries))}}
 	parked := 0

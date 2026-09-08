@@ -51,7 +51,7 @@ func resolve(ctx context.Context, offline bool) (*config.Effective, config.Paths
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, paths, controlplane.Remote{}, fmt.Errorf(
 			"%w\n\nThis install is enrolled but its enrollment record cannot be used. "+
-				"Fix the file or log in again with `shipper login`; collecting without it would ship "+
+				"Fix the file or log in again with `quesma-shipper login`; collecting without it would ship "+
 				"under different credentials than the ones this install was granted", err)
 	}
 	remote := controlplane.Refresh(ctx, controlplane.RefreshOptions{

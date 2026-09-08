@@ -206,7 +206,7 @@ func ServiceState() Status {
 			// Written but not loaded is the state that collects nothing while looking installed.
 			st.Detail = "plist present but NOT loaded: re-run the Shipper installer"
 		default:
-			st.Detail = "no agent installed; `shipper run` works in the foreground"
+			st.Detail = "no agent installed; `quesma-shipper run` works in the foreground"
 		}
 		return st
 	}

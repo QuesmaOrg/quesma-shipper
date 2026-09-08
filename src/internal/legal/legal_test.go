@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The embedded copies must match the repository's canonical files, or `shipper licenses` lies.
+// The embedded copies must match the repository's canonical files, or `quesma-shipper licenses` lies.
 func TestEmbeddedCopiesMatchRepository(t *testing.T) {
 	for name, canonical := range map[string]string{"LICENSE": "../../../LICENSE", "NOTICE": "../../../NOTICE"} {
 		want, err := os.ReadFile(canonical)

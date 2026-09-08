@@ -188,7 +188,7 @@ func ServiceState() Status {
 		st.Detail = fmt.Sprintf("unit present but %s (%s): re-run the Shipper installer",
 			orUnknown(activeState), orUnknown(enabledState))
 	default:
-		st.Detail = "no agent installed; `shipper run` works in the foreground"
+		st.Detail = "no agent installed; `quesma-shipper run` works in the foreground"
 	}
 	if hint := lingerHint(); hint != "" && st.Loaded {
 		st.Detail += "; " + hint

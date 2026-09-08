@@ -30,12 +30,12 @@ main() {
 	mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$WORK/payload/.local/bin" "$OUT"
 
 	build_binary "$MODULE" "$WORK" "$RELEASE_VERSION"
-	cp "$WORK/shipper-arm64" "$OUT/shipper-darwin-arm64"
-	cp "$WORK/shipper-amd64" "$OUT/shipper-darwin-amd64"
+	cp "$WORK/shipper-arm64" "$OUT/quesma-shipper-darwin-arm64"
+	cp "$WORK/shipper-amd64" "$OUT/quesma-shipper-darwin-amd64"
 	/usr/bin/lipo -create "$WORK/shipper-arm64" "$WORK/shipper-amd64" -output "$APP/Contents/MacOS/shipper"
 	/usr/bin/lipo "$APP/Contents/MacOS/shipper" -verify_arch arm64 x86_64
 	case $("$APP/Contents/MacOS/shipper" --version) in
-	"shipper $RELEASE_VERSION ("*) ;;
+	"quesma-shipper $RELEASE_VERSION ("*) ;;
 	*) die "binary did not corroborate release version $RELEASE_VERSION (build from a clean matching revision)" ;;
 	esac
 
@@ -47,10 +47,10 @@ main() {
 	cp "$HERE/Shipper.icns" "$APP/Contents/Resources/Shipper.icns"
 	cp "$MODULE/internal/legal/LICENSE" "$MODULE/internal/legal/NOTICE" "$APP/Contents/Resources/"
 	cp -R "$MODULE/internal/legal/third_party" "$APP/Contents/Resources/third_party"
-	ln -s ../../Applications/Shipper.app/Contents/MacOS/shipper "$WORK/payload/.local/bin/shipper"
-	/usr/bin/xattr -cr "$WORK/payload" "$OUT/shipper-darwin-arm64" "$OUT/shipper-darwin-amd64"
+	ln -s ../../Applications/Shipper.app/Contents/MacOS/shipper "$WORK/payload/.local/bin/quesma-shipper"
+	/usr/bin/xattr -cr "$WORK/payload" "$OUT/quesma-shipper-darwin-arm64" "$OUT/quesma-shipper-darwin-amd64"
 	if [ -n "$APPLICATION_IDENTITY" ]; then
-		sign_code "$APPLICATION_IDENTITY" "$APP" "$OUT/shipper-darwin-arm64" "$OUT/shipper-darwin-amd64"
+		sign_code "$APPLICATION_IDENTITY" "$APP" "$OUT/quesma-shipper-darwin-arm64" "$OUT/quesma-shipper-darwin-amd64"
 	fi
 	mkdir "$WORK/scripts"
 	cp "$HERE/scripts/postinstall" "$WORK/scripts"
@@ -95,7 +95,7 @@ build_binary() {
 	for arch in arm64 amd64; do
 		printf 'building shipper darwin/%s\n' "$arch"
 		(cd "$module" && CGO_ENABLED=0 GOOS=darwin GOARCH=$arch \
-			go build -trimpath -ldflags "$ldflags" -o "$work/shipper-$arch" ./cmd/shipper)
+			go build -trimpath -ldflags "$ldflags" -o "$work/shipper-$arch" ./cmd/quesma-shipper)
 	done
 }
 

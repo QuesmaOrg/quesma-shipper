@@ -93,8 +93,8 @@ only derived fields:
 
 Everything derived this way passes through the scrub stage like any other file.
 
-`shipper tracking` shows what is collected on this machine, per agent and repository.
-`shipper preview` shows what the next run would send, after scrubbing, without sending it.
+`quesma-shipper tracking` shows what is collected on this machine, per agent and repository.
+`quesma-shipper preview` shows what the next run would send, after scrubbing, without sending it.
 
 ## Install
 
@@ -114,18 +114,21 @@ sh src/packaging/linux/install.sh
 The script downloads a hash-pinned bootstrap binary and installs a systemd user service. Run it
 again to upgrade. Existing enrollment is kept. Use `--no-service` to skip the service.
 
+Existing installations named `shipper` keep self-updating at that path so their service is not
+orphaned. Re-run the installer to move the command and service to `quesma-shipper`.
+
 **Windows**
 
-Download `shipper-windows-<arch>.exe` from a release, rename it to `shipper.exe`, and put it in a
-directory on `PATH`. Run `shipper run` from a scheduler of your choice. There is no service
-integration yet.
+Download `quesma-shipper-windows-<arch>.exe` from a release, rename it to `quesma-shipper.exe`, and
+put it in a directory on `PATH`. Run `quesma-shipper run` from a scheduler of your choice. There is
+no service integration yet.
 
 ### From source
 
 You need Go 1.27 or newer. No other tool is required. `make doctor` lists the optional ones.
 
 ```sh
-make build                                     # bin/shipper
+make build                                     # bin/quesma-shipper
 make install                                   # into GOBIN, or GOPATH/bin
 ```
 
@@ -133,7 +136,7 @@ To test the Linux installer and the background service with a local build:
 
 ```sh
 make build
-sh src/packaging/linux/install.sh --from bin/shipper
+sh src/packaging/linux/install.sh --from bin/quesma-shipper
 ```
 
 To build the macOS package: `make macos-pkg RELEASE_VERSION=<version>`. This works on macOS only.
@@ -144,46 +147,46 @@ Every new shipper must be enrolled with the control plane selected by your admin
 command is the same on every platform:
 
 ```sh
-shipper login <enrollment-token> --server https://cp.example.com
+quesma-shipper login <enrollment-token> --server https://cp.example.com
 ```
 
 To run the pipeline without a control plane:
 
 ```sh
-bin/shipper local-dev      # create a local identity and state directory
-bin/shipper preview        # show what would be collected and how it would be scrubbed
+bin/quesma-shipper local-dev      # create a local identity and state directory
+bin/quesma-shipper preview        # show what would be collected and how it would be scrubbed
 ```
 
 ## Usage
 
 ```
-shipper                Status: is it on, what is collected, what is waiting to be sent
-shipper login <token>  Join your organisation with the token from your admin
-shipper tracking       What is collected, per agent and repository
-shipper pause [dur]    Stop collecting for 15m, 1h, 6h, 12h, 24h, or until tomorrow 9:00
-shipper resume         Start collecting again
-shipper doctor         Check collecting and sending, explain anything wrong
-shipper update         Install the newest release
-shipper uninstall      Remove the service and program, keep local state
-shipper licenses       Print the license and the third-party notices
+quesma-shipper                Status: is it on, what is collected, what is waiting to be sent
+quesma-shipper login <token>  Join your organisation with the token from your admin
+quesma-shipper tracking       What is collected, per agent and repository
+quesma-shipper pause [dur]    Stop collecting for 15m, 1h, 6h, 12h, 24h, or until tomorrow 9:00
+quesma-shipper resume         Start collecting again
+quesma-shipper doctor         Check collecting and sending, explain anything wrong
+quesma-shipper update         Install the newest release
+quesma-shipper uninstall      Remove the service and program, keep local state
+quesma-shipper licenses       Print the license and the third-party notices
 ```
 
 Debug commands. These are not shown in `--help`:
 
 ```
-shipper run [--once|--drain] [-q]   Run the scheduler loop in the foreground, log to stderr
-shipper preview                      Show what would be sent, without sending or recording anything
-shipper config [--with-provenance]   The effective configuration and where each value came from
-shipper log                          Recent audit entries: what was decided about each file
-shipper state reset|prune            Inspect and repair the local record of what was sent
-shipper service uninstall|restart    Manage the background service entry
-shipper local-dev                    Set up without a control plane
+quesma-shipper run [--once|--drain] [-q]   Run the scheduler loop in the foreground, log to stderr
+quesma-shipper preview                      Show what would be sent, without sending or recording anything
+quesma-shipper config [--with-provenance]   The effective configuration and where each value came from
+quesma-shipper log                          Recent audit entries: what was decided about each file
+quesma-shipper state reset|prune            Inspect and repair the local record of what was sent
+quesma-shipper service uninstall|restart    Manage the background service entry
+quesma-shipper local-dev                    Set up without a control plane
 ```
 
 ## Configuration
 
 Configuration is resolved from four layers, in this order: compiled defaults, the source catalog,
-the user file, the document served by the control plane. `shipper config --with-provenance` prints
+the user file, the document served by the control plane. `quesma-shipper config --with-provenance` prints
 each effective value and the layer that set it.
 
 The served document has limited authority. A rulebook in the
@@ -226,7 +229,7 @@ Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
 ```
 src/           Go module root
-  cmd/shipper/   main
+  cmd/quesma-shipper/   main
   app/           composes a run
   internal/      pipeline stages, config, control-plane client, platform floor
   packaging/     install, service, and update mechanics per OS
@@ -238,7 +241,7 @@ Makefile       repository-level build and test entry points
 ## Build and test
 
 ```sh
-make build       # bin/shipper
+make build       # bin/quesma-shipper
 make test        # unit suite and local end-to-end tests
 make race        # the same under the race detector
 make check       # the commit gate: fmt, vet, version, dead code, licenses, race
@@ -271,7 +274,7 @@ real trajectories, agent databases, logs, or credentials to issues or pull reque
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). `shipper licenses` prints the
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). `quesma-shipper licenses` prints the
 license and every bundled dependency's license text; the same texts ship inside the macOS app
 bundle and are kept in `src/internal/legal/third_party/` with an inventory in `licenses.csv` that
 covers Linux, macOS, and Windows builds. `make licenses` regenerates them after a dependency change.

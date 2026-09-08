@@ -98,7 +98,7 @@ func NewFrom(
 ) (*Runtime, error) {
 	unit, err := identity.Load(paths.StateDir)
 	if err != nil {
-		return nil, fmt.Errorf("%w\n\nRun `shipper login <token>` first (or `shipper local-dev` without a control\n"+
+		return nil, fmt.Errorf("%w\n\nRun `quesma-shipper login <token>` first (or `quesma-shipper local-dev` without a control\n"+
 			"plane): an install needs an identity before it can ship", err)
 	}
 
@@ -259,7 +259,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 		return err
 	}
 
-	// Mirrored in the clear (counts and versions, never payload bytes) so `shipper doctor` needs
+	// Mirrored in the clear (counts and versions, never payload bytes) so `quesma-shipper doctor` needs
 	// no network call. Best-effort: a reporting nicety must never fail a flush.
 	if mirror {
 		_ = platform.WriteAtomic(filepath.Join(r.eff.StateDir, engine.Name), body, 0o600)

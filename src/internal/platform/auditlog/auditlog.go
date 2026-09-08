@@ -1,4 +1,4 @@
-// Package auditlog is the append-only local log behind `shipper log`, written for the person
+// Package auditlog is the append-only local log behind `quesma-shipper log`, written for the person
 // whose data it is: the file, bytes, density, rule hit counts, object key, decision and config
 // version in force, never a redacted value or file contents. Rejected configs land here too.
 package auditlog

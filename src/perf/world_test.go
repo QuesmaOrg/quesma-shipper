@@ -236,7 +236,7 @@ func buildBinaries() {
 		return nil
 	}
 	shipperPath = filepath.Join(dir, "quesma-shipper")
-	buildErr = build(shipperPath, "..", "./cmd/shipper")
+	buildErr = build(shipperPath, "..", "./cmd/quesma-shipper")
 }
 
 // The client under measurement, built once for the whole tier.
@@ -302,7 +302,7 @@ func (w *world) mustSync(t *testing.T) childObservation {
 	t.Helper()
 	obs := w.observedSync(t)
 	if obs.Err != nil {
-		t.Fatalf("shipper run --once: %v\n%s", obs.Err, obs.Output)
+		t.Fatalf("quesma-shipper run --once: %v\n%s", obs.Err, obs.Output)
 	}
 	return obs
 }

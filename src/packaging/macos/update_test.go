@@ -17,7 +17,7 @@ func TestShipperAppForExecutableValidatesIdentity(t *testing.T) {
 	if got, ok := shipperAppForExecutable(executable); !ok || got != app {
 		t.Fatalf("shipperAppForExecutable() = %q, %v", got, ok)
 	}
-	if _, ok := shipperAppForExecutable("/Users/me/.local/bin/shipper"); ok {
+	if _, ok := shipperAppForExecutable("/Users/me/.local/bin/quesma-shipper"); ok {
 		t.Fatal("a raw binary was treated as an app bundle")
 	}
 	other := filepath.Join(t.TempDir(), "Other.app")

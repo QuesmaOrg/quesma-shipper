@@ -28,6 +28,7 @@ func RemoveProgram(executable string) (string, error) {
 	if err != nil {
 		return app, err
 	}
+	removeCLILink(filepath.Join(home, ".local", "bin", "quesma-shipper"), executable)
 	removeCLILink(filepath.Join(home, ".local", "bin", "shipper"), executable)
 	if err := os.RemoveAll(app); err != nil {
 		return app, err

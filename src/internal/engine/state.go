@@ -399,8 +399,8 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 		}
 		if errors.Is(err, platform.ErrTooLarge) {
 			// Past the ceiling every verb fails, so the overrides are named where the wall is.
-			return Document{}, fmt.Errorf("%w\n\nRun `shipper state prune` to drop the "+
-				"entries whose files are gone, or `shipper state reset` to forget "+
+			return Document{}, fmt.Errorf("%w\n\nRun `quesma-shipper state prune` to drop the "+
+				"entries whose files are gone, or `quesma-shipper state reset` to forget "+
 				"everything and re-ship the install's whole history", err)
 		}
 		return Document{}, fmt.Errorf("state: read %s: %w", path, err)

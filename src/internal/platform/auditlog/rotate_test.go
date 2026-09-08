@@ -10,7 +10,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 )
 
-// Unrotated, `shipper log tail` stops working past the read cap, on the installs with the most to explain.
+// Unrotated, `quesma-shipper log tail` stops working past the read cap, on the installs with the most to explain.
 func TestTheLogRotatesInsteadOfGrowingForever(t *testing.T) {
 	dir := t.TempDir()
 	l, err := auditlog.Open(dir)

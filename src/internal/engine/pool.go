@@ -236,7 +236,7 @@ func (p *sourcePass) run(ctx context.Context) error {
 		}
 		return fmt.Errorf("%w: collection stopped after %d of %d files; "+
 			"this install may have been revoked or re-enrolled elsewhere. "+
-			"`shipper doctor` reports what the control plane says",
+			"`quesma-shipper doctor` reports what the control plane says",
 			formats.ErrCredentialsRefused, len(p.out.Files), len(p.disc.Candidates))
 	}
 	// Not a kill: nothing new was committed, and the next tick tries again.

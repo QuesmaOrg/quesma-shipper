@@ -61,7 +61,7 @@ func checkUpdate(ctx context.Context, build Build, autoupdate bool, getenv func(
 	case available:
 		return UpdateStatus{State: "available", Latest: latest, Published: published,
 			Detail: fmt.Sprintf("%s available (%s)", latest, published.Format("2006-01-02")),
-			Fix:    "shipper update"}
+			Fix:    "quesma-shipper update"}
 	default:
 		return UpdateStatus{State: "current", Latest: latest, Published: published,
 			Detail: fmt.Sprintf("up to date (newest release is %s%s)", latest, when)}
@@ -209,7 +209,7 @@ func familyRows(name string, probes []sourceProbe, up familyUpload, now time.Tim
 			if d.Sniff != "" && d.Sniff != sources.SniffOK {
 				issues = append(issues, warn(part, "unexpected format",
 					"content does not look like the expected format",
-					"the agent may have changed formats, `shipper preview` shows what would ship"))
+					"the agent may have changed formats, `quesma-shipper preview` shows what would ship"))
 			}
 		case sources.AgentAbsent:
 			absent++
@@ -300,7 +300,7 @@ func familyRows(name string, probes []sourceProbe, up familyUpload, now time.Tim
 		if up.failed > 0 {
 			row.Sev = SevWarn
 			row.Brief = name + ": upload failures"
-			row.Fix = "`shipper log` shows each file's outcome"
+			row.Fix = "`quesma-shipper log` shows each file's outcome"
 		}
 		issues = append([]Row{row}, issues...)
 	}
@@ -398,7 +398,7 @@ func enricherIssues(name string, src config.ResolvedSource) []Row {
 			rows = append(rows, Row{Sev: SevWarn, Sub: true, Label: "  database",
 				Brief:  name + ": enricher missing from this build",
 				Detail: "tool results and timestamps are not captured - enricher " + p.id + " is not in this build",
-				Fix:    "`shipper update` may carry it"})
+				Fix:    "`quesma-shipper update` may carry it"})
 		case !p.on:
 			rows = append(rows, Row{Sev: SevDim, Label: "  database",
 				Detail: "enrichment disabled - no tool results, call ids or timestamps"})
@@ -435,7 +435,7 @@ func discoveryRows(src config.ResolvedSource, d sources.Discovery) []Row {
 		if d.Sniff != "" && d.Sniff != sources.SniffOK {
 			rows = append(rows, Row{Sev: SevWarn, Label: src.ID,
 				Detail: detail + ", sniff " + string(d.Sniff),
-				Fix:    "the agent's format may have changed under this build, `shipper preview` shows what would ship"})
+				Fix:    "the agent's format may have changed under this build, `quesma-shipper preview` shows what would ship"})
 		} else {
 			rows = append(rows, Row{Sev: SevOK, Label: src.ID, Detail: detail})
 		}
@@ -500,7 +500,7 @@ func scheduleRows(stateDir string, now time.Time) []Row {
 	if p := platform.Read(stateDir); p.Paused {
 		rows = append(rows, Row{Sev: SevWarn, Label: "collecting", Brief: "paused",
 			Detail: "paused until " + FormatUntil(p.UntilTime(), now),
-			Fix:    "`shipper resume`"})
+			Fix:    "`quesma-shipper resume`"})
 	}
 
 	st := packaging.ServiceState(stateDir)
@@ -508,7 +508,7 @@ func scheduleRows(stateDir string, now time.Time) []Row {
 	case st.Loaded && st.LastRun.IsZero():
 		rows = append(rows, Row{Sev: SevWarn, Label: "background service", Brief: "background service never ran",
 			Detail: "loaded but it has never completed a run",
-			Fix:    "`shipper log` shows what each run did"})
+			Fix:    "`quesma-shipper log` shows what each run did"})
 	case st.Loaded:
 		rows = append(rows, Row{Sev: SevOK, Label: "background service",
 			Detail: "running"})

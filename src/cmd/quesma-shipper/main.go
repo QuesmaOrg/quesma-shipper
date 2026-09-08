@@ -21,15 +21,15 @@ func reportPanic(errOut io.Writer, args []string, r any) {
 	app.RecordPanic(verbOf(args), r)
 }
 
-// verbOf names the verb for a persisted panic. The first non-flag argument, so `shipper -q sync`
-// still reads as sync; "shipper" alone when there is none.
+// verbOf names the verb for a persisted panic. The first non-flag argument, so
+// `quesma-shipper -q sync` still reads as sync; "quesma-shipper" alone when there is none.
 func verbOf(args []string) string {
 	for _, a := range args[1:] {
 		if !strings.HasPrefix(a, "-") {
 			return a
 		}
 	}
-	return "shipper"
+	return app.Name
 }
 
 func main() {
