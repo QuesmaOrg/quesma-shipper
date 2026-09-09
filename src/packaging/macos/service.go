@@ -216,13 +216,13 @@ func ServiceState() Status {
 		st.Detail = err.Error()
 		return st
 	}
-	st.Path = launchdPath(home)
+	label := activeLabel(home)
+	st.Path = launchdPathFor(home, label)
 	if _, err := os.Stat(st.Path); err == nil {
 		st.Installed = true
 	}
 
-	target := guiService()
-	out, err := exec.Command(launchctl, "print", target).CombinedOutput()
+	out, err := exec.Command(launchctl, "print", guiServiceFor(label)).CombinedOutput()
 	if err != nil {
 		switch {
 		case st.Installed:
@@ -239,7 +239,11 @@ func ServiceState() Status {
 }
 
 func RestartService() error {
-	out, err := exec.Command(launchctl, "kickstart", "-k", guiService()).CombinedOutput()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	out, err := exec.Command(launchctl, "kickstart", "-k", guiServiceFor(activeLabel(home))).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("launchctl kickstart: %v: %s", err, strings.TrimSpace(string(out)))
 	}

@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
@@ -31,7 +32,29 @@ var bootoutLegacy = func(wait bool) {
 		_ = cmd.Run()
 		return
 	}
+	// Its own session: launchd kills the exiting agent's whole process group, and this child has
+	// to outlive the agent it is booting out.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	_ = cmd.Start()
+}
+
+// activeLabel is the label to talk to: the renamed one, or the former one while only its plist
+// exists, so a not yet migrated agent still counts as supervised, recycles and can be restarted.
+func activeLabel(home string) string {
+	if _, err := os.Stat(launchdPath(home)); err != nil {
+		if _, err := os.Stat(launchdPathFor(home, legacyBundleIdentifier)); err == nil {
+			return legacyBundleIdentifier
+		}
+	}
+	return bundleIdentifier
+}
+
+// retireOrphanedLegacyLabel boots the former label out when only launchd still knows it: plist
+// gone, job lingering, spawn scheduled against a path that no longer exists.
+func retireOrphanedLegacyLabel(home string) {
+	if _, err := os.Stat(launchdPathFor(home, legacyBundleIdentifier)); err != nil {
+		bootoutLegacy(true)
+	}
 }
 
 func legacyAppPath(home string) string { return filepath.Join(home, "Applications", legacyAppName) }
@@ -63,6 +86,7 @@ func MigrateLegacyInstall(ctx context.Context, out io.Writer) (bool, error) {
 	if isLegacyBinary(exe) {
 		return migrateLegacyBinary(out, home, exe)
 	}
+	retireOrphanedLegacyLabel(home)
 	return false, nil
 }
 

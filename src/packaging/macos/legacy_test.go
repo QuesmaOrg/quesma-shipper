@@ -238,3 +238,45 @@ func TestIsLegacyBinaryMeansTheFormerNameOutsideAnyBundle(t *testing.T) {
 		}
 	}
 }
+
+func TestActiveLabelFallsBackToTheFormerOneWhileOnlyItsPlistExists(t *testing.T) {
+	home := t.TempDir()
+	if got := activeLabel(home); got != bundleIdentifier {
+		t.Fatalf("activeLabel() with no plist = %q", got)
+	}
+	writePlist(t, launchdPathFor(home, legacyBundleIdentifier))
+	if got := activeLabel(home); got != legacyBundleIdentifier {
+		t.Fatalf("activeLabel() with only the former plist = %q", got)
+	}
+	writePlist(t, launchdPath(home))
+	if got := activeLabel(home); got != bundleIdentifier {
+		t.Fatalf("activeLabel() with both plists = %q", got)
+	}
+}
+
+func TestRetireOrphanedLegacyLabelOnlyWhenItsPlistIsGone(t *testing.T) {
+	calls := 0
+	stubBootout(t, func(wait bool) {
+		calls++
+		if !wait {
+			t.Error("booting an orphan out must wait: nothing else keeps this process alive for it")
+		}
+	})
+	home := t.TempDir()
+	retireOrphanedLegacyLabel(home)
+	writePlist(t, launchdPathFor(home, legacyBundleIdentifier))
+	retireOrphanedLegacyLabel(home)
+	if calls != 1 {
+		t.Fatalf("bootout ran %d times, want once (only while the former plist is gone)", calls)
+	}
+}
+
+func writePlist(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("<plist/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
