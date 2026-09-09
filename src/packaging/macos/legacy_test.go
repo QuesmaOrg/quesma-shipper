@@ -45,16 +45,11 @@ func formerUpdaterAccepts(expanded, version string) error {
 	return nil
 }
 
-func expandPackage(t *testing.T, raw []byte) string {
+func expandForTest(t *testing.T, raw []byte) string {
 	t.Helper()
-	dir := t.TempDir()
-	pkg := filepath.Join(dir, "update.pkg")
-	if err := os.WriteFile(pkg, raw, 0o600); err != nil {
+	expanded, err := expandPackage(raw, t.TempDir())
+	if err != nil {
 		t.Fatal(err)
-	}
-	expanded := filepath.Join(dir, "expanded")
-	if out, err := exec.Command("/usr/sbin/pkgutil", "--expand-full", pkg, expanded).CombinedOutput(); err != nil {
-		t.Fatalf("pkgutil --expand-full: %v: %s", err, out)
 	}
 	return expanded
 }
@@ -62,33 +57,20 @@ func expandPackage(t *testing.T, raw []byte) string {
 func testLegacyComponent(t *testing.T, version string) string {
 	t.Helper()
 	root := t.TempDir()
-	app := filepath.Join(root, "Applications", legacyAppName)
-	writeTestApp(t, app, legacyBundleIdentifier, legacyExecutableName)
-	plist := `<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>` + legacyBundleIdentifier + `</string>
-<key>ShipperReleaseVersion</key><string>` + version + `</string>
-</dict></plist>`
-	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), []byte(plist), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	component := filepath.Join(t.TempDir(), "Shipper-component.pkg")
-	if out, err := exec.Command("/usr/bin/pkgbuild", "--root", root, "--identifier", legacyBundleIdentifier,
-		"--version", "1", component).CombinedOutput(); err != nil {
-		t.Fatalf("pkgbuild: %v: %s", err, out)
-	}
-	return component
+	writeTestBundle(t, filepath.Join(root, "Applications", legacyAppName), legacyBundleIdentifier,
+		legacyExecutableName, "ShipperReleaseVersion", version)
+	return buildTestComponent(t, root, legacyBundleIdentifier, filepath.Join(t.TempDir(), "Shipper-component.pkg"))
 }
 
 func TestBridgedPackageServesBothUpdaters(t *testing.T) {
 	raw := testAppPackage(t, "1.2.3", testLegacyComponent(t, "1.2.3"))
-	if err := formerUpdaterAccepts(expandPackage(t, raw), "1.2.3"); err != nil {
+	if err := formerUpdaterAccepts(expandForTest(t, raw), "1.2.3"); err != nil {
 		t.Fatalf("the former updater rejects the bridged package: %v", err)
 	}
 
 	parent := t.TempDir()
 	app := filepath.Join(parent, appName)
-	if err := installAppPackage(raw, app, "1.2.3"); err != nil {
+	if err := applyAppPackage(raw, app, "1.2.3"); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := appForExecutable(filepath.Join(app, "Contents", "MacOS", executableName)); !ok {
@@ -111,7 +93,7 @@ func TestBuiltPackageSatisfiesTheFormerUpdater(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expanded := expandPackage(t, raw)
+	expanded := expandForTest(t, raw)
 	if err := formerUpdaterAccepts(expanded, version); err != nil {
 		t.Fatalf("the former updater rejects the built package: %v", err)
 	}

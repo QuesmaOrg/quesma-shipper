@@ -40,14 +40,7 @@ main() {
 	*) die "binary did not corroborate release version $RELEASE_VERSION (build from a clean matching revision)" ;;
 	esac
 
-	sed -e "s/@MARKETING_VERSION@/$MARKETING_VERSION/g" \
-		-e "s/@BUILD_VERSION@/$BUILD_VERSION/g" \
-		-e "s/@RELEASE_VERSION@/$RELEASE_VERSION/g" \
-		"$HERE/Info.plist.in" > "$APP/Contents/Info.plist"
-	/usr/bin/plutil -lint "$APP/Contents/Info.plist" >/dev/null
-	cp "$HERE/quesma-shipper.icns" "$APP/Contents/Resources/quesma-shipper.icns"
-	cp "$MODULE/internal/legal/LICENSE" "$MODULE/internal/legal/NOTICE" "$APP/Contents/Resources/"
-	cp -R "$MODULE/internal/legal/third_party" "$APP/Contents/Resources/third_party"
+	fill_bundle "$APP" "$HERE/Info.plist.in" quesma-shipper.icns
 	ln -s '../../Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper' \
 		"$WORK/payload/.local/bin/quesma-shipper"
 	/usr/bin/xattr -cr "$WORK/payload" "$OUT/quesma-shipper-darwin-arm64" "$OUT/quesma-shipper-darwin-amd64"
@@ -57,14 +50,7 @@ main() {
 	mkdir "$WORK/scripts"
 	cp "$HERE/scripts/postinstall" "$WORK/scripts"
 
-	/usr/bin/pkgbuild --analyze --root "$WORK/payload" "$WORK/components.plist"
-	/usr/libexec/PlistBuddy -c 'Set :0:BundleIsRelocatable false' "$WORK/components.plist"
-	/usr/bin/pkgbuild --root "$WORK/payload" \
-		--component-plist "$WORK/components.plist" \
-		--scripts "$WORK/scripts" \
-		--identifier com.quesma.shipper \
-		--version "$BUILD_VERSION" --install-location / \
-		"$WORK/quesma-shipper-component.pkg"
+	build_component "$WORK/payload" com.quesma.shipper "$WORK/quesma-shipper-component.pkg" --scripts "$WORK/scripts"
 	build_legacy_bridge "$APP"
 	set -- --distribution "$HERE/Distribution.xml" --package-path "$WORK"
 	[ -z "$INSTALLER_IDENTITY" ] || set -- "$@" --sign "$INSTALLER_IDENTITY"
@@ -87,27 +73,36 @@ main() {
 # the swapped-in binary then migrates the install itself (packaging/macos/legacy.go). Delete this
 # function, its call, legacy/ and the Distribution choice with the rest of the bridge glue.
 build_legacy_bridge() {
-	app=$1
 	legacy="$WORK/legacy/Applications/Shipper.app"
 	mkdir -p "$legacy/Contents/MacOS" "$legacy/Contents/Resources"
-	cp "$app/Contents/MacOS/quesma-shipper" "$legacy/Contents/MacOS/shipper"
+	cp "$1/Contents/MacOS/quesma-shipper" "$legacy/Contents/MacOS/shipper"
+	fill_bundle "$legacy" "$HERE/legacy/Info.plist.in" Shipper.icns
+	/usr/bin/xattr -cr "$WORK/legacy"
+	[ -z "$APPLICATION_IDENTITY" ] || sign_app "$APPLICATION_IDENTITY" "$legacy"
+	build_component "$WORK/legacy" com.quesma.trajectory-shipper "$WORK/Shipper-component.pkg"
+}
+
+# fill_bundle renders the versioned Info.plist and copies the resources every bundle carries.
+fill_bundle() {
+	bundle=$1 plist_in=$2 icns=$3
 	sed -e "s/@MARKETING_VERSION@/$MARKETING_VERSION/g" \
 		-e "s/@BUILD_VERSION@/$BUILD_VERSION/g" \
 		-e "s/@RELEASE_VERSION@/$RELEASE_VERSION/g" \
-		"$HERE/legacy/Info.plist.in" > "$legacy/Contents/Info.plist"
-	/usr/bin/plutil -lint "$legacy/Contents/Info.plist" >/dev/null
-	cp "$HERE/quesma-shipper.icns" "$legacy/Contents/Resources/Shipper.icns"
-	cp "$MODULE/internal/legal/LICENSE" "$MODULE/internal/legal/NOTICE" "$legacy/Contents/Resources/"
-	cp -R "$MODULE/internal/legal/third_party" "$legacy/Contents/Resources/third_party"
-	/usr/bin/xattr -cr "$WORK/legacy"
-	[ -z "$APPLICATION_IDENTITY" ] || sign_app "$APPLICATION_IDENTITY" "$legacy"
-	/usr/bin/pkgbuild --analyze --root "$WORK/legacy" "$WORK/legacy-components.plist"
-	/usr/libexec/PlistBuddy -c 'Set :0:BundleIsRelocatable false' "$WORK/legacy-components.plist"
-	/usr/bin/pkgbuild --root "$WORK/legacy" \
-		--component-plist "$WORK/legacy-components.plist" \
-		--identifier com.quesma.trajectory-shipper \
-		--version "$BUILD_VERSION" --install-location / \
-		"$WORK/Shipper-component.pkg"
+		"$plist_in" > "$bundle/Contents/Info.plist"
+	/usr/bin/plutil -lint "$bundle/Contents/Info.plist" >/dev/null
+	cp "$HERE/quesma-shipper.icns" "$bundle/Contents/Resources/$icns"
+	cp "$MODULE/internal/legal/LICENSE" "$MODULE/internal/legal/NOTICE" "$bundle/Contents/Resources/"
+	cp -R "$MODULE/internal/legal/third_party" "$bundle/Contents/Resources/third_party"
+}
+
+# build_component packages root as one non-relocatable component; extra args go to pkgbuild.
+build_component() {
+	root=$1 identifier=$2 out=$3
+	shift 3
+	/usr/bin/pkgbuild --analyze --root "$root" "$out.components.plist"
+	/usr/libexec/PlistBuddy -c 'Set :0:BundleIsRelocatable false' "$out.components.plist"
+	/usr/bin/pkgbuild --root "$root" --component-plist "$out.components.plist" \
+		--identifier "$identifier" --version "$BUILD_VERSION" --install-location / "$@" "$out"
 }
 
 sign_code() {

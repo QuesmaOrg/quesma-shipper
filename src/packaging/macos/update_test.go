@@ -55,28 +55,13 @@ func testAppPackage(t *testing.T, version string, extra ...string) []byte {
 	t.Helper()
 	root := t.TempDir()
 	app := filepath.Join(root, "Applications", appName)
-	executable := writeTestApp(t, app, bundleIdentifier, executableName)
-	plist := `<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>` + bundleIdentifier + `</string>
-<key>` + releaseVersionField + `</key><string>` + version + `</string>
-</dict></plist>`
-	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), []byte(plist), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(executable, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeTestBundle(t, app, bundleIdentifier, executableName, releaseVersionField, version)
 	if err := os.WriteFile(filepath.Join(app, "new"), []byte("new"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	work := t.TempDir()
-	component := filepath.Join(work, componentPackage)
-	if out, err := exec.Command("/usr/bin/pkgbuild", "--root", root, "--identifier", bundleIdentifier,
-		"--version", "1", component).CombinedOutput(); err != nil {
-		t.Fatalf("pkgbuild: %v: %s", err, out)
-	}
+	component := buildTestComponent(t, root, bundleIdentifier, filepath.Join(work, componentPackage))
 	pkg := filepath.Join(work, "quesma-shipper.pkg")
 	args := []string{"--package", component}
 	for _, c := range extra {
@@ -90,6 +75,33 @@ func testAppPackage(t *testing.T, version string, extra ...string) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+// writeTestBundle is writeTestApp plus the release-version key an updater validates.
+func writeTestBundle(t *testing.T, app, bundleID, exe, versionKey, version string) string {
+	t.Helper()
+	executable := writeTestApp(t, app, bundleID, exe)
+	plist := `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>` + bundleID + `</string>
+<key>` + versionKey + `</key><string>` + version + `</string>
+</dict></plist>`
+	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), []byte(plist), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(executable, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return executable
+}
+
+func buildTestComponent(t *testing.T, root, identifier, out string) string {
+	t.Helper()
+	if res, err := exec.Command("/usr/bin/pkgbuild", "--root", root, "--identifier", identifier,
+		"--version", "1", out).CombinedOutput(); err != nil {
+		t.Fatalf("pkgbuild: %v: %s", err, res)
+	}
+	return out
 }
 
 func writeTestApp(t *testing.T, app, bundleID, executableName string) string {

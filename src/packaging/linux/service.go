@@ -106,9 +106,9 @@ func InstallService(spec Spec) (Status, error) {
 	}
 
 	st := Status{Kind: common.KindSystemd, Installed: true, Path: path}
-	if out, err := exec.Command("systemctl", "--user", "daemon-reload").CombinedOutput(); err != nil {
-		st.Detail = fmt.Sprintf("unit written but daemon-reload failed: %v: %s", err, strings.TrimSpace(string(out)))
-		return st, fmt.Errorf("supervise: systemctl --user daemon-reload: %w: %s", err, strings.TrimSpace(string(out)))
+	if err := daemonReload(); err != nil {
+		st.Detail = "unit written but " + err.Error()
+		return st, fmt.Errorf("supervise: %w", err)
 	}
 	// enable then restart, not `enable --now`: start is a no-op and would keep the old binary.
 	for _, verb := range []string{"enable", "restart"} {
@@ -155,7 +155,14 @@ func UninstallService() error {
 	if err := os.Remove(systemdPath(home)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("supervise: remove unit: %w", err)
 	}
-	_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
+	_ = daemonReload()
+	return nil
+}
+
+func daemonReload() error {
+	if out, err := exec.Command("systemctl", "--user", "daemon-reload").CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl --user daemon-reload: %w: %s", err, strings.TrimSpace(string(out)))
+	}
 	return nil
 }
 

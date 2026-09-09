@@ -20,8 +20,17 @@ type Spec = common.Spec
 type Status = common.Status
 
 // launchdPath is the per-user LaunchAgent path, never /Library/LaunchDaemons, which is root's.
-func launchdPath(home string) string {
-	return filepath.Join(home, "Library", "LaunchAgents", bundleIdentifier+".plist")
+func launchdPath(home string) string { return launchdPathFor(home, bundleIdentifier) }
+
+func launchdPathFor(home, label string) string {
+	return filepath.Join(home, "Library", "LaunchAgents", label+".plist")
+}
+
+// installedApp is where the package puts the bundle.
+func installedApp(home string) string { return filepath.Join(home, "Applications", appName) }
+
+func installedExecutable(home string) string {
+	return filepath.Join(installedApp(home), "Contents", "MacOS", executableName)
 }
 
 // renderPlist builds the LaunchAgent. KeepAlive and RunAtLoad together are what survive both a
@@ -85,7 +94,9 @@ func renderPlist(spec Spec) string {
 const launchctl = "/bin/launchctl"
 
 func guiDomain() string  { return fmt.Sprintf("gui/%d", os.Getuid()) }
-func guiService() string { return guiDomain() + "/" + bundleIdentifier }
+func guiService() string { return guiServiceFor(bundleIdentifier) }
+
+func guiServiceFor(label string) string { return guiDomain() + "/" + label }
 
 func installService(spec Spec) (Status, error) {
 	home, err := common.HomeFor(spec)
@@ -132,31 +143,34 @@ func PostInstall() (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	spec, err := common.NewServiceSpec(defaultStateDir(home), 0, 0)
+	exe, err := common.CurrentExecutable()
 	if err != nil {
 		return Status{}, err
 	}
-	expected := filepath.Join(home, "Applications", appName, "Contents", "MacOS", executableName)
+	expected := installedExecutable(home)
 	if resolved, err := filepath.EvalSymlinks(expected); err == nil {
 		expected = resolved
 	}
-	if spec.Executable != expected {
-		return Status{}, fmt.Errorf("postinstall must run from %s, not %s", expected, spec.Executable)
+	if exe != expected {
+		return Status{}, fmt.Errorf("postinstall must run from %s, not %s", expected, exe)
+	}
+	// Rename bridge: an install over the former package stops that agent first, or two would run.
+	retireLegacyInstall(home, legacyAppPath(home), false)
+	return supervise(exe, home)
+}
+
+// supervise registers exe as the LaunchAgent with the default state directory: packaging cannot
+// import the config layer, and the Installer environment carries no override.
+func supervise(exe, home string) (Status, error) {
+	stateDir := filepath.Join(home, ".local", "state", "trajectory-shipper")
+	spec, err := common.ServiceSpecFor(exe, stateDir, 0, 0)
+	if err != nil {
+		return Status{}, err
 	}
 	if err := common.ValidateInstall(spec); err != nil {
 		return Status{}, err
 	}
-	// Rename bridge: an install over the former package stops that agent first, or two would run.
-	retireLegacyInstall(home, legacyAppPath(home), false)
 	return installService(spec)
-}
-
-// defaultStateDir mirrors the client's state path; packaging cannot import the config layer.
-func defaultStateDir(home string) string {
-	if x := os.Getenv("XDG_STATE_HOME"); x != "" {
-		return filepath.Join(x, "trajectory-shipper")
-	}
-	return filepath.Join(home, ".local", "state", "trajectory-shipper")
 }
 
 func waitForLabelGone(within time.Duration) error {

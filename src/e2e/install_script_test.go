@@ -35,10 +35,17 @@ func (w installWorld) stubLog() string { return filepath.Join(w.Home, "stub.log"
 func stageStub(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "shipper-local")
-	if err := os.WriteFile(path, []byte(stubShipper), 0o600); err != nil {
+	writeStub(t, path, "quesma-shipper 0.0.0-stub", 0o600)
+	return path
+}
+
+// writeStub writes the stub answering --version with banner.
+func writeStub(t *testing.T, path, banner string, perm os.FileMode) {
+	t.Helper()
+	stub := strings.Replace(stubShipper, "quesma-shipper 0.0.0-stub", banner, 1)
+	if err := os.WriteFile(path, []byte(stub), perm); err != nil {
 		t.Fatal(err)
 	}
-	return path
 }
 
 func runInstall(t *testing.T, w installWorld, args ...string) (string, error) {
@@ -162,10 +169,7 @@ func stageLegacy(t *testing.T, w installWorld, banner string) {
 	if err := os.MkdirAll(w.bin(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	stub := strings.Replace(stubShipper, "quesma-shipper 0.0.0-stub", banner, 1)
-	if err := os.WriteFile(w.legacy(), []byte(stub), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeStub(t, w.legacy(), banner, 0o755)
 }
 
 // An install at the former path answers with the old banner; one that already self-updated there

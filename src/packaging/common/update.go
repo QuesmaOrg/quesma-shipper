@@ -73,7 +73,7 @@ func Update(ctx context.Context, o Options, selectTarget func(Release) string,
 	if !newer(release.Version, o.Current) {
 		return res, nil
 	}
-	binary, err := download(repo, release, selectTarget, o)
+	binary, err := download(repo, release, selectTarget, o.Out)
 	if err != nil {
 		return res, err
 	}
@@ -84,17 +84,16 @@ func Update(ctx context.Context, o Options, selectTarget func(Release) string,
 	return res, nil
 }
 
-func download(repo *tufupdater.Updater, release Release, selectTarget func(Release) string, o Options) ([]byte, error) {
+func download(repo *tufupdater.Updater, release Release, selectTarget func(Release) string, out io.Writer) ([]byte, error) {
 	target := selectTarget(release)
 	if target == "" {
-		return nil, fmt.Errorf("release %s has no binary for %s/%s, so this installation stays on %s",
-			release.Version, runtime.GOOS, runtime.GOARCH, o.Current)
+		return nil, fmt.Errorf("release %s has no binary for %s/%s", release.Version, runtime.GOOS, runtime.GOARCH)
 	}
 	info, err := repo.GetTargetInfo(target)
 	if err != nil {
 		return nil, fmt.Errorf("finding %s: %w", target, err)
 	}
-	progress(o.Out, "downloading shipper %s", release.Version)
+	progress(out, "downloading shipper %s", release.Version)
 	_, binary, err := repo.DownloadTarget(info, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("downloading %s: %w", target, err)

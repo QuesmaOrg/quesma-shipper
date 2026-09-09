@@ -3,6 +3,7 @@
 package macos
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,22 +20,11 @@ const macPackageTarget = "darwin/pkg"
 func appUpdateTarget(release common.Release) string { return release.Targets[macPackageTarget] }
 
 func currentAppBundle() (string, bool) {
-	exe, err := currentExecutable()
+	exe, err := common.CurrentExecutable()
 	if err != nil {
 		return "", false
 	}
 	return appForExecutable(exe)
-}
-
-func currentExecutable() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
-	}
-	return exe, nil
 }
 
 func containingApp(exe string) (string, bool) {
@@ -56,21 +46,30 @@ func appForExecutable(exe string) (string, bool) {
 }
 
 func bundleIdentifierOf(app string) string {
-	out, err := exec.Command("/usr/bin/plutil", "-extract", "CFBundleIdentifier", "raw", "-o", "-",
-		filepath.Join(app, "Contents", "Info.plist")).Output()
+	plist := filepath.Join(app, "Contents", "Info.plist")
+	if _, err := os.Stat(plist); err != nil {
+		return ""
+	}
+	out, err := exec.Command("/usr/bin/plutil", "-extract", "CFBundleIdentifier", "raw", "-o", "-", plist).Output()
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
 }
 
+// applyAppPackage swaps the bundle in whole. No bundle at app yet (the rename bridge laying the
+// renamed one out for the first time) is a plain move.
 func applyAppPackage(raw []byte, app, version string) error {
 	stage, stagedApp, err := stageAppPackage(raw, filepath.Dir(app), version)
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(stage)
-	if err := unix.RenamexNp(app, stagedApp, unix.RENAME_SWAP); err != nil {
+	err = unix.RenamexNp(app, stagedApp, unix.RENAME_SWAP)
+	if errors.Is(err, unix.ENOENT) {
+		err = os.Rename(stagedApp, app)
+	}
+	if err != nil {
 		return fmt.Errorf("replacing %s: %w", app, err)
 	}
 	return nil
@@ -92,6 +91,19 @@ func stageAppPackage(raw []byte, parent, version string) (string, string, error)
 }
 
 func expandAppPackage(raw []byte, stage, version string) (string, error) {
+	expanded, err := expandPackage(raw, stage)
+	if err != nil {
+		return "", err
+	}
+	stagedApp := filepath.Join(expanded, componentPackage, "Payload", "Applications", appName)
+	if err := validateAppBundle(stagedApp, version); err != nil {
+		return "", err
+	}
+	return stagedApp, nil
+}
+
+// expandPackage unpacks the product archive under stage, every component included.
+func expandPackage(raw []byte, stage string) (string, error) {
 	pkg := filepath.Join(stage, "quesma-shipper.pkg")
 	if err := platform.WriteAtomic(pkg, raw, 0o600); err != nil {
 		return "", fmt.Errorf("writing staged package: %w", err)
@@ -100,11 +112,7 @@ func expandAppPackage(raw []byte, stage, version string) (string, error) {
 	if out, err := exec.Command("/usr/sbin/pkgutil", "--expand-full", pkg, expanded).CombinedOutput(); err != nil {
 		return "", fmt.Errorf("extracting package: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	stagedApp := filepath.Join(expanded, componentPackage, "Payload", "Applications", appName)
-	if err := validateAppBundle(stagedApp, version); err != nil {
-		return "", err
-	}
-	return stagedApp, nil
+	return expanded, nil
 }
 
 func validateAppBundle(app, version string) error {

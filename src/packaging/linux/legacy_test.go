@@ -3,9 +3,9 @@
 package linux
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -28,14 +28,11 @@ func TestRepointUnitRewritesOnlyTheExecStartPath(t *testing.T) {
 	if string(got) != renderUnit(spec) {
 		t.Fatalf("repointed unit differs from a fresh render:\n%s", got)
 	}
-	if !strings.Contains(string(got), "ExecStart=/home/jane/.local/bin/quesma-shipper run") {
-		t.Fatalf("ExecStart was not repointed:\n%s", got)
-	}
 
 	if changed, err := repointUnit(path, "/home/jane/.local/bin/shipper", "/x"); err != nil || changed {
 		t.Fatalf("an already repointed unit was rewritten: %v, %v", changed, err)
 	}
-	if changed, err := repointUnit(filepath.Join(t.TempDir(), "missing"), "/a", "/b"); err != nil || changed {
-		t.Fatalf("a missing unit was not a no-op: %v, %v", changed, err)
+	if _, err := repointUnit(filepath.Join(t.TempDir(), "missing"), "/a", "/b"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a missing unit did not report as such: %v", err)
 	}
 }

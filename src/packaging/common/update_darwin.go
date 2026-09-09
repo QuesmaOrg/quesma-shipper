@@ -13,6 +13,6 @@ func Fetch(ctx context.Context, o Options, selectTarget func(Release) string) ([
 	if err != nil {
 		return nil, "", err
 	}
-	raw, err := download(repo, release, selectTarget, o)
+	raw, err := download(repo, release, selectTarget, o.Out)
 	return raw, release.Version, err
 }

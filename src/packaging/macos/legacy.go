@@ -20,13 +20,13 @@ import (
 
 const (
 	legacyAppName          = "Shipper.app"
-	legacyExecutableName   = common.FormerExecutable
+	legacyExecutableName   = "shipper"
 	legacyBundleIdentifier = "com.quesma.trajectory-shipper"
 )
 
 // bootoutLegacy is a variable so tests never reach a developer's real launchd domain.
 var bootoutLegacy = func(wait bool) {
-	cmd := exec.Command(launchctl, "bootout", guiDomain()+"/"+legacyBundleIdentifier)
+	cmd := exec.Command(launchctl, "bootout", guiServiceFor(legacyBundleIdentifier))
 	if wait {
 		_ = cmd.Run()
 		return
@@ -48,7 +48,7 @@ func legacyAppForExecutable(exe string) (string, bool) {
 // starts its agent and retires the former one. True means this process was the former agent and
 // is done; launchd normally ends it before the return.
 func MigrateLegacyInstall(ctx context.Context, out io.Writer) (bool, error) {
-	exe, err := currentExecutable()
+	exe, err := common.CurrentExecutable()
 	if err != nil {
 		return false, err
 	}
@@ -60,29 +60,24 @@ func MigrateLegacyInstall(ctx context.Context, out io.Writer) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	app := filepath.Join(home, "Applications", appName)
-	target := filepath.Join(app, "Contents", "MacOS", executableName)
+	app, target := installedApp(home), installedExecutable(home)
 	if _, ok := appForExecutable(target); !ok {
 		fmt.Fprintf(out, "rename migration: laying out %s\n", app)
 		raw, version, err := common.Fetch(ctx, common.Options{Out: out}, appUpdateTarget)
 		if err != nil {
 			return false, err
 		}
-		if err := installAppPackage(raw, app, version); err != nil {
+		if err := os.MkdirAll(filepath.Dir(app), 0o755); err != nil {
+			return false, err
+		}
+		if err := applyAppPackage(raw, app, version); err != nil {
 			return false, err
 		}
 	}
 	linkCLI(filepath.Join(home, ".local", "bin", executableName),
 		filepath.Join("..", "..", "Applications", appName, "Contents", "MacOS", executableName))
 	if !ServiceState().Loaded {
-		spec, err := common.ServiceSpecFor(target, defaultStateDir(home), 0, 0)
-		if err != nil {
-			return false, err
-		}
-		if err := common.ValidateInstall(spec); err != nil {
-			return false, err
-		}
-		if _, err := installService(spec); err != nil {
+		if _, err := supervise(target, home); err != nil {
 			return false, err
 		}
 	}
@@ -91,40 +86,14 @@ func MigrateLegacyInstall(ctx context.Context, out io.Writer) (bool, error) {
 	return true, nil
 }
 
-// installAppPackage lays the package's renamed bundle out at app, replacing whatever is there.
-func installAppPackage(raw []byte, app, version string) error {
-	parent := filepath.Dir(app)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return err
-	}
-	stage, stagedApp, err := stageAppPackage(raw, parent, version)
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(stage)
-	if err := os.RemoveAll(app); err != nil {
-		return fmt.Errorf("clearing %s: %w", app, err)
-	}
-	if err := os.Rename(stagedApp, app); err != nil {
-		return fmt.Errorf("placing %s: %w", app, err)
-	}
-	return nil
-}
-
 // linkCLI points link at target, replacing only a symlink: a regular file there is someone else's.
 func linkCLI(link, target string) {
-	if info, err := os.Lstat(link); err == nil {
-		if info.Mode()&os.ModeSymlink == 0 {
-			return
-		}
-		if current, err := os.Readlink(link); err == nil && current == target {
-			return
-		}
-		_ = os.Remove(link)
+	if info, err := os.Lstat(link); err == nil && info.Mode()&os.ModeSymlink == 0 {
+		return
 	}
-	if err := os.MkdirAll(filepath.Dir(link), 0o755); err == nil {
-		_ = os.Symlink(target, link)
-	}
+	_ = os.MkdirAll(filepath.Dir(link), 0o755)
+	_ = os.Remove(link)
+	_ = os.Symlink(target, link)
 }
 
 // retireLegacyInstall removes what the former package left behind: its CLI link, app, receipt and
@@ -136,8 +105,7 @@ func retireLegacyInstall(home, legacyApp string, self bool) {
 		_ = os.RemoveAll(legacyApp)
 	}
 	forgetReceipt(home, legacyBundleIdentifier)
-	plist := filepath.Join(home, "Library", "LaunchAgents", legacyBundleIdentifier+".plist")
-	if err := os.Remove(plist); err == nil {
+	if err := os.Remove(launchdPathFor(home, legacyBundleIdentifier)); err == nil {
 		bootoutLegacy(!self)
 	}
 }

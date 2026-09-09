@@ -36,9 +36,7 @@ func RemoveProgram(executable string) (string, error) {
 }
 
 func forgetReceipt(home, identifier string) {
-	if exec.Command("/usr/sbin/pkgutil", "--volume", home, "--pkg-info", identifier).Run() == nil {
-		_ = exec.Command("/usr/sbin/pkgutil", "--volume", home, "--forget", identifier).Run()
-	}
+	_ = exec.Command("/usr/sbin/pkgutil", "--volume", home, "--forget", identifier).Run()
 }
 
 func removeCLILink(path, executable string) {

@@ -51,19 +51,7 @@ type Spec struct {
 	StopTimeout time.Duration
 }
 
-// NewServiceSpec resolves the stable executable behind a package-installed symlink.
-func NewServiceSpec(stateDir string, stopTimeout, tick time.Duration) (Spec, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return Spec{}, fmt.Errorf("cannot determine this binary's path: %w", err)
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
-	}
-	return ServiceSpecFor(exe, stateDir, stopTimeout, tick)
-}
-
-// ServiceSpecFor describes an agent run from exe rather than from this process's own binary.
+// ServiceSpecFor describes an agent run from exe.
 func ServiceSpecFor(exe, stateDir string, stopTimeout, tick time.Duration) (Spec, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -202,4 +190,16 @@ func ServiceProgram(st Status) string {
 
 func RemoveState(stateDir string) error {
 	return os.RemoveAll(stateDir)
+}
+
+// CurrentExecutable is this binary's real path, behind any package-installed symlink.
+func CurrentExecutable() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine this binary's path: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return exe, nil
 }
