@@ -10,7 +10,7 @@ control plane manages every install.
 Supported agents: Claude Code, Codex, Cursor.
 
 Supported platforms: macOS 13 or newer (app bundle, launchd service), Linux (systemd user
-service), Windows (binary only, no service).
+service), Windows 10 1809 or newer (per-user installer, scheduled task).
 
 ## Status
 
@@ -119,9 +119,13 @@ orphaned. Re-run the installer to move the command and service to `quesma-shippe
 
 **Windows**
 
-Download `quesma-shipper-windows-<arch>.exe` from a release, rename it to `quesma-shipper.exe`, and
-put it in a directory on `PATH`. Run `quesma-shipper run` from a scheduler of your choice. There is
-no service integration yet.
+Download `QuesmaShipperSetup-amd64.exe` on an x64 PC or `QuesmaShipperSetup-arm64.exe` on an Arm PC
+and run it as your normal user. The setup installs the command under `%LOCALAPPDATA%`, adds it to
+your user `PATH`, and registers a scheduled task that starts immediately and at login without
+administrator rights. Re-running setup repairs that integration without changing enrollment.
+
+The raw `quesma-shipper-windows-<arch>.exe` files remain available for portable use and are the
+payloads installed by the TUF self-updater. A portable copy has no scheduled task or uninstaller.
 
 ### From source
 
@@ -140,6 +144,12 @@ sh src/packaging/linux/install.sh --from bin/quesma-shipper
 ```
 
 To build the macOS package: `make macos-pkg RELEASE_VERSION=<version>`. This works on macOS only.
+On Windows with Inno Setup installed, build an installer with:
+
+```powershell
+src/packaging/windows/build-setup.ps1 -ReleaseVersion <version> -Architecture amd64 `
+  -BinaryPath <binary> -OutputDir bin/dist
+```
 
 ### Enroll
 

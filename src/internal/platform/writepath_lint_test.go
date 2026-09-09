@@ -79,7 +79,7 @@ func forEachModuleGoFile(t *testing.T, fn func(rel string, file *ast.File, fset 
 // its place by owning a specific durable artifact:
 //
 //	internal/engine/state.go    the fingerprint document
-//	packaging/{common,macos,linux} the program, app bundle, LaunchAgent, and systemd unit
+//	packaging/{common,macos,linux,windows} the program, app bundle, and supervision entries
 //	internal/platform/auditlog  the append-only local log
 //	internal/platform/crashjournal    the append-only crash journal
 //	internal/sources/sqliteread scratch snapshots and cold copies of agent databases
@@ -93,6 +93,7 @@ var writeCapablePackages = []string{
 	"internal/sources/sqliteread",
 	"packaging/macos",
 	"packaging/linux",
+	"packaging/windows",
 }
 
 // writeCapableFiles is the FILE-granular half, for the merged platform package: a directory grant

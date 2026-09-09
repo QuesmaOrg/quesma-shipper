@@ -80,6 +80,25 @@ jobs:
           cache-dependency-path: src/go.sum
       - run: go test ./...
         working-directory: src
+      - name: Build and exercise the per-user installer
+        shell: pwsh
+        run: |
+          $version = "0.0.0-ci"
+          New-Item -ItemType Directory -Force bin/dist | Out-Null
+          Push-Location src
+          go build -trimpath -ldflags "-X github.com/QuesmaOrg/quesma-shipper/internal/platform.releaseVersion=$version" `
+            -o ../bin/dist/quesma-shipper-windows-amd64.exe ./cmd/quesma-shipper
+          Pop-Location
+          src/packaging/windows/build-setup.ps1 -ReleaseVersion $version -Architecture amd64 `
+            -BinaryPath bin/dist/quesma-shipper-windows-amd64.exe -OutputDir bin/dist
+          & bin/dist/QuesmaShipperSetup-amd64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="$env:RUNNER_TEMP\quesma-setup.log"
+          if ($LASTEXITCODE -ne 0) { throw "installer exited $LASTEXITCODE" }
+          schtasks /Query /TN "\Quesma Shipper" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "scheduled task was not installed" }
+          & "$env:LOCALAPPDATA\Programs\Quesma Shipper\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          if ($LASTEXITCODE -ne 0) { throw "uninstaller exited $LASTEXITCODE" }
+          schtasks /Query /TN "\Quesma Shipper" 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) { throw "scheduled task survived uninstall" }
 
   macos-package:
     runs-on: macos-15

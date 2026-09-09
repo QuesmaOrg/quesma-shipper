@@ -20,6 +20,7 @@ quesma-shipper/
       common/             TUF verification, re-exec, shared service types and run markers
       macos/              app/pkg assets, launchd, app-bundle update and removal
       linux/              systemd user service
+      windows/            Inno Setup assets and per-user Task Scheduler integration
     internal/
       cli/                cobra verbs and rendering — formats, never decides
       config/             policy: the layer merge, the authority rulebook, the served document

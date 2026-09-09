@@ -12,6 +12,7 @@ type ServiceStatus = common.Status
 const (
 	serviceLaunchd     = common.KindLaunchd
 	serviceSystemd     = common.KindSystemd
+	serviceWindowsTask = common.KindWindowsTask
 	ServiceCron        = common.KindCron
 	serviceUnsupported = common.KindUnsupported
 )

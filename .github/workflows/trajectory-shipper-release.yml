@@ -79,16 +79,111 @@ jobs:
                 "darwin/arm64": "quesma-shipper-darwin-arm64",
                 "windows/amd64": "quesma-shipper-windows-amd64.exe",
                 "windows/arm64": "quesma-shipper-windows-arm64.exe",
+                "windows/amd64/setup": "QuesmaShipperSetup-amd64.exe",
+                "windows/arm64/setup": "QuesmaShipperSetup-arm64.exe",
                 "darwin/pkg": "Shipper-macos-universal.pkg"
               }
             }' > bin/dist/release.json
 
       - uses: actions/upload-artifact@v7
         with:
+          # Windows signs its two payloads before promoting this intermediate build for release.
+          name: shipper-build-binaries
+          path: |
+            bin/dist/quesma-shipper-linux-*
+            bin/dist/quesma-shipper-windows-*
+            bin/dist/release.json
+          compression-level: 0
+          retention-days: 7
+
+  build-windows-setup:
+    if: github.event_name == 'push'
+    needs: [version, build]
+    runs-on: windows-2025
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: tuf-publishing-testing
+      deployment: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: shipper-build-binaries
+          path: bin/dist
+      - name: Require Windows signing configuration
+        shell: pwsh
+        env:
+          CLIENT_ID: ${{ secrets.WINDOWS_SIGNING_AZURE_CLIENT_ID }}
+          TENANT_ID: ${{ secrets.WINDOWS_SIGNING_AZURE_TENANT_ID }}
+          SUBSCRIPTION_ID: ${{ secrets.WINDOWS_SIGNING_AZURE_SUBSCRIPTION_ID }}
+          ENDPOINT: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
+          ACCOUNT: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
+          PROFILE: ${{ vars.WINDOWS_SIGNING_PROFILE }}
+        run: |
+          foreach ($name in @("CLIENT_ID", "TENANT_ID", "SUBSCRIPTION_ID", "ENDPOINT", "ACCOUNT", "PROFILE")) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "release environment is missing $name for Windows Authenticode signing"
+            }
+          }
+      - name: Authenticate for Windows code signing
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.WINDOWS_SIGNING_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.WINDOWS_SIGNING_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.WINDOWS_SIGNING_AZURE_SUBSCRIPTION_ID }}
+      - name: Sign the application payloads
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.WINDOWS_SIGNING_PROFILE }}
+          files: |
+            ${{ github.workspace }}\bin\dist\quesma-shipper-windows-amd64.exe
+            ${{ github.workspace }}\bin\dist\quesma-shipper-windows-arm64.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Build the per-user setup executables
+        shell: pwsh
+        run: |
+          foreach ($arch in @("amd64", "arm64")) {
+            src/packaging/windows/build-setup.ps1 `
+              -ReleaseVersion "${{ needs.version.outputs.value }}" `
+              -Architecture $arch `
+              -BinaryPath "bin/dist/quesma-shipper-windows-$arch.exe" `
+              -OutputDir "bin/dist"
+          }
+      - name: Sign the setup executables
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.WINDOWS_SIGNING_PROFILE }}
+          files: |
+            ${{ github.workspace }}\bin\dist\QuesmaShipperSetup-amd64.exe
+            ${{ github.workspace }}\bin\dist\QuesmaShipperSetup-arm64.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Require valid Authenticode signatures
+        shell: pwsh
+        run: |
+          Get-ChildItem bin/dist/*.exe | ForEach-Object {
+            $signature = Get-AuthenticodeSignature $_.FullName
+            if ($signature.Status -ne "Valid") {
+              throw "$($_.Name) has invalid Authenticode status: $($signature.Status)"
+            }
+          }
+      - uses: actions/upload-artifact@v7
+        with:
           name: shipper-release-binaries
           path: |
             bin/dist/quesma-shipper-linux-*
             bin/dist/quesma-shipper-windows-*
+            bin/dist/QuesmaShipperSetup-*.exe
             bin/dist/release.json
           compression-level: 0
           retention-days: 7
@@ -165,7 +260,7 @@ jobs:
 
   publish-tuf:
     name: ${{ github.event_name == 'push' && 'Publish release to TUF/R2' || github.event_name == 'workflow_dispatch' && 'Recover TUF metadata' || 'Refresh TUF metadata' }}
-    needs: [build, build-macos, check-tuf-root]
+    needs: [build, build-macos, build-windows-setup, check-tuf-root]
     # A scheduled run skips build; every non-skipped prerequisite must still succeed.
     if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-24.04
