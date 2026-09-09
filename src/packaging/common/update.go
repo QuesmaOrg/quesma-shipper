@@ -84,21 +84,6 @@ func Update(ctx context.Context, o Options, selectTarget func(Release) string,
 	return res, nil
 }
 
-// Fetch downloads the signed release's target whatever version runs here. Rename-bridge glue: the
-// former agent's updater has already swapped this binary in under the old layout, and laying out
-// the renamed one needs the package again. Delete with the rest of the bridge.
-func Fetch(ctx context.Context, o Options, selectTarget func(Release) string) ([]byte, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeoutOr(o.Timeout, defaultUpdateTimeout))
-	defer cancel()
-
-	repo, release, err := load(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	raw, err := download(repo, release, selectTarget, o)
-	return raw, release.Version, err
-}
-
 func download(repo *tufupdater.Updater, release Release, selectTarget func(Release) string, o Options) ([]byte, error) {
 	target := selectTarget(release)
 	if target == "" {
