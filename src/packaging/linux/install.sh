@@ -52,11 +52,12 @@ main() {
 		say "not enrolled; run \`$bin login <token> --server URL\`"
 	fi
 	[ -n "$NO_SERVICE" ] || "$bin" postinstall >/dev/null
-	# A reinstall retires the former command, but only once postinstall has repointed the service
-	# entry at the new executable: --no-service leaves an entry that may still name the old path,
-	# and removing the file it names would stop collection silently. An install that already
-	# self-updated answers with the new name at the old path, so accept either banner - but not an
-	# unrelated program that merely has the old name.
+
+	# Rename bridge: a reinstall retires the former command, but only once postinstall has repointed
+	# the service entry at the new executable: --no-service leaves an entry that may still name the
+	# old path, and removing the file it names would stop collection silently. An install that
+	# already self-updated answers with the new name at the old path, so accept either banner - but
+	# not an unrelated program that merely has the old name.
 	legacy=$BIN_DIR/shipper
 	if [ -x "$legacy" ] && "$legacy" --version 2>/dev/null | grep -qE '^(quesma-)?shipper '; then
 		if [ -n "$NO_SERVICE" ]; then
@@ -81,7 +82,7 @@ download() {
 	*) die "unsupported architecture $arch" ;;
 	esac
 	case $os in
-	darwin) die "macOS releases are installed with Shipper.pkg; use --from for a local development binary" ;;
+	darwin) die "macOS releases are installed with quesma-shipper-macos-universal.pkg; use --from for a local development binary" ;;
 	linux) ;;
 	*) die "unsupported OS $os" ;;
 	esac
@@ -108,7 +109,7 @@ Installs or upgrades quesma-shipper into ~/.local/bin and turns on its backgroun
 
   install.sh                    install or upgrade; an existing login is kept
   install.sh <token> --server URL
-                                install and log in (supported for compatibility)
+                                install and log in
   install.sh --from PATH        install a local build instead of a release
   install.sh --no-service       skip the background service
   install.sh --bin-dir DIR      somewhere other than ~/.local/bin

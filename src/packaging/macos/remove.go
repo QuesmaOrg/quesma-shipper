@@ -8,8 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-
-	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
 func RemoveProgram(executable string) (string, error) {
@@ -20,23 +18,25 @@ func RemoveProgram(executable string) (string, error) {
 		}
 		return executable, nil
 	}
-	if _, ok := shipperAppForExecutable(executable); !ok {
-		return app, fmt.Errorf("refusing to remove %s: executable is not the %s app", app, common.Label)
+	if _, ok := appForExecutable(executable); !ok {
+		return app, fmt.Errorf("refusing to remove %s: executable is not %s", app, appName)
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return app, err
 	}
-	removeCLILink(filepath.Join(home, ".local", "bin", "quesma-shipper"), executable)
-	removeCLILink(filepath.Join(home, ".local", "bin", "shipper"), executable)
+	removeCLILink(filepath.Join(home, ".local", "bin", executableName), executable)
 	if err := os.RemoveAll(app); err != nil {
 		return app, err
 	}
-	if exec.Command("/usr/sbin/pkgutil", "--volume", home, "--pkg-info", common.Label).Run() == nil {
-		_ = exec.Command("/usr/sbin/pkgutil", "--volume", home, "--forget", common.Label).Run()
-	}
+	forgetReceipt(home, bundleIdentifier)
+	retireLegacyInstall(home, legacyAppPath(home), false)
 	return app, nil
+}
+
+func forgetReceipt(home, identifier string) {
+	_ = exec.Command("/usr/sbin/pkgutil", "--volume", home, "--forget", identifier).Run()
 }
 
 func removeCLILink(path, executable string) {

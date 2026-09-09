@@ -79,7 +79,7 @@ jobs:
                 "darwin/arm64": "quesma-shipper-darwin-arm64",
                 "windows/amd64": "quesma-shipper-windows-amd64.exe",
                 "windows/arm64": "quesma-shipper-windows-arm64.exe",
-                "darwin/pkg": "Shipper-macos-universal.pkg"
+                "darwin/pkg": "quesma-shipper-macos-universal.pkg"
               }
             }' > bin/dist/release.json
 
@@ -140,7 +140,7 @@ jobs:
         with:
           name: shipper-release-macos
           path: |
-            bin/dist/Shipper-macos-universal.pkg
+            bin/dist/quesma-shipper-macos-universal.pkg
             bin/dist/quesma-shipper-darwin-amd64
             bin/dist/quesma-shipper-darwin-arm64
           compression-level: 0

@@ -13,10 +13,6 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
 
-// Label is the identifier launchd and systemd know this agent by. Never change it: an installed
-// agent would be orphaned, running an old binary on a schedule nothing can see.
-const Label = "com.quesma.trajectory-shipper"
-
 // Kind is the supervision mechanism in use on this host.
 type Kind string
 
@@ -55,15 +51,8 @@ type Spec struct {
 	StopTimeout time.Duration
 }
 
-// NewServiceSpec resolves the stable executable behind a package-installed symlink.
-func NewServiceSpec(stateDir string, stopTimeout, tick time.Duration) (Spec, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return Spec{}, fmt.Errorf("cannot determine this binary's path: %w", err)
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
-	}
+// ServiceSpecFor describes an agent run from exe.
+func ServiceSpecFor(exe, stateDir string, stopTimeout, tick time.Duration) (Spec, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return Spec{}, err
@@ -201,4 +190,16 @@ func ServiceProgram(st Status) string {
 
 func RemoveState(stateDir string) error {
 	return os.RemoveAll(stateDir)
+}
+
+// CurrentExecutable is this binary's real path, behind any package-installed symlink.
+func CurrentExecutable() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine this binary's path: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return exe, nil
 }

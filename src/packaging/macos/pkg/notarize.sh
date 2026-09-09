@@ -7,19 +7,19 @@ main() {
 	[ $# -le 1 ] || usage
 
 	OUT=${1:-bin/dist}
-	PKG=$OUT/Shipper-macos-universal.pkg
+	PKG=$OUT/quesma-shipper-macos-universal.pkg
 	RAW_ARM64=$OUT/quesma-shipper-darwin-arm64
 	RAW_AMD64=$OUT/quesma-shipper-darwin-amd64
 	for artifact in "$PKG" "$RAW_ARM64" "$RAW_AMD64"; do
 		[ -f "$artifact" ] || die "missing artifact: $artifact"
 	done
 
-	WORK=$(mktemp -d "${TMPDIR:-/tmp}/shipper-notary.XXXXXX")
+	WORK=$(mktemp -d "${TMPDIR:-/tmp}/quesma-shipper-notary.XXXXXX")
 	trap 'rm -rf "$WORK"' EXIT HUP INT TERM
 	mkdir "$WORK/submission"
 	cp "$PKG" "$RAW_ARM64" "$RAW_AMD64" "$WORK/submission"
-	/usr/bin/ditto -c -k --keepParent "$WORK/submission" "$WORK/Shipper-notarization.zip"
-	submit "$WORK/Shipper-notarization.zip"
+	/usr/bin/ditto -c -k --keepParent "$WORK/submission" "$WORK/quesma-shipper-notarization.zip"
+	submit "$WORK/quesma-shipper-notarization.zip"
 
 	/usr/bin/xcrun stapler staple "$PKG"
 	/usr/bin/xcrun stapler validate "$PKG"

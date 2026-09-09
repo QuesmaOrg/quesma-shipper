@@ -25,8 +25,8 @@ Collection, scrubbing, and preview work. Upload is disabled.
 The public update channel is a test facility, not a supported installation channel. See
 [Versions and releases](#versions-and-releases).
 
-`trajectory-shipper` is the product, service, and wire identifier. It appears in file paths,
-service names, and the User-Agent header. It is kept for compatibility.
+`trajectory-shipper` remains the wire identifier and on-disk configuration/state namespace.
+Those protocol-facing names are separate from the user-facing Quesma Shipper package and command.
 
 ## How it works
 
@@ -100,28 +100,40 @@ Everything derived this way passes through the scrub stage like any other file.
 
 ### From a release
 
+Release builds use the signed TUF repository to update themselves after installation. The public
+repository and stable download endpoints are described in
+[RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md).
+
 **macOS**
 
-Install the signed `Shipper-macos-universal.pkg`. It installs `Shipper.app` for the current user and
-registers a launchd agent. It does not need administrator rights.
+Download and install the signed
+[`quesma-shipper-macos-universal.pkg`](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg).
+It installs `Quesma Shipper.app` for the current user and registers a launchd agent. It does not
+need administrator rights.
 
 **Linux**
 
 ```sh
-sh src/packaging/linux/install.sh
+curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/src/packaging/linux/install.sh
+sh install.sh
 ```
 
 The script downloads a hash-pinned bootstrap binary and installs a systemd user service. Run it
 again to upgrade. Existing enrollment is kept. Use `--no-service` to skip the service.
 
-Existing installations named `shipper` keep self-updating at that path so their service is not
-orphaned. Re-run the installer to move the command and service to `quesma-shipper`.
+The released binaries are also available directly for
+[AMD64](https://updates.quesma.dev/targets/3ae805e2d630af5cb52fff51a5c8ae77aeb7b12f2d73a56fd7723698e9bfe48e.shipper-linux-amd64)
+and
+[ARM64](https://updates.quesma.dev/targets/78f0c89019d8a2f86fe3723359c00082ba9ec6ddedfc5fde1709f7516c33a3b0.shipper-linux-arm64).
 
 **Windows**
 
-Download `quesma-shipper-windows-<arch>.exe` from a release, rename it to `quesma-shipper.exe`, and
-put it in a directory on `PATH`. Run `quesma-shipper run` from a scheduler of your choice. There is
-no service integration yet.
+Download the released binary for
+[AMD64](https://updates.quesma.dev/targets/350d0996b4275e7b6d9570dbd852ca47dfa49a75ad0695cba0e2d1774c48712c.shipper-windows-amd64.exe)
+or
+[ARM64](https://updates.quesma.dev/targets/40b608fb37e30bd5254028a761d45124ebd80211aa891d755266546fa9d32521.shipper-windows-arm64.exe),
+rename it to `quesma-shipper.exe`, and put it in a directory on `PATH`. Run `quesma-shipper run`
+from a scheduler of your choice. There is no service integration yet.
 
 ### From source
 

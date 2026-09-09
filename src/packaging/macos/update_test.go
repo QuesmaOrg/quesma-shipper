@@ -7,32 +7,30 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
-
-	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
-func TestShipperAppForExecutableValidatesIdentity(t *testing.T) {
-	app := filepath.Join(t.TempDir(), "Shipper.app")
-	executable := writeTestApp(t, app, common.Label, "shipper")
-	if got, ok := shipperAppForExecutable(executable); !ok || got != app {
-		t.Fatalf("shipperAppForExecutable() = %q, %v", got, ok)
+func TestAppForExecutableValidatesIdentity(t *testing.T) {
+	app := filepath.Join(t.TempDir(), appName)
+	executable := writeTestApp(t, app, bundleIdentifier, executableName)
+	if got, ok := appForExecutable(executable); !ok || got != app {
+		t.Fatalf("appForExecutable() = %q, %v", got, ok)
 	}
-	if _, ok := shipperAppForExecutable("/Users/me/.local/bin/quesma-shipper"); ok {
+	if _, ok := appForExecutable("/Users/me/.local/bin/quesma-shipper"); ok {
 		t.Fatal("a raw binary was treated as an app bundle")
 	}
 	other := filepath.Join(t.TempDir(), "Other.app")
-	if _, ok := shipperAppForExecutable(writeTestApp(t, other, "com.example.other", "shipper")); ok {
-		t.Fatal("an unrelated app was treated as Shipper")
+	if _, ok := appForExecutable(writeTestApp(t, other, "com.example.other", executableName)); ok {
+		t.Fatal("an unrelated app was treated as Quesma Shipper")
 	}
-	wrongName := filepath.Join(t.TempDir(), "Shipper.app")
-	if _, ok := shipperAppForExecutable(writeTestApp(t, wrongName, common.Label, "helper")); ok {
-		t.Fatal("an unrelated executable was treated as Shipper")
+	wrongName := filepath.Join(t.TempDir(), appName)
+	if _, ok := appForExecutable(writeTestApp(t, wrongName, bundleIdentifier, "helper")); ok {
+		t.Fatal("an unrelated executable was treated as Quesma Shipper")
 	}
 }
 
 func TestApplyAppPackageReplacesTheWholeBundle(t *testing.T) {
 	parent := t.TempDir()
-	app := filepath.Join(parent, "Shipper.app")
+	app := filepath.Join(parent, appName)
 	if err := os.MkdirAll(filepath.Join(app, "Contents", "MacOS"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -52,34 +50,24 @@ func TestApplyAppPackageReplacesTheWholeBundle(t *testing.T) {
 	}
 }
 
-func testAppPackage(t *testing.T, version string) []byte {
+// testAppPackage builds a product with the renamed component plus any extra component packages.
+func testAppPackage(t *testing.T, version string, extra ...string) []byte {
 	t.Helper()
 	root := t.TempDir()
-	app := filepath.Join(root, "Applications", "Shipper.app")
-	executable := writeTestApp(t, app, common.Label, "shipper")
-	plist := `<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>com.quesma.trajectory-shipper</string>
-<key>ShipperReleaseVersion</key><string>` + version + `</string>
-</dict></plist>`
-	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), []byte(plist), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(executable, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	app := filepath.Join(root, "Applications", appName)
+	writeTestBundle(t, app, bundleIdentifier, executableName, releaseVersionField, version)
 	if err := os.WriteFile(filepath.Join(app, "new"), []byte("new"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	work := t.TempDir()
-	component := filepath.Join(work, "Shipper-component.pkg")
-	if out, err := exec.Command("/usr/bin/pkgbuild", "--root", root, "--identifier", common.Label,
-		"--version", "1", component).CombinedOutput(); err != nil {
-		t.Fatalf("pkgbuild: %v: %s", err, out)
+	component := buildTestComponent(t, root, bundleIdentifier, filepath.Join(work, componentPackage))
+	pkg := filepath.Join(work, "quesma-shipper.pkg")
+	args := []string{"--package", component}
+	for _, c := range extra {
+		args = append(args, "--package", c)
 	}
-	pkg := filepath.Join(work, "Shipper.pkg")
-	if out, err := exec.Command("/usr/bin/productbuild", "--package", component, pkg).CombinedOutput(); err != nil {
+	if out, err := exec.Command("/usr/bin/productbuild", append(args, pkg)...).CombinedOutput(); err != nil {
 		t.Fatalf("productbuild: %v: %s", err, out)
 	}
 	raw, err := os.ReadFile(pkg)
@@ -87,6 +75,33 @@ func testAppPackage(t *testing.T, version string) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+// writeTestBundle is writeTestApp plus the release-version key an updater validates.
+func writeTestBundle(t *testing.T, app, bundleID, exe, versionKey, version string) string {
+	t.Helper()
+	executable := writeTestApp(t, app, bundleID, exe)
+	plist := `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>` + bundleID + `</string>
+<key>` + versionKey + `</key><string>` + version + `</string>
+</dict></plist>`
+	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), []byte(plist), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(executable, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return executable
+}
+
+func buildTestComponent(t *testing.T, root, identifier, out string) string {
+	t.Helper()
+	if res, err := exec.Command("/usr/bin/pkgbuild", "--root", root, "--identifier", identifier,
+		"--version", "1", out).CombinedOutput(); err != nil {
+		t.Fatalf("pkgbuild: %v: %s", err, res)
+	}
+	return out
 }
 
 func writeTestApp(t *testing.T, app, bundleID, executableName string) string {

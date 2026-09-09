@@ -6,8 +6,6 @@ import (
 	"encoding/xml"
 	"strings"
 	"testing"
-
-	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
 func testSpec() Spec {
@@ -23,7 +21,7 @@ func TestPlistIsWellFormedAndKeepsTheAgentAlive(t *testing.T) {
 		t.Fatalf("invalid plist XML: %v", err)
 	}
 	for _, want := range []string{"<key>RunAtLoad</key>\n\t<true/>", "<key>KeepAlive</key>\n\t<true/>",
-		"<string>" + common.Label + "</string>", "<string>/usr/local/bin/quesma-shipper</string>",
+		"<string>" + bundleIdentifier + "</string>", "<string>/usr/local/bin/quesma-shipper</string>",
 		"<key>HOME</key>", "XDG_STATE_HOME", "StandardOutPath", "StandardErrorPath"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("plist is missing %q:\n%s", want, got)
@@ -32,7 +30,7 @@ func TestPlistIsWellFormedAndKeepsTheAgentAlive(t *testing.T) {
 }
 
 func TestPlistAssociatesTheInstalledApp(t *testing.T) {
-	want := "<key>AssociatedBundleIdentifiers</key>\n\t<array>\n\t\t<string>" + common.Label + "</string>"
+	want := "<key>AssociatedBundleIdentifiers</key>\n\t<array>\n\t\t<string>" + bundleIdentifier + "</string>"
 	if got := renderPlist(testSpec()); !strings.Contains(got, want) {
 		t.Errorf("the app-installed agent lacks its bundle association:\n%s", got)
 	}
@@ -41,7 +39,7 @@ func TestPlistAssociatesTheInstalledApp(t *testing.T) {
 func TestPlistEscapesPaths(t *testing.T) {
 	spec := testSpec()
 	spec.Home = "/Users/jane & co"
-	spec.Executable = "/opt/<weird>/shipper"
+	spec.Executable = "/opt/<weird>/quesma-shipper"
 	got := renderPlist(spec)
 	var v any
 	if err := xml.Unmarshal([]byte(got), &v); err != nil {
