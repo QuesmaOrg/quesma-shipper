@@ -115,6 +115,18 @@ func runCmd(build app.Build) *cobra.Command {
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
+			if build.Release {
+				// Rename bridge: an agent installed under the former name moves itself over and,
+				// on macOS, exits in favour of the renamed one. Delete with the rest of the glue.
+				exit, err := packaging.MigrateLegacyInstall(ctx, cmd.ErrOrStderr())
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "rename migration: %v; running on as the former install\n", err)
+					app.RecordUpdateFailure(fmt.Sprintf("rename migration from %s did not finish: %v", build.Version, err))
+				}
+				if exit {
+					return nil
+				}
+			}
 			// Resolved once, outside the loop: a config that will not parse also reads as "not
 			// logged in" and cannot repair itself between polls, so waiting on it waits forever.
 			// A resolve error skips the wait entirely and lets app.New report the real reason.

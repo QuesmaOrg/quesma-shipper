@@ -83,7 +83,8 @@ jobs:
       - name: Build and exercise the per-user installer
         shell: pwsh
         run: |
-          $version = "0.0.0-ci"
+          $version = (sh scripts/release-version.sh).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "could not compute release version" }
           New-Item -ItemType Directory -Force bin/dist | Out-Null
           Push-Location src
           go build -trimpath -ldflags "-X github.com/QuesmaOrg/quesma-shipper/internal/platform.releaseVersion=$version" `
@@ -113,6 +114,10 @@ jobs:
           cache-dependency-path: src/go.sum
       - name: Build and inspect the rootless package
         run: |
-          make macos-pkg RELEASE_VERSION="$(sh scripts/release-version.sh)"
-          pkgutil --payload-files bin/dist/Shipper-macos-universal.pkg | grep -q 'Applications/Shipper.app/Contents/MacOS/shipper'
-          pkgutil --payload-files bin/dist/Shipper-macos-universal.pkg | grep -q '.local/bin/quesma-shipper'
+          version="$(sh scripts/release-version.sh)"
+          make macos-pkg RELEASE_VERSION="$version"
+          pkgutil --payload-files bin/dist/quesma-shipper-macos-universal.pkg | grep -q 'Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper'
+          pkgutil --payload-files bin/dist/quesma-shipper-macos-universal.pkg | grep -q '.local/bin/quesma-shipper'
+          # Rename bridge: the package must still satisfy the updater of every pre-rename install.
+          (cd src && QUESMA_SHIPPER_PKG="$PWD/../bin/dist/quesma-shipper-macos-universal.pkg" \
+            QUESMA_SHIPPER_RELEASE_VERSION="$version" go test ./packaging/macos/ -run BuiltPackage -v)

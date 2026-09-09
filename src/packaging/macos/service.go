@@ -20,8 +20,17 @@ type Spec = common.Spec
 type Status = common.Status
 
 // launchdPath is the per-user LaunchAgent path, never /Library/LaunchDaemons, which is root's.
-func launchdPath(home string) string {
-	return filepath.Join(home, "Library", "LaunchAgents", common.Label+".plist")
+func launchdPath(home string) string { return launchdPathFor(home, bundleIdentifier) }
+
+func launchdPathFor(home, label string) string {
+	return filepath.Join(home, "Library", "LaunchAgents", label+".plist")
+}
+
+// installedApp is where the package puts the bundle.
+func installedApp(home string) string { return filepath.Join(home, "Applications", appName) }
+
+func installedExecutable(home string) string {
+	return filepath.Join(installedApp(home), "Contents", "MacOS", executableName)
 }
 
 // renderPlist builds the LaunchAgent. KeepAlive and RunAtLoad together are what survive both a
@@ -79,13 +88,15 @@ func renderPlist(spec Spec) string {
 	<string>%s</string>
 </dict>
 </plist>
-`, common.Label, common.Label, argXML.String(), envXML.String(), stop, escapeXML(stdout), escapeXML(stderr))
+`, bundleIdentifier, bundleIdentifier, argXML.String(), envXML.String(), stop, escapeXML(stdout), escapeXML(stderr))
 }
 
 const launchctl = "/bin/launchctl"
 
 func guiDomain() string  { return fmt.Sprintf("gui/%d", os.Getuid()) }
-func guiService() string { return guiDomain() + "/" + common.Label }
+func guiService() string { return guiServiceFor(bundleIdentifier) }
+
+func guiServiceFor(label string) string { return guiDomain() + "/" + label }
 
 func installService(spec Spec) (Status, error) {
 	home, err := common.HomeFor(spec)
@@ -132,17 +143,29 @@ func PostInstall() (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	stateDir := filepath.Join(home, ".local", "state", "trajectory-shipper")
-	spec, err := common.NewServiceSpec(stateDir, 0, 0)
+	exe, err := common.CurrentExecutable()
 	if err != nil {
 		return Status{}, err
 	}
-	expected := filepath.Join(home, "Applications", "Shipper.app", "Contents", "MacOS", "shipper")
+	expected := installedExecutable(home)
 	if resolved, err := filepath.EvalSymlinks(expected); err == nil {
 		expected = resolved
 	}
-	if spec.Executable != expected {
-		return Status{}, fmt.Errorf("postinstall must run from %s, not %s", expected, spec.Executable)
+	if exe != expected {
+		return Status{}, fmt.Errorf("postinstall must run from %s, not %s", expected, exe)
+	}
+	// Rename bridge: an install over the former package stops that agent first, or two would run.
+	retireLegacyInstall(home, legacyAppPath(home), false)
+	return supervise(exe, home)
+}
+
+// supervise registers exe as the LaunchAgent with the default state directory: packaging cannot
+// import the config layer, and the Installer environment carries no override.
+func supervise(exe, home string) (Status, error) {
+	stateDir := filepath.Join(home, ".local", "state", "trajectory-shipper")
+	spec, err := common.ServiceSpecFor(exe, stateDir, 0, 0)
+	if err != nil {
+		return Status{}, err
 	}
 	if err := common.ValidateInstall(spec); err != nil {
 		return Status{}, err
@@ -204,7 +227,7 @@ func ServiceState() Status {
 		switch {
 		case st.Installed:
 			// Written but not loaded is the state that collects nothing while looking installed.
-			st.Detail = "plist present but NOT loaded: re-run the Shipper installer"
+			st.Detail = "plist present but NOT loaded: re-run the Quesma Shipper installer"
 		default:
 			st.Detail = "no agent installed; `quesma-shipper run` works in the foreground"
 		}
@@ -224,7 +247,7 @@ func RestartService() error {
 }
 
 func RestartCommand() string {
-	return "launchctl kickstart -k gui/$(id -u)/" + common.Label
+	return "launchctl kickstart -k gui/$(id -u)/" + bundleIdentifier
 }
 
 // summariseLaunchctlPrint pulls whether a process is running and how it last exited.

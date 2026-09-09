@@ -36,7 +36,7 @@ func TestACorruptRunMarkerReadsAsNever(t *testing.T) {
 }
 
 func TestInstallSpecRequiresAnAbsoluteExecutable(t *testing.T) {
-	if err := ValidateInstall(Spec{Executable: "shipper"}); err == nil {
+	if err := ValidateInstall(Spec{Executable: "quesma-shipper"}); err == nil {
 		t.Fatal("a relative executable path was accepted")
 	}
 	if err := ValidateInstall(Spec{}); err == nil {

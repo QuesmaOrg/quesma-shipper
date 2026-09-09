@@ -515,11 +515,11 @@ func scheduleRows(stateDir string, now time.Time) []Row {
 	case st.Installed:
 		rows = append(rows, Row{Sev: SevWarn, Label: "background service", Brief: "background service not loaded",
 			Detail: "installed but not loaded",
-			Fix:    "re-run the Shipper installer"})
+			Fix:    "re-run the Quesma Shipper installer"})
 	default:
 		rows = append(rows, Row{Sev: SevWarn, Label: "background service", Brief: "no background service",
 			Detail: "not installed, nothing is sent on its own",
-			Fix:    "re-run the Shipper installer"})
+			Fix:    "re-run the Quesma Shipper installer"})
 	}
 	return rows
 }

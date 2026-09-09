@@ -12,7 +12,11 @@ import (
 type ServiceSpec = common.Spec
 
 func NewServiceSpec(stateDir string, stopTimeout, tick time.Duration) (ServiceSpec, error) {
-	return common.NewServiceSpec(stateDir, stopTimeout, tick)
+	exe, err := common.CurrentExecutable()
+	if err != nil {
+		return ServiceSpec{}, err
+	}
+	return common.ServiceSpecFor(exe, stateDir, stopTimeout, tick)
 }
 
 func InstallService(spec ServiceSpec) (ServiceStatus, error) { return windowspkg.InstallService(spec) }

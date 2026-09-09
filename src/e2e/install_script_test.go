@@ -30,26 +30,20 @@ func stageInstall(t *testing.T) installWorld {
 
 func (w installWorld) bin() string     { return filepath.Join(w.Home, "bin") }
 func (w installWorld) shipper() string { return filepath.Join(w.bin(), "quesma-shipper") }
-func (w installWorld) legacy() string  { return filepath.Join(w.bin(), "shipper") }
 func (w installWorld) stubLog() string { return filepath.Join(w.Home, "stub.log") }
 
 func stageStub(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "shipper-local")
-	if err := os.WriteFile(path, []byte(stubShipper), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeStub(t, path, "quesma-shipper 0.0.0-stub", 0o600)
 	return path
 }
 
-// stageLegacy puts an install at the former path in place, answering --version with banner.
-func stageLegacy(t *testing.T, w installWorld, banner string) {
+// writeStub writes the stub answering --version with banner.
+func writeStub(t *testing.T, path, banner string, perm os.FileMode) {
 	t.Helper()
-	if err := os.MkdirAll(w.bin(), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	stub := strings.Replace(stubShipper, "quesma-shipper 0.0.0-stub", banner, 1)
-	if err := os.WriteFile(w.legacy(), []byte(stub), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte(stub), perm); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -126,6 +120,58 @@ func TestInstallScriptKeepsAnExistingLogin(t *testing.T) {
 	}
 }
 
+func TestInstallScriptDoesNotRequireEnrollment(t *testing.T) {
+	w := stageInstall(t)
+	out, err := runInstall(t, w, "--from", stageStub(t), "--no-service")
+	if err != nil {
+		t.Fatalf("install.sh failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "not enrolled") {
+		t.Errorf("missing enrollment instructions:\n%s", out)
+	}
+	if calls := stubCalls(t, w); !slices.Equal(calls, []string{"--version"}) {
+		t.Errorf("stub calls = %v", calls)
+	}
+}
+
+func TestInstallScriptRequiresServerBeforeChangingAnything(t *testing.T) {
+	w := stageInstall(t)
+	out, err := runInstall(t, w, "--from", stageStub(t), "token", "--no-service")
+	if err == nil || !strings.Contains(out, "pass --server URL") {
+		t.Fatalf("first install without --server was not refused: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(w.shipper()); !os.IsNotExist(err) {
+		t.Errorf("destination changed: %v", err)
+	}
+	if calls := stubCalls(t, w); calls != nil {
+		t.Errorf("stub was called: %v", calls)
+	}
+}
+
+func TestInstallScriptChecksLocalInputBeforeChangingAnything(t *testing.T) {
+	w := stageInstall(t)
+	out, err := runInstall(t, w, "--from", w.shipper()+".missing", "token", "--no-service")
+	if err == nil || !strings.Contains(out, "no such file") {
+		t.Fatalf("missing --from file was not refused: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(w.shipper()); !os.IsNotExist(err) {
+		t.Errorf("destination changed: %v", err)
+	}
+}
+
+// --- rename bridge: delete this block with the retirement in install.sh -----------------------
+
+func (w installWorld) legacy() string { return filepath.Join(w.bin(), "shipper") }
+
+// stageLegacy puts an install at the former path in place, answering --version with banner.
+func stageLegacy(t *testing.T, w installWorld, banner string) {
+	t.Helper()
+	if err := os.MkdirAll(w.bin(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeStub(t, w.legacy(), banner, 0o755)
+}
+
 // An install at the former path answers with the old banner; one that already self-updated there
 // answers with the new one. Both are this program, and a reinstall retires both.
 func TestInstallScriptRetiresTheFormerBinaryOnceTheServiceIsRepointed(t *testing.T) {
@@ -174,44 +220,5 @@ func TestInstallScriptLeavesAnUnrelatedProgramWithTheFormerName(t *testing.T) {
 	}
 	if _, err := os.Stat(w.legacy()); err != nil {
 		t.Fatalf("an unrelated program with the old name was removed: %v", err)
-	}
-}
-
-func TestInstallScriptDoesNotRequireEnrollment(t *testing.T) {
-	w := stageInstall(t)
-	out, err := runInstall(t, w, "--from", stageStub(t), "--no-service")
-	if err != nil {
-		t.Fatalf("install.sh failed: %v\n%s", err, out)
-	}
-	if !strings.Contains(out, "not enrolled") {
-		t.Errorf("missing enrollment instructions:\n%s", out)
-	}
-	if calls := stubCalls(t, w); !slices.Equal(calls, []string{"--version"}) {
-		t.Errorf("stub calls = %v", calls)
-	}
-}
-
-func TestInstallScriptRequiresServerBeforeChangingAnything(t *testing.T) {
-	w := stageInstall(t)
-	out, err := runInstall(t, w, "--from", stageStub(t), "token", "--no-service")
-	if err == nil || !strings.Contains(out, "pass --server URL") {
-		t.Fatalf("first install without --server was not refused: %v\n%s", err, out)
-	}
-	if _, err := os.Stat(w.shipper()); !os.IsNotExist(err) {
-		t.Errorf("destination changed: %v", err)
-	}
-	if calls := stubCalls(t, w); calls != nil {
-		t.Errorf("stub was called: %v", calls)
-	}
-}
-
-func TestInstallScriptChecksLocalInputBeforeChangingAnything(t *testing.T) {
-	w := stageInstall(t)
-	out, err := runInstall(t, w, "--from", w.shipper()+".missing", "token", "--no-service")
-	if err == nil || !strings.Contains(out, "no such file") {
-		t.Fatalf("missing --from file was not refused: %v\n%s", err, out)
-	}
-	if _, err := os.Stat(w.shipper()); !os.IsNotExist(err) {
-		t.Errorf("destination changed: %v", err)
 	}
 }

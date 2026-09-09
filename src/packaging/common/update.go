@@ -73,26 +73,32 @@ func Update(ctx context.Context, o Options, selectTarget func(Release) string,
 	if !newer(release.Version, o.Current) {
 		return res, nil
 	}
-
-	target := selectTarget(release)
-	if target == "" {
-		return res, fmt.Errorf("newer release %s has no binary for %s/%s, so this installation stays on %s",
-			release.Version, runtime.GOOS, runtime.GOARCH, o.Current)
-	}
-	info, err := repo.GetTargetInfo(target)
+	binary, err := download(repo, release, selectTarget, o.Out)
 	if err != nil {
-		return res, fmt.Errorf("finding %s: %w", target, err)
-	}
-	progress(o.Out, "downloading shipper %s", release.Version)
-	_, binary, err := repo.DownloadTarget(info, "", "")
-	if err != nil {
-		return res, fmt.Errorf("downloading %s: %w", target, err)
+		return res, err
 	}
 	if err := applyTarget(binary, release.Version); err != nil {
 		return res, fmt.Errorf("installing update: %w", err)
 	}
 	res.Updated = true
 	return res, nil
+}
+
+func download(repo *tufupdater.Updater, release Release, selectTarget func(Release) string, out io.Writer) ([]byte, error) {
+	target := selectTarget(release)
+	if target == "" {
+		return nil, fmt.Errorf("release %s has no binary for %s/%s", release.Version, runtime.GOOS, runtime.GOARCH)
+	}
+	info, err := repo.GetTargetInfo(target)
+	if err != nil {
+		return nil, fmt.Errorf("finding %s: %w", target, err)
+	}
+	progress(out, "downloading shipper %s", release.Version)
+	_, binary, err := repo.DownloadTarget(info, "", "")
+	if err != nil {
+		return nil, fmt.Errorf("downloading %s: %w", target, err)
+	}
+	return binary, nil
 }
 
 func load(ctx context.Context) (*tufupdater.Updater, Release, error) {
