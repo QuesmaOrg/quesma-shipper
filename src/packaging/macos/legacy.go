@@ -44,22 +44,55 @@ func legacyAppForExecutable(exe string) (string, bool) {
 	return app, bundleIdentifierOf(app) == legacyBundleIdentifier
 }
 
-// MigrateLegacyInstall lays the renamed install out beside the Shipper.app this process runs from,
-// starts its agent and retires the former one. True means this process was the former agent and
-// is done; launchd normally ends it before the return.
+// MigrateLegacyInstall moves an install made under the former name over to the renamed one and
+// retires the former agent. True means this process was that agent and is done; launchd normally
+// ends it before the return. Two shapes exist: a Shipper.app bundle, and a raw binary named
+// shipper that self-updated in place under the former label.
 func MigrateLegacyInstall(ctx context.Context, out io.Writer) (bool, error) {
 	exe, err := common.CurrentExecutable()
 	if err != nil {
 		return false, err
 	}
-	legacyApp, ok := legacyAppForExecutable(exe)
-	if !ok {
-		return false, nil
-	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return false, err
 	}
+	if legacyApp, ok := legacyAppForExecutable(exe); ok {
+		return migrateLegacyApp(ctx, out, home, legacyApp)
+	}
+	if isLegacyBinary(exe) {
+		return migrateLegacyBinary(out, home, exe)
+	}
+	return false, nil
+}
+
+// isLegacyBinary is the raw shape: the former name outside any bundle.
+func isLegacyBinary(exe string) bool {
+	_, inApp := containingApp(exe)
+	return !inApp && filepath.Base(exe) == legacyExecutableName
+}
+
+// migrateLegacyBinary renames the file in place, like the Linux bridge, and moves a LaunchAgent
+// under the former label onto the new one. Without that plist the rename is all there is to do.
+func migrateLegacyBinary(out io.Writer, home, exe string) (bool, error) {
+	renamed := filepath.Join(filepath.Dir(exe), executableName)
+	if err := os.Rename(exe, renamed); err != nil {
+		return false, err
+	}
+	fmt.Fprintf(out, "rename migration: %s is now %s\n", exe, renamed)
+	if _, err := os.Stat(launchdPathFor(home, legacyBundleIdentifier)); err != nil {
+		fmt.Fprintf(out, "rename migration: no former LaunchAgent; whatever starts this must now name %s\n", renamed)
+		return false, nil
+	}
+	if _, err := supervise(renamed, home); err != nil {
+		return false, err
+	}
+	fmt.Fprintf(out, "rename migration: %s took over under %s; retiring %s\n", renamed, bundleIdentifier, legacyBundleIdentifier)
+	retireLegacyInstall(home, legacyAppPath(home), true)
+	return true, nil
+}
+
+func migrateLegacyApp(ctx context.Context, out io.Writer, home, legacyApp string) (bool, error) {
 	app, target := installedApp(home), installedExecutable(home)
 	if _, ok := appForExecutable(target); !ok {
 		fmt.Fprintf(out, "rename migration: laying out %s\n", app)
