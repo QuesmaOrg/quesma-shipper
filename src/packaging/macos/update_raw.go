@@ -10,10 +10,10 @@ import (
 	selfapply "github.com/creativeprojects/go-selfupdate/update"
 )
 
-func legacyUpdateTarget(release common.Release) string {
+func rawUpdateTarget(release common.Release) string {
 	return release.Targets[runtime.GOOS+"/"+runtime.GOARCH]
 }
 
-func applyLegacyTarget(raw []byte) error {
+func applyRawTarget(raw []byte) error {
 	return selfapply.Apply(bytes.NewReader(raw), selfapply.Options{})
 }

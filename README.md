@@ -25,8 +25,8 @@ Collection, scrubbing, and preview work. Upload is disabled.
 The public update channel is a test facility, not a supported installation channel. See
 [Versions and releases](#versions-and-releases).
 
-`trajectory-shipper` is the product, service, and wire identifier. It appears in file paths,
-service names, and the User-Agent header. It is kept for compatibility.
+`trajectory-shipper` remains the wire identifier and on-disk configuration/state namespace.
+Those protocol-facing names are separate from the user-facing Quesma Shipper package and command.
 
 ## How it works
 
@@ -100,16 +100,16 @@ Everything derived this way passes through the scrub stage like any other file.
 
 ### From a release
 
-The direct links below are hash-pinned bootstrap artifacts, not mutable `latest` URLs. Release
-builds use the signed TUF repository to update themselves after installation. The planned stable
-download endpoints are described in [RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md).
+Release builds use the signed TUF repository to update themselves after installation. The public
+repository and stable download endpoints are described in
+[RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md).
 
 **macOS**
 
 Download and install the signed
-[`Shipper-macos-universal.pkg`](https://updates.quesma.dev/targets/bf5594a018d8a44ea00a2b66c174208993e6cf8dc5757a6cac1a590f92a800fd.Shipper-macos-universal.pkg).
-It installs `Shipper.app` for the current user and registers a launchd agent. It does not need
-administrator rights.
+[`quesma-shipper-macos-universal.pkg`](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg).
+It installs `Quesma Shipper.app` for the current user and registers a launchd agent. It does not
+need administrator rights.
 
 **Linux**
 
@@ -125,9 +125,6 @@ The released binaries are also available directly for
 [AMD64](https://updates.quesma.dev/targets/3ae805e2d630af5cb52fff51a5c8ae77aeb7b12f2d73a56fd7723698e9bfe48e.shipper-linux-amd64)
 and
 [ARM64](https://updates.quesma.dev/targets/78f0c89019d8a2f86fe3723359c00082ba9ec6ddedfc5fde1709f7516c33a3b0.shipper-linux-arm64).
-
-Existing installations named `shipper` keep self-updating at that path so their service is not
-orphaned. Re-run the installer to move the command and service to `quesma-shipper`.
 
 **Windows**
 

@@ -21,7 +21,7 @@ type Status = common.Status
 
 // launchdPath is the per-user LaunchAgent path, never /Library/LaunchDaemons, which is root's.
 func launchdPath(home string) string {
-	return filepath.Join(home, "Library", "LaunchAgents", common.Label+".plist")
+	return filepath.Join(home, "Library", "LaunchAgents", bundleIdentifier+".plist")
 }
 
 // renderPlist builds the LaunchAgent. KeepAlive and RunAtLoad together are what survive both a
@@ -79,13 +79,13 @@ func renderPlist(spec Spec) string {
 	<string>%s</string>
 </dict>
 </plist>
-`, common.Label, common.Label, argXML.String(), envXML.String(), stop, escapeXML(stdout), escapeXML(stderr))
+`, bundleIdentifier, bundleIdentifier, argXML.String(), envXML.String(), stop, escapeXML(stdout), escapeXML(stderr))
 }
 
 const launchctl = "/bin/launchctl"
 
 func guiDomain() string  { return fmt.Sprintf("gui/%d", os.Getuid()) }
-func guiService() string { return guiDomain() + "/" + common.Label }
+func guiService() string { return guiDomain() + "/" + bundleIdentifier }
 
 func installService(spec Spec) (Status, error) {
 	home, err := common.HomeFor(spec)
@@ -137,7 +137,7 @@ func PostInstall() (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	expected := filepath.Join(home, "Applications", "Shipper.app", "Contents", "MacOS", "shipper")
+	expected := filepath.Join(home, "Applications", appName, "Contents", "MacOS", executableName)
 	if resolved, err := filepath.EvalSymlinks(expected); err == nil {
 		expected = resolved
 	}
@@ -204,7 +204,7 @@ func ServiceState() Status {
 		switch {
 		case st.Installed:
 			// Written but not loaded is the state that collects nothing while looking installed.
-			st.Detail = "plist present but NOT loaded: re-run the Shipper installer"
+			st.Detail = "plist present but NOT loaded: re-run the Quesma Shipper installer"
 		default:
 			st.Detail = "no agent installed; `quesma-shipper run` works in the foreground"
 		}
@@ -224,7 +224,7 @@ func RestartService() error {
 }
 
 func RestartCommand() string {
-	return "launchctl kickstart -k gui/$(id -u)/" + common.Label
+	return "launchctl kickstart -k gui/$(id -u)/" + bundleIdentifier
 }
 
 // summariseLaunchctlPrint pulls whether a process is running and how it last exited.

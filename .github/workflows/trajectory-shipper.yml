@@ -95,5 +95,5 @@ jobs:
       - name: Build and inspect the rootless package
         run: |
           make macos-pkg RELEASE_VERSION="$(sh scripts/release-version.sh)"
-          pkgutil --payload-files bin/dist/Shipper-macos-universal.pkg | grep -q 'Applications/Shipper.app/Contents/MacOS/shipper'
-          pkgutil --payload-files bin/dist/Shipper-macos-universal.pkg | grep -q '.local/bin/quesma-shipper'
+          pkgutil --payload-files bin/dist/quesma-shipper-macos-universal.pkg | grep -q 'Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper'
+          pkgutil --payload-files bin/dist/quesma-shipper-macos-universal.pkg | grep -q '.local/bin/quesma-shipper'

@@ -7,32 +7,30 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
-
-	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
-func TestShipperAppForExecutableValidatesIdentity(t *testing.T) {
-	app := filepath.Join(t.TempDir(), "Shipper.app")
-	executable := writeTestApp(t, app, common.Label, "shipper")
-	if got, ok := shipperAppForExecutable(executable); !ok || got != app {
-		t.Fatalf("shipperAppForExecutable() = %q, %v", got, ok)
+func TestAppForExecutableValidatesIdentity(t *testing.T) {
+	app := filepath.Join(t.TempDir(), appName)
+	executable := writeTestApp(t, app, bundleIdentifier, executableName)
+	if got, ok := appForExecutable(executable); !ok || got != app {
+		t.Fatalf("appForExecutable() = %q, %v", got, ok)
 	}
-	if _, ok := shipperAppForExecutable("/Users/me/.local/bin/quesma-shipper"); ok {
+	if _, ok := appForExecutable("/Users/me/.local/bin/quesma-shipper"); ok {
 		t.Fatal("a raw binary was treated as an app bundle")
 	}
 	other := filepath.Join(t.TempDir(), "Other.app")
-	if _, ok := shipperAppForExecutable(writeTestApp(t, other, "com.example.other", "shipper")); ok {
-		t.Fatal("an unrelated app was treated as Shipper")
+	if _, ok := appForExecutable(writeTestApp(t, other, "com.example.other", executableName)); ok {
+		t.Fatal("an unrelated app was treated as Quesma Shipper")
 	}
-	wrongName := filepath.Join(t.TempDir(), "Shipper.app")
-	if _, ok := shipperAppForExecutable(writeTestApp(t, wrongName, common.Label, "helper")); ok {
-		t.Fatal("an unrelated executable was treated as Shipper")
+	wrongName := filepath.Join(t.TempDir(), appName)
+	if _, ok := appForExecutable(writeTestApp(t, wrongName, bundleIdentifier, "helper")); ok {
+		t.Fatal("an unrelated executable was treated as Quesma Shipper")
 	}
 }
 
 func TestApplyAppPackageReplacesTheWholeBundle(t *testing.T) {
 	parent := t.TempDir()
-	app := filepath.Join(parent, "Shipper.app")
+	app := filepath.Join(parent, appName)
 	if err := os.MkdirAll(filepath.Join(app, "Contents", "MacOS"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -55,12 +53,12 @@ func TestApplyAppPackageReplacesTheWholeBundle(t *testing.T) {
 func testAppPackage(t *testing.T, version string) []byte {
 	t.Helper()
 	root := t.TempDir()
-	app := filepath.Join(root, "Applications", "Shipper.app")
-	executable := writeTestApp(t, app, common.Label, "shipper")
+	app := filepath.Join(root, "Applications", appName)
+	executable := writeTestApp(t, app, bundleIdentifier, executableName)
 	plist := `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>com.quesma.trajectory-shipper</string>
-<key>ShipperReleaseVersion</key><string>` + version + `</string>
+<key>CFBundleIdentifier</key><string>` + bundleIdentifier + `</string>
+<key>` + releaseVersionField + `</key><string>` + version + `</string>
 </dict></plist>`
 	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), []byte(plist), 0o644); err != nil {
 		t.Fatal(err)
@@ -73,12 +71,12 @@ func testAppPackage(t *testing.T, version string) []byte {
 	}
 
 	work := t.TempDir()
-	component := filepath.Join(work, "Shipper-component.pkg")
-	if out, err := exec.Command("/usr/bin/pkgbuild", "--root", root, "--identifier", common.Label,
+	component := filepath.Join(work, componentPackage)
+	if out, err := exec.Command("/usr/bin/pkgbuild", "--root", root, "--identifier", bundleIdentifier,
 		"--version", "1", component).CombinedOutput(); err != nil {
 		t.Fatalf("pkgbuild: %v: %s", err, out)
 	}
-	pkg := filepath.Join(work, "Shipper.pkg")
+	pkg := filepath.Join(work, "quesma-shipper.pkg")
 	if out, err := exec.Command("/usr/bin/productbuild", "--package", component, pkg).CombinedOutput(); err != nil {
 		t.Fatalf("productbuild: %v: %s", err, out)
 	}

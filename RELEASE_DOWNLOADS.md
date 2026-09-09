@@ -42,7 +42,7 @@ permanent link in the README.
 The public, stable download URLs will be:
 
 ```text
-https://updates.quesma.dev/download/Shipper-macos-universal.pkg
+https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg
 https://updates.quesma.dev/download/quesma-shipper-linux-amd64
 https://updates.quesma.dev/download/quesma-shipper-linux-arm64
 https://updates.quesma.dev/download/quesma-shipper-windows-amd64.exe
@@ -81,7 +81,7 @@ Create a Worker with the following TypeScript entry point:
 
 ```ts
 const downloads: Record<string, string> = {
-  "/download/Shipper-macos-universal.pkg": "darwin/pkg",
+  "/download/quesma-shipper-macos-universal.pkg": "darwin/pkg",
   "/download/quesma-shipper-linux-amd64": "linux/amd64",
   "/download/quesma-shipper-linux-arm64": "linux/arm64",
   "/download/quesma-shipper-windows-amd64.exe": "windows/amd64",

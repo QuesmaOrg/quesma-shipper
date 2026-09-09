@@ -13,10 +13,6 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
 
-// Label is the identifier launchd and systemd know this agent by. Never change it: an installed
-// agent would be orphaned, running an old binary on a schedule nothing can see.
-const Label = "com.quesma.trajectory-shipper"
-
 // Kind is the supervision mechanism in use on this host.
 type Kind string
 
