@@ -107,8 +107,10 @@ jobs:
             $postinstallExit = $LASTEXITCODE
             throw "scheduled task was not installed; direct postinstall exited $postinstallExit"
           }
-          & "$env:LOCALAPPDATA\Programs\Quesma Shipper\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-          if ($LASTEXITCODE -ne 0) { throw "uninstaller exited $LASTEXITCODE" }
+          $uninstaller = "$env:LOCALAPPDATA\Programs\Quesma Shipper\unins000.exe"
+          $uninstallProcess = Start-Process -FilePath $uninstaller -Wait -PassThru -ArgumentList `
+            @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
+          if ($uninstallProcess.ExitCode -ne 0) { throw "uninstaller exited $($uninstallProcess.ExitCode)" }
           schtasks /Query /TN "\Quesma Shipper" 2>$null | Out-Null
           if ($LASTEXITCODE -eq 0) { throw "scheduled task survived uninstall" }
 
