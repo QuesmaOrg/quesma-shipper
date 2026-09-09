@@ -113,6 +113,7 @@ jobs:
           if ($uninstallProcess.ExitCode -ne 0) { throw "uninstaller exited $($uninstallProcess.ExitCode)" }
           schtasks /Query /TN "\Quesma Shipper" 2>$null | Out-Null
           if ($LASTEXITCODE -eq 0) { throw "scheduled task survived uninstall" }
+          $global:LASTEXITCODE = 0
 
   macos-package:
     runs-on: macos-15
