@@ -95,7 +95,11 @@ jobs:
           & bin/dist/QuesmaShipperSetup-amd64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="$env:RUNNER_TEMP\quesma-setup.log"
           if ($LASTEXITCODE -ne 0) { throw "installer exited $LASTEXITCODE" }
           schtasks /Query /TN "\Quesma Shipper" | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "scheduled task was not installed" }
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content "$env:RUNNER_TEMP\quesma-setup.log"
+            & "$env:LOCALAPPDATA\Programs\Quesma Shipper\quesma-shipper.exe" postinstall
+            throw "scheduled task was not installed; direct postinstall exited $LASTEXITCODE"
+          }
           & "$env:LOCALAPPDATA\Programs\Quesma Shipper\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
           if ($LASTEXITCODE -ne 0) { throw "uninstaller exited $LASTEXITCODE" }
           schtasks /Query /TN "\Quesma Shipper" 2>$null | Out-Null
