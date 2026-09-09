@@ -185,7 +185,7 @@ func ServiceState() Status {
 			st.Detail = "active but NOT enabled: it will not start at login"
 		}
 	case st.Installed:
-		st.Detail = fmt.Sprintf("unit present but %s (%s): re-run the Shipper installer",
+		st.Detail = fmt.Sprintf("unit present but %s (%s): re-run the Quesma Shipper installer",
 			orUnknown(activeState), orUnknown(enabledState))
 	default:
 		st.Detail = "no agent installed; `quesma-shipper run` works in the foreground"

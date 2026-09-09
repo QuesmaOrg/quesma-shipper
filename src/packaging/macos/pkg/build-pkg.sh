@@ -65,6 +65,7 @@ main() {
 		--identifier com.quesma.shipper \
 		--version "$BUILD_VERSION" --install-location / \
 		"$WORK/quesma-shipper-component.pkg"
+	build_legacy_bridge "$APP"
 	set -- --distribution "$HERE/Distribution.xml" --package-path "$WORK"
 	[ -z "$INSTALLER_IDENTITY" ] || set -- "$@" --sign "$INSTALLER_IDENTITY"
 	/usr/bin/productbuild "$@" "$OUT/quesma-shipper-macos-universal.pkg"
@@ -80,6 +81,35 @@ main() {
 	printf 'built %s\n' "$OUT/quesma-shipper-macos-universal.pkg"
 }
 
+# Rename bridge: the updater in every install older than the rename only accepts a package whose
+# Shipper-component.pkg holds a Shipper.app with the former identifiers, so one rides along with
+# the renamed binary inside. The Distribution leaves it unselected, so Installer never lays it out;
+# the swapped-in binary then migrates the install itself (packaging/macos/legacy.go). Delete this
+# function, its call, legacy/ and the Distribution choice with the rest of the bridge glue.
+build_legacy_bridge() {
+	app=$1
+	legacy="$WORK/legacy/Applications/Shipper.app"
+	mkdir -p "$legacy/Contents/MacOS" "$legacy/Contents/Resources"
+	cp "$app/Contents/MacOS/quesma-shipper" "$legacy/Contents/MacOS/shipper"
+	sed -e "s/@MARKETING_VERSION@/$MARKETING_VERSION/g" \
+		-e "s/@BUILD_VERSION@/$BUILD_VERSION/g" \
+		-e "s/@RELEASE_VERSION@/$RELEASE_VERSION/g" \
+		"$HERE/legacy/Info.plist.in" > "$legacy/Contents/Info.plist"
+	/usr/bin/plutil -lint "$legacy/Contents/Info.plist" >/dev/null
+	cp "$HERE/quesma-shipper.icns" "$legacy/Contents/Resources/Shipper.icns"
+	cp "$MODULE/internal/legal/LICENSE" "$MODULE/internal/legal/NOTICE" "$legacy/Contents/Resources/"
+	cp -R "$MODULE/internal/legal/third_party" "$legacy/Contents/Resources/third_party"
+	/usr/bin/xattr -cr "$WORK/legacy"
+	[ -z "$APPLICATION_IDENTITY" ] || sign_app "$APPLICATION_IDENTITY" "$legacy"
+	/usr/bin/pkgbuild --analyze --root "$WORK/legacy" "$WORK/legacy-components.plist"
+	/usr/libexec/PlistBuddy -c 'Set :0:BundleIsRelocatable false' "$WORK/legacy-components.plist"
+	/usr/bin/pkgbuild --root "$WORK/legacy" \
+		--component-plist "$WORK/legacy-components.plist" \
+		--identifier com.quesma.trajectory-shipper \
+		--version "$BUILD_VERSION" --install-location / \
+		"$WORK/Shipper-component.pkg"
+}
+
 sign_code() {
 	identity=$1 app=$2 raw_arm64=$3 raw_amd64=$4
 	for binary in "$raw_arm64" "$raw_amd64"; do
@@ -87,8 +117,12 @@ sign_code() {
 			--identifier com.quesma.shipper.cli --sign "$identity" "$binary"
 		/usr/bin/codesign --verify --strict --verbose=2 "$binary"
 	done
-	/usr/bin/codesign --force --options runtime --timestamp --sign "$identity" "$app"
-	/usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
+	sign_app "$identity" "$app"
+}
+
+sign_app() {
+	/usr/bin/codesign --force --options runtime --timestamp --sign "$1" "$2"
+	/usr/bin/codesign --verify --deep --strict --verbose=2 "$2"
 }
 
 build_binary() {

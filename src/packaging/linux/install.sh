@@ -53,6 +53,20 @@ main() {
 	fi
 	[ -n "$NO_SERVICE" ] || "$bin" postinstall >/dev/null
 
+	# Rename bridge: a reinstall retires the former command, but only once postinstall has repointed
+	# the service entry at the new executable: --no-service leaves an entry that may still name the
+	# old path, and removing the file it names would stop collection silently. An install that
+	# already self-updated answers with the new name at the old path, so accept either banner - but
+	# not an unrelated program that merely has the old name.
+	legacy=$BIN_DIR/shipper
+	if [ -x "$legacy" ] && "$legacy" --version 2>/dev/null | grep -qE '^(quesma-)?shipper '; then
+		if [ -n "$NO_SERVICE" ]; then
+			say "kept $legacy: a service entry may still name it; re-run without --no-service to retire it"
+		else
+			rm -f "$legacy"
+		fi
+	fi
+
 	case ":$PATH:" in
 	*":$BIN_DIR:"*) ;;
 	*) say "add $BIN_DIR to your PATH to run \`$NAME\` by name" ;;
@@ -68,11 +82,12 @@ download() {
 	*) die "unsupported architecture $arch" ;;
 	esac
 	case $os in
-	darwin) die "macOS releases are installed with Shipper.pkg; use --from for a local development binary" ;;
+	darwin) die "macOS releases are installed with quesma-shipper-macos-universal.pkg; use --from for a local development binary" ;;
 	linux) ;;
 	*) die "unsupported OS $os" ;;
 	esac
-	# The immutable bootstrap hands subsequent target selection to the signed release manifest.
+	# The bootstrap keeps its published target name; after launch its TUF client follows the
+	# release manifest to quesma-shipper-* assets. Removing this target would strand old scripts.
 	asset=shipper-$os-$arch
 	case $os/$arch in
 	linux/amd64) want=e15ae94795e1f8f00523a3874930b12494be0d568d67405e65abb59d323497ef ;;

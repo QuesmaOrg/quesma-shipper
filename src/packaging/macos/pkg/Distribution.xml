@@ -9,11 +9,18 @@
 	<choices-outline>
 		<line choice="default">
 			<line choice="com.quesma.shipper"/>
+			<line choice="com.quesma.trajectory-shipper"/>
 		</line>
 	</choices-outline>
 	<choice id="default"/>
 	<choice id="com.quesma.shipper" visible="false">
 		<pkg-ref id="com.quesma.shipper"/>
 	</choice>
+	<!-- Rename bridge: carried for the former updater to find, never laid out by Installer. -->
+	<choice id="com.quesma.trajectory-shipper" visible="false" enabled="false" selected="false"
+		start_visible="false" start_enabled="false" start_selected="false">
+		<pkg-ref id="com.quesma.trajectory-shipper"/>
+	</choice>
 	<pkg-ref id="com.quesma.shipper" version="0">quesma-shipper-component.pkg</pkg-ref>
+	<pkg-ref id="com.quesma.trajectory-shipper" version="0">Shipper-component.pkg</pkg-ref>
 </installer-gui-script>

@@ -26,14 +26,19 @@ func RemoveProgram(executable string) (string, error) {
 	if err != nil {
 		return app, err
 	}
-	removeCLILink(filepath.Join(home, ".local", "bin", "quesma-shipper"), executable)
+	removeCLILink(filepath.Join(home, ".local", "bin", executableName), executable)
 	if err := os.RemoveAll(app); err != nil {
 		return app, err
 	}
-	if exec.Command("/usr/sbin/pkgutil", "--volume", home, "--pkg-info", bundleIdentifier).Run() == nil {
-		_ = exec.Command("/usr/sbin/pkgutil", "--volume", home, "--forget", bundleIdentifier).Run()
-	}
+	forgetReceipt(home, bundleIdentifier)
+	retireLegacyInstall(home, legacyAppPath(home), false)
 	return app, nil
+}
+
+func forgetReceipt(home, identifier string) {
+	if exec.Command("/usr/sbin/pkgutil", "--volume", home, "--pkg-info", identifier).Run() == nil {
+		_ = exec.Command("/usr/sbin/pkgutil", "--volume", home, "--forget", identifier).Run()
+	}
 }
 
 func removeCLILink(path, executable string) {

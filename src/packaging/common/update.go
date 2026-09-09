@@ -73,26 +73,48 @@ func Update(ctx context.Context, o Options, selectTarget func(Release) string,
 	if !newer(release.Version, o.Current) {
 		return res, nil
 	}
-
-	target := selectTarget(release)
-	if target == "" {
-		return res, fmt.Errorf("newer release %s has no binary for %s/%s, so this installation stays on %s",
-			release.Version, runtime.GOOS, runtime.GOARCH, o.Current)
-	}
-	info, err := repo.GetTargetInfo(target)
+	binary, err := download(repo, release, selectTarget, o)
 	if err != nil {
-		return res, fmt.Errorf("finding %s: %w", target, err)
-	}
-	progress(o.Out, "downloading shipper %s", release.Version)
-	_, binary, err := repo.DownloadTarget(info, "", "")
-	if err != nil {
-		return res, fmt.Errorf("downloading %s: %w", target, err)
+		return res, err
 	}
 	if err := applyTarget(binary, release.Version); err != nil {
 		return res, fmt.Errorf("installing update: %w", err)
 	}
 	res.Updated = true
 	return res, nil
+}
+
+// Fetch downloads the signed release's target whatever version runs here. Rename-bridge glue: the
+// former agent's updater has already swapped this binary in under the old layout, and laying out
+// the renamed one needs the package again. Delete with the rest of the bridge.
+func Fetch(ctx context.Context, o Options, selectTarget func(Release) string) ([]byte, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeoutOr(o.Timeout, defaultUpdateTimeout))
+	defer cancel()
+
+	repo, release, err := load(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	raw, err := download(repo, release, selectTarget, o)
+	return raw, release.Version, err
+}
+
+func download(repo *tufupdater.Updater, release Release, selectTarget func(Release) string, o Options) ([]byte, error) {
+	target := selectTarget(release)
+	if target == "" {
+		return nil, fmt.Errorf("release %s has no binary for %s/%s, so this installation stays on %s",
+			release.Version, runtime.GOOS, runtime.GOARCH, o.Current)
+	}
+	info, err := repo.GetTargetInfo(target)
+	if err != nil {
+		return nil, fmt.Errorf("finding %s: %w", target, err)
+	}
+	progress(o.Out, "downloading shipper %s", release.Version)
+	_, binary, err := repo.DownloadTarget(info, "", "")
+	if err != nil {
+		return nil, fmt.Errorf("downloading %s: %w", target, err)
+	}
+	return binary, nil
 }
 
 func load(ctx context.Context) (*tufupdater.Updater, Release, error) {

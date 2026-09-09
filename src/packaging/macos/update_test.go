@@ -50,7 +50,8 @@ func TestApplyAppPackageReplacesTheWholeBundle(t *testing.T) {
 	}
 }
 
-func testAppPackage(t *testing.T, version string) []byte {
+// testAppPackage builds a product with the renamed component plus any extra component packages.
+func testAppPackage(t *testing.T, version string, extra ...string) []byte {
 	t.Helper()
 	root := t.TempDir()
 	app := filepath.Join(root, "Applications", appName)
@@ -77,7 +78,11 @@ func testAppPackage(t *testing.T, version string) []byte {
 		t.Fatalf("pkgbuild: %v: %s", err, out)
 	}
 	pkg := filepath.Join(work, "quesma-shipper.pkg")
-	if out, err := exec.Command("/usr/bin/productbuild", "--package", component, pkg).CombinedOutput(); err != nil {
+	args := []string{"--package", component}
+	for _, c := range extra {
+		args = append(args, "--package", c)
+	}
+	if out, err := exec.Command("/usr/bin/productbuild", append(args, pkg)...).CombinedOutput(); err != nil {
 		t.Fatalf("productbuild: %v: %s", err, out)
 	}
 	raw, err := os.ReadFile(pkg)

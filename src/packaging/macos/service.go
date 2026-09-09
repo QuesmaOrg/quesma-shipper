@@ -132,8 +132,7 @@ func PostInstall() (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	stateDir := filepath.Join(home, ".local", "state", "trajectory-shipper")
-	spec, err := common.NewServiceSpec(stateDir, 0, 0)
+	spec, err := common.NewServiceSpec(defaultStateDir(home), 0, 0)
 	if err != nil {
 		return Status{}, err
 	}
@@ -147,7 +146,17 @@ func PostInstall() (Status, error) {
 	if err := common.ValidateInstall(spec); err != nil {
 		return Status{}, err
 	}
+	// Rename bridge: an install over the former package stops that agent first, or two would run.
+	retireLegacyInstall(home, legacyAppPath(home), false)
 	return installService(spec)
+}
+
+// defaultStateDir mirrors the client's state path; packaging cannot import the config layer.
+func defaultStateDir(home string) string {
+	if x := os.Getenv("XDG_STATE_HOME"); x != "" {
+		return filepath.Join(x, "trajectory-shipper")
+	}
+	return filepath.Join(home, ".local", "state", "trajectory-shipper")
 }
 
 func waitForLabelGone(within time.Duration) error {

@@ -60,6 +60,11 @@ func NewServiceSpec(stateDir string, stopTimeout, tick time.Duration) (Spec, err
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
+	return ServiceSpecFor(exe, stateDir, stopTimeout, tick)
+}
+
+// ServiceSpecFor describes an agent run from exe rather than from this process's own binary.
+func ServiceSpecFor(exe, stateDir string, stopTimeout, tick time.Duration) (Spec, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return Spec{}, err
