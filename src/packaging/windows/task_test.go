@@ -50,6 +50,21 @@ func TestParseTaskAcceptsSchtasksUTF16Output(t *testing.T) {
 	}
 }
 
+func TestTaskXMLForSchtasksIsUTF16AndRoundTrips(t *testing.T) {
+	raw := renderTask(common.Spec{Executable: `C:\Quesma Shipper\quesma-shipper.exe`}, "S-1-5-21-1")
+	encoded := taskXMLForSchtasks(raw)
+	if len(encoded) < 2 || encoded[0] != 0xff || encoded[1] != 0xfe {
+		t.Fatalf("task XML lacks UTF-16LE BOM: %x", encoded[:min(len(encoded), 8)])
+	}
+	doc, err := parseTask(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Actions.Exec.Command != `C:\Quesma Shipper\quesma-shipper-task.cmd` {
+		t.Fatalf("parsed command = %q", doc.Actions.Exec.Command)
+	}
+}
+
 func TestTaskXMLIsWellFormed(t *testing.T) {
 	if err := xml.Unmarshal([]byte(renderTask(common.Spec{Executable: `C:\shipper.exe`}, "S-1-5-21-1")), new(any)); err != nil {
 		t.Fatal(err)

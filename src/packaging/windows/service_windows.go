@@ -35,7 +35,7 @@ func InstallService(spec Spec) (Status, error) {
 	}
 	path := f.Name()
 	defer os.Remove(path)
-	if _, err := f.WriteString(renderTask(spec, current.Uid)); err != nil {
+	if _, err := f.Write(taskXMLForSchtasks(renderTask(spec, current.Uid))); err != nil {
 		f.Close()
 		return Status{}, fmt.Errorf("supervise: write task definition: %w", err)
 	}
