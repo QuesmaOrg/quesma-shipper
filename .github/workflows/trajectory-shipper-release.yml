@@ -119,9 +119,9 @@ jobs:
           CLIENT_ID: ${{ secrets.WINDOWS_SIGNING_AZURE_CLIENT_ID }}
           TENANT_ID: ${{ secrets.WINDOWS_SIGNING_AZURE_TENANT_ID }}
           SUBSCRIPTION_ID: ${{ secrets.WINDOWS_SIGNING_AZURE_SUBSCRIPTION_ID }}
-          ENDPOINT: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
-          ACCOUNT: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
-          PROFILE: ${{ vars.WINDOWS_SIGNING_PROFILE }}
+          ENDPOINT: ${{ secrets.WINDOWS_SIGNING_ENDPOINT }}
+          ACCOUNT: ${{ secrets.WINDOWS_SIGNING_ACCOUNT }}
+          PROFILE: ${{ secrets.WINDOWS_SIGNING_PROFILE }}
         run: |
           foreach ($name in @("CLIENT_ID", "TENANT_ID", "SUBSCRIPTION_ID", "ENDPOINT", "ACCOUNT", "PROFILE")) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
@@ -137,9 +137,9 @@ jobs:
       - name: Sign the application payloads
         uses: azure/artifact-signing-action@v2
         with:
-          endpoint: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.WINDOWS_SIGNING_PROFILE }}
+          endpoint: ${{ secrets.WINDOWS_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.WINDOWS_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.WINDOWS_SIGNING_PROFILE }}
           files: |
             ${{ github.workspace }}\bin\dist\quesma-shipper-windows-amd64.exe
             ${{ github.workspace }}\bin\dist\quesma-shipper-windows-arm64.exe
@@ -159,9 +159,9 @@ jobs:
       - name: Sign the setup executables
         uses: azure/artifact-signing-action@v2
         with:
-          endpoint: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.WINDOWS_SIGNING_PROFILE }}
+          endpoint: ${{ secrets.WINDOWS_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.WINDOWS_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.WINDOWS_SIGNING_PROFILE }}
           files: |
             ${{ github.workspace }}\bin\dist\QuesmaShipperSetup-amd64.exe
             ${{ github.workspace }}\bin\dist\QuesmaShipperSetup-arm64.exe
