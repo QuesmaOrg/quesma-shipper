@@ -90,19 +90,38 @@ begin
   Result := RemoveBackslashUnlessRoot(Trim(Value));
 end;
 
+function TakePathPart(var Remaining: String): String;
+var
+  Separator: Integer;
+begin
+  Separator := Pos(';', Remaining);
+  if Separator = 0 then
+  begin
+    Result := Remaining;
+    Remaining := '';
+  end
+  else
+  begin
+    Result := Copy(Remaining, 1, Separator - 1);
+    Delete(Remaining, 1, Separator);
+  end;
+end;
+
 function PathContains(const PathValue, Entry: String): Boolean;
 var
-  Parts: TArrayOfString;
-  I: Integer;
+  Remaining, Part: String;
 begin
   Result := False;
-  Parts := SplitString(PathValue, ';');
-  for I := 0 to GetArrayLength(Parts) - 1 do
-    if CompareText(NormalizedPath(Parts[I]), NormalizedPath(Entry)) = 0 then
+  Remaining := PathValue;
+  while Remaining <> '' do
+  begin
+    Part := TakePathPart(Remaining);
+    if CompareText(NormalizedPath(Part), NormalizedPath(Entry)) = 0 then
     begin
       Result := True;
       Exit;
     end;
+  end;
 end;
 
 procedure AddToUserPath;
@@ -120,23 +139,24 @@ end;
 
 procedure RemoveFromUserPath;
 var
-  Existing, Updated, AppDir: String;
-  Parts: TArrayOfString;
-  I: Integer;
+  Existing, Updated, AppDir, Remaining, Part: String;
 begin
   if not RegQueryStringValue(HKCU, 'Environment', 'Path', Existing) then
     Exit;
   AppDir := ExpandConstant('{app}');
   Updated := '';
-  Parts := SplitString(Existing, ';');
-  for I := 0 to GetArrayLength(Parts) - 1 do
-    if (Trim(Parts[I]) <> '') and
-       (CompareText(NormalizedPath(Parts[I]), NormalizedPath(AppDir)) <> 0) then
+  Remaining := Existing;
+  while Remaining <> '' do
+  begin
+    Part := TakePathPart(Remaining);
+    if (Trim(Part) <> '') and
+       (CompareText(NormalizedPath(Part), NormalizedPath(AppDir)) <> 0) then
     begin
       if Updated <> '' then
         Updated := Updated + ';';
-      Updated := Updated + Parts[I];
+      Updated := Updated + Part;
     end;
+  end;
   if Updated <> Existing then
     RegWriteExpandStringValue(HKCU, 'Environment', 'Path', Updated);
 end;
