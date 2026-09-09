@@ -224,3 +224,17 @@ func stubBootout(t *testing.T, stub func(bool)) {
 	bootoutLegacy = stub
 	t.Cleanup(func() { bootoutLegacy = real })
 }
+
+func TestIsLegacyBinaryMeansTheFormerNameOutsideAnyBundle(t *testing.T) {
+	if !isLegacyBinary("/Users/me/.local/bin/shipper") {
+		t.Fatal("a raw shipper binary was not recognised")
+	}
+	for _, exe := range []string{
+		"/Users/me/.local/bin/quesma-shipper",
+		"/Users/me/Applications/Shipper.app/Contents/MacOS/shipper",
+	} {
+		if isLegacyBinary(exe) {
+			t.Errorf("%s was treated as a raw former binary", exe)
+		}
+	}
+}
