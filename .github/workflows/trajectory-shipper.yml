@@ -94,11 +94,11 @@ jobs:
             -BinaryPath bin/dist/quesma-shipper-windows-amd64.exe -OutputDir bin/dist
           $setup = (Resolve-Path bin/dist/QuesmaShipperSetup-amd64.exe).Path
           $setupLog = "$env:RUNNER_TEMP\quesma-setup.log"
-          & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="$setupLog"
-          $setupExit = $LASTEXITCODE
-          if ($setupExit -ne 0) {
+          $setupProcess = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList `
+            @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=$setupLog")
+          if ($setupProcess.ExitCode -ne 0) {
             if (Test-Path $setupLog) { Get-Content $setupLog }
-            throw "installer exited $setupExit"
+            throw "installer exited $($setupProcess.ExitCode)"
           }
           schtasks /Query /TN "\Quesma Shipper" | Out-Null
           if ($LASTEXITCODE -ne 0) {
