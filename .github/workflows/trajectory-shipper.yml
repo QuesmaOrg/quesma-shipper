@@ -92,13 +92,20 @@ jobs:
           Pop-Location
           src/packaging/windows/build-setup.ps1 -ReleaseVersion $version -Architecture amd64 `
             -BinaryPath bin/dist/quesma-shipper-windows-amd64.exe -OutputDir bin/dist
-          & bin/dist/QuesmaShipperSetup-amd64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="$env:RUNNER_TEMP\quesma-setup.log"
-          if ($LASTEXITCODE -ne 0) { throw "installer exited $LASTEXITCODE" }
+          $setup = (Resolve-Path bin/dist/QuesmaShipperSetup-amd64.exe).Path
+          $setupLog = "$env:RUNNER_TEMP\quesma-setup.log"
+          & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="$setupLog"
+          $setupExit = $LASTEXITCODE
+          if ($setupExit -ne 0) {
+            if (Test-Path $setupLog) { Get-Content $setupLog }
+            throw "installer exited $setupExit"
+          }
           schtasks /Query /TN "\Quesma Shipper" | Out-Null
           if ($LASTEXITCODE -ne 0) {
-            Get-Content "$env:RUNNER_TEMP\quesma-setup.log"
+            if (Test-Path $setupLog) { Get-Content $setupLog }
             & "$env:LOCALAPPDATA\Programs\Quesma Shipper\quesma-shipper.exe" postinstall
-            throw "scheduled task was not installed; direct postinstall exited $LASTEXITCODE"
+            $postinstallExit = $LASTEXITCODE
+            throw "scheduled task was not installed; direct postinstall exited $postinstallExit"
           }
           & "$env:LOCALAPPDATA\Programs\Quesma Shipper\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
           if ($LASTEXITCODE -ne 0) { throw "uninstaller exited $LASTEXITCODE" }
