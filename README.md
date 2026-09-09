@@ -100,6 +100,10 @@ Everything derived this way passes through the scrub stage like any other file.
 
 ### From a release
 
+The direct links below are hash-pinned bootstrap artifacts, not mutable `latest` URLs. Release
+builds use the signed TUF repository to update themselves after installation. The planned stable
+download endpoints are described in [RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md).
+
 **macOS**
 
 Download and install the signed
