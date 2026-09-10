@@ -20,7 +20,8 @@ func TestTaskRunsAsTheInteractiveUserAndSurvivesUpdates(t *testing.T) {
 	for _, want := range []string{
 		`<LogonType>InteractiveToken</LogonType>`,
 		`<RunLevel>LeastPrivilege</RunLevel>`,
-		`<Interval>PT1H</Interval>`,
+		// Task Scheduler rejects a zero Duration; omitting it is what repeats indefinitely.
+		"<Repetition>\n        <Interval>PT1H</Interval>\n      </Repetition>",
 		`<RestartOnFailure>`,
 		`C:\Users\A &amp; B\Quesma Shipper\quesma-shipper-supervisor.exe`,
 		`<Arguments>"C:\Users\A &amp; B\AppData\Local\quesma-shipper\logs"</Arguments>`,

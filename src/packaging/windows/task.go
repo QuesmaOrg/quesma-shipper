@@ -57,7 +57,6 @@ func renderTask(spec Spec, userSID string) string {
       <UserId>%s</UserId>
       <Repetition>
         <Interval>PT1H</Interval>
-        <Duration>P0D</Duration>
       </Repetition>
     </LogonTrigger>
   </Triggers>
