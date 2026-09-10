@@ -17,8 +17,9 @@ func TestTaskRunsAsTheInteractiveUserAndSurvivesUpdates(t *testing.T) {
 	for _, want := range []string{
 		`<LogonType>InteractiveToken</LogonType>`,
 		`<RunLevel>LeastPrivilege</RunLevel>`,
+		`<Interval>PT1H</Interval>`,
 		`<RestartOnFailure>`,
-		`C:\Users\A &amp; B\Quesma Shipper\quesma-shipper-task.cmd`,
+		`C:\Users\A &amp; B\Quesma Shipper\quesma-shipper-supervisor.exe`,
 	} {
 		if !strings.Contains(raw, want) {
 			t.Errorf("task XML lacks %q:\n%s", want, raw)
@@ -60,7 +61,7 @@ func TestTaskXMLForSchtasksIsUTF16AndRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if doc.Actions.Exec.Command != `C:\Quesma Shipper\quesma-shipper-task.cmd` {
+	if doc.Actions.Exec.Command != `C:\Quesma Shipper\quesma-shipper-supervisor.exe` {
 		t.Fatalf("parsed command = %q", doc.Actions.Exec.Command)
 	}
 }
@@ -72,7 +73,7 @@ func TestTaskXMLIsWellFormed(t *testing.T) {
 }
 
 func TestTaskRunnerMapsBackToTheOwnedProgram(t *testing.T) {
-	runner := `C:\Users\Jane\Quesma Shipper\QUESMA-SHIPPER-TASK.CMD`
+	runner := `C:\Users\Jane\Quesma Shipper\QUESMA-SHIPPER-SUPERVISOR.EXE`
 	want := `C:\Users\Jane\Quesma Shipper\quesma-shipper.exe`
 	if got := programFromTask(runner); got != want {
 		t.Fatalf("programFromTask(%q) = %q, want %q", runner, got, want)

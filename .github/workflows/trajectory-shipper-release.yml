@@ -145,6 +145,8 @@ jobs:
       #     files: |
       #       ${{ github.workspace }}\bin\dist\quesma-shipper-windows-amd64.exe
       #       ${{ github.workspace }}\bin\dist\quesma-shipper-windows-arm64.exe
+      #       ${{ github.workspace }}\bin\dist\quesma-shipper-windows-amd64-supervisor.exe
+      #       ${{ github.workspace }}\bin\dist\quesma-shipper-windows-arm64-supervisor.exe
       #     file-digest: SHA256
       #     timestamp-rfc3161: http://timestamp.acs.microsoft.com
       #     timestamp-digest: SHA256
@@ -156,6 +158,7 @@ jobs:
               -ReleaseVersion "${{ needs.version.outputs.value }}" `
               -Architecture $arch `
               -BinaryPath "bin/dist/quesma-shipper-windows-$arch.exe" `
+              -SupervisorPath "bin/dist/quesma-shipper-windows-$arch-supervisor.exe" `
               -OutputDir "bin/dist"
           }
       # - name: Sign the setup executables

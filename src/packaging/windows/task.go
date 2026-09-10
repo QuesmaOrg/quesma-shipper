@@ -1,5 +1,10 @@
 // Package windows owns the per-user Task Scheduler entry. The task runs in the interactive
 // user's security context because the shipper reads that user's coding-agent stores.
+//
+// Task Scheduler terminates an action rather than delivering the Unix signals used by the
+// shipper's drain path. The supervisor therefore puts the child in a kill-on-close Job Object:
+// stopping the task is deterministic, but not graceful. This is safe because a source is only
+// committed after its destination confirms the write, so an interrupted tick is replayed.
 package windows
 
 import (
@@ -16,7 +21,7 @@ type Spec = common.Spec
 type Status = common.Status
 
 const TaskName = `\Quesma Shipper`
-const taskRunnerName = "quesma-shipper-task.cmd"
+const taskRunnerName = "quesma-shipper-supervisor.exe"
 
 func taskRunner(executable string) string {
 	if slash := strings.LastIndexAny(executable, `\/`); slash >= 0 {
@@ -50,6 +55,10 @@ func renderTask(spec Spec, userSID string) string {
       <Enabled>true</Enabled>
       <Delay>PT30S</Delay>
       <UserId>%s</UserId>
+      <Repetition>
+        <Interval>PT1H</Interval>
+        <Duration>P0D</Duration>
+      </Repetition>
     </LogonTrigger>
   </Triggers>
   <Principals>
@@ -70,8 +79,8 @@ func renderTask(spec Spec, userSID string) string {
     <Enabled>true</Enabled>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
     <RestartOnFailure>
-      <Interval>PT1M</Interval>
-      <Count>999</Count>
+      <Interval>PT15M</Interval>
+      <Count>3</Count>
     </RestartOnFailure>
     <Priority>7</Priority>
   </Settings>

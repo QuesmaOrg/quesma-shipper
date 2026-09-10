@@ -27,3 +27,5 @@ func serviceState() ServiceStatus                     { return windowspkg.Servic
 func RestartService() error                           { return windowspkg.RestartService() }
 func RestartCommand() string                          { return windowspkg.RestartCommand() }
 func RemoveProgram(executable string) (string, error) { return windowspkg.RemoveProgram(executable) }
+func SameProgram(a, b string) bool                    { return windowspkg.SameProgram(a, b) }
+func ProgramRemovalDeferred() bool                    { return windowspkg.ProgramRemovalDeferred() }

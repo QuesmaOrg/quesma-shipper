@@ -10,6 +10,12 @@
 #ifndef BinaryPath
   #error BinaryPath is required
 #endif
+#ifndef SupervisorPath
+  #error SupervisorPath is required
+#endif
+#ifndef FileVersion
+  #error FileVersion is required
+#endif
 #ifndef OutputDir
   #define OutputDir "."
 #endif
@@ -50,22 +56,16 @@ UninstallDisplayIcon={app}\quesma-shipper.exe
 VersionInfoCompany=Quesma Poland Sp. z o.o.
 VersionInfoDescription=Quesma Shipper installer
 VersionInfoProductName=Quesma Shipper
-VersionInfoVersion={#Copy(ReleaseVersion, 1, Pos("-", ReleaseVersion + "-") - 1)}
-VersionInfoProductVersion={#Copy(ReleaseVersion, 1, Pos("-", ReleaseVersion + "-") - 1)}
+VersionInfoVersion={#FileVersion}
+VersionInfoProductVersion={#FileVersion}
 VersionInfoProductTextVersion={#ReleaseVersion}
 LicenseFile={#SourcePath}\..\..\..\LICENSE
 
 [Files]
 Source: "{#BinaryPath}"; DestDir: "{app}"; DestName: "quesma-shipper.exe"; Flags: ignoreversion
-Source: "{#SourcePath}\quesma-shipper-task.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SupervisorPath}"; DestDir: "{app}"; DestName: "quesma-shipper-supervisor.exe"; Flags: ignoreversion
 Source: "{#SourcePath}\..\..\..\LICENSE"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "{#SourcePath}\..\..\..\NOTICE"; DestDir: "{app}\licenses"; Flags: ignoreversion
-
-[Run]
-Filename: "{app}\quesma-shipper.exe"; Parameters: "postinstall"; StatusMsg: "Starting Quesma Shipper..."; Flags: runhidden waituntilterminated
-
-[UninstallRun]
-Filename: "{app}\quesma-shipper.exe"; Parameters: "service uninstall"; RunOnceId: "RemoveScheduledTask"; Flags: runhidden waituntilterminated skipifdoesntexist
 
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -79,10 +79,40 @@ begin
     Exit;
   if not Exec(ExistingProgram, 'service uninstall', '', SW_HIDE,
               ewWaitUntilTerminated, ExitCode) then
-    Result := 'Could not stop the existing Quesma Shipper background task.'
+    Log('Could not invoke the existing Quesma Shipper to remove its background task; continuing.')
   else if ExitCode <> 0 then
-    Result := 'The existing Quesma Shipper background task could not be removed (exit code ' +
-              IntToStr(ExitCode) + ').';
+    Log('The existing Quesma Shipper could not remove its background task (exit code ' +
+        IntToStr(ExitCode) + '); continuing so setup can repair the installation.');
+end;
+
+procedure StartShipper;
+var
+  ExitCode: Integer;
+  ProgramPath: String;
+begin
+  ProgramPath := ExpandConstant('{app}\quesma-shipper.exe');
+  if not Exec(ProgramPath, 'postinstall', '', SW_HIDE,
+              ewWaitUntilTerminated, ExitCode) then
+    RaiseException('Could not start Quesma Shipper after installation.');
+  if ExitCode <> 0 then
+    RaiseException('Quesma Shipper could not register or start its background task (exit code ' +
+                   IntToStr(ExitCode) + ').');
+end;
+
+procedure StopShipperForUninstall;
+var
+  ExitCode: Integer;
+  ProgramPath: String;
+begin
+  ProgramPath := ExpandConstant('{app}\quesma-shipper.exe');
+  if not FileExists(ProgramPath) then
+    Exit;
+  if not Exec(ProgramPath, 'service uninstall', '', SW_HIDE,
+              ewWaitUntilTerminated, ExitCode) then
+    RaiseException('Could not stop the Quesma Shipper background task.');
+  if ExitCode <> 0 then
+    RaiseException('The Quesma Shipper background task could not be removed (exit code ' +
+                   IntToStr(ExitCode) + ').');
 end;
 
 function NormalizedPath(const Value: String): String;
@@ -164,11 +194,21 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
+  begin
     AddToUserPath;
+    StartShipper;
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
+  begin
+    StopShipperForUninstall;
     RemoveFromUserPath;
+  end;
 end;
+
+[UninstallDelete]
+Type: files; Name: "{app}\.quesma-shipper.exe.old"
+Type: dirifempty; Name: "{app}"

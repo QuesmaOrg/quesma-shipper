@@ -27,3 +27,8 @@ func RecordRun(stateDir string, at time.Time) error { return common.RecordRun(st
 func RotateLogs(logDir string)                      { common.RotateLogs(logDir) }
 func ServiceProgram(st ServiceStatus) string        { return common.ServiceProgram(st) }
 func RemoveState(stateDir string) error             { return common.RemoveState(stateDir) }
+func ReadSelfUpdateHop(stateDir string) string      { return common.ReadSelfUpdateHop(stateDir) }
+func WriteSelfUpdateHop(stateDir, version string) error {
+	return common.WriteSelfUpdateHop(stateDir, version)
+}
+func ClearSelfUpdateHop(stateDir string) error { return common.ClearSelfUpdateHop(stateDir) }

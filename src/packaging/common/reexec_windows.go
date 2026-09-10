@@ -5,13 +5,11 @@ import (
 	"os/exec"
 )
 
-const supervisedEnv = "SHIPPER_SUPERVISED"
-
 // No exec(2) on Windows: start the new binary and leave; waiting would keep a stale parent alive.
 func ReExec() error {
-	if os.Getenv(supervisedEnv) != "" {
+	if os.Getenv(SupervisedEnv) != "" {
 		// The installed runner starts the replaced binary without letting it escape supervision.
-		os.Exit(75)
+		os.Exit(SupervisorRestartExitCode)
 	}
 	exe, err := os.Executable()
 	if err != nil {

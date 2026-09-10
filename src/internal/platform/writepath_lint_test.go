@@ -104,11 +104,13 @@ var writeCapablePackages = []string{
 //	pause.go    the pause-state flag it must be able to set and clear
 //	packaging/common/service.go  service state
 //	packaging/common/remove.go  the installed standalone executable
+//	packaging/common/selfupdate.go  the cross-supervisor self-update hop guard
 var writeCapableFiles = []string{
 	"internal/platform/safeio.go",
 	"internal/engine/state.go",
 	"packaging/common/service.go",
 	"packaging/common/remove.go",
+	"packaging/common/selfupdate.go",
 	"internal/platform/pause.go",
 	"internal/sources/ignore.go",
 }

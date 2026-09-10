@@ -20,20 +20,23 @@ func TestTheBootGateKeepsItsPromises(t *testing.T) {
 		name    string
 		build   app.Build
 		vars    map[string]string
+		hop     string
 		wantRun bool
 		loud    bool // a skip the operator should see a line about
 	}{
-		{"a released daemon updates", release, nil, true, false},
-		{"a dev build never does, silently", dev, nil, false, false},
+		{"a released daemon updates", release, nil, "", true, false},
+		{"a dev build never does, silently", dev, nil, "", false, false},
 		{"a dev build ignores even a stray re-exec guard", dev,
-			map[string]string{app.ReexecGuardEnv: "0.0.1-9.x"}, false, false},
+			map[string]string{app.ReexecGuardEnv: "0.0.1-9.x"}, "", false, false},
 		{"the env kill switch wins and says so", release,
-			map[string]string{app.NoSelfUpdateEnv: "1"}, false, true},
+			map[string]string{app.NoSelfUpdateEnv: "1"}, "", false, true},
 		{"the hop guard stops a second update this boot and says so", release,
-			map[string]string{app.ReexecGuardEnv: "0.0.1-124.def456def456"}, false, true},
+			map[string]string{app.ReexecGuardEnv: "0.0.1-124.def456def456"}, "", false, true},
+		{"the persisted hop survives a supervisor restart", release, nil,
+			"0.0.1-124.def456def456", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			run, why := selfUpdateGate(tc.build, env(tc.vars))
+			run, why := selfUpdateGate(tc.build, env(tc.vars), tc.hop)
 			if run != tc.wantRun {
 				t.Errorf("run = %v, want %v", run, tc.wantRun)
 			}

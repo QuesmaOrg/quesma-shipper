@@ -128,10 +128,15 @@ and
 
 **Windows**
 
-Download `QuesmaShipperSetup-amd64.exe` on an x64 PC or `QuesmaShipperSetup-arm64.exe` on an Arm PC
-and run it as your normal user. The setup installs the command under `%LOCALAPPDATA%`, adds it to
+Download [QuesmaShipperSetup-amd64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe)
+on an x64 PC or [QuesmaShipperSetup-arm64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe)
+on an Arm PC and run it as your normal user. The setup installs the command under `%LOCALAPPDATA%`, adds it to
 your user `PATH`, and registers a scheduled task that starts immediately and at login without
 administrator rights. Re-running setup repairs that integration without changing enrollment.
+
+Windows release signing is temporarily disabled while the publisher identity is validated. Until
+it is restored, Microsoft Defender SmartScreen may warn about the download, and managed devices
+whose application-control policy requires a trusted publisher may block it.
 
 The raw `quesma-shipper-windows-<arch>.exe` files remain available for portable use and are the
 payloads installed by the TUF self-updater. A portable copy has no scheduled task or uninstaller.
@@ -157,8 +162,10 @@ On Windows with Inno Setup installed, build an installer with:
 
 ```powershell
 src/packaging/windows/build-setup.ps1 -ReleaseVersion <version> -Architecture amd64 `
-  -BinaryPath <binary> -OutputDir bin/dist
+  -BinaryPath <binary> -SupervisorPath <supervisor-binary> -OutputDir bin/dist
 ```
+
+`make dist RELEASE_VERSION=<version>` cross-compiles both Windows binaries.
 
 ### Enroll
 

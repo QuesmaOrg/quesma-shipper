@@ -7,4 +7,6 @@ func serviceState() ServiceStatus                     { return macos.ServiceStat
 func RestartService() error                           { return macos.RestartService() }
 func RestartCommand() string                          { return macos.RestartCommand() }
 func RemoveProgram(executable string) (string, error) { return macos.RemoveProgram(executable) }
+func SameProgram(a, b string) bool                    { return a == b }
+func ProgramRemovalDeferred() bool                    { return false }
 func PostInstall() (ServiceStatus, error)             { return macos.PostInstall() }

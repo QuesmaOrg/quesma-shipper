@@ -89,9 +89,12 @@ jobs:
           Push-Location src
           go build -trimpath -ldflags "-X github.com/QuesmaOrg/quesma-shipper/internal/platform.releaseVersion=$version" `
             -o ../bin/dist/quesma-shipper-windows-amd64.exe ./cmd/quesma-shipper
+          go build -trimpath -ldflags "-s -w -H windowsgui" `
+            -o ../bin/dist/quesma-shipper-windows-amd64-supervisor.exe ./cmd/quesma-shipper-supervisor
           Pop-Location
           src/packaging/windows/build-setup.ps1 -ReleaseVersion $version -Architecture amd64 `
-            -BinaryPath bin/dist/quesma-shipper-windows-amd64.exe -OutputDir bin/dist
+            -BinaryPath bin/dist/quesma-shipper-windows-amd64.exe `
+            -SupervisorPath bin/dist/quesma-shipper-windows-amd64-supervisor.exe -OutputDir bin/dist
           $setup = (Resolve-Path bin/dist/QuesmaShipperSetup-amd64.exe).Path
           $setupLog = "$env:RUNNER_TEMP\quesma-setup.log"
           $setupProcess = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList `
@@ -99,6 +102,17 @@ jobs:
           if ($setupProcess.ExitCode -ne 0) {
             if (Test-Path $setupLog) { Get-Content $setupLog }
             throw "installer exited $($setupProcess.ExitCode)"
+          }
+          $deadline = (Get-Date).AddSeconds(15)
+          do {
+            $task = Get-ScheduledTask -TaskName "Quesma Shipper" -ErrorAction Stop
+            $supervisor = Get-Process quesma-shipper-supervisor -ErrorAction SilentlyContinue
+            $shipper = Get-Process quesma-shipper -ErrorAction SilentlyContinue
+            if ($task.State -eq "Running" -and $supervisor -and $shipper) { break }
+            Start-Sleep -Seconds 1
+          } while ((Get-Date) -lt $deadline)
+          if ($task.State -ne "Running" -or -not $supervisor -or -not $shipper) {
+            throw "scheduled task did not become live (state=$($task.State), supervisor=$([bool]$supervisor), shipper=$([bool]$shipper))"
           }
           schtasks /Query /TN "\Quesma Shipper" | Out-Null
           if ($LASTEXITCODE -ne 0) {

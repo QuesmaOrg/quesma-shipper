@@ -3,8 +3,11 @@
 package windows
 
 import (
+	"bytes"
+	"encoding/csv"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/user"
@@ -61,20 +64,34 @@ func InstallService(spec Spec) (Status, error) {
 func UninstallService() error {
 	_, _ = schtasks("/End", "/TN", TaskName)
 	out, err := schtasks("/Delete", "/TN", TaskName, "/F")
-	if err != nil && !taskMissing(err, out) {
-		return fmt.Errorf("supervise: delete scheduled task: %s", commandError(err, out))
+	if err == nil {
+		return nil
 	}
-	return nil
+	exists, verifyErr := taskExists()
+	if verifyErr == nil && !exists {
+		return nil
+	}
+	if verifyErr != nil {
+		return fmt.Errorf("supervise: delete scheduled task: %s (could not verify absence: %v)",
+			commandError(err, out), verifyErr)
+	}
+	return fmt.Errorf("supervise: delete scheduled task: %s", commandError(err, out))
 }
 
 func ServiceState() Status {
 	st := Status{Kind: common.KindWindowsTask, Path: TaskName}
 	out, err := schtasks("/Query", "/TN", TaskName, "/XML")
 	if err != nil {
-		if taskMissing(err, out) {
+		exists, verifyErr := taskExists()
+		if verifyErr == nil && !exists {
 			st.Detail = "no scheduled task installed; `quesma-shipper run` works in the foreground"
 		} else {
 			st.Detail = "cannot query scheduled task: " + commandError(err, out)
+			if verifyErr != nil {
+				st.Detail += "; cannot enumerate tasks: " + verifyErr.Error()
+			} else {
+				st.Installed = true
+			}
 		}
 		return st
 	}
@@ -118,15 +135,37 @@ func RemoveProgram(executable string) (string, error) {
 	return executable, errors.New("this is a portable executable; remove it after this command exits")
 }
 
+func SameProgram(a, b string) bool {
+	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+}
+
+func ProgramRemovalDeferred() bool { return true }
+
 func schtasks(args ...string) ([]byte, error) {
 	return exec.Command("schtasks.exe", args...).CombinedOutput()
 }
 
-func taskMissing(err error, out []byte) bool {
-	// schtasks localizes its message and collapses a missing task to exit code 1.
-	var exit *exec.ExitError
-	return strings.Contains(string(out), "0x80070002") ||
-		(errors.As(err, &exit) && exit.ExitCode() == 1)
+// taskExists enumerates all tasks after a targeted operation failed. A successful enumeration can
+// prove absence without interpreting schtasks' localized text or its catch-all exit code 1.
+func taskExists() (bool, error) {
+	out, err := schtasks("/Query", "/FO", "CSV", "/NH")
+	if err != nil {
+		return false, errors.New(commandError(err, out))
+	}
+	r := csv.NewReader(bytes.NewReader(out))
+	r.FieldsPerRecord = -1
+	for {
+		record, err := r.Read()
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf("parse task enumeration: %w", err)
+		}
+		if len(record) > 0 && strings.EqualFold(strings.TrimSpace(record[0]), TaskName) {
+			return true, nil
+		}
+	}
 }
 
 func commandError(err error, out []byte) string {

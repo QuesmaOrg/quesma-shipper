@@ -37,6 +37,12 @@ dist: ## Cross-compile the shipper for every supported platform into bin/dist
 		(cd $(MODULE) && CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch \
 			go build -trimpath -ldflags "$(LDFLAGS) -s -w" -o ../$$out ./cmd/quesma-shipper) || exit 1; \
 	done
+	@for arch in amd64 arm64; do \
+		out=$(DIST)/quesma-shipper-windows-$$arch-supervisor.exe; \
+		echo "building $$out"; \
+		(cd $(MODULE) && CGO_ENABLED=0 GOOS=windows GOARCH=$$arch \
+			go build -trimpath -ldflags "-s -w -H windowsgui" -o ../$$out ./cmd/quesma-shipper-supervisor) || exit 1; \
+	done
 	@echo "built $(DIST)/ ($(VERSION))"
 
 .PHONY: macos-pkg
