@@ -120,7 +120,10 @@ jobs:
           if (-not (Test-Path "$logDir\agent.err.log")) {
             throw "supervisor did not redirect the shipper's output into $logDir"
           }
-          schtasks /Query /TN "\Quesma Shipper" | Out-Null
+          # The task name carries the installing user's SID, so two accounts cannot collide.
+          $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+          $taskName = "\Quesma Shipper - $sid"
+          schtasks /Query /TN $taskName | Out-Null
           if ($LASTEXITCODE -ne 0) {
             if (Test-Path $setupLog) { Get-Content $setupLog }
             & "$env:LOCALAPPDATA\Programs\Quesma Shipper\quesma-shipper.exe" postinstall
@@ -131,7 +134,7 @@ jobs:
           $uninstallProcess = Start-Process -FilePath $uninstaller -Wait -PassThru -ArgumentList `
             @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
           if ($uninstallProcess.ExitCode -ne 0) { throw "uninstaller exited $($uninstallProcess.ExitCode)" }
-          schtasks /Query /TN "\Quesma Shipper" 2>$null | Out-Null
+          schtasks /Query /TN $taskName 2>$null | Out-Null
           if ($LASTEXITCODE -eq 0) { throw "scheduled task survived uninstall" }
           $global:LASTEXITCODE = 0
 
