@@ -47,6 +47,8 @@ https://updates.quesma.dev/download/quesma-shipper-linux-amd64
 https://updates.quesma.dev/download/quesma-shipper-linux-arm64
 https://updates.quesma.dev/download/quesma-shipper-windows-amd64.exe
 https://updates.quesma.dev/download/quesma-shipper-windows-arm64.exe
+https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe
+https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe
 ```
 
 Each endpoint resolves `timestamp.json`, the referenced snapshot and targets metadata, and
@@ -86,6 +88,8 @@ const downloads: Record<string, string> = {
   "/download/quesma-shipper-linux-arm64": "linux/arm64",
   "/download/quesma-shipper-windows-amd64.exe": "windows/amd64",
   "/download/quesma-shipper-windows-arm64.exe": "windows/arm64",
+  "/download/QuesmaShipperSetup-amd64.exe": "windows/amd64/setup",
+  "/download/QuesmaShipperSetup-arm64.exe": "windows/arm64/setup",
 };
 
 type Metadata = {

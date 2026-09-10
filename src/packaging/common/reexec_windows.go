@@ -7,6 +7,10 @@ import (
 
 // No exec(2) on Windows: start the new binary and leave; waiting would keep a stale parent alive.
 func ReExec() error {
+	if os.Getenv(SupervisedEnv) != "" {
+		// The installed runner starts the replaced binary without letting it escape supervision.
+		os.Exit(SupervisorRestartExitCode)
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return err

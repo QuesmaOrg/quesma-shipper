@@ -44,7 +44,7 @@ func uninstallCmd(b app.Build) *cobra.Command {
 				return nil
 			}
 			fmt.Fprintln(w)
-			err = app.Uninstall(purge, func(s app.UninstallStep) {
+			deferred, err := app.Uninstall(purge, func(s app.UninstallStep) {
 				switch {
 				case s.Err != nil:
 					fmt.Fprintf(w, "  %s  %s  %s: %v\n", p.glyph(app.SevFail), s.Done, app.HomeTilde(s.Detail), s.Err)
@@ -63,7 +63,11 @@ func uninstallCmd(b app.Build) *cobra.Command {
 				banner(w, p, p.red, "not fully removed", "")
 				return errSilent{code: 1}
 			}
-			banner(w, p, p.red, "removed", "")
+			if deferred {
+				banner(w, p, p.red, "removal finishing", "the Windows uninstaller is running in the background")
+			} else {
+				banner(w, p, p.red, "removed", "")
+			}
 			return nil
 		},
 	}

@@ -57,3 +57,6 @@ func serviceState() ServiceStatus {
 func RestartService() error                           { return linuxpkg.RestartService() }
 func RestartCommand() string                          { return linuxpkg.RestartCommand() }
 func RemoveProgram(executable string) (string, error) { return common.RemoveProgram(executable) }
+func SameProgram(a, b string) bool                    { return a == b }
+func ProgramRemovalDeferred() bool                    { return false }
+func RemovalUnverified(error) bool                    { return false }

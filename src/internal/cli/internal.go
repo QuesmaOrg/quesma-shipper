@@ -23,6 +23,10 @@ func serviceCmd() *cobra.Command {
 	uninstall := &cobra.Command{Use: "uninstall", Short: "Unload and delete the service entry", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			kind, err := packaging.UninstallService()
+			if packaging.RemovalUnverified(err) {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %v\n", err)
+				return nil
+			}
 			if err != nil {
 				return err
 			}

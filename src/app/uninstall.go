@@ -14,10 +14,10 @@ type UninstallStep struct {
 	Err    error
 }
 
-func Uninstall(purge bool, report func(UninstallStep)) error {
+func Uninstall(purge bool, report func(UninstallStep)) (bool, error) {
 	_, paths, err := ResolveEffective()
 	if err != nil {
-		return err
+		return false, err
 	}
 	exe, err := os.Executable()
 	if err == nil {
@@ -29,22 +29,35 @@ func Uninstall(purge bool, report func(UninstallStep)) error {
 	switch program := packaging.ServiceProgram(st); {
 	case !st.Installed:
 		report(UninstallStep{Skip: "no background service to remove"})
-	case program != "" && program != exe:
+	case program != "" && !packaging.SameProgram(program, exe):
 		report(UninstallStep{Skip: "background service left alone, it runs " + program})
 	default:
 		kind, err := packaging.UninstallService()
+		if packaging.RemovalUnverified(err) {
+			report(UninstallStep{Skip: "background service removal could not be confirmed: " + err.Error()})
+			break
+		}
 		report(UninstallStep{Done: "background service stopped and removed", Detail: string(kind), Err: err})
 		if err != nil {
-			return err
+			return false, err
+		}
+	}
+	if packaging.ProgramRemovalDeferred() {
+		if err := uninstallState(paths.StateDir, purge, report); err != nil {
+			return false, err
 		}
 	}
 	removed, err := packaging.RemoveProgram(exe)
 	if err != nil {
 		report(UninstallStep{Done: "program removed", Detail: removed, Err: err})
-		return err
+		return false, err
+	}
+	if packaging.ProgramRemovalDeferred() {
+		report(UninstallStep{Done: "Windows uninstaller started", Detail: removed})
+		return true, nil
 	}
 	report(UninstallStep{Done: "program removed", Detail: removed})
-	return uninstallState(paths.StateDir, purge, report)
+	return false, uninstallState(paths.StateDir, purge, report)
 }
 
 func uninstallState(stateDir string, purge bool, report func(UninstallStep)) error {

@@ -12,7 +12,12 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
 
-func clearSelfUpdateHop() { os.Unsetenv(app.ReexecGuardEnv) }
+func clearSelfUpdateHop() {
+	os.Unsetenv(app.ReexecGuardEnv) // clean up guards inherited from pre-file releases
+	if stateDir, err := app.StateDirWithoutConfig(); err == nil {
+		_ = packaging.ClearSelfUpdateHop(stateDir)
+	}
+}
 
 func updateCmd(build app.Build) *cobra.Command {
 	cmd := &cobra.Command{
@@ -54,7 +59,9 @@ func restartService(w io.Writer) error {
 	return nil
 }
 
-func selfUpdateGate(build app.Build, getenv func(string) string) (run bool, why string) {
+// selfUpdateGate blocks the hop that did not land: we updated to persistedHop, restarted, and are
+// still not running it. A hop that matches this build has done its job and the caller clears it.
+func selfUpdateGate(build app.Build, getenv func(string) string, persistedHop string) (run bool, why string) {
 	if !build.Release {
 		return false, ""
 	}
@@ -64,11 +71,22 @@ func selfUpdateGate(build app.Build, getenv func(string) string) (run bool, why 
 	if to := getenv(app.ReexecGuardEnv); to != "" {
 		return false, "already updated to " + to + " this boot"
 	}
+	if persistedHop != "" && persistedHop != build.Version {
+		return false, "already updated to " + persistedHop + " but still running " + build.Version
+	}
 	return true, ""
 }
 
 func maybeSelfUpdate(ctx context.Context, build app.Build, errOut io.Writer) {
-	run, why := selfUpdateGate(build, os.Getenv)
+	stateDir, stateErr := app.StateDirWithoutConfig()
+	persistedHop := ""
+	if stateErr == nil {
+		persistedHop = packaging.ReadSelfUpdateHop(stateDir)
+		if persistedHop == build.Version {
+			_ = packaging.ClearSelfUpdateHop(stateDir)
+		}
+	}
+	run, why := selfUpdateGate(build, os.Getenv, persistedHop)
 	if !run {
 		if why != "" {
 			fmt.Fprintf(errOut, "self-update: %s\n", why)
@@ -89,7 +107,17 @@ func maybeSelfUpdate(ctx context.Context, build app.Build, errOut io.Writer) {
 		return
 	}
 	fmt.Fprintf(errOut, "self-update: %s -> %s, restarting\n", res.From, res.To)
-	os.Setenv(app.ReexecGuardEnv, res.To)
+	if stateErr != nil {
+		fmt.Fprintf(errOut, "self-update: cannot persist the restart guard (%v); the new version runs from the next supervised restart\n", stateErr)
+		app.RecordUpdateFailure(fmt.Sprintf("updated to %s but could not persist the restart guard: %v", res.To, stateErr))
+		return
+	}
+	if err := packaging.WriteSelfUpdateHop(stateDir, res.To); err != nil {
+		fmt.Fprintf(errOut, "self-update: cannot persist the restart guard (%v); the new version runs from the next supervised restart\n", err)
+		app.RecordUpdateFailure(fmt.Sprintf("updated to %s but could not persist the restart guard: %v", res.To, err))
+		return
+	}
+	os.Setenv(app.ReexecGuardEnv, res.To) // keeps compatibility with an older Unix binary on the hop
 	if err := packaging.ReExec(); err != nil {
 		fmt.Fprintf(errOut, "self-update: restart failed (%v); the new version runs from the next restart\n", err)
 		// The binary IS updated; only the restart failed. Recorded because a supervisor that never

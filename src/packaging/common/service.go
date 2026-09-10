@@ -17,8 +17,9 @@ import (
 type Kind string
 
 const (
-	KindLaunchd Kind = "launchd"
-	KindSystemd Kind = "systemd-user"
+	KindLaunchd     Kind = "launchd"
+	KindSystemd     Kind = "systemd-user"
+	KindWindowsTask Kind = "windows-task"
 
 	// KindCron is the non-systemd Linux fallback: the client prints a crontab line, never edits one.
 	KindCron Kind = "cron"
@@ -85,6 +86,9 @@ type Status struct {
 
 	// Path is the unit or plist file.
 	Path string
+
+	// Program is set by supervisors whose entries are not represented by a readable file.
+	Program string
 
 	// LastRun is when the loop last completed a flush; zero on a loaded agent is the alarm.
 	LastRun time.Time
@@ -169,6 +173,9 @@ func cronExpr(tick time.Duration) string {
 
 // ServiceProgram reads the executable owned by an installed service entry.
 func ServiceProgram(st Status) string {
+	if st.Program != "" {
+		return st.Program
+	}
 	raw, err := os.ReadFile(st.Path)
 	if err != nil {
 		return ""

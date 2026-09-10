@@ -80,6 +80,60 @@ jobs:
           cache-dependency-path: src/go.sum
       - run: go test ./...
         working-directory: src
+      - name: Build and exercise the per-user installer
+        shell: pwsh
+        run: |
+          $version = (sh scripts/release-version.sh).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "could not compute release version" }
+          New-Item -ItemType Directory -Force bin/dist | Out-Null
+          Push-Location src
+          go build -trimpath -ldflags "-X github.com/QuesmaOrg/quesma-shipper/internal/platform.releaseVersion=$version" `
+            -o ../bin/dist/quesma-shipper-windows-amd64.exe ./cmd/quesma-shipper
+          go build -trimpath -ldflags "-s -w -H windowsgui" `
+            -o ../bin/dist/quesma-shipper-windows-amd64-supervisor.exe ./cmd/quesma-shipper-supervisor
+          Pop-Location
+          src/packaging/windows/build-setup.ps1 -ReleaseVersion $version -Architecture amd64 `
+            -BinaryPath bin/dist/quesma-shipper-windows-amd64.exe `
+            -SupervisorPath bin/dist/quesma-shipper-windows-amd64-supervisor.exe -OutputDir bin/dist
+          $setup = (Resolve-Path bin/dist/QuesmaShipperSetup-amd64.exe).Path
+          $setupLog = "$env:RUNNER_TEMP\quesma-setup.log"
+          $setupProcess = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList `
+            @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=$setupLog")
+          if ($setupProcess.ExitCode -ne 0) {
+            if (Test-Path $setupLog) { Get-Content $setupLog }
+            throw "installer exited $($setupProcess.ExitCode)"
+          }
+          # Registration is not liveness: assert both processes and the redirected logs.
+          $deadline = (Get-Date).AddSeconds(30)
+          do {
+            $supervisor = Get-Process quesma-shipper-supervisor -ErrorAction SilentlyContinue
+            $shipper = Get-Process quesma-shipper -ErrorAction SilentlyContinue
+            if ($supervisor -and $shipper) { break }
+            Start-Sleep -Seconds 1
+          } while ((Get-Date) -lt $deadline)
+          if (-not $supervisor -or -not $shipper) {
+            if (Test-Path $setupLog) { Get-Content $setupLog }
+            & "$env:LOCALAPPDATA\Programs\Quesma Shipper\quesma-shipper.exe" postinstall
+            throw "task did not become live: postinstall exited $LASTEXITCODE (supervisor=$([bool]$supervisor), shipper=$([bool]$shipper))"
+          }
+          $logDir = "$env:USERPROFILE\.local\state\trajectory-shipper\logs"
+          if (-not (Test-Path "$logDir\agent.err.log")) {
+            throw "supervisor did not redirect the shipper's output into $logDir"
+          }
+          schtasks /Query /TN "\Quesma Shipper" | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            if (Test-Path $setupLog) { Get-Content $setupLog }
+            & "$env:LOCALAPPDATA\Programs\Quesma Shipper\quesma-shipper.exe" postinstall
+            $postinstallExit = $LASTEXITCODE
+            throw "scheduled task was not installed; direct postinstall exited $postinstallExit"
+          }
+          $uninstaller = "$env:LOCALAPPDATA\Programs\Quesma Shipper\unins000.exe"
+          $uninstallProcess = Start-Process -FilePath $uninstaller -Wait -PassThru -ArgumentList `
+            @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
+          if ($uninstallProcess.ExitCode -ne 0) { throw "uninstaller exited $($uninstallProcess.ExitCode)" }
+          schtasks /Query /TN "\Quesma Shipper" 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) { throw "scheduled task survived uninstall" }
+          $global:LASTEXITCODE = 0
 
   macos-package:
     runs-on: macos-15
