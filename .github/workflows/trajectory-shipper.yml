@@ -113,8 +113,8 @@ jobs:
           } while ((Get-Date) -lt $deadline)
           if (-not $supervisor -or -not $shipper) {
             if (Test-Path $setupLog) { Get-Content $setupLog }
-            schtasks /Query /TN "\Quesma Shipper" /FO LIST /V
-            throw "task did not become live (supervisor=$([bool]$supervisor), shipper=$([bool]$shipper))"
+            & "$env:LOCALAPPDATA\Programs\Quesma Shipper\quesma-shipper.exe" postinstall
+            throw "task did not become live: postinstall exited $LASTEXITCODE (supervisor=$([bool]$supervisor), shipper=$([bool]$shipper))"
           }
           $logDir = "$env:USERPROFILE\.local\state\trajectory-shipper\logs"
           if (-not (Test-Path "$logDir\agent.err.log")) {
