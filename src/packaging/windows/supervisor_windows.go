@@ -2,6 +2,7 @@ package windows
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,12 +18,22 @@ import (
 // RunSupervisor keeps the replaceable shipper binary under a stable, windowless Task Scheduler
 // action. The caller is built with -H windowsgui; CREATE_NO_WINDOW keeps its child windowless too.
 func RunSupervisor() {
-	if supervise() != nil {
-		os.Exit(1)
+	logDir := ""
+	if len(os.Args) > 1 {
+		logDir = os.Args[1]
 	}
+	err := supervise(logDir)
+	if err == nil {
+		return
+	}
+	if f, openErr := openLog(logDir, "agent.err.log"); openErr == nil {
+		fmt.Fprintf(f, "supervisor giving up: %v\n", err)
+		f.Close()
+	}
+	os.Exit(1)
 }
 
-func supervise() error {
+func supervise(logDir string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -30,8 +41,9 @@ func supervise() error {
 	child := filepath.Join(filepath.Dir(self), "quesma-shipper.exe")
 	crashes := 0
 	for {
-		code, err := runChild(child)
-		delay, nextCrashes, restart := restartPolicy(code, crashes)
+		started := time.Now()
+		code, err := runChild(child, logDir)
+		delay, nextCrashes, restart := restartPolicy(code, time.Since(started), crashes)
 		if !restart {
 			if err != nil {
 				return err
@@ -45,7 +57,7 @@ func supervise() error {
 	}
 }
 
-func runChild(path string) (int, error) {
+func runChild(path, logDir string) (int, error) {
 	job, err := newKillOnCloseJob()
 	if err != nil {
 		return -1, err
@@ -55,6 +67,15 @@ func runChild(path string) (int, error) {
 	cmd := exec.Command(path, "run")
 	cmd.Env = append(os.Environ(), common.SupervisedEnv+"=1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
+	// Reopened per launch so RotateLogs can move an oversized log aside between children.
+	if out, err := openLog(logDir, "agent.out.log"); err == nil {
+		defer out.Close()
+		cmd.Stdout = out
+	}
+	if errLog, err := openLog(logDir, "agent.err.log"); err == nil {
+		defer errLog.Close()
+		cmd.Stderr = errLog
+	}
 	if err := cmd.Start(); err != nil {
 		return -1, err
 	}
@@ -98,4 +119,14 @@ func newKillOnCloseJob() (windows.Handle, error) {
 		return 0, err
 	}
 	return job, nil
+}
+
+func openLog(dir, name string) (*os.File, error) {
+	if dir == "" {
+		return nil, errors.New("no log directory")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 }

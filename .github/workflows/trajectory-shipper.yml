@@ -114,6 +114,10 @@ jobs:
           if ($task.State -ne "Running" -or -not $supervisor -or -not $shipper) {
             throw "scheduled task did not become live (state=$($task.State), supervisor=$([bool]$supervisor), shipper=$([bool]$shipper))"
           }
+          $logDir = "$env:USERPROFILE\.local\state\trajectory-shipper\logs"
+          if (-not (Test-Path "$logDir\agent.err.log")) {
+            throw "supervisor did not redirect the shipper's output into $logDir"
+          }
           schtasks /Query /TN "\Quesma Shipper" | Out-Null
           if ($LASTEXITCODE -ne 0) {
             if (Test-Path $setupLog) { Get-Content $setupLog }

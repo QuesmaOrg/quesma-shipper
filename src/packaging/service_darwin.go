@@ -10,3 +10,4 @@ func RemoveProgram(executable string) (string, error) { return macos.RemoveProgr
 func SameProgram(a, b string) bool                    { return a == b }
 func ProgramRemovalDeferred() bool                    { return false }
 func PostInstall() (ServiceStatus, error)             { return macos.PostInstall() }
+func RemovalUnverified(error) bool                    { return false }

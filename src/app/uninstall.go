@@ -33,6 +33,10 @@ func Uninstall(purge bool, report func(UninstallStep)) (bool, error) {
 		report(UninstallStep{Skip: "background service left alone, it runs " + program})
 	default:
 		kind, err := packaging.UninstallService()
+		if packaging.RemovalUnverified(err) {
+			report(UninstallStep{Skip: "background service removal could not be confirmed: " + err.Error()})
+			break
+		}
 		report(UninstallStep{Done: "background service stopped and removed", Detail: string(kind), Err: err})
 		if err != nil {
 			return false, err

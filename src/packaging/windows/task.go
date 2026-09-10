@@ -87,10 +87,11 @@ func renderTask(spec Spec, userSID string) string {
   <Actions Context="Author">
     <Exec>
       <Command>%s</Command>
+      <Arguments>"%s"</Arguments>
     </Exec>
   </Actions>
 </Task>
-`, TaskName, xmlText(userSID), xmlText(userSID), xmlText(taskRunner(spec.Executable)))
+`, TaskName, xmlText(userSID), xmlText(userSID), xmlText(taskRunner(spec.Executable)), xmlText(spec.LogDir))
 }
 
 type taskDocument struct {

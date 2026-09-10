@@ -41,11 +41,12 @@ $compilerPath = if ($compiler -is [System.Management.Automation.CommandInfo]) {
 } else {
     $compiler
 }
-$compilerVersion = (Get-Item $compilerPath).VersionInfo.ProductVersion
-if ($compilerVersion -notmatch '^(\d+)\.(\d+)') {
-    throw "could not determine the Inno Setup version from '$compilerVersion'"
-}
-if ([version]::new([int]$Matches[1], [int]$Matches[2]) -lt [version]'6.3') {
+# ISCC.exe carries no usable version resource; Compil32.exe does. An unreadable version is not
+# an error: ArchitecturesAllowed will fail the compile on its own if the toolchain is too old.
+$gui = Join-Path (Split-Path $compilerPath) 'Compil32.exe'
+$compilerVersion = if (Test-Path $gui) { (Get-Item $gui).VersionInfo.ProductVersion } else { '' }
+if ($compilerVersion -match '^(\d+)\.(\d+)' -and
+    [version]::new([int]$Matches[1], [int]$Matches[2]) -lt [version]'6.3') {
     throw "Inno Setup 6.3 or newer is required; found $compilerVersion"
 }
 

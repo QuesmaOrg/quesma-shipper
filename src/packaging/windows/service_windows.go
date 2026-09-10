@@ -72,11 +72,15 @@ func UninstallService() error {
 		return nil
 	}
 	if verifyErr != nil {
-		return fmt.Errorf("supervise: delete scheduled task: %s (could not verify absence: %v)",
-			commandError(err, out), verifyErr)
+		return fmt.Errorf("%w: %s (could not verify absence: %v)",
+			ErrTaskDeleteUnverified, commandError(err, out), verifyErr)
 	}
 	return fmt.Errorf("supervise: delete scheduled task: %s", commandError(err, out))
 }
+
+// ErrTaskDeleteUnverified marks a delete whose outcome could not be confirmed either way. Removal
+// must not be blocked by it: a user who wants the software gone has to be able to get there.
+var ErrTaskDeleteUnverified = errors.New("supervise: delete scheduled task, outcome unverified")
 
 func ServiceState() Status {
 	st := Status{Kind: common.KindWindowsTask, Path: TaskName}
@@ -145,10 +149,16 @@ func schtasks(args ...string) ([]byte, error) {
 	return exec.Command("schtasks.exe", args...).CombinedOutput()
 }
 
+// schtasksStdout keeps a machine-readable listing clear of the per-task warnings schtasks writes
+// to stderr when it meets a task it cannot read.
+func schtasksStdout(args ...string) ([]byte, error) {
+	return exec.Command("schtasks.exe", args...).Output()
+}
+
 // taskExists enumerates all tasks after a targeted operation failed. A successful enumeration can
 // prove absence without interpreting schtasks' localized text or its catch-all exit code 1.
 func taskExists() (bool, error) {
-	out, err := schtasks("/Query", "/FO", "CSV", "/NH")
+	out, err := schtasksStdout("/Query", "/FO", "CSV", "/NH")
 	if err != nil {
 		return false, errors.New(commandError(err, out))
 	}

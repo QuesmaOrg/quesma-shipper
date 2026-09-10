@@ -11,7 +11,10 @@ import (
 )
 
 func TestTaskRunsAsTheInteractiveUserAndSurvivesUpdates(t *testing.T) {
-	spec := Spec{Executable: `C:\Users\A & B\Quesma Shipper\quesma-shipper.exe`}
+	spec := Spec{
+		Executable: `C:\Users\A & B\Quesma Shipper\quesma-shipper.exe`,
+		LogDir:     `C:\Users\A & B\AppData\Local\quesma-shipper\logs`,
+	}
 	raw := renderTask(spec, "S-1-5-21-123")
 
 	for _, want := range []string{
@@ -20,6 +23,7 @@ func TestTaskRunsAsTheInteractiveUserAndSurvivesUpdates(t *testing.T) {
 		`<Interval>PT1H</Interval>`,
 		`<RestartOnFailure>`,
 		`C:\Users\A &amp; B\Quesma Shipper\quesma-shipper-supervisor.exe`,
+		`<Arguments>"C:\Users\A &amp; B\AppData\Local\quesma-shipper\logs"</Arguments>`,
 	} {
 		if !strings.Contains(raw, want) {
 			t.Errorf("task XML lacks %q:\n%s", want, raw)

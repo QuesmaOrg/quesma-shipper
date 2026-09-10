@@ -59,6 +59,8 @@ func restartService(w io.Writer) error {
 	return nil
 }
 
+// selfUpdateGate blocks the hop that did not land: we updated to persistedHop, restarted, and are
+// still not running it. A hop that matches this build has done its job and the caller clears it.
 func selfUpdateGate(build app.Build, getenv func(string) string, persistedHop string) (run bool, why string) {
 	if !build.Release {
 		return false, ""
@@ -69,8 +71,8 @@ func selfUpdateGate(build app.Build, getenv func(string) string, persistedHop st
 	if to := getenv(app.ReexecGuardEnv); to != "" {
 		return false, "already updated to " + to + " this boot"
 	}
-	if persistedHop != "" {
-		return false, "already updated to " + persistedHop + " under this supervisor"
+	if persistedHop != "" && persistedHop != build.Version {
+		return false, "already updated to " + persistedHop + " but still running " + build.Version
 	}
 	return true, ""
 }
@@ -80,6 +82,9 @@ func maybeSelfUpdate(ctx context.Context, build app.Build, errOut io.Writer) {
 	persistedHop := ""
 	if stateErr == nil {
 		persistedHop = packaging.ReadSelfUpdateHop(stateDir)
+		if persistedHop == build.Version {
+			_ = packaging.ClearSelfUpdateHop(stateDir)
+		}
 	}
 	run, why := selfUpdateGate(build, os.Getenv, persistedHop)
 	if !run {
