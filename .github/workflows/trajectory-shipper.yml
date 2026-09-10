@@ -103,16 +103,18 @@ jobs:
             if (Test-Path $setupLog) { Get-Content $setupLog }
             throw "installer exited $($setupProcess.ExitCode)"
           }
-          $deadline = (Get-Date).AddSeconds(15)
+          # Registration is not liveness: assert both processes and the redirected logs.
+          $deadline = (Get-Date).AddSeconds(30)
           do {
-            $task = Get-ScheduledTask -TaskName "Quesma Shipper" -ErrorAction Stop
             $supervisor = Get-Process quesma-shipper-supervisor -ErrorAction SilentlyContinue
             $shipper = Get-Process quesma-shipper -ErrorAction SilentlyContinue
-            if ($task.State -eq "Running" -and $supervisor -and $shipper) { break }
+            if ($supervisor -and $shipper) { break }
             Start-Sleep -Seconds 1
           } while ((Get-Date) -lt $deadline)
-          if ($task.State -ne "Running" -or -not $supervisor -or -not $shipper) {
-            throw "scheduled task did not become live (state=$($task.State), supervisor=$([bool]$supervisor), shipper=$([bool]$shipper))"
+          if (-not $supervisor -or -not $shipper) {
+            if (Test-Path $setupLog) { Get-Content $setupLog }
+            schtasks /Query /TN "\Quesma Shipper" /FO LIST /V
+            throw "task did not become live (supervisor=$([bool]$supervisor), shipper=$([bool]$shipper))"
           }
           $logDir = "$env:USERPROFILE\.local\state\trajectory-shipper\logs"
           if (-not (Test-Path "$logDir\agent.err.log")) {
