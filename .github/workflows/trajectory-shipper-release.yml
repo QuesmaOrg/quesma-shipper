@@ -103,49 +103,51 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      id-token: write
-    environment:
-      name: tuf-publishing-testing
-      deployment: false
+      # TODO: Re-enable OIDC and the signing environment after Microsoft validates the organisation.
+      # id-token: write
+    # environment:
+    #   name: tuf-publishing-testing
+    #   deployment: false
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: shipper-build-binaries
           path: bin/dist
-      - name: Require Windows signing configuration
-        shell: pwsh
-        env:
-          CLIENT_ID: ${{ secrets.WINDOWS_SIGNING_AZURE_CLIENT_ID }}
-          TENANT_ID: ${{ secrets.WINDOWS_SIGNING_AZURE_TENANT_ID }}
-          SUBSCRIPTION_ID: ${{ secrets.WINDOWS_SIGNING_AZURE_SUBSCRIPTION_ID }}
-          ENDPOINT: ${{ secrets.WINDOWS_SIGNING_ENDPOINT }}
-          ACCOUNT: ${{ secrets.WINDOWS_SIGNING_ACCOUNT }}
-          PROFILE: ${{ secrets.WINDOWS_SIGNING_PROFILE }}
-        run: |
-          foreach ($name in @("CLIENT_ID", "TENANT_ID", "SUBSCRIPTION_ID", "ENDPOINT", "ACCOUNT", "PROFILE")) {
-            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              throw "release environment is missing $name for Windows Authenticode signing"
-            }
-          }
-      - name: Authenticate for Windows code signing
-        uses: azure/login@v3
-        with:
-          client-id: ${{ secrets.WINDOWS_SIGNING_AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.WINDOWS_SIGNING_AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.WINDOWS_SIGNING_AZURE_SUBSCRIPTION_ID }}
-      - name: Sign the application payloads
-        uses: azure/artifact-signing-action@v2
-        with:
-          endpoint: ${{ secrets.WINDOWS_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ secrets.WINDOWS_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ secrets.WINDOWS_SIGNING_PROFILE }}
-          files: |
-            ${{ github.workspace }}\bin\dist\quesma-shipper-windows-amd64.exe
-            ${{ github.workspace }}\bin\dist\quesma-shipper-windows-arm64.exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
+      # TODO: Re-enable these steps after Microsoft validates the organisation.
+      # - name: Require Windows signing configuration
+      #   shell: pwsh
+      #   env:
+      #     CLIENT_ID: ${{ secrets.WINDOWS_SIGNING_AZURE_CLIENT_ID }}
+      #     TENANT_ID: ${{ secrets.WINDOWS_SIGNING_AZURE_TENANT_ID }}
+      #     SUBSCRIPTION_ID: ${{ secrets.WINDOWS_SIGNING_AZURE_SUBSCRIPTION_ID }}
+      #     ENDPOINT: ${{ secrets.WINDOWS_SIGNING_ENDPOINT }}
+      #     ACCOUNT: ${{ secrets.WINDOWS_SIGNING_ACCOUNT }}
+      #     PROFILE: ${{ secrets.WINDOWS_SIGNING_PROFILE }}
+      #   run: |
+      #     foreach ($name in @("CLIENT_ID", "TENANT_ID", "SUBSCRIPTION_ID", "ENDPOINT", "ACCOUNT", "PROFILE")) {
+      #       if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+      #         throw "release environment is missing $name for Windows Authenticode signing"
+      #       }
+      #     }
+      # - name: Authenticate for Windows code signing
+      #   uses: azure/login@v3
+      #   with:
+      #     client-id: ${{ secrets.WINDOWS_SIGNING_AZURE_CLIENT_ID }}
+      #     tenant-id: ${{ secrets.WINDOWS_SIGNING_AZURE_TENANT_ID }}
+      #     subscription-id: ${{ secrets.WINDOWS_SIGNING_AZURE_SUBSCRIPTION_ID }}
+      # - name: Sign the application payloads
+      #   uses: azure/artifact-signing-action@v2
+      #   with:
+      #     endpoint: ${{ secrets.WINDOWS_SIGNING_ENDPOINT }}
+      #     signing-account-name: ${{ secrets.WINDOWS_SIGNING_ACCOUNT }}
+      #     certificate-profile-name: ${{ secrets.WINDOWS_SIGNING_PROFILE }}
+      #     files: |
+      #       ${{ github.workspace }}\bin\dist\quesma-shipper-windows-amd64.exe
+      #       ${{ github.workspace }}\bin\dist\quesma-shipper-windows-arm64.exe
+      #     file-digest: SHA256
+      #     timestamp-rfc3161: http://timestamp.acs.microsoft.com
+      #     timestamp-digest: SHA256
       - name: Build the per-user setup executables
         shell: pwsh
         run: |
@@ -156,27 +158,27 @@ jobs:
               -BinaryPath "bin/dist/quesma-shipper-windows-$arch.exe" `
               -OutputDir "bin/dist"
           }
-      - name: Sign the setup executables
-        uses: azure/artifact-signing-action@v2
-        with:
-          endpoint: ${{ secrets.WINDOWS_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ secrets.WINDOWS_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ secrets.WINDOWS_SIGNING_PROFILE }}
-          files: |
-            ${{ github.workspace }}\bin\dist\QuesmaShipperSetup-amd64.exe
-            ${{ github.workspace }}\bin\dist\QuesmaShipperSetup-arm64.exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-      - name: Require valid Authenticode signatures
-        shell: pwsh
-        run: |
-          Get-ChildItem bin/dist/*.exe | ForEach-Object {
-            $signature = Get-AuthenticodeSignature $_.FullName
-            if ($signature.Status -ne "Valid") {
-              throw "$($_.Name) has invalid Authenticode status: $($signature.Status)"
-            }
-          }
+      # - name: Sign the setup executables
+      #   uses: azure/artifact-signing-action@v2
+      #   with:
+      #     endpoint: ${{ secrets.WINDOWS_SIGNING_ENDPOINT }}
+      #     signing-account-name: ${{ secrets.WINDOWS_SIGNING_ACCOUNT }}
+      #     certificate-profile-name: ${{ secrets.WINDOWS_SIGNING_PROFILE }}
+      #     files: |
+      #       ${{ github.workspace }}\bin\dist\QuesmaShipperSetup-amd64.exe
+      #       ${{ github.workspace }}\bin\dist\QuesmaShipperSetup-arm64.exe
+      #     file-digest: SHA256
+      #     timestamp-rfc3161: http://timestamp.acs.microsoft.com
+      #     timestamp-digest: SHA256
+      # - name: Require valid Authenticode signatures
+      #   shell: pwsh
+      #   run: |
+      #     Get-ChildItem bin/dist/*.exe | ForEach-Object {
+      #       $signature = Get-AuthenticodeSignature $_.FullName
+      #       if ($signature.Status -ne "Valid") {
+      #         throw "$($_.Name) has invalid Authenticode status: $($signature.Status)"
+      #       }
+      #     }
       - uses: actions/upload-artifact@v7
         with:
           name: shipper-release-binaries
