@@ -350,7 +350,16 @@ jobs:
           R2_URI: ${{ vars.R2_URI }}
         run: |
           if [[ -d .tuf/targets ]]; then
-            aws s3 sync .tuf/targets/ "${R2_URI%/}/targets/" --no-progress
+            while IFS= read -r -d '' target; do
+              object=${target#.tuf/targets/}
+              filename=${object#*.}
+              [[ "$object" =~ ^[0-9a-f]{64}\.[A-Za-z0-9._-]+$ ]] || {
+                echo "::error::Unexpected TUF target name: $object"
+                exit 1
+              }
+              aws s3 cp "$target" "${R2_URI%/}/targets/$object" \
+                --content-disposition "attachment; filename=\"$filename\"" --no-progress
+            done < <(find -L .tuf/targets -type f -print0)
           fi
           aws s3 sync .tuf/metadata/ "${R2_URI%/}/metadata/" --exclude timestamp.json --no-progress
           aws s3 cp .tuf/metadata/timestamp.json "${R2_URI%/}/metadata/timestamp.json" --no-progress
