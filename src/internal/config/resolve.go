@@ -487,53 +487,97 @@ func resolveRoots(eff *Effective, in Input) error {
 			}
 		}
 
-		var reasons []string
-		for _, candidate := range src.Roots {
-			expanded, err := in.Env.ExpandRoot(candidate)
-			if err != nil {
-				var unset *sources.ErrUnsetVar
-				if errors.As(err, &unset) {
-					reasons = append(reasons, unset.Error())
-					continue
-				}
-				return &RejectionError{eff.Provenance["sources."+src.ID+".roots"].Layer,
-					"sources." + src.ID + ".roots", err.Error()}
-			}
-
-			// Deny is checked before existence: a root pointed into ~/.ssh is a refusal whether or not it exists.
-			if err := eff.Deny.CheckRoot(expanded); err != nil {
-				return &RejectionError{eff.Provenance["sources."+src.ID+".roots"].Layer,
-					"sources." + src.ID + ".roots", err.Error()}
-			}
-
-			// A missing root is the agent-absent case: expected silence, kept distinguishable from a root that matches nothing.
-			info, statErr := os.Stat(expanded)
-			if statErr != nil {
-				reasons = append(reasons, fmt.Sprintf("%s does not exist", expanded))
-				continue
-			}
-			if !info.IsDir() {
-				reasons = append(reasons, fmt.Sprintf("%s is not a directory", expanded))
-				continue
-			}
-
-			if err := requireSubdir(expanded, src.RequireSubdir); err != nil {
-				reasons = append(reasons, err.Error())
-				continue
-			}
-			if err := eff.Deny.CheckIncludes(expanded, src.Include); err != nil {
-				return &RejectionError{eff.Provenance["sources."+src.ID+".include"].Layer,
-					"sources." + src.ID + ".include", err.Error()}
-			}
-
-			src.Root = expanded
-			break
+		root, reasons, rej := pickRoot(eff, src, in.Env)
+		if rej != nil {
+			return rej
 		}
+		src.Root = root
 		if src.Root == "" {
 			src.RootUnresolvedReason = strings.Join(reasons, "; ")
 		}
 	}
 	return nil
+}
+
+// pickRoot returns the first candidate that expands, exists and satisfies require_subdir, or the
+// reasons no candidate qualified. A RejectionError separates a configuration fault -- a candidate
+// that cannot expand, or one the deny list forbids -- from the ordinary absent agent, which is an
+// empty root and a reason.
+func pickRoot(eff *Effective, src *ResolvedSource, env sources.Env) (string, []string, *RejectionError) {
+	var reasons []string
+	for _, candidate := range src.Roots {
+		expanded, err := env.ExpandRoot(candidate)
+		if err != nil {
+			var unset *sources.ErrUnsetVar
+			if errors.As(err, &unset) {
+				reasons = append(reasons, unset.Error())
+				continue
+			}
+			return "", reasons, &RejectionError{eff.Provenance["sources."+src.ID+".roots"].Layer,
+				"sources." + src.ID + ".roots", err.Error()}
+		}
+
+		// Deny is checked before existence: a root pointed into ~/.ssh is a refusal whether or not it exists.
+		if err := eff.Deny.CheckRoot(expanded); err != nil {
+			return "", reasons, &RejectionError{eff.Provenance["sources."+src.ID+".roots"].Layer,
+				"sources." + src.ID + ".roots", err.Error()}
+		}
+
+		// A missing root is the agent-absent case: expected silence, kept distinguishable from a root that matches nothing.
+		info, statErr := os.Stat(expanded)
+		if statErr != nil {
+			reasons = append(reasons, fmt.Sprintf("%s does not exist", expanded))
+			continue
+		}
+		if !info.IsDir() {
+			reasons = append(reasons, fmt.Sprintf("%s is not a directory", expanded))
+			continue
+		}
+
+		if err := requireSubdir(expanded, src.RequireSubdir); err != nil {
+			reasons = append(reasons, err.Error())
+			continue
+		}
+		if err := eff.Deny.CheckIncludes(expanded, src.Include); err != nil {
+			return "", reasons, &RejectionError{eff.Provenance["sources."+src.ID+".include"].Layer,
+				"sources." + src.ID + ".include", err.Error()}
+		}
+
+		return expanded, reasons, nil
+	}
+	return "", reasons, nil
+}
+
+// RefreshAbsentRoots re-picks the roots that did not resolve and reports the source ids that now
+// do. Roots are otherwise chosen once per process, so an agent installed -- or merely first run,
+// which is when Claude Code creates projects/ -- after the daemon started stays invisible for the
+// life of that process. On a host whose daemon never restarts, that is forever.
+//
+// Only absent roots are retried. A source that already resolved keeps the root its fingerprints
+// were built against, so a refresh can start collection but never silently move it.
+//
+// Best-effort by construction: a refusal is recorded as the reason and leaves the source absent.
+// Re-checking an optional root must not be able to stop a loop that is otherwise collecting.
+func RefreshAbsentRoots(eff *Effective, env sources.Env) []string {
+	var found []string
+	for i := range eff.Sources {
+		src := &eff.Sources[i]
+		if !src.Enabled || src.Root != "" {
+			continue
+		}
+		root, reasons, rej := pickRoot(eff, src, env)
+		switch {
+		case rej != nil:
+			src.RootUnresolvedReason = rej.Error()
+		case root == "":
+			src.RootUnresolvedReason = strings.Join(reasons, "; ")
+		default:
+			src.Root = root
+			src.RootUnresolvedReason = ""
+			found = append(found, src.ID)
+		}
+	}
+	return found
 }
 
 // requireSubdir refuses a root without the declared subdirectory: a claimed store that does not look like one is not one.

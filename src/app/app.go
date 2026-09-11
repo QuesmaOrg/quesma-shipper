@@ -349,6 +349,11 @@ func planFor(eff *config.Effective) engine.Plan {
 // Effective is the configuration in force.
 func (r *Runtime) Effective() *config.Effective { return r.eff }
 
+// RefreshAbsentRoots re-picks the roots that did not resolve at startup and reports the source ids
+// that now do. The scheduler calls it before each tick: options() rebuilds the plan from r.eff
+// every flush, so a root found here is collected by the tick that follows.
+func (r *Runtime) RefreshAbsentRoots() []string { return config.RefreshAbsentRoots(r.eff, r.env) }
+
 // Remote is the outcome of this run's config refresh, so a verb can report a fallback.
 func (r *Runtime) Remote() controlplane.Remote { return r.remote }
 
