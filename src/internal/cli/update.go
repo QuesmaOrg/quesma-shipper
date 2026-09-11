@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -40,23 +41,49 @@ func updateCmd(build app.Build) *cobra.Command {
 				return nil
 			}
 			fmt.Fprintf(w, "Updated %s → %s\n", styled(p.cyan, res.From, p.reset), styled(p.cyan, res.To, p.reset))
-			return restartService(w)
+			return restartService(cmd.Context(), w)
 		},
 	}
 	return cmd
 }
 
-func restartService(w io.Writer) error {
-	_, paths, err := app.ResolveEffective()
-	if err != nil || !packaging.ServiceState(paths.StateDir).Loaded {
+func restartService(ctx context.Context, w io.Writer) error {
+	eff, paths, err := app.ResolveEffective()
+	if err != nil {
+		return nil
+	}
+	// The wait is the agent's own SIGTERM drain, not a stalled supervisor, so it gets the drain
+	// window rather than a short guard; the bound only matters when the supervisor itself hangs.
+	budget := packaging.RestartBudget(eff.DrainDeadline)
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	if !packaging.ServiceStateContext(ctx, paths.StateDir).Loaded {
+		if ctx.Err() != nil {
+			printWarning(w, restartTimeoutWarning(budget))
+		}
 		return nil
 	}
 	p := paletteFor(w)
-	if err := packaging.RestartService(); err != nil {
+	fmt.Fprintf(w, "Restarting background service; it ships a final slice before exiting, up to %s…\n", budget)
+	if err := packaging.RestartService(ctx); err != nil {
+		if ctx.Err() != nil {
+			printWarning(w, restartTimeoutWarning(budget))
+			return nil
+		}
 		return fmt.Errorf("the background service did not restart onto the new version: %w; it keeps the previous version until its next restart", err)
 	}
 	banner(w, p, p.green, "on", "background service restarted")
 	return nil
+}
+
+// restartTimeoutWarning is not an error: the binary is swapped and the supervisor restarts the
+// agent onto it as soon as the drain ends. Only the wait for confirmation gave up.
+func restartTimeoutWarning(budget time.Duration) string {
+	msg := fmt.Sprintf("the background service was still shutting down after %s; the update is installed and the service starts on the new version when its final slice is shipped", budget)
+	if cmd := packaging.RestartCommand(); cmd != "" {
+		msg += "; to force it now: " + cmd
+	}
+	return msg
 }
 
 // selfUpdateGate blocks the hop that did not land: we updated to persistedHop, restarted, and are

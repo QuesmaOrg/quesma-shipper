@@ -3,6 +3,7 @@
 package linux
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -119,7 +120,7 @@ func InstallService(spec Spec) (Status, error) {
 	}
 	st.Loaded = true
 	st.Detail = "enabled and started"
-	if hint := lingerHint(); hint != "" {
+	if hint := lingerHint(context.Background()); hint != "" {
 		st.Detail += "; " + hint
 	}
 	return st, nil
@@ -127,12 +128,12 @@ func InstallService(spec Spec) (Status, error) {
 
 // lingerHint is the session-less-box caveat: without linger a --user service stops with the
 // last session and never starts at boot. A hint, not enabled here; linger is the owner's call.
-func lingerHint() string {
+func lingerHint(ctx context.Context) string {
 	user := os.Getenv("USER")
 	if user == "" {
 		user = "$USER"
 	}
-	out, err := exec.Command("loginctl", "show-user", user, "--property=Linger").Output()
+	out, err := exec.CommandContext(ctx, "loginctl", "show-user", user, "--property=Linger").Output()
 	if err == nil && strings.Contains(string(out), "Linger=yes") {
 		return ""
 	}
@@ -166,7 +167,7 @@ func daemonReload() error {
 	return nil
 }
 
-func ServiceState() Status {
+func ServiceState(ctx context.Context) Status {
 	st := Status{Kind: common.KindSystemd}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -178,8 +179,8 @@ func ServiceState() Status {
 		st.Installed = true
 	}
 
-	active, _ := exec.Command("systemctl", "--user", "is-active", unitName).Output()
-	enabled, _ := exec.Command("systemctl", "--user", "is-enabled", unitName).Output()
+	active, _ := exec.CommandContext(ctx, "systemctl", "--user", "is-active", unitName).Output()
+	enabled, _ := exec.CommandContext(ctx, "systemctl", "--user", "is-enabled", unitName).Output()
 	activeState := strings.TrimSpace(string(active))
 	enabledState := strings.TrimSpace(string(enabled))
 
@@ -197,16 +198,16 @@ func ServiceState() Status {
 	default:
 		st.Detail = "no agent installed; `quesma-shipper run` works in the foreground"
 	}
-	if hint := lingerHint(); hint != "" && st.Loaded {
+	if hint := lingerHint(ctx); hint != "" && st.Loaded {
 		st.Detail += "; " + hint
 	}
 	return st
 }
 
-func RestartService() error {
-	out, err := exec.Command("systemctl", "--user", "restart", unitName).CombinedOutput()
+func RestartService(ctx context.Context) error {
+	out, err := exec.CommandContext(ctx, "systemctl", "--user", "restart", unitName).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("systemctl restart: %v: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("systemctl restart: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

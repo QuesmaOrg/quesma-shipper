@@ -3,6 +3,8 @@
 package linux
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -11,6 +13,16 @@ func testSpec() Spec {
 	return Spec{Executable: "/usr/local/bin/quesma-shipper", Args: []string{"run"},
 		Home: "/home/jane", StateDir: "/home/jane/.local/state/trajectory-shipper",
 		LogDir: "/home/jane/.local/state/trajectory-shipper/logs"}
+}
+
+// A context that is already done makes exec.Cmd.Start fail before it spawns anything, so these
+// never reach the developer's real supervisor.
+func TestRestartHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := RestartService(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("restart with a canceled context = %v, want context canceled", err)
+	}
 }
 
 func TestUnitCarriesRestartEnvironmentAndLoginStart(t *testing.T) {

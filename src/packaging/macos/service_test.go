@@ -3,7 +3,9 @@
 package macos
 
 import (
+	"context"
 	"encoding/xml"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -12,6 +14,25 @@ func testSpec() Spec {
 	return Spec{Executable: "/usr/local/bin/quesma-shipper", Args: []string{"run"},
 		Home: "/Users/jane", StateDir: "/Users/jane/.local/state/trajectory-shipper",
 		LogDir: "/Users/jane/.local/state/trajectory-shipper/logs"}
+}
+
+// A context that is already done makes exec.Cmd.Start fail before it spawns anything, so these
+// never reach the developer's real supervisor.
+func TestRestartHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := RestartService(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("restart with a canceled context = %v, want context canceled", err)
+	}
+}
+
+func TestServiceStateHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	got := ServiceState(ctx)
+	if got.Loaded {
+		t.Fatalf("state with a canceled context = %+v, want not loaded", got)
+	}
 }
 
 func TestPlistIsWellFormedAndKeepsTheAgentAlive(t *testing.T) {
