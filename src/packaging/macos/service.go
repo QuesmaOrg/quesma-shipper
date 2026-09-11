@@ -20,10 +20,8 @@ type Spec = common.Spec
 type Status = common.Status
 
 // launchdPath is the per-user LaunchAgent path, never /Library/LaunchDaemons, which is root's.
-func launchdPath(home string) string { return launchdPathFor(home, bundleIdentifier) }
-
-func launchdPathFor(home, label string) string {
-	return filepath.Join(home, "Library", "LaunchAgents", label+".plist")
+func launchdPath(home string) string {
+	return filepath.Join(home, "Library", "LaunchAgents", bundleIdentifier+".plist")
 }
 
 // installedApp is where the package puts the bundle.
@@ -94,9 +92,7 @@ func renderPlist(spec Spec) string {
 const launchctl = "/bin/launchctl"
 
 func guiDomain() string  { return fmt.Sprintf("gui/%d", os.Getuid()) }
-func guiService() string { return guiServiceFor(bundleIdentifier) }
-
-func guiServiceFor(label string) string { return guiDomain() + "/" + label }
+func guiService() string { return guiDomain() + "/" + bundleIdentifier }
 
 func installService(spec Spec) (Status, error) {
 	home, err := common.HomeFor(spec)
@@ -154,8 +150,6 @@ func PostInstall() (Status, error) {
 	if exe != expected {
 		return Status{}, fmt.Errorf("postinstall must run from %s, not %s", expected, exe)
 	}
-	// Rename bridge: an install over the former package stops that agent first, or two would run.
-	retireLegacyInstall(home, legacyAppPath(home), false)
 	return supervise(exe, home)
 }
 
@@ -216,13 +210,12 @@ func ServiceState() Status {
 		st.Detail = err.Error()
 		return st
 	}
-	label := activeLabel(home)
-	st.Path = launchdPathFor(home, label)
+	st.Path = launchdPath(home)
 	if _, err := os.Stat(st.Path); err == nil {
 		st.Installed = true
 	}
 
-	out, err := exec.Command(launchctl, "print", guiServiceFor(label)).CombinedOutput()
+	out, err := exec.Command(launchctl, "print", guiService()).CombinedOutput()
 	if err != nil {
 		switch {
 		case st.Installed:
@@ -239,11 +232,7 @@ func ServiceState() Status {
 }
 
 func RestartService() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	out, err := exec.Command(launchctl, "kickstart", "-k", guiServiceFor(activeLabel(home))).CombinedOutput()
+	out, err := exec.Command(launchctl, "kickstart", "-k", guiService()).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("launchctl kickstart: %v: %s", err, strings.TrimSpace(string(out)))
 	}

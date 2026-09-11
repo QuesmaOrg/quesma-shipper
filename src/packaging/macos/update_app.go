@@ -3,7 +3,6 @@
 package macos
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -57,53 +56,26 @@ func bundleIdentifierOf(app string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// applyAppPackage swaps the bundle in whole. No bundle at app yet (the rename bridge laying the
-// renamed one out for the first time) is a plain move.
+// applyAppPackage swaps the bundle in whole: the staged one is validated before anything moves.
 func applyAppPackage(raw []byte, app, version string) error {
-	stage, stagedApp, err := stageAppPackage(raw, filepath.Dir(app), version)
+	parent := filepath.Dir(app)
+	stage, err := os.MkdirTemp(parent, ".quesma-shipper-update-")
+	if err != nil {
+		return fmt.Errorf("staging in %s: %w", parent, err)
+	}
+	defer os.RemoveAll(stage)
+	stagedApp, err := expandAppPackage(raw, stage, version)
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(stage)
-	err = unix.RenamexNp(app, stagedApp, unix.RENAME_SWAP)
-	if errors.Is(err, unix.ENOENT) {
-		err = os.Rename(stagedApp, app)
-	}
-	if err != nil {
+	if err := unix.RenamexNp(app, stagedApp, unix.RENAME_SWAP); err != nil {
 		return fmt.Errorf("replacing %s: %w", app, err)
 	}
 	return nil
 }
 
-// stageAppPackage expands the package under parent and validates the bundle inside; the caller
-// removes stage once done with stagedApp.
-func stageAppPackage(raw []byte, parent, version string) (string, string, error) {
-	stage, err := os.MkdirTemp(parent, ".quesma-shipper-update-")
-	if err != nil {
-		return "", "", fmt.Errorf("staging in %s: %w", parent, err)
-	}
-	stagedApp, err := expandAppPackage(raw, stage, version)
-	if err != nil {
-		os.RemoveAll(stage)
-		return "", "", err
-	}
-	return stage, stagedApp, nil
-}
-
+// expandAppPackage unpacks the product archive under stage and validates the bundle inside it.
 func expandAppPackage(raw []byte, stage, version string) (string, error) {
-	expanded, err := expandPackage(raw, stage)
-	if err != nil {
-		return "", err
-	}
-	stagedApp := filepath.Join(expanded, componentPackage, "Payload", "Applications", appName)
-	if err := validateAppBundle(stagedApp, version); err != nil {
-		return "", err
-	}
-	return stagedApp, nil
-}
-
-// expandPackage unpacks the product archive under stage, every component included.
-func expandPackage(raw []byte, stage string) (string, error) {
 	pkg := filepath.Join(stage, "quesma-shipper.pkg")
 	if err := platform.WriteAtomic(pkg, raw, 0o600); err != nil {
 		return "", fmt.Errorf("writing staged package: %w", err)
@@ -112,7 +84,11 @@ func expandPackage(raw []byte, stage string) (string, error) {
 	if out, err := exec.Command("/usr/sbin/pkgutil", "--expand-full", pkg, expanded).CombinedOutput(); err != nil {
 		return "", fmt.Errorf("extracting package: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	return expanded, nil
+	stagedApp := filepath.Join(expanded, componentPackage, "Payload", "Applications", appName)
+	if err := validateAppBundle(stagedApp, version); err != nil {
+		return "", err
+	}
+	return stagedApp, nil
 }
 
 func validateAppBundle(app, version string) error {

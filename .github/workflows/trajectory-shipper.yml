@@ -155,6 +155,5 @@ jobs:
           make macos-pkg RELEASE_VERSION="$version"
           pkgutil --payload-files bin/dist/quesma-shipper-macos-universal.pkg | grep -q 'Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper'
           pkgutil --payload-files bin/dist/quesma-shipper-macos-universal.pkg | grep -q '.local/bin/quesma-shipper'
-          # Rename bridge: the package must still satisfy the updater of every pre-rename install.
           (cd src && QUESMA_SHIPPER_PKG="$PWD/../bin/dist/quesma-shipper-macos-universal.pkg" \
             QUESMA_SHIPPER_RELEASE_VERSION="$version" go test ./packaging/macos/ -run BuiltPackage -v)

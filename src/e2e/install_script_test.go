@@ -35,17 +35,10 @@ func (w installWorld) stubLog() string { return filepath.Join(w.Home, "stub.log"
 func stageStub(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "shipper-local")
-	writeStub(t, path, "quesma-shipper 0.0.0-stub", 0o600)
-	return path
-}
-
-// writeStub writes the stub answering --version with banner.
-func writeStub(t *testing.T, path, banner string, perm os.FileMode) {
-	t.Helper()
-	stub := strings.Replace(stubShipper, "quesma-shipper 0.0.0-stub", banner, 1)
-	if err := os.WriteFile(path, []byte(stub), perm); err != nil {
+	if err := os.WriteFile(path, []byte(stubShipper), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	return path
 }
 
 func runInstall(t *testing.T, w installWorld, args ...string) (string, error) {
@@ -156,69 +149,5 @@ func TestInstallScriptChecksLocalInputBeforeChangingAnything(t *testing.T) {
 	}
 	if _, err := os.Stat(w.shipper()); !os.IsNotExist(err) {
 		t.Errorf("destination changed: %v", err)
-	}
-}
-
-// --- rename bridge: delete this block with the retirement in install.sh -----------------------
-
-func (w installWorld) legacy() string { return filepath.Join(w.bin(), "shipper") }
-
-// stageLegacy puts an install at the former path in place, answering --version with banner.
-func stageLegacy(t *testing.T, w installWorld, banner string) {
-	t.Helper()
-	if err := os.MkdirAll(w.bin(), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeStub(t, w.legacy(), banner, 0o755)
-}
-
-// An install at the former path answers with the old banner; one that already self-updated there
-// answers with the new one. Both are this program, and a reinstall retires both.
-func TestInstallScriptRetiresTheFormerBinaryOnceTheServiceIsRepointed(t *testing.T) {
-	for _, banner := range []string{"shipper 0.0.0-stub", "quesma-shipper 0.0.0-stub"} {
-		t.Run(banner, func(t *testing.T) {
-			w := stageInstall(t)
-			stageLegacy(t, w, banner)
-			out, err := runInstall(t, w, "--from", stageStub(t))
-			if err != nil {
-				t.Fatalf("install.sh failed: %v\n%s", err, out)
-			}
-			if _, err := os.Stat(w.legacy()); !os.IsNotExist(err) {
-				t.Fatalf("former binary still exists: %v", err)
-			}
-			if _, err := os.Stat(w.shipper()); err != nil {
-				t.Fatalf("renamed binary is missing: %v", err)
-			}
-		})
-	}
-}
-
-// --no-service skips postinstall, so a service entry may still name the former path: removing the
-// file it names would leave the entry pointing at nothing and stop collection silently.
-func TestInstallScriptKeepsTheFormerBinaryWhenTheServiceIsNotRepointed(t *testing.T) {
-	w := stageInstall(t)
-	stageLegacy(t, w, "shipper 0.0.0-stub")
-	out, err := runInstall(t, w, "--from", stageStub(t), "--no-service")
-	if err != nil {
-		t.Fatalf("install.sh failed: %v\n%s", err, out)
-	}
-	if _, err := os.Stat(w.legacy()); err != nil {
-		t.Fatalf("former binary was removed while a service entry may still name it: %v", err)
-	}
-	if !strings.Contains(out, "kept "+w.legacy()) {
-		t.Errorf("keeping the former binary was not reported:\n%s", out)
-	}
-}
-
-// The old name is not ours to claim: only a binary that identifies itself as this program goes.
-func TestInstallScriptLeavesAnUnrelatedProgramWithTheFormerName(t *testing.T) {
-	w := stageInstall(t)
-	stageLegacy(t, w, "some-other-shipper 1.0")
-	out, err := runInstall(t, w, "--from", stageStub(t))
-	if err != nil {
-		t.Fatalf("install.sh failed: %v\n%s", err, out)
-	}
-	if _, err := os.Stat(w.legacy()); err != nil {
-		t.Fatalf("an unrelated program with the old name was removed: %v", err)
 	}
 }
