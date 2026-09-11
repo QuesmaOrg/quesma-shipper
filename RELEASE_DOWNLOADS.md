@@ -1,12 +1,11 @@
 # Release downloads
 
-This document describes the public release repository at `updates.quesma.dev` and the proposed
-friendly download endpoints. It is both an operator guide and a statement of the trust boundary for
-people downloading Quesma Shipper.
+This document describes the public release repository at `updates.quesma.dev` and its friendly
+download endpoints. It is both an operator guide and a statement of the trust boundary for people
+downloading Quesma Shipper.
 
-The TUF repository is live. The friendly `/download/` endpoints described below are not live until
-the Worker route is deployed and verified. Do not publish those links in installation instructions
-before that point.
+The TUF repository and the `/download/` endpoints are both live. They are the supported way to
+install Quesma Shipper, and they are the links the installation instructions use.
 
 ## Public release repository
 

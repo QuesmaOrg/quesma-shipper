@@ -1,5 +1,7 @@
 # Quesma Shipper
 
+[![version](https://img.shields.io/badge/version-0.0.3-blue)](#download)
+
 Quesma Shipper collects the session files and related artifacts that AI coding agents write on a
 developer machine. See [What is collected](#what-is-collected). It removes secrets and personal
 data from each file, encrypts the file with
@@ -12,6 +14,21 @@ Supported agents: Claude Code, Codex, Cursor.
 Supported platforms: macOS 13 or newer (app bundle, launchd service), Linux (systemd user
 service), Windows 10 1809 or newer (per-user installer, scheduled task).
 
+## Download
+
+Every download below installs for the current user and needs no administrator rights. Released
+builds keep themselves current from the signed update channel.
+
+| Platform | Download |
+|---|---|
+| macOS 13+ | [quesma-shipper-macos-universal.pkg](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg) |
+| Windows 10 1809+ | [QuesmaShipperSetup-amd64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe) for x64, [QuesmaShipperSetup-arm64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe) for Arm |
+| Linux | `curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/src/packaging/linux/install.sh && sh install.sh` |
+
+Collection, scrubbing, and preview work straight away. Uploading needs enrollment against a
+control plane. See [Install](#install) for the full instructions, [Enroll](#enroll) for enrollment,
+and [RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md) for the trust boundary these links sit behind.
+
 ## Status
 
 The project is pre-1.0. The wire protocol, the configuration format, and the object naming are
@@ -22,7 +39,8 @@ The shipper needs a control plane to send data. The control plane is not part of
 and is not published yet. Without a control plane the shipper runs in local development mode.
 Collection, scrubbing, and preview work. Upload is disabled.
 
-The public update channel is a test facility, not a supported installation channel. See
+The public update channel is the supported way to install and stay current. Released builds
+update themselves from its signed TUF repository. See
 [Versions and releases](#versions-and-releases).
 
 `trajectory-shipper` remains the wire identifier and on-disk configuration/state namespace.
