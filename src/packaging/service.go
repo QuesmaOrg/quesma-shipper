@@ -37,3 +37,9 @@ func WriteSelfUpdateHop(stateDir, version string) error {
 	return common.WriteSelfUpdateHop(stateDir, version)
 }
 func ClearSelfUpdateHop(stateDir string) error { return common.ClearSelfUpdateHop(stateDir) }
+
+// RestartBudget is how long a restart may legitimately take: the agent ships a final slice
+// under drainDeadline before it exits, and the supervisor kills it only after that window.
+func RestartBudget(drainDeadline time.Duration) time.Duration {
+	return common.ExitTimeout(common.Spec{StopTimeout: drainDeadline})
+}

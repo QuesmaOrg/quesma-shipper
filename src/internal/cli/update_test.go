@@ -1,25 +1,25 @@
 package cli
 
 import (
-	"context"
-	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
+	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
 
+// A restart that outlives the wait is still a successful update: the text has to say so, name
+// the window it waited, and hand over the manual restart.
 func TestRestartTimeoutKeepsTheSuccessfulUpdateClear(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	err := restartTimeoutError(ctx)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("restart timeout = %v, want canceled context", err)
-	}
-	for _, want := range []string{"30s", "update is installed", "next restart"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("restart timeout %q does not contain %q", err, want)
+	got := restartTimeoutWarning(5*time.Minute + 30*time.Second)
+	for _, want := range []string{"5m30s", "update is installed", "new version"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("restart timeout warning %q does not contain %q", got, want)
 		}
+	}
+	if cmd := packaging.RestartCommand(); cmd != "" && !strings.Contains(got, cmd) {
+		t.Errorf("restart timeout warning %q does not offer %q", got, cmd)
 	}
 }
 

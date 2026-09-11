@@ -13,8 +13,6 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
 
-const serviceRestartTimeout = 30 * time.Second
-
 func clearSelfUpdateHop() {
 	os.Unsetenv(app.ReexecGuardEnv) // clean up guards inherited from pre-file releases
 	if stateDir, err := app.StateDirWithoutConfig(); err == nil {
@@ -50,23 +48,27 @@ func updateCmd(build app.Build) *cobra.Command {
 }
 
 func restartService(ctx context.Context, w io.Writer) error {
-	_, paths, err := app.ResolveEffective()
+	eff, paths, err := app.ResolveEffective()
 	if err != nil {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, serviceRestartTimeout)
+	// The wait is the agent's own SIGTERM drain, not a stalled supervisor, so it gets the drain
+	// window rather than a short guard; the bound only matters when the supervisor itself hangs.
+	budget := packaging.RestartBudget(eff.DrainDeadline)
+	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	if !packaging.ServiceStateContext(ctx, paths.StateDir).Loaded {
 		if ctx.Err() != nil {
-			return restartTimeoutError(ctx)
+			printWarning(w, restartTimeoutWarning(budget))
 		}
 		return nil
 	}
 	p := paletteFor(w)
-	fmt.Fprintln(w, "Restarting background service…")
+	fmt.Fprintf(w, "Restarting background service; it ships a final slice before exiting, up to %s…\n", budget)
 	if err := packaging.RestartService(ctx); err != nil {
 		if ctx.Err() != nil {
-			return restartTimeoutError(ctx)
+			printWarning(w, restartTimeoutWarning(budget))
+			return nil
 		}
 		return fmt.Errorf("the background service did not restart onto the new version: %w; it keeps the previous version until its next restart", err)
 	}
@@ -74,9 +76,14 @@ func restartService(ctx context.Context, w io.Writer) error {
 	return nil
 }
 
-func restartTimeoutError(ctx context.Context) error {
-	return fmt.Errorf("the background service restart did not finish within %s: %w; the update is installed and the service will use it after its next restart",
-		serviceRestartTimeout, ctx.Err())
+// restartTimeoutWarning is not an error: the binary is swapped and the supervisor restarts the
+// agent onto it as soon as the drain ends. Only the wait for confirmation gave up.
+func restartTimeoutWarning(budget time.Duration) string {
+	msg := fmt.Sprintf("the background service was still shutting down after %s; the update is installed and the service starts on the new version when its final slice is shipped", budget)
+	if cmd := packaging.RestartCommand(); cmd != "" {
+		msg += "; to force it now: " + cmd
+	}
+	return msg
 }
 
 // selfUpdateGate blocks the hop that did not land: we updated to persistedHop, restarted, and are
