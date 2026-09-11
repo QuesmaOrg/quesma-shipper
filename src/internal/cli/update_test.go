@@ -1,10 +1,27 @@
 package cli
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
 )
+
+func TestRestartTimeoutKeepsTheSuccessfulUpdateClear(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := restartTimeoutError(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("restart timeout = %v, want canceled context", err)
+	}
+	for _, want := range []string{"30s", "update is installed", "next restart"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("restart timeout %q does not contain %q", err, want)
+		}
+	}
+}
 
 // Every branch of the boot-time gate is a promise: dev builds never self-update,
 // SHIPPER_NO_SELFUPDATE always wins, and the re-exec guard allows exactly one hop per boot.

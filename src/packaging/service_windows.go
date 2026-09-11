@@ -3,6 +3,7 @@
 package packaging
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -24,8 +25,8 @@ func InstallService(spec ServiceSpec) (ServiceStatus, error) { return windowspkg
 func UninstallService() (ServiceKind, error) {
 	return serviceWindowsTask, windowspkg.UninstallService()
 }
-func serviceState() ServiceStatus                     { return windowspkg.ServiceState() }
-func RestartService() error                           { return windowspkg.RestartService() }
+func serviceState(ctx context.Context) ServiceStatus  { return windowspkg.ServiceState(ctx) }
+func RestartService(ctx context.Context) error        { return windowspkg.RestartService(ctx) }
 func RestartCommand() string                          { return windowspkg.RestartCommand() }
 func RemoveProgram(executable string) (string, error) { return windowspkg.RemoveProgram(executable) }
 func SameProgram(a, b string) bool                    { return windowspkg.SameProgram(a, b) }

@@ -1,6 +1,7 @@
 package packaging
 
 import (
+	"context"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
@@ -18,7 +19,11 @@ const (
 )
 
 func ServiceState(stateDir string) ServiceStatus {
-	st := serviceState()
+	return ServiceStateContext(context.Background(), stateDir)
+}
+
+func ServiceStateContext(ctx context.Context, stateDir string) ServiceStatus {
+	st := serviceState(ctx)
 	st.LastRun = common.LastRun(stateDir)
 	return st
 }

@@ -133,7 +133,7 @@ func migrateLegacyApp(ctx context.Context, out io.Writer, home, legacyApp string
 	}
 	linkCLI(filepath.Join(home, ".local", "bin", executableName),
 		filepath.Join("..", "..", "Applications", appName, "Contents", "MacOS", executableName))
-	if !ServiceState().Loaded {
+	if !ServiceState(ctx).Loaded {
 		if _, err := supervise(target, home); err != nil {
 			return false, err
 		}

@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
+
+const serviceRestartTimeout = 30 * time.Second
 
 func clearSelfUpdateHop() {
 	os.Unsetenv(app.ReexecGuardEnv) // clean up guards inherited from pre-file releases
@@ -40,23 +43,40 @@ func updateCmd(build app.Build) *cobra.Command {
 				return nil
 			}
 			fmt.Fprintf(w, "Updated %s → %s\n", styled(p.cyan, res.From, p.reset), styled(p.cyan, res.To, p.reset))
-			return restartService(w)
+			return restartService(cmd.Context(), w)
 		},
 	}
 	return cmd
 }
 
-func restartService(w io.Writer) error {
+func restartService(ctx context.Context, w io.Writer) error {
 	_, paths, err := app.ResolveEffective()
-	if err != nil || !packaging.ServiceState(paths.StateDir).Loaded {
+	if err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, serviceRestartTimeout)
+	defer cancel()
+	if !packaging.ServiceStateContext(ctx, paths.StateDir).Loaded {
+		if ctx.Err() != nil {
+			return restartTimeoutError(ctx)
+		}
 		return nil
 	}
 	p := paletteFor(w)
-	if err := packaging.RestartService(); err != nil {
+	fmt.Fprintln(w, "Restarting background service…")
+	if err := packaging.RestartService(ctx); err != nil {
+		if ctx.Err() != nil {
+			return restartTimeoutError(ctx)
+		}
 		return fmt.Errorf("the background service did not restart onto the new version: %w; it keeps the previous version until its next restart", err)
 	}
 	banner(w, p, p.green, "on", "background service restarted")
 	return nil
+}
+
+func restartTimeoutError(ctx context.Context) error {
+	return fmt.Errorf("the background service restart did not finish within %s: %w; the update is installed and the service will use it after its next restart",
+		serviceRestartTimeout, ctx.Err())
 }
 
 // selfUpdateGate blocks the hop that did not land: we updated to persistedHop, restarted, and are
