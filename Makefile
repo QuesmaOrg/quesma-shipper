@@ -180,6 +180,8 @@ tidy: ## Tidy go.mod, failing if it was not already tidy
 .PHONY: version-check
 version-check: ## Validate VERSION and construct this commit's release identity
 	@sh scripts/release-version.sh >/dev/null
+	@v=$$(tr -d '\r\n' < VERSION); grep -qF "badge/version-$$v-" README.md || \
+		{ echo "README version badge does not match VERSION ($$v)"; exit 1; }
 
 .PHONY: release-version
 release-version: ## Print this commit's official release identity
