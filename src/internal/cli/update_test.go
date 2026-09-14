@@ -1,10 +1,44 @@
 package cli
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
+	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
+
+func TestServiceStateTimeoutSaysNoRestartWasRequested(t *testing.T) {
+	err := serviceStateTimeoutError(context.DeadlineExceeded)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("service-state timeout = %v, want deadline exceeded", err)
+	}
+	for _, want := range []string{"5s", "update is installed", "restart was not requested"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("service-state timeout %q does not contain %q", err, want)
+		}
+	}
+	if cmd := packaging.RestartCommand(); cmd != "" && !strings.Contains(err.Error(), cmd) {
+		t.Errorf("service-state timeout %q does not offer %q", err, cmd)
+	}
+}
+
+// A restart that outlives the wait is still a successful update: the text has to say so, name
+// the window it waited, and hand over the manual restart.
+func TestRestartTimeoutKeepsTheSuccessfulUpdateClear(t *testing.T) {
+	got := restartTimeoutWarning(5*time.Minute + 30*time.Second)
+	for _, want := range []string{"5m30s", "update is installed", "new version"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("restart timeout warning %q does not contain %q", got, want)
+		}
+	}
+	if cmd := packaging.RestartCommand(); cmd != "" && !strings.Contains(got, cmd) {
+		t.Errorf("restart timeout warning %q does not offer %q", got, cmd)
+	}
+}
 
 // Every branch of the boot-time gate is a promise: dev builds never self-update,
 // SHIPPER_NO_SELFUPDATE always wins, and the re-exec guard allows exactly one hop per boot.

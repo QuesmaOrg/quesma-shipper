@@ -1,6 +1,7 @@
 package packaging
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -47,14 +48,14 @@ func UninstallService() (ServiceKind, error) {
 	return serviceSystemd, linuxpkg.UninstallService()
 }
 
-func serviceState() ServiceStatus {
+func serviceState(ctx context.Context) ServiceStatus {
 	if detectService() == ServiceCron {
 		return ServiceStatus{Kind: ServiceCron, Detail: "no supervision entry: this host uses cron, which the client does not edit"}
 	}
-	return linuxpkg.ServiceState()
+	return linuxpkg.ServiceState(ctx)
 }
 
-func RestartService() error                           { return linuxpkg.RestartService() }
+func RestartService(ctx context.Context) error        { return linuxpkg.RestartService(ctx) }
 func RestartCommand() string                          { return linuxpkg.RestartCommand() }
 func RemoveProgram(executable string) (string, error) { return common.RemoveProgram(executable) }
 func SameProgram(a, b string) bool                    { return a == b }
