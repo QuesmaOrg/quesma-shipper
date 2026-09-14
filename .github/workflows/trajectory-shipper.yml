@@ -149,6 +149,11 @@ jobs:
         with:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
+      # The unit suite runs on Linux and Windows; without this it never runs on darwin at all, and
+      # the per-OS code it covers -- path and service handling above all -- is exactly where the
+      # three platforms disagree.
+      - run: go test ./...
+        working-directory: src
       - name: Build and inspect the rootless package
         run: |
           version="$(sh scripts/release-version.sh)"

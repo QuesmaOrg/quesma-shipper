@@ -40,6 +40,43 @@ func TestRestartTimeoutKeepsTheSuccessfulUpdateClear(t *testing.T) {
 	}
 }
 
+// Loaded is a detection result, and detection is what goes wrong. Gating the restart on it meant
+// `update` printed the new version, exited 0, and left the daemon running the old binary.
+func TestRestartWantedIgnoresWhetherTheServiceReportsItselfLoaded(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		st   packaging.ServiceStatus
+		want bool
+	}{
+		{"a loaded service is restarted", packaging.ServiceStatus{Installed: true, Loaded: true}, true},
+		// The Windows regression: the task was running, its definition could not be read, and
+		// Loaded came back false. Also the macOS "present but NOT loaded" plist.
+		{"an installed service that does not report itself loaded is still restarted",
+			packaging.ServiceStatus{Installed: true, Loaded: false}, true},
+		{"no service entry is the one case with nothing to restart", packaging.ServiceStatus{}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := restartWanted(tc.st); got != tc.want {
+				t.Errorf("restartWanted(%+v) = %v, want %v", tc.st, got, tc.want)
+			}
+		})
+	}
+}
+
+// The update is installed either way, so the text has to separate that from the daemon still
+// running the old binary, and hand over the manual restart.
+func TestConfigUnreadableWarningKeepsTheStaleDaemonVisible(t *testing.T) {
+	got := configUnreadableWarning(errors.New("state_dir is not absolute"))
+	for _, want := range []string{"state_dir is not absolute", "not restarted", "previous version"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("config-unreadable warning %q does not contain %q", got, want)
+		}
+	}
+	if cmd := packaging.RestartCommand(); cmd != "" && !strings.Contains(got, cmd) {
+		t.Errorf("config-unreadable warning %q does not offer %q", got, cmd)
+	}
+}
+
 // Every branch of the boot-time gate is a promise: dev builds never self-update,
 // SHIPPER_NO_SELFUPDATE always wins, and the re-exec guard allows exactly one hop per boot.
 func TestTheBootGateKeepsItsPromises(t *testing.T) {

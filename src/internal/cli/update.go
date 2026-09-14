@@ -52,6 +52,7 @@ func updateCmd(build app.Build) *cobra.Command {
 func restartService(ctx context.Context, w io.Writer) error {
 	eff, paths, err := app.ResolveEffective()
 	if err != nil {
+		printWarning(w, configUnreadableWarning(err))
 		return nil
 	}
 	stateCtx, stateCancel := context.WithTimeout(ctx, serviceStateTimeout)
@@ -61,7 +62,7 @@ func restartService(ctx context.Context, w io.Writer) error {
 	if stateErr != nil {
 		return serviceStateTimeoutError(stateErr)
 	}
-	if !state.Loaded {
+	if !restartWanted(state) {
 		return nil
 	}
 
@@ -80,6 +81,31 @@ func restartService(ctx context.Context, w io.Writer) error {
 	}
 	banner(w, p, p.green, "on", "background service restarted")
 	return nil
+}
+
+// restartWanted reports whether there is a background service for `update` to restart.
+//
+// The predicate is Installed rather than Loaded. A service entry that exists is one to restart, and
+// whether the supervisor currently reports it loaded is exactly what a platform can get wrong: a
+// Windows install whose scheduled task could not be parsed reported Loaded false while that task
+// was running, so the restart was skipped and the daemon went on executing the previous binary.
+// Loaded is also legitimately false for a plist written but never bootstrapped, or an inactive
+// unit -- the state macOS calls "present but NOT loaded", which collects nothing while looking
+// installed. Restarting is the right answer in all three; only the absence of an entry is not.
+func restartWanted(st packaging.ServiceStatus) bool {
+	return st.Installed
+}
+
+// configUnreadableWarning covers the update that lands with nowhere to look up the service: the
+// binary is replaced and the daemon keeps the old one. Silent, this is indistinguishable from a
+// restart that happened.
+func configUnreadableWarning(err error) string {
+	msg := fmt.Sprintf("the configuration does not resolve (%v), so the background service was not restarted;\n"+
+		"the update is installed and the daemon keeps the previous version until something restarts it", err)
+	if cmd := packaging.RestartCommand(); cmd != "" {
+		msg += ";\nto force it now: " + cmd
+	}
+	return msg
 }
 
 func serviceStateTimeoutError(err error) error {
