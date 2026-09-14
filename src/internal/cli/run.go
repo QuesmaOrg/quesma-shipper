@@ -210,6 +210,16 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 
 	for n := 1; ; n++ {
 		fl.Phase(fmt.Sprintf("tick %d", n))
+		// Roots are picked once, during app.New above. An agent installed -- or first run, which
+		// is when Claude Code creates projects/ -- after this process started would otherwise read
+		// as absent until something restarted the daemon. Announced, because the silence is what
+		// let an install look healthy for days while collecting nothing.
+		appeared := env.RefreshAbsentRoots()
+		if !quiet {
+			for _, id := range appeared {
+				fmt.Fprintf(out, "source %s: root resolved, collecting from this tick\n", id)
+			}
+		}
 		before := platform.ReadMemStats()
 		var rep formats.Report
 		var err error

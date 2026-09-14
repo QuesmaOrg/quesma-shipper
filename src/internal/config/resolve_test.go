@@ -381,6 +381,82 @@ func TestRequireSubdirRefusesAWrongShapedRoot(t *testing.T) {
 	}
 }
 
+// --- refreshing an absent root ----------------------------------------------
+
+// The daemon resolves roots once and then ticks for days. Claude Code creates projects/ on its
+// first run, which is routinely after the shipper started: without a refresh that install reports
+// agent_absent forever, looking healthy while collecting nothing.
+func TestARootThatAppearsAfterStartupIsPickedUp(t *testing.T) {
+	home := t.TempDir()
+	mustMkdir(t, filepath.Join(home, ".claude")) // present, but not yet the right shape
+
+	eff, err := config.Resolve(baseInput(t, home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sourceByID(t, eff, "claude-code-transcripts"); got.Root != "" {
+		t.Fatalf("precondition: the root must start unresolved, got %q", got.Root)
+	}
+
+	// The agent runs for the first time.
+	mustWrite(t, filepath.Join(home, ".claude", "projects", "-Users-jane-api", "s.jsonl"), "{}\n")
+
+	found := config.RefreshAbsentRoots(eff, env(home, nil))
+	if !slices.Contains(found, "claude-code-transcripts") {
+		t.Errorf("the newly resolved source must be reported so the tick can announce it, got %v", found)
+	}
+	src := sourceByID(t, eff, "claude-code-transcripts")
+	if src.Root != filepath.Join(home, ".claude") {
+		t.Errorf("root should now resolve, got %q (%s)", src.Root, src.RootUnresolvedReason)
+	}
+	if src.RootUnresolvedReason != "" {
+		t.Errorf("a resolved root must carry no absence reason, got %q", src.RootUnresolvedReason)
+	}
+}
+
+// A root already in use keys the fingerprints that decide what has been shipped. Re-picking it
+// could move collection to a different directory mid-run, so a refresh only fills in the gaps.
+func TestRefreshLeavesAnAlreadyResolvedRootAlone(t *testing.T) {
+	home := fakeHome(t)
+	eff, err := config.Resolve(baseInput(t, home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := sourceByID(t, eff, "claude-code-transcripts").Root
+	if before == "" {
+		t.Fatal("precondition: the root must resolve from a fake home")
+	}
+
+	if found := config.RefreshAbsentRoots(eff, env(home, nil)); slices.Contains(found, "claude-code-transcripts") {
+		t.Errorf("a source that already resolved must not be reported as newly found, got %v", found)
+	}
+	if after := sourceByID(t, eff, "claude-code-transcripts").Root; after != before {
+		t.Errorf("root moved under a running loop: %q -> %q", before, after)
+	}
+}
+
+// An agent that is still absent keeps an accurate reason, and the refresh reports nothing: doctor
+// and the heartbeat read this string, so a stale one is what made the outage unreadable.
+func TestRefreshKeepsTheReasonCurrentWhileTheAgentStaysAbsent(t *testing.T) {
+	home := t.TempDir()
+	mustMkdir(t, filepath.Join(home, ".claude"))
+
+	eff, err := config.Resolve(baseInput(t, home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found := config.RefreshAbsentRoots(eff, env(home, nil)); len(found) != 0 {
+		t.Errorf("nothing appeared, so nothing may be reported as found, got %v", found)
+	}
+	src := sourceByID(t, eff, "claude-code-transcripts")
+	if src.Root != "" {
+		t.Errorf("the root must stay unresolved, got %q", src.Root)
+	}
+	if !strings.Contains(src.RootUnresolvedReason, "projects") {
+		t.Errorf("the reason should still name the missing subdir, got %q", src.RootUnresolvedReason)
+	}
+}
+
 // --- env expansion ----------------------------------------------------------
 
 // Expansion is an attack surface: the deny list must act on the expanded value, never the template.
