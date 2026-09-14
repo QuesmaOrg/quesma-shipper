@@ -32,7 +32,7 @@ import (
 // Pinned: a floating MinIO changes what the store does under concurrency and a floating toxiproxy
 // renames the metrics this file parses, either without a line of shipper code changing.
 const (
-	minioImage     = "minio/minio:RELEASE.2025-04-22T22-12-26Z"
+	minioImage     = "quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z"
 	toxiproxyImage = "ghcr.io/shopify/toxiproxy:2.12.0"
 )
 

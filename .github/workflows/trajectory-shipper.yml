@@ -52,7 +52,7 @@ jobs:
           cache-dependency-path: src/go.sum
       - name: Compile while pulling the pinned test images
         run: |
-          docker pull -q minio/minio:RELEASE.2025-04-22T22-12-26Z & minio=$!
+          docker pull -q quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z & minio=$!
           docker pull -q ghcr.io/shopify/toxiproxy:2.12.0 & toxiproxy=$!
           (cd src && go test -tags perf -c -o /dev/null ./perf/)
           wait $minio
