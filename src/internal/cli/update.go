@@ -13,6 +13,8 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
 
+const serviceStateTimeout = 5 * time.Second
+
 func clearSelfUpdateHop() {
 	os.Unsetenv(app.ReexecGuardEnv) // clean up guards inherited from pre-file releases
 	if stateDir, err := app.StateDirWithoutConfig(); err == nil {
@@ -52,17 +54,21 @@ func restartService(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return nil
 	}
-	// The wait is the agent's own SIGTERM drain, not a stalled supervisor, so it gets the drain
-	// window rather than a short guard; the bound only matters when the supervisor itself hangs.
+	stateCtx, stateCancel := context.WithTimeout(ctx, serviceStateTimeout)
+	state := packaging.ServiceStateContext(stateCtx, paths.StateDir)
+	stateErr := stateCtx.Err()
+	stateCancel()
+	if stateErr != nil {
+		return serviceStateTimeoutError(stateErr)
+	}
+	if !state.Loaded {
+		return nil
+	}
+
+	// A loaded agent gets its full SIGTERM drain; the bound only matters when the supervisor hangs.
 	budget := packaging.RestartBudget(eff.DrainDeadline)
 	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
-	if !packaging.ServiceStateContext(ctx, paths.StateDir).Loaded {
-		if ctx.Err() != nil {
-			printWarning(w, restartTimeoutWarning(budget))
-		}
-		return nil
-	}
 	p := paletteFor(w)
 	fmt.Fprintf(w, "Restarting background service; it ships a final slice before exiting, up to %s…\n", budget)
 	if err := packaging.RestartService(ctx); err != nil {
@@ -74,6 +80,15 @@ func restartService(ctx context.Context, w io.Writer) error {
 	}
 	banner(w, p, p.green, "on", "background service restarted")
 	return nil
+}
+
+func serviceStateTimeoutError(err error) error {
+	detail := "the update is installed but its service restart was not requested"
+	if cmd := packaging.RestartCommand(); cmd != "" {
+		detail += "; restart it with: " + cmd
+	}
+	return fmt.Errorf("could not determine whether the background service is running within %s: %w; %s",
+		serviceStateTimeout, err, detail)
 }
 
 // restartTimeoutWarning is not an error: the binary is swapped and the supervisor restarts the
