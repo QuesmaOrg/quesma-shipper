@@ -70,7 +70,7 @@ sources:
       kind: none
 
   - id: cursor-account
-    description: Account and raw provider usage snapshots every 15 minutes.
+    description: Account and raw provider usage snapshots each collection interval.
     gather: account
     scrub: false
     roots:

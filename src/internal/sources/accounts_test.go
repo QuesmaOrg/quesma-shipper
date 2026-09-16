@@ -26,7 +26,7 @@ func accountFixture(t *testing.T) Request {
 	return Request{
 		Source:   Resolved{Source: Source{ID: "codex-account", Family: "codex", Gather: "account"}, Root: filepath.Join(home, ".codex")},
 		StateDir: filepath.Join(home, "shipper"), Env: Env{Home: home, Lookup: func(string) (string, bool) { return "", false }},
-		Context: context.Background(), Capture: true,
+		Context: context.Background(), Capture: true, Interval: 15 * time.Minute,
 		Now: func() time.Time { return time.Date(2026, 9, 16, 14, 17, 3, 0, time.UTC) },
 	}
 }
@@ -180,11 +180,44 @@ func TestClaudeUsesActiveCredentialsAndPreservesLocalAccount(t *testing.T) {
 		if err := json.Unmarshal(line, &record); err != nil {
 			t.Fatal(err)
 		}
-		if !record.BucketStart.Equal(req.Now().Truncate(accountInterval)) || record.Source == "" || record.ObservedAt.IsZero() || len(record.Body) == 0 {
+		if !record.BucketStart.Equal(req.Now().Truncate(req.Interval)) || record.Source == "" || record.ObservedAt.IsZero() || len(record.Body) == 0 {
 			t.Fatalf("incomplete record %d: %s", i, line)
 		}
 	}
 	if bytes.Contains(raw, []byte(`"observations"`)) || bytes.Contains(raw, []byte("not collected")) || !bytes.Contains(raw, []byte(`"future":42`)) {
 		t.Fatalf("%s", raw)
+	}
+}
+
+func TestAccountBucketUsesCollectionInterval(t *testing.T) {
+	for _, interval := range []time.Duration{5 * time.Minute, 30 * time.Minute, 0, -time.Minute} {
+		t.Run(interval.String(), func(t *testing.T) {
+			req := accountFixture(t)
+			req.Interval = interval
+			accountFile(t, filepath.Join(req.Source.Root, "auth.json"), `{}`)
+			d, err := (&Accounts{}).Discover(req)
+			if interval <= 0 {
+				if err == nil {
+					t.Fatal("accepted nonpositive interval")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			bucket := req.Now().UTC().Truncate(interval)
+			c := d.Candidates[0]
+			if c.RelPath != "codex.account."+bucket.Format("20060102T150405Z")+".jsonl" {
+				t.Fatal(c.RelPath)
+			}
+			for _, line := range bytes.Split(bytes.TrimSpace(c.Content), []byte("\n")) {
+				var record struct {
+					BucketStart time.Time `json:"bucket_start"`
+				}
+				if err := json.Unmarshal(line, &record); err != nil || !record.BucketStart.Equal(bucket) {
+					t.Fatalf("wrong bucket: %s (%v)", line, err)
+				}
+			}
+		})
 	}
 }

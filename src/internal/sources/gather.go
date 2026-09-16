@@ -112,7 +112,8 @@ type Request struct {
 	// Username feeds the path placeholder, so an inventory record carries a pseudonymised path.
 	Username string
 
-	Now func() time.Time
+	Now      func() time.Time
+	Interval time.Duration
 
 	Context context.Context
 	Env     Env

@@ -68,7 +68,7 @@ sources:
       magic_hex: "28b52ffd"
 
   - id: codex-account
-    description: Account and raw provider usage snapshots every 15 minutes.
+    description: Account and raw provider usage snapshots each collection interval.
     gather: account
     scrub: false
     roots:

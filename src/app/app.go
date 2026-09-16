@@ -327,7 +327,9 @@ func ignoreFilter() *sources.RepoFilter {
 // planFor is the one place configuration becomes something the loop can read: the core gets
 // values, never the resolver, so adding a config key does not touch the engine.
 func planFor(eff *config.Effective) engine.Plan {
+	interval, _ := config.TickInterval(eff.Schedule)
 	return engine.Plan{
+		Interval:       interval,
 		OrganizationID: eff.OrganizationID,
 		StateDir:       eff.StateDir,
 		MaxFilesPerRun: eff.MaxFilesPerRun,

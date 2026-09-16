@@ -91,7 +91,7 @@ Two more records are produced by the shipper itself:
   directory, and the git remote as host and path. Credentials embedded in a remote URL are removed
   before the value is written anywhere.
 - **Account and usage history.** Independent Claude Code, Codex, and Cursor collectors upload
-  account metadata and provider usage JSON in 15-minute UTC buckets. Unknown fields are preserved;
+  account metadata and provider usage JSON in UTC buckets matching the collection interval (default 15 minutes). Unknown fields are preserved;
   these records skip scrubbing and ship encrypted.
 
 All other files above pass through the scrub stage before encryption. The control plane receives no

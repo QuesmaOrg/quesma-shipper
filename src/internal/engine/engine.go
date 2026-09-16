@@ -102,6 +102,7 @@ type Plan struct {
 
 	StateDir       string
 	MaxFilesPerRun int
+	Interval       time.Duration
 
 	Sources []sources.Resolved
 
@@ -224,6 +225,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			StateDir: o.Plan.StateDir,
 			Username: o.user,
 			Now:      o.Now,
+			Interval: o.Plan.Interval,
 			Context:  ctx,
 			Env:      o.Env,
 			Capture:  !o.DryRun,

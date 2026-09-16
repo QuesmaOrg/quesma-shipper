@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-const accountInterval = 15 * time.Minute
-
 type Accounts struct {
 	client   *http.Client
 	keychain func(context.Context, string) ([]byte, error)
@@ -41,7 +39,10 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 	if req.Now == nil || req.Context == nil || req.Env.Home == "" {
 		return d, fmt.Errorf("account collection requires clock, context and home")
 	}
-	bucket := req.Now().UTC().Truncate(accountInterval)
+	if req.Interval <= 0 {
+		return d, fmt.Errorf("account collection requires a positive interval")
+	}
+	bucket := req.Now().UTC().Truncate(req.Interval)
 	name := strings.TrimSuffix(req.Source.ID, "-account") + ".account." + bucket.Format("20060102T150405Z") + ".jsonl"
 	ctx, cancel := context.WithTimeout(req.Context, 30*time.Second)
 	defer cancel()

@@ -30,6 +30,7 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	}
 	spec, _ := catalog.Source("codex-account")
 	o := f.opts()
+	o.Plan.Interval = 5 * time.Minute
 	o.Env = sources.Env{Home: f.home, Lookup: func(string) (string, bool) { return "", false }}
 	o.Plan.Sources = []sources.Resolved{{Source: spec, Root: home, Enabled: true, SpecFingerprint: sources.SpecFingerprint(spec)}}
 	now := o.Now()
@@ -82,7 +83,7 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	if rep.Shipped != 1 || len(f.port.keys()) != 1 {
 		t.Fatalf("same bucket should overwrite existing object: %+v", rep)
 	}
-	now = now.Add(15 * time.Minute)
+	now = now.Add(5 * time.Minute)
 	rep = runEnrich(t, f, o)
 	if rep.Shipped != 1 {
 		t.Fatalf("new bucket %+v", rep)
