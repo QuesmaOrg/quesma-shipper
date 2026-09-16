@@ -72,8 +72,8 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 				t.Fatalf("invalid account record: %s", line)
 			}
 		}
-		if !bytes.Contains(payload, []byte(`"auth_mode":"fresh"`)) || bytes.Contains(payload, []byte("dev@example.org")) {
-			t.Fatalf("fresh payload not scrubbed: %s", payload)
+		if !bytes.Contains(payload, []byte(`"auth_mode":"fresh"`)) || !bytes.Contains(payload, []byte("dev@example.org")) || manifest.Redaction != nil {
+			t.Fatalf("fresh account payload altered: %s", payload)
 		}
 	}
 	f.reopen()
@@ -115,5 +115,40 @@ func TestAccountDisabledAndPreviewDoNotCapture(t *testing.T) {
 	runEnrich(t, f, o)
 	if _, err := os.Stat(filepath.Join(f.stateDir, "snapshots")); !os.IsNotExist(err) {
 		t.Fatal("disabled/preview collection wrote snapshots")
+	}
+}
+
+func TestSourceScrubSetting(t *testing.T) {
+	on, off := true, false
+	for _, tc := range []struct {
+		name    string
+		setting *bool
+		wantRaw bool
+	}{{"default", nil, false}, {"enabled", &on, false}, {"disabled", &off, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			const raw = "{\"email\":\"dev@example.org\",\"access_token\":\"fixture-secret\"}\n"
+			f.writeTranscript("projects/demo/session.jsonl", raw)
+			o := f.opts()
+			o.Plan.Sources[0].Scrub = tc.setting
+			rep := runEnrich(t, f, o)
+			if rep.Shipped != 1 {
+				t.Fatalf("shipped: %+v", rep)
+			}
+			for _, key := range f.port.keys() {
+				obj, _ := f.port.get(key)
+				m, payload, err := transforms.Open(obj.Body, f.unit.Identity)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tc.wantRaw {
+					if string(payload) != raw || m.Redaction != nil {
+						t.Fatal("disabled scrub changed bytes or reported redaction")
+					}
+				} else if bytes.Contains(payload, []byte("dev@example.org")) || bytes.Contains(payload, []byte("fixture-secret")) || m.Redaction == nil {
+					t.Fatalf("scrubbing was not applied: %s", payload)
+				}
+			}
+		})
 	}
 }

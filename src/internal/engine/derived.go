@@ -224,13 +224,7 @@ func (o Options) prepareDerived(
 		return fo, nil
 	}
 
-	if o.scrubErr != nil {
-		fo.Decision = auditlog.DecisionFailed
-		fo.Reason = o.scrubErr.Error()
-		return fo, nil
-	}
-	// Redaction fails CLOSED here too: a derived object whose scrub failed does not ship.
-	res, err := o.scrub.Scrub(d.Payload, transforms.Hint{Family: src.Family, JSONL: true})
+	res, err := scrubSource(src, d.Payload, true, o.scrub, o.scrubErr)
 	if err != nil {
 		fo.Decision = auditlog.DecisionFailed
 		fo.Reason = "scrub failed closed on derived payload: " + err.Error()
@@ -271,9 +265,11 @@ func (o Options) prepareDerived(
 		Keyspaces:  d.DBKeyspaces,
 		RowsRead:   d.DBRowsRead,
 	}
-	m.Redaction = &transforms.RedactionSummary{
-		Density:  res.Density(),
-		RuleHits: res.RuleHits,
+	if src.Scrub == nil || *src.Scrub {
+		m.Redaction = &transforms.RedactionSummary{
+			Density:  res.Density(),
+			RuleHits: res.RuleHits,
+		}
 	}
 	m.ShippedHash = transforms.Hash(res.Out)
 

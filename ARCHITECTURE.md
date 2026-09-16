@@ -145,6 +145,6 @@ Account collectors use bounded provider HTTP reads during collection only. Crede
 in memory; a separate exact-key SQLite reader supplies Cursor authentication without changing
 the generic collection deny rules. macOS Keychain access invokes only `/usr/bin/security find-generic-password` with a five-second
 timeout, using the system reader’s existing permissions.
-Collectors return generated content in memory; the engine scrubs, encrypts, and uploads it
-through the same pipeline as files. Repeated runs overwrite the current bucket. Sources do
+Collectors return generated content in memory; the engine encrypts and uploads it
+through the same pipeline as files. Their compiled catalog entries set `scrub: false`. Repeated runs overwrite the current bucket. Sources do
 not import transforms or engine.

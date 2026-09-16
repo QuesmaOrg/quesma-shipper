@@ -40,6 +40,7 @@ type Source struct {
 	MaxFileBytes  int64           `yaml:"max_file_bytes"`
 	Sniff         *Sniff          `yaml:"sniff"`
 	Enrichers     map[string]bool `yaml:"enrichers"`
+	Scrub         *bool           `yaml:"scrub"`
 
 	// Emit, CWDProbe and GitRead belong to the sidecar primitive. Remote normalisation is not
 	// configurable: NormaliseRemote strips userinfo unconditionally.

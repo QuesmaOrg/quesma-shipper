@@ -70,6 +70,7 @@ sources:
   - id: codex-account
     description: Account and raw provider usage snapshots every 15 minutes.
     gather: account
+    scrub: false
     roots:
       - $CODEX_HOME
       - ~/.codex

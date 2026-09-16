@@ -121,11 +121,7 @@ func (o Options) prepareFile(
 		out.Reason = "file shrank: truncation or rewrite"
 	}
 
-	if scrubErr != nil {
-		failAndBackOff(o, &res, key, fp, scrubErr.Error())
-		return res, nil
-	}
-	scrubbed, err := scrubber.Scrub(raw, transforms.Hint{Family: src.Family, JSONL: isJSONL(src)})
+	scrubbed, err := scrubSource(src, raw, isJSONL(src), scrubber, scrubErr)
 	if err != nil {
 		// Fail closed: a scrub-ENGINE error means this file does not upload.
 		failAndBackOff(o, &res, key, fp, "scrub failed closed: "+err.Error())
@@ -200,4 +196,14 @@ func failAndBackOff(o Options, res *fileResult, key Key, fp Fingerprint, reason 
 	// Spread by the file's own key so correlated failures do not all wake in the same second.
 	next.BackoffUntil = o.Now().Add(backoffFor(attempts, keySpread(key)))
 	res.intent = intent{kind: intentBackoff, key: key, fp: next, reason: reason}
+}
+
+func scrubSource(src sources.Resolved, raw []byte, jsonl bool, scrubber *transforms.Scrubber, scrubErr error) (transforms.Result, error) {
+	if src.Scrub != nil && !*src.Scrub {
+		return transforms.Result{Out: raw, BytesTotal: len(raw)}, nil
+	}
+	if scrubErr != nil {
+		return transforms.Result{}, scrubErr
+	}
+	return scrubber.Scrub(raw, transforms.Hint{Family: src.Family, JSONL: jsonl})
 }

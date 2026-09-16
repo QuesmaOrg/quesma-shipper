@@ -31,10 +31,11 @@ can be swapped, and configuration over hard-coded policy. Where v1 fixed a choic
 the sink auth method, for instance — the default posture is configurable; a hard
 rejection needs an article here to stand on.
 
-### 4. Nothing ships raw: scrubbed, then encrypted
+### 4. Scrub by default; always encrypt
 
 Every trajectory file is scrubbed before upload: credentials, PII, whatever the
-operator needs removed. The stage is a fixture of the pipeline; what it scrubs is
+operator needs removed. Compiled source specs may explicitly disable scrubbing; runtime
+configuration cannot. What the scrub stage removes is
 configurable and a hook point (Article 3). What survives ships encrypted with
 `age`. The control plane supplies the recipients — possibly several — and the
 client encrypts to them. The client needs no ability to decrypt what it ships;

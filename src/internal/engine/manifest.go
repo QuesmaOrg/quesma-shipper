@@ -52,10 +52,12 @@ func (o Options) manifestFor(
 	m.PayloadMTime = &mtime
 	m.AgentVersion = disc.AgentVersion
 	m.ShapeSniff = string(disc.Sniff)
-	m.Redaction = &transforms.RedactionSummary{
-		Density:  res.Density(),
-		RuleHits: res.RuleHits,
-		ScanMode: res.ScanMode,
+	if src.Scrub == nil || *src.Scrub {
+		m.Redaction = &transforms.RedactionSummary{
+			Density:  res.Density(),
+			RuleHits: res.RuleHits,
+			ScanMode: res.ScanMode,
+		}
 	}
 	if m.ShapeSniff == "" {
 		m.ShapeSniff = string(sources.SniffOK)

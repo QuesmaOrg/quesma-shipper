@@ -97,6 +97,7 @@ sources:
   - id: claude-account
     description: Account and raw provider usage snapshots every 15 minutes.
     gather: account
+    scrub: false
     roots:
       - $CLAUDE_CONFIG_DIR
       - ~/.claude

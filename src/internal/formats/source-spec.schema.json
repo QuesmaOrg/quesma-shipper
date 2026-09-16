@@ -79,6 +79,12 @@
           "$ref": "#/$defs/sniff"
         },
 
+        "scrub": {
+          "description": "Whether to scrub source content before encryption. Only the compiled catalog can disable it.",
+          "type": "boolean",
+          "default": true
+        },
+
         "enrichers": {
           "description": "Registered enrichers to run for this source. Config can only enable or disable a compiled enricher -- no layer can install transformation code. For DB-backed inputs the derived view is the only carrier of the DB-side fields, so disabling one stops that capture entirely.",
           "type": "object",

@@ -92,9 +92,9 @@ Two more records are produced by the shipper itself:
   before the value is written anywhere.
 - **Account and usage history.** Independent Claude Code, Codex, and Cursor collectors upload
   account metadata and provider usage JSON in 15-minute UTC buckets. Unknown fields are preserved;
-  credentials and PII are scrubbed before encryption and upload.
+  these records skip scrubbing and ship encrypted.
 
-Every file above passes through the scrub stage before encryption. The control plane receives no
+All other files above pass through the scrub stage before encryption. The control plane receives no
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.
 
 Never uploaded as files: credential stores such as Claude Code's `.credentials.json` and
