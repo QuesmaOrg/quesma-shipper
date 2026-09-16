@@ -52,8 +52,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ steps.version.outputs.value }}
         run: |
-          tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_VERSION" --jq .object.sha 2>/dev/null || true)
-          if [[ -n "$tag_sha" ]]; then
+          if tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_VERSION" --jq .object.sha 2>/dev/null); then
             [[ "$tag_sha" == "$GITHUB_SHA" ]] || {
               echo "::error::Release tag $RELEASE_VERSION points at $tag_sha, expected $GITHUB_SHA"
               exit 1
