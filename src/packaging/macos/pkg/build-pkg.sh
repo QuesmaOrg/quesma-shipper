@@ -40,7 +40,7 @@ main() {
 	*) die "binary did not corroborate release version $RELEASE_VERSION (build from a clean matching revision)" ;;
 	esac
 
-	fill_bundle "$APP" "$HERE/Info.plist.in" quesma-shipper.icns
+	fill_bundle "$APP"
 	ln -s '../../Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper' \
 		"$WORK/payload/.local/bin/quesma-shipper"
 	/usr/bin/xattr -cr "$WORK/payload" "$OUT/quesma-shipper-darwin-arm64" "$OUT/quesma-shipper-darwin-amd64"
@@ -51,7 +51,6 @@ main() {
 	cp "$HERE/scripts/postinstall" "$WORK/scripts"
 
 	build_component "$WORK/payload" com.quesma.shipper "$WORK/quesma-shipper-component.pkg" --scripts "$WORK/scripts"
-	build_legacy_bridge "$APP"
 	set -- --distribution "$HERE/Distribution.xml" --package-path "$WORK"
 	[ -z "$INSTALLER_IDENTITY" ] || set -- "$@" --sign "$INSTALLER_IDENTITY"
 	/usr/bin/productbuild "$@" "$OUT/quesma-shipper-macos-universal.pkg"
@@ -67,30 +66,15 @@ main() {
 	printf 'built %s\n' "$OUT/quesma-shipper-macos-universal.pkg"
 }
 
-# Rename bridge: the updater in every install older than the rename only accepts a package whose
-# Shipper-component.pkg holds a Shipper.app with the former identifiers, so one rides along with
-# the renamed binary inside. The Distribution leaves it unselected, so Installer never lays it out;
-# the swapped-in binary then migrates the install itself (packaging/macos/legacy.go). Delete this
-# function, its call, legacy/ and the Distribution choice with the rest of the bridge glue.
-build_legacy_bridge() {
-	legacy="$WORK/legacy/Applications/Shipper.app"
-	mkdir -p "$legacy/Contents/MacOS" "$legacy/Contents/Resources"
-	cp "$1/Contents/MacOS/quesma-shipper" "$legacy/Contents/MacOS/shipper"
-	fill_bundle "$legacy" "$HERE/legacy/Info.plist.in" Shipper.icns
-	/usr/bin/xattr -cr "$WORK/legacy"
-	[ -z "$APPLICATION_IDENTITY" ] || sign_app "$APPLICATION_IDENTITY" "$legacy"
-	build_component "$WORK/legacy" com.quesma.trajectory-shipper "$WORK/Shipper-component.pkg"
-}
-
-# fill_bundle renders the versioned Info.plist and copies the resources every bundle carries.
+# fill_bundle renders the versioned Info.plist and copies the resources the bundle carries.
 fill_bundle() {
-	bundle=$1 plist_in=$2 icns=$3
+	bundle=$1
 	sed -e "s/@MARKETING_VERSION@/$MARKETING_VERSION/g" \
 		-e "s/@BUILD_VERSION@/$BUILD_VERSION/g" \
 		-e "s/@RELEASE_VERSION@/$RELEASE_VERSION/g" \
-		"$plist_in" > "$bundle/Contents/Info.plist"
+		"$HERE/Info.plist.in" > "$bundle/Contents/Info.plist"
 	/usr/bin/plutil -lint "$bundle/Contents/Info.plist" >/dev/null
-	cp "$HERE/quesma-shipper.icns" "$bundle/Contents/Resources/$icns"
+	cp "$HERE/quesma-shipper.icns" "$bundle/Contents/Resources/quesma-shipper.icns"
 	cp "$MODULE/internal/legal/LICENSE" "$MODULE/internal/legal/NOTICE" "$bundle/Contents/Resources/"
 	cp -R "$MODULE/internal/legal/third_party" "$bundle/Contents/Resources/third_party"
 }
@@ -112,12 +96,8 @@ sign_code() {
 			--identifier com.quesma.shipper.cli --sign "$identity" "$binary"
 		/usr/bin/codesign --verify --strict --verbose=2 "$binary"
 	done
-	sign_app "$identity" "$app"
-}
-
-sign_app() {
-	/usr/bin/codesign --force --options runtime --timestamp --sign "$1" "$2"
-	/usr/bin/codesign --verify --deep --strict --verbose=2 "$2"
+	/usr/bin/codesign --force --options runtime --timestamp --sign "$identity" "$app"
+	/usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
 }
 
 build_binary() {
