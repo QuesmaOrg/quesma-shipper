@@ -1,5 +1,5 @@
 # Releases for the trajectory shipper: every push to main that touches the shipper publishes one
-# through TUF in R2.
+# through TUF in R2, then announces it on GitHub.
 #
 # VERSION is the reviewed release line. The script appends <commit-count>.<hash>, keeping builds
 # within that line ordered and carrying provenance that buildinfo verifies before trusting.
@@ -363,3 +363,40 @@ jobs:
           fi
           aws s3 sync .tuf/metadata/ "${R2_URI%/}/metadata/" --exclude timestamp.json --no-progress
           aws s3 cp .tuf/metadata/timestamp.json "${R2_URI%/}/metadata/timestamp.json" --no-progress
+
+  announce-github-release:
+    name: Announce release on GitHub
+    if: github.event_name == 'push'
+    needs: [version, publish-tuf]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.version.outputs.value }}
+        run: |
+          if gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub release $RELEASE_VERSION already exists"
+            exit 0
+          fi
+
+          gh release create "$RELEASE_VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Quesma Shipper $RELEASE_VERSION" \
+            --notes-file - <<EOF
+          Quesma Shipper **$RELEASE_VERSION** is now available.
+
+          | Platform | Architecture | Download |
+          |---|---|---|
+          | macOS 13+ | Apple Silicon and Intel | [Download universal installer](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg) |
+          | Windows 10 1809+ | x64 | [Download installer](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe) |
+          | Windows 10 1809+ | Arm64 | [Download installer](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe) |
+          | Linux | x64 | [Download binary](https://updates.quesma.dev/download/quesma-shipper-linux-amd64) |
+          | Linux | Arm64 | [Download binary](https://updates.quesma.dev/download/quesma-shipper-linux-arm64) |
+
+          Portable Windows binaries: [x64](https://updates.quesma.dev/download/quesma-shipper-windows-amd64.exe) · [Arm64](https://updates.quesma.dev/download/quesma-shipper-windows-arm64.exe)
+          EOF
