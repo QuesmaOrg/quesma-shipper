@@ -224,6 +224,20 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			StateDir: o.Plan.StateDir,
 			Username: o.user,
 			Now:      o.Now,
+			Context:  ctx,
+			Env:      o.Env,
+			Capture:  !o.DryRun,
+			Scrub: func(raw []byte) ([]byte, error) {
+				if o.scrubErr != nil {
+					return nil, o.scrubErr
+				}
+				r, err := o.scrub.Scrub(raw, transforms.Hint{Family: src.Family, JSONL: true})
+				return r.Out, err
+			},
+			Committed: func(c sources.Candidate) bool {
+				fp, ok := store.store.Get(Key{SourceID: src.ID, NativePath: c.Path})
+				return ok && fp.SourceHash != "" && fp.SourceSize == c.Size && fp.SourceMTime.Equal(c.MTime)
+			},
 		})
 		if err != nil {
 			out.Health = sources.MatchPresentUnreadable

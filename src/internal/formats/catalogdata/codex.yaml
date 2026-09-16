@@ -43,13 +43,6 @@ sources:
       - "sessions/**/*.jsonl"
       - "archived_sessions/**/*.jsonl"
       - "session_index.jsonl"
-    # Which account and plan produced these rollouts. The rollouts do carry
-    # plan_type in their rate-limit telemetry, but only while a session runs;
-    # auth.json answers it for every install, including one that logged in and
-    # never used the tool. The email and plan are claims inside the id_token —
-    # the compiled probe decodes them locally and no token ships.
-    enrichers:
-      codex-account: true
     sniff:
       kind: jsonl
       max_scan_bytes: 65536
@@ -73,3 +66,16 @@ sources:
     sniff:
       kind: magic
       magic_hex: "28b52ffd"
+
+  - id: codex-account
+    description: Account and raw provider usage snapshots every 15 minutes.
+    gather: account
+    roots:
+      - $CODEX_HOME
+      - ~/.codex
+    artifact_class: context
+    max_file_bytes: 8388608
+    emit: account
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 8388608

@@ -90,20 +90,50 @@ Two more records are produced by the shipper itself:
 - **Project map.** For each project directory an agent used: the directory name, the working
   directory, and the git remote as host and path. Credentials embedded in a remote URL are removed
   before the value is written anywhere.
-- **Account metadata.** From each agent's account store: email, plan, rate-limit tier, auth mode,
-  billing type, organisation name and role, seat tier, team, and subscription end date. Tokens
-  cannot appear in this record. The output is a fixed struct, so unknown fields are dropped.
+- **Account and usage history.** Independent `claude-account`, `codex-account`, and
+  `cursor-account` collectors save the first observation in each 15-minute UTC bucket.
+  Snapshots preserve provider JSON fields, including unknown fields, percentages, reset
+  windows, and plan details, plus selected local account metadata. They are scrubbed before
+  local persistence and again before encryption and upload.
+
+Snapshots live under `<state-dir>/snapshots/<source-id>/`, for example
+`claude.account.20260916T141500Z.json`. Each timestamp produces its own encrypted remote
+object; retries use the saved snapshot. Older local snapshots are removed only after a
+confirmed upload, with the latest retained as the sampling marker. Pending history is bounded
+by 672 files and 64 MiB per source; a full backlog pauses new samples and reports the gap,
+without deleting pending uploads. The normal tick defaults to 15 minutes; slower schedules,
+sleep, and offline authentication can leave gaps. Missed observations are never backfilled.
+
+Claude reads the active login's macOS Keychain entry through `purego` (no CGO, subprocess,
+or interactive prompt), with `.credentials.json` as a fallback; other platforms use the file.
+Codex reads `$CODEX_HOME/auth.json` or `~/.codex/auth.json`. Cursor reads exact account keys
+and its access token from `state.vscdb` read-only. Credentials only authenticate requests;
+they are never added to the snapshot, refreshed, or written back to an agent's store.
+
+Claude snapshots contain the OAuth profile and usage responses; Codex captures WHAM usage;
+Cursor captures dashboard plan and current-period usage. Each observation records its source,
+time, HTTP status, and either the provider body or a fixed failure reason. These provider
+endpoints can change, and expired or inaccessible credentials produce partial snapshots.
+Rate-limit cooldowns survive restarts. Doctor, status, and preview do not fetch new usage.
+
+Disable an account collector with `sources: [{id: claude-account, enabled: false}]` (likewise
+for Codex/Cursor). Old `enrichers: {claude-account: false}` settings on transcript sources
+are migrated to the corresponding collector disable. Disabling transcripts alone now leaves
+account collection enabled. Existing remote account objects are retained; historical data
+cannot be recovered from their latest snapshots. New objects use `gather: account` and a
+versioned envelope around provider data rather than the previous flat account struct.
+Session token usage remains in the collected transcripts; no session totals or pricing are
+calculated by these collectors. Cursor billing exports and session attribution are not included.
 
 Every file above passes through the scrub stage before encryption. The control plane receives no
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.
 
 Never uploaded as files: credential stores such as Claude Code's `.credentials.json` and
 `~/.claude.json`, Codex's `auth.json`, and Cursor's `state.vscdb`. A compiled deny list blocks
-these paths even when a configured glob would match them. Two enrichers read from them and ship
-only derived fields:
+these paths even when a configured glob would match them. Account collectors read selected
+metadata and credentials separately; the auth stores themselves never become upload candidates.
+The remaining transcript enricher reads only its declared database scope:
 
-- The account probe reads the account fields listed above into a fixed struct. A token cannot
-  appear in it.
 - The Cursor enricher reads conversation records from `state.vscdb` and writes the conversation
   text, tool calls, and model names it finds into the transcript record, because Cursor's own
   transcript files lack them. The `cursorAuth/*` keys and the encryption-key fields are stripped

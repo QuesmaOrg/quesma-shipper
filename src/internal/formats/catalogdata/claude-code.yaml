@@ -41,11 +41,6 @@ sources:
       - "projects/**/*.jsonl"
       - "projects/**/*.meta.json"
       - "projects/**/tool-results/**"
-    # Which account and plan produced these transcripts. The fields live in
-    # ~/.claude.json — ABOVE the root, beside auth state no glob may touch — so
-    # the answer is a compiled probe, not a wider include.
-    enrichers:
-      claude-account: true
     sniff:
       kind: jsonl
       max_scan_bytes: 65536
@@ -98,3 +93,17 @@ sources:
       - "settings.json"
     sniff:
       kind: none
+
+  - id: claude-account
+    description: Account and raw provider usage snapshots every 15 minutes.
+    gather: account
+    roots:
+      - $CLAUDE_CONFIG_DIR
+      - ~/.claude
+      - $XDG_CONFIG_HOME/claude
+    artifact_class: context
+    max_file_bytes: 8388608
+    emit: account
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 8388608

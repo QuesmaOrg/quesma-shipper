@@ -218,6 +218,11 @@ func TestAppendingOneLineShipsTheFileAgain(t *testing.T) {
 		t.Fatalf("append produced %d objects, want the same %d under new content",
 			len(second), len(first))
 	}
+	first = slices.DeleteFunc(first, func(o object) bool { return o.Manifest.SourceID != claudeSource })
+	second = slices.DeleteFunc(second, func(o object) bool { return o.Manifest.SourceID != claudeSource })
+	if len(first) != 1 || len(second) != 1 {
+		t.Fatalf("want one transcript before and after append, got %d and %d", len(first), len(second))
+	}
 	if got := w.store.versions(second[0].Key); got != 2 {
 		t.Errorf("%s has %d versions after one append, want the original and the grown one",
 			second[0].Key, got)

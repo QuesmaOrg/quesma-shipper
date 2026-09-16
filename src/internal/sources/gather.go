@@ -5,6 +5,7 @@ package sources
 
 import (
 	"cmp"
+	"context"
 	"encoding/hex"
 	"fmt"
 	"io/fs"
@@ -106,6 +107,12 @@ type Request struct {
 	Username string
 
 	Now func() time.Time
+
+	Context   context.Context
+	Env       Env
+	Capture   bool
+	Scrub     func([]byte) ([]byte, error)
+	Committed func(Candidate) bool
 }
 
 // Primitive discovers candidates for one source. Config can never introduce one: primitives are code, sources are data.
@@ -128,6 +135,7 @@ func NewRegistry() *Registry {
 		globPrimitive{name: "file_glob"},
 		globPrimitive{name: "compressed_file"},
 		&Sidecar{},
+		&Accounts{},
 	} {
 		r.primitives[p.Name()] = p
 	}
