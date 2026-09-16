@@ -115,8 +115,7 @@ endpoints can change, and expired or inaccessible credentials produce partial sn
 Rate-limit cooldowns are kept in memory until the process exits. Doctor, status, and preview do not fetch new usage.
 
 Disable an account collector with `sources: [{id: claude-account, enabled: false}]` (likewise
-for Codex/Cursor). Old `enrichers: {claude-account: false}` settings on transcript sources
-are migrated to the corresponding collector disable. Disabling transcripts alone now leaves
+for Codex/Cursor). Disabling transcripts alone leaves
 account collection enabled. Existing remote account objects are retained; historical data
 cannot be recovered from their latest snapshots. New objects use `gather: account` and a
 versioned envelope around provider data rather than the previous flat account struct.

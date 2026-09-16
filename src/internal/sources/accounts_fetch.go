@@ -58,11 +58,7 @@ func (p *Accounts) collect(ctx context.Context, req Request, retryAfter time.Tim
 	}
 	switch req.Source.ID {
 	case "claude-account":
-		home, err := accountHome(req, env, "CLAUDE_CONFIG_DIR", ".claude")
-		if err != nil {
-			local("claude.local.account", nil, err)
-			return out, true
-		}
+		home := req.Source.Root
 		config := filepath.Join(env.Home, ".claude.json")
 		service := "Claude Code-credentials"
 		override, _ := env.Lookup("CLAUDE_CONFIG_DIR")
@@ -74,13 +70,6 @@ func (p *Accounts) collect(ctx context.Context, req Request, retryAfter time.Tim
 			}
 			sum := sha256.Sum256([]byte(keychainHome))
 			service = fmt.Sprintf("Claude Code-credentials-%x", sum[:4])
-		}
-		legacy := filepath.Join(home, ".config.json")
-		if _, err := os.Stat(legacy); err == nil {
-			config = legacy
-		}
-		if !accountPathExists(home) && !accountPathExists(config) {
-			return nil, false
 		}
 		doc, err := accountJSON(config, 64<<20)
 		if err != nil || len(doc["oauthAccount"]) > 0 {
@@ -117,11 +106,7 @@ func (p *Accounts) collect(ctx context.Context, req Request, retryAfter time.Tim
 		fetch("claude.oauth.profile", "GET", "https://api.anthropic.com/api/oauth/profile", token, "")
 		fetch("claude.oauth.usage", "GET", "https://api.anthropic.com/api/oauth/usage", token, "")
 	case "codex-account":
-		home, err := accountHome(req, env, "CODEX_HOME", ".codex")
-		if err != nil {
-			local("codex.local.account", nil, err)
-			return out, true
-		}
+		home := req.Source.Root
 		path := filepath.Join(home, "auth.json")
 		if !accountPathExists(home) {
 			return nil, false
@@ -150,10 +135,7 @@ func (p *Accounts) collect(ctx context.Context, req Request, retryAfter time.Tim
 		local("codex.local.account", body, err)
 		fetch("codex.wham.usage", "GET", "https://chatgpt.com/backend-api/wham/usage", tokens.Access, tokens.AccountID)
 	case "cursor-account":
-		path := cursorAccountPath(env)
-		if req.Source.Root != "" {
-			path = filepath.Join(req.Source.Root, "state.vscdb")
-		}
+		path := filepath.Join(req.Source.Root, "state.vscdb")
 		if !accountPathExists(path) {
 			return nil, false
 		}
@@ -168,20 +150,6 @@ func (p *Accounts) collect(ctx context.Context, req Request, retryAfter time.Tim
 	return out, true
 }
 
-func accountHome(req Request, env Env, variable, fallback string) (string, error) {
-	home := req.Source.Root
-	if home == "" {
-		home, _ = env.Lookup(variable)
-	}
-	if home == "" {
-		home = filepath.Join(env.Home, fallback)
-	}
-	if !filepath.IsAbs(home) {
-		return "", fmt.Errorf("invalid account directory")
-	}
-	return filepath.Clean(home), nil
-}
-
 func accountPathExists(path string) bool { _, err := os.Stat(path); return !os.IsNotExist(err) }
 
 func accountJSON(path string, limit int64) (map[string]json.RawMessage, error) {
@@ -192,29 +160,6 @@ func accountJSON(path string, limit int64) (map[string]json.RawMessage, error) {
 	var doc map[string]json.RawMessage
 	err = json.Unmarshal(raw, &doc)
 	return doc, err
-}
-
-func cursorAccountPath(env Env) string {
-	switch runtime.GOOS {
-	case "darwin":
-		return filepath.Join(env.Home, "Library", "Application Support", "Cursor", "User", "globalStorage", "state.vscdb")
-	case "windows":
-		root, _ := env.Lookup("APPDATA")
-		if root == "" {
-			root = filepath.Join(env.Home, "AppData", "Roaming")
-		}
-		return filepath.Join(root, "Cursor", "User", "globalStorage", "state.vscdb")
-	default:
-		root, _ := env.Lookup("XDG_CONFIG_HOME")
-		if root == "" {
-			root = filepath.Join(env.Home, ".config")
-		}
-		path := filepath.Join(root, "Cursor", "User", "globalStorage", "state.vscdb")
-		if !accountPathExists(path) {
-			path = filepath.Join(root, "cursor", "User", "globalStorage", "state.vscdb")
-		}
-		return path
-	}
 }
 
 func (p *Accounts) fetch(ctx context.Context, obs accountObservation, method, endpoint, token, accountID string) accountObservation {
@@ -279,11 +224,6 @@ func (p *Accounts) fetch(ctx context.Context, obs accountObservation, method, en
 		obs.Error = "invalid_json"
 		return obs
 	}
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, raw); err != nil {
-		obs.Error = "invalid_json"
-		return obs
-	}
-	obs.Body = compact.Bytes()
+	obs.Body = raw
 	return obs
 }

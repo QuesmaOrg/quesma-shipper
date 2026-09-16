@@ -968,3 +968,16 @@ func enrichersOf(eff *config.Effective, id string) map[string]bool {
 	}
 	return nil
 }
+
+func TestTranscriptDisableDoesNotDisableAccountSource(t *testing.T) {
+	eff, err := config.Resolve(baseInput(t, fakeHome(t), config.LayeredDocument{Layer: config.LayerUser, Doc: doc(t, `sources:
+  - id: codex-rollouts
+    enabled: false
+`)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sourceByID(t, eff, "codex-account").Enabled {
+		t.Fatal("account source coupled to transcripts")
+	}
+}

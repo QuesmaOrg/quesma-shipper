@@ -30,7 +30,7 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	spec, _ := catalog.Source("codex-account")
 	o := f.opts()
 	o.Env = sources.Env{Home: f.home, Lookup: func(string) (string, bool) { return "", false }}
-	o.Plan.Sources = []sources.Resolved{{Source: spec, Enabled: true, SpecFingerprint: sources.SpecFingerprint(spec)}}
+	o.Plan.Sources = []sources.Resolved{{Source: spec, Root: home, Enabled: true, SpecFingerprint: sources.SpecFingerprint(spec)}}
 	now := o.Now()
 	o.Now = func() time.Time { return now }
 	f.port.FailAll = errors.New("offline")
@@ -98,7 +98,7 @@ func TestAccountDisabledAndPreviewDoNotCapture(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(`{"auth_mode":"apikey"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	o.Plan.Sources = []sources.Resolved{{Source: spec, Enabled: false}}
+	o.Plan.Sources = []sources.Resolved{{Source: spec, Root: home, Enabled: false}}
 	runEnrich(t, f, o)
 	o.Plan.Sources[0].Enabled = true
 	o.DryRun = true

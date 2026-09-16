@@ -24,7 +24,7 @@ func accountFixture(t *testing.T) Request {
 	t.Helper()
 	home := t.TempDir()
 	return Request{
-		Source:   Resolved{Source: Source{ID: "codex-account", Family: "codex", Gather: "account"}},
+		Source:   Resolved{Source: Source{ID: "codex-account", Family: "codex", Gather: "account"}, Root: filepath.Join(home, ".codex")},
 		StateDir: filepath.Join(home, "shipper"), Env: Env{Home: home, Lookup: func(string) (string, bool) { return "", false }},
 		Context: context.Background(), Capture: true,
 		Now: func() time.Time { return time.Date(2026, 9, 16, 14, 17, 3, 0, time.UTC) },

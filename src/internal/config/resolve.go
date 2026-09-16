@@ -165,15 +165,6 @@ func Resolve(in Input) (*Effective, error) {
 		}
 
 		for _, o := range ld.Doc.Sources {
-			for oldSource, accountID := range map[string]string{"claude-code-transcripts": "claude-account", "codex-rollouts": "codex-account", "cursor-transcripts": "cursor-account"} {
-				if on, ok := o.Enrichers[accountID]; o.ID == oldSource && ok {
-					o.Enrichers = maps.Clone(o.Enrichers)
-					delete(o.Enrichers, accountID)
-					if !on || ld.Layer.IsLocal() {
-						overrides[accountID] = append(overrides[accountID], layeredOverride{ld.Layer, SourceOverride{ID: accountID, Enabled: &on}})
-					}
-				}
-			}
 			if _, ok := in.Catalog.Source(o.ID); !ok {
 				return nil, &RejectionError{ld.Layer, "sources." + o.ID,
 					"no such source in the compiled catalog: a config layer cannot create a source, only adjust one"}

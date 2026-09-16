@@ -36,6 +36,10 @@ type accountSnapshot struct {
 
 func (p *Accounts) Discover(req Request) (Discovery, error) {
 	d := Discovery{Health: RootPresentNoMatch, Sniff: SniffOK}
+	if req.Source.Root == "" {
+		d.Health = AgentAbsent
+		return d, nil
+	}
 	if !req.Capture {
 		return d, nil
 	}
