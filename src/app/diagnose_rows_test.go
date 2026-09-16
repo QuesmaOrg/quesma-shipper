@@ -312,3 +312,21 @@ func TestHumanCount(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountInspectionIsNeutral(t *testing.T) {
+	src := config.ResolvedSource{Source: sources.Source{ID: "codex-account", Family: "codex", Gather: "account"}, Root: t.TempDir(), Enabled: true}
+	d, err := (&sources.Accounts{}).Discover(sources.Request{Source: src})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, verbose := range []bool{false, true} {
+		rows, collecting, files := familyRows("Codex", []sourceProbe{{src: src, d: d}}, familyUpload{}, time.Now(), verbose)
+		if collecting || files != 0 || len(rows) != 1 || rows[0].Sev != SevDim || rows[0].Detail != "configured; checked during collection" {
+			t.Fatalf("unexpected account inspection: %+v collecting=%v files=%d", rows, collecting, files)
+		}
+	}
+	rows := discoveryRows(src, d)
+	if len(rows) != 1 || rows[0].Sev != SevDim || rows[0].Detail != d.Reason || rows[0].Fix != "" {
+		t.Fatalf("unexpected source inspection: %+v", rows)
+	}
+}

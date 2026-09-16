@@ -59,6 +59,9 @@ type Candidate struct {
 type Discovery struct {
 	Health HealthState
 
+	// Deferred means inspection skipped a check that requires collection.
+	Deferred bool
+
 	// SniffFailures counts sampled files that were unreadable or the wrong shape; it is a source-wide verdict only when every sample failed.
 	SniffFailures int
 

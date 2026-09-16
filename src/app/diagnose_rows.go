@@ -175,6 +175,7 @@ func familyRows(name string, probes []sourceProbe, up familyUpload, now time.Tim
 	var parts []string
 	var issues []Row
 	var disabled []Row
+	var deferred []Row
 	sniffed := ""
 	absent := 0
 	var noMatch []config.ResolvedSource
@@ -196,6 +197,10 @@ func familyRows(name string, probes []sourceProbe, up familyUpload, now time.Tim
 			issues = append(issues, warn(part, "discovery error",
 				fmt.Sprintf("error: %v", pr.err),
 				fmt.Sprintf("check sources[%s] in config", src.ID)))
+			continue
+		}
+		if d.Deferred {
+			deferred = append(deferred, Row{Sev: SevDim, Sub: true, Label: "  " + part, Detail: d.Reason})
 			continue
 		}
 		switch d.Health {
@@ -256,6 +261,9 @@ func familyRows(name string, probes []sourceProbe, up familyUpload, now time.Tim
 	}
 
 	if !collecting && len(issues) == 0 {
+		if len(deferred) > 0 {
+			return append([]Row{{Sev: SevDim, Label: name, Name: true, Detail: deferred[0].Detail}}, disabled...), false, 0
+		}
 		if len(disabled) > 0 {
 			return append([]Row{{Sev: SevDim, Label: name, Detail: "disabled by configuration"}}, disabled...), false, 0
 		}
@@ -311,7 +319,8 @@ func familyRows(name string, probes []sourceProbe, up familyUpload, now time.Tim
 			break
 		}
 	}
-	return append(append([]Row{head}, issues...), disabled...), collecting, files
+	rows = append(append([]Row{head}, issues...), deferred...)
+	return append(rows, disabled...), collecting, files
 }
 
 func claudeHeadline(probes []sourceProbe, verbose bool) string {
@@ -424,6 +433,9 @@ func technicalSourceRows(pr sourceProbe) []Row {
 }
 
 func discoveryRows(src config.ResolvedSource, d sources.Discovery) []Row {
+	if d.Deferred {
+		return []Row{{Sev: SevDim, Label: src.ID, Detail: d.Reason}}
+	}
 	var rows []Row
 	state := string(d.Health)
 	switch d.Health {

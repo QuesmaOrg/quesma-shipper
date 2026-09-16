@@ -116,7 +116,7 @@ func TestAccountHTTPFailuresAreBoundedAndDoNotLeak(t *testing.T) {
 			p := Accounts{client: &http.Client{Transport: accountTransport(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body)), Header: http.Header{}}, nil
 			})}}
-			obs := p.fetch(context.Background(), accountObservation{ObservedAt: time.Now()}, "GET", "https://example.org", "fixture-secret", "")
+			obs := p.fetch(context.Background(), accountFixture(t), "test", "GET", "https://example.org", "fixture-secret", "")
 			if obs.Error != tc.want || len(obs.Body) != 0 {
 				t.Fatalf("%+v", obs)
 			}
@@ -128,7 +128,7 @@ func TestAccountHTTPFailuresAreBoundedAndDoNotLeak(t *testing.T) {
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, http.StatusFound) }))
 	defer origin.Close()
 	p := Accounts{}
-	obs := p.fetch(context.Background(), accountObservation{}, "GET", origin.URL, "fixture-secret", "")
+	obs := p.fetch(context.Background(), accountFixture(t), "test", "GET", origin.URL, "fixture-secret", "")
 	if redirected || obs.HTTPStatus != 302 {
 		t.Fatalf("followed credential redirect: %+v", obs)
 	}

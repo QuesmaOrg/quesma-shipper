@@ -38,6 +38,8 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 		return d, nil
 	}
 	if !req.Capture {
+		d.Deferred = true
+		d.Reason = "configured; checked during collection"
 		return d, nil
 	}
 	if req.Now == nil || req.Context == nil || req.Env.Home == "" {
@@ -71,4 +73,17 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 		d.Reason = "partial account snapshot: " + d.UnreadableReason
 	}
 	return d, nil
+}
+
+func (p *Accounts) collect(ctx context.Context, req Request) ([]accountObservation, bool) {
+	switch req.Source.ID {
+	case "claude-account":
+		return p.collectClaude(ctx, req)
+	case "codex-account":
+		return p.collectCodex(ctx, req)
+	case "cursor-account":
+		return p.collectCursor(ctx, req)
+	default:
+		return []accountObservation{localAccount(req, "account", nil, fmt.Errorf("unsupported account source"))}, true
+	}
 }
