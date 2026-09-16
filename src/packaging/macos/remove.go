@@ -3,20 +3,18 @@
 package macos
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
 func RemoveProgram(executable string) (string, error) {
 	app, ok := containingApp(executable)
 	if !ok {
-		if err := os.Remove(executable); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return executable, err
-		}
-		return executable, nil
+		return common.RemoveProgram(executable)
 	}
 	if _, ok := appForExecutable(executable); !ok {
 		return app, fmt.Errorf("refusing to remove %s: executable is not %s", app, appName)

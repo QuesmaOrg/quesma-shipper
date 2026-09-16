@@ -43,7 +43,7 @@ func resolve(ctx context.Context, offline bool) (*config.Effective, config.Paths
 
 	// Known BEFORE the remote layer is fetched, because the enrollment record and the config cache
 	// live in it; only local layers may set state_dir, so the remote layer cannot move it after.
-	paths.StateDir = StateDirFrom(layers, paths.StateDir)
+	paths.StateDir = stateDirFrom(layers, paths.StateDir)
 
 	// A MISSING record means standalone, a complete configuration. Anything else is refused, not
 	// swallowed: swallowing silently downgrades an enrolled install to "no backend".
@@ -85,9 +85,9 @@ func resolve(ctx context.Context, offline bool) (*config.Effective, config.Paths
 	return eff, paths, remote, nil
 }
 
-// StateDirFrom returns the state directory the layers set, or the default. Layers arrive in
+// stateDirFrom returns the state directory the layers set, or the default. Layers arrive in
 // precedence order, lowest first, so the last one that mentions it wins, as Resolve does.
-func StateDirFrom(layers []config.LayeredDocument, def string) string {
+func stateDirFrom(layers []config.LayeredDocument, def string) string {
 	out := def
 	for _, ld := range layers {
 		if ld.Doc != nil && ld.Doc.StateDir != nil && *ld.Doc.StateDir != "" {

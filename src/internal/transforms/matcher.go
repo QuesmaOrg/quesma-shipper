@@ -2,18 +2,15 @@ package transforms
 
 import (
 	"cmp"
-	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/packs"
 )
 
 // Span is a byte range inside one decoded string value, attributed to the rule that
-// matched it.
-type Span struct {
-	Start  int
-	End    int
-	RuleID string
-}
+// matched it; the packs type, so rule matchers and the engine share one span.
+type Span = packs.Span
 
 // FieldPath is a dotted path to a value inside a record, with "[]" standing for array
 // elements: content[].image.hex, message.content[].text, toolUseResult.stdout.
@@ -174,14 +171,3 @@ func dropOverlappedHeuristics(spans []prioritizedSpan) []prioritizedSpan {
 	}
 	return out
 }
-
-// EngineError marks a failure of the scrubber itself. on_error: fail_closed fires on
-// these ONLY, so a file that hits one does not upload; a payload that merely failed to
-// parse is raw-text scanned and ships byte-exact.
-type EngineError struct {
-	Op  string
-	Err error
-}
-
-func (e *EngineError) Error() string { return fmt.Sprintf("scrub engine: %s: %v", e.Op, e.Err) }
-func (e *EngineError) Unwrap() error { return e.Err }

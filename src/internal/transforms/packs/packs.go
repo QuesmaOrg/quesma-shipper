@@ -25,13 +25,10 @@ const (
 	GenericEntropy = "generic-entropy"
 )
 
-// PatternPacks are the high-confidence packs. They scan every field, exempt or not.
-var PatternPacks = []string{GitleaksCore, QuesmaExtra, CloudKeys, PIICore}
-
 // HeuristicPacks are the low-confidence packs; the engine checks exemptions first.
 var HeuristicPacks = []string{GenericEntropy}
 
-// Span mirrors scrub.Span, duplicated rather than imported to keep this package a leaf.
+// Span is one matched byte range; the engine's transforms.Span is an alias of it.
 type Span struct {
 	Start  int
 	End    int
@@ -83,15 +80,15 @@ type Rule struct {
 // the guard and checksum. See pii.go and handscan.go for each equivalence argument.
 type candidateScanner func(value string) []Span
 
-// The one registry of hand scanners, one entry per name, so a scanner cannot be wired into
-// the standalone path and silently dropped from the fused one. fusedNone runs on its own.
+// The one registry of scanners, one entry per name: a fused kind reads its candidates out of
+// the shared walk, and only a rule with no slot there carries its own byte walk.
 var scanners = map[string]struct {
 	fn    candidateScanner
 	fused fusedKind
 }{
-	"card-pan": {scanCardPAN, fusedCardPAN},
-	"iban":     {scanIBAN, fusedIBAN},
-	"pesel":    {scanPESEL, fusedPESEL},
+	"card-pan": {nil, fusedCardPAN},
+	"iban":     {nil, fusedIBAN},
+	"pesel":    {nil, fusedPESEL},
 	"email":    {scanEmail, fusedNone},
 }
 
@@ -104,6 +101,11 @@ func (r *Rule) Keywords() []string { return r.keywords }
 // MatchScanned finds every occurrence in a value the caller has already scanned for keywords.
 // Hand scanner, anchor or sweep: all three answer identically, which the tests beside each pin.
 func (r *Rule) MatchScanned(value string) []Span {
+	if r.fused != fusedNone {
+		var c ValueScan
+		c.Reset(value)
+		return r.checked(c.candidates(r.fused), value)
+	}
 	if r.hand != nil {
 		return r.checked(r.hand(value), value)
 	}

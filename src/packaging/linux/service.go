@@ -93,11 +93,7 @@ WantedBy=default.target
 }
 
 func InstallService(spec Spec) (Status, error) {
-	home, err := common.HomeFor(spec)
-	if err != nil {
-		return Status{}, err
-	}
-	path := systemdPath(home)
+	path := systemdPath(spec.Home)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return Status{}, fmt.Errorf("supervise: %w", err)
 	}

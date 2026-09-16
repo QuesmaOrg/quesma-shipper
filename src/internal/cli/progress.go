@@ -49,7 +49,12 @@ func newProgressStream(out io.Writer, quiet bool) *progressStream {
 }
 
 func (s *progressStream) openLog(stateDir string) {
-	f, path, err := openRunLog(stateDir)
+	path := filepath.Join(stateDir, runLogName)
+	var f *os.File
+	err := platform.EnsureDir(stateDir, 0o700)
+	if err == nil {
+		f, err = platform.OpenTruncating(path, 0o600)
+	}
 	if err != nil {
 		printWarning(s.Stderr(), "no run log this time: "+err.Error())
 		return
@@ -63,18 +68,6 @@ func (s *progressStream) closeLog() {
 	}
 	s.logFile.Close()
 	s.logFile, s.log = nil, nil
-}
-
-func openRunLog(stateDir string) (*os.File, string, error) {
-	if err := platform.EnsureDir(stateDir, 0o700); err != nil {
-		return nil, "", err
-	}
-	path := filepath.Join(stateDir, runLogName)
-	f, err := platform.OpenTruncating(path, 0o600)
-	if err != nil {
-		return nil, "", err
-	}
-	return f, path, nil
 }
 
 func (s *progressStream) emit(sourceID string, done, total int, f formats.FileOutcome) {

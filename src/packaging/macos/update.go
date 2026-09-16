@@ -10,13 +10,13 @@ func UpdateTarget(release common.Release) string {
 	if _, ok := currentAppBundle(); ok {
 		return appUpdateTarget(release)
 	}
-	return rawUpdateTarget(release)
+	return common.BinaryTarget(release)
 }
 
 func ApplyTarget(raw []byte, version string) error {
 	app, ok := currentAppBundle()
 	if !ok {
-		return applyRawTarget(raw)
+		return common.ApplyBinary(raw)
 	}
 	return applyAppPackage(raw, app, version)
 }

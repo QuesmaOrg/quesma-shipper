@@ -10,13 +10,12 @@ import (
 // number. These are the only rules allowed to be precise; everything else is tuned for recall.
 
 func digitsOnly(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] >= '0' && s[i] <= '9' {
-			b.WriteByte(s[i])
+	return strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
 		}
-	}
-	return b.String()
+		return -1
+	}, s)
 }
 
 // luhnValid implements the Luhn check used by payment card numbers; d must be digits only.

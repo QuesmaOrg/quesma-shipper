@@ -13,10 +13,11 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/crashjournal"
 )
 
-func startCrashJournal(errOut io.Writer) (*crashjournal.Log, string, *formats.LastCrash) {
+// startCrashJournal opens the journal in dir; dirErr says the caller could not find one, which
+// leaves this run unjournaled rather than unstarted.
+func startCrashJournal(errOut io.Writer, dir string, dirErr error) (*crashjournal.Log, string, *formats.LastCrash) {
 	runID := newRunID()
-	dir, err := app.StateDirWithoutConfig()
-	if err != nil {
+	if dirErr != nil {
 		return nil, runID, nil
 	}
 

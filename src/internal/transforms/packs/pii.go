@@ -170,18 +170,3 @@ func scanCardPANFrom(value string, start int) (int, bool) {
 	}
 	return 0, false
 }
-
-// The standalone scanners are the fused walk with two of its three answers thrown away: one
-// implementation, so the regex equivalence the tests prove is the code the engine runs.
-
-func scanPESEL(value string) []Span { return fusedCandidates(fusedPESEL, value) }
-
-func scanIBAN(value string) []Span { return fusedCandidates(fusedIBAN, value) }
-
-func scanCardPAN(value string) []Span { return fusedCandidates(fusedCardPAN, value) }
-
-func fusedCandidates(kind fusedKind, value string) []Span {
-	var c ValueScan
-	c.Reset(value)
-	return c.candidates(kind)
-}

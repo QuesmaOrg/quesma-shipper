@@ -13,8 +13,6 @@ type commitBuffer struct {
 
 	// limit bounds both the crash window and the memory held.
 	limit int
-
-	flushes int // for tests: this type exists to control how often it writes
 }
 
 const defaultCommitBatch = 200
@@ -59,7 +57,6 @@ func (b *commitBuffer) Flush() error {
 		return err
 	}
 	clear(b.pending)
-	b.flushes++
 	return nil
 }
 

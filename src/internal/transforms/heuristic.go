@@ -54,8 +54,8 @@ type entropyMatcher struct {
 func newEntropyMatcher(cfg EntropyConfig, username string) *entropyMatcher {
 	skip := []string{formats.UserPlaceholder, sentinelPrefix}
 	if len(username) >= 2 {
-		// Same floor as pathUserRewriter: a one-letter name would mark half the
-		// alphabet path-shaped.
+		// Same floor as pathUserReplacementSpans: a one-letter name would mark half
+		// the alphabet path-shaped.
 		skip = append(skip, username)
 	}
 	minRun := cfg.MinLength
@@ -134,7 +134,7 @@ func entropyFloor(threshold float64) int {
 
 func (m *entropyMatcher) RuleID() string { return "generic-entropy" }
 
-func (m *entropyMatcher) Match(value string, _ FieldPath) []Span {
+func (m *entropyMatcher) Match(value string) []Span {
 	if len(value) < m.cfg.MinLength {
 		return nil
 	}
@@ -302,11 +302,9 @@ func buildNLog2Table() (nLog2 [log2SmallMax]float64) {
 type keyNameMatcher struct {
 	re *regexp.Regexp
 
-	// names[i] uppercased once, so MatchesKeyName folds only the key it is given.
-	upperNames []string
-
-	// Marks names configured with a leading "*": suffix test rather than equality.
-	suffix []bool
+	// Each configured name uppercased once, so MatchesKeyName folds only the key it is
+	// given; suffix marks a name configured with a leading "*", matched by suffix.
+	names []configuredName
 
 	// Lower-cased literal cores of the alternation ("_token" for *_TOKEN). Gating re behind the
 	// shared automaton narrows the rule: re is (?i), which also folds non-ASCII runes (long s,
@@ -328,22 +326,26 @@ func DefaultSecretKeyNames() []string {
 	}
 }
 
+type configuredName struct {
+	upper  string
+	suffix bool
+}
+
 func newKeyNameMatcher(names []string) *keyNameMatcher {
 	alts := make([]string, 0, len(names))
 	stems := make([]string, 0, len(names))
-	upper := make([]string, len(names))
-	suffix := make([]bool, len(names))
+	configured := make([]configuredName, len(names))
 	unfiltered := false
 	for i, n := range names {
 		literal := n
 		if rest, ok := strings.CutPrefix(n, "*"); ok {
 			literal = rest
-			suffix[i] = true
+			configured[i].suffix = true
 			alts = append(alts, `[A-Za-z0-9_]*`+regexp.QuoteMeta(rest))
 		} else {
 			alts = append(alts, regexp.QuoteMeta(n))
 		}
-		upper[i] = strings.ToUpper(literal)
+		configured[i].upper = strings.ToUpper(literal)
 		if literal == "" || !isASCII(literal) {
 			unfiltered = true
 			continue
@@ -356,10 +358,7 @@ func newKeyNameMatcher(names []string) *keyNameMatcher {
 	// NAME=value, NAME: value, NAME = "value"; the value run stops at whitespace,
 	// quotes and separators so one redaction cannot swallow a whole line.
 	pattern := `(?i)\b(?:` + strings.Join(alts, "|") + `)\b\s*[:=]\s*"?([^\s"',;)]+)"?`
-	return &keyNameMatcher{
-		re:         regexp.MustCompile(pattern),
-		upperNames: upper, suffix: suffix, stems: stems,
-	}
+	return &keyNameMatcher{re: regexp.MustCompile(pattern), names: configured, stems: stems}
 }
 
 func (m *keyNameMatcher) RuleID() string { return "key-name" }
@@ -389,28 +388,13 @@ func (m *keyNameMatcher) MatchesKeyName(key string) bool {
 	}
 	// Configured environment names apply as written to field names too.
 	upper := strings.ToUpper(key)
-	for i, n := range m.upperNames {
-		if m.suffix[i] {
-			if strings.HasSuffix(upper, n) {
-				return true
-			}
-			continue
-		}
-		if upper == n {
+	for _, n := range m.names {
+		if n.suffix && strings.HasSuffix(upper, n.upper) || !n.suffix && upper == n.upper {
 			return true
 		}
 	}
 	return false
 }
-
-// pathUserRewriter replaces the OS user's home segment with a structural placeholder,
-// keeping paths comparable across sessions. A rewriter, not a detector: it runs on every
-// field including exempt ones, because a username in a cwd is PII either way.
-type pathUserRewriter struct {
-	username string
-}
-
-func (r *pathUserRewriter) RuleID() string { return "path-user" }
 
 func isAlnumByte(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'

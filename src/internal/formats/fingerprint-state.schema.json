@@ -50,11 +50,6 @@
           "type": "string",
           "minLength": 1
         },
-        "source_spec_fingerprint": {
-          "description": "Legacy: older builds recorded the spec generation on every entry. Read to seed source_specs, never written.",
-          "$ref": "#/$defs/sha256"
-        },
-
         "source_size": {
           "description": "Size at the last commit. Cheap pre-filter only.",
           "type": "integer",

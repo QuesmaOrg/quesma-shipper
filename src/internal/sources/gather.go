@@ -4,6 +4,7 @@
 package sources
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/hex"
 	"fmt"
@@ -110,7 +111,6 @@ type Request struct {
 
 // Primitive discovers candidates for one source. Config can never introduce one: primitives are code, sources are data.
 type Primitive interface {
-	Name() string
 	Discover(req Request) (Discovery, error)
 }
 
@@ -121,17 +121,13 @@ type Registry struct {
 
 // NewRegistry builds the registry. Reserved names (acp, cloud_pull) are absent by construction, so a source naming one fails validation.
 func NewRegistry() *Registry {
-	r := &Registry{primitives: map[string]Primitive{}}
-	for _, p := range []Primitive{
+	return &Registry{primitives: map[string]Primitive{
 		// file_glob: append-only JSONL stores, copied config files, spill directories.
 		// compressed_file: already-compressed files by whole-file hash, advertised separately.
-		globPrimitive{name: "file_glob"},
-		globPrimitive{name: "compressed_file"},
-		&Sidecar{},
-	} {
-		r.primitives[p.Name()] = p
-	}
-	return r
+		"file_glob":       globPrimitive{},
+		"compressed_file": globPrimitive{},
+		"sidecar":         &Sidecar{},
+	}}
 }
 
 // For returns the primitive a source declares.
@@ -144,9 +140,7 @@ func (r *Registry) For(gather string) (Primitive, error) {
 }
 
 // globPrimitive walks a root and matches include globs; both glob-shaped gathers share it.
-type globPrimitive struct{ name string }
-
-func (p globPrimitive) Name() string { return p.name }
+type globPrimitive struct{}
 
 func (p globPrimitive) Discover(req Request) (Discovery, error) {
 	return discoverByGlob(req)
@@ -424,23 +418,18 @@ func sniff(path string, spec *Sniff) (SniffResult, string) {
 	case "jsonl":
 		return sniffJSONL(head, truncated)
 	case "json":
-		if firstNonEmptyByte(head) != '{' && firstNonEmptyByte(head) != '[' {
+		if body := bytes.TrimLeft(head, " \t\n\r"); len(body) == 0 || (body[0] != '{' && body[0] != '[') {
 			return SniffUnexpectedShape, ""
 		}
 		return SniffOK, ""
 	case "magic":
 		want, err := hex.DecodeString(spec.MagicHex)
-		if err != nil || len(head) < len(want) {
+		if err != nil || !bytes.HasPrefix(head, want) {
 			return SniffUnexpectedShape, ""
-		}
-		for i := range want {
-			if head[i] != want[i] {
-				return SniffUnexpectedShape, ""
-			}
 		}
 		return SniffOK, ""
 	case "text":
-		if looksBinary(head) {
+		if bytes.IndexByte(head, 0) >= 0 {
 			return SniffUnexpectedShape, ""
 		}
 		return SniffOK, ""
@@ -465,24 +454,6 @@ func readHead(path string, budget int64) ([]byte, os.FileInfo, error) {
 		return nil, info, err
 	}
 	return buf[:n], info, nil
-}
-
-func firstNonEmptyByte(b []byte) byte {
-	for _, c := range b {
-		if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
-			return c
-		}
-	}
-	return 0
-}
-
-func looksBinary(b []byte) bool {
-	for _, c := range b {
-		if c == 0 {
-			return true
-		}
-	}
-	return false
 }
 
 // sniffSampleSize is how many files are asked before condemning a source, spread across the ordering rather than taken from one end.
