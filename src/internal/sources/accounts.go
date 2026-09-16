@@ -1,6 +1,7 @@
 package sources
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -26,11 +27,6 @@ type accountObservation struct {
 	Body       json.RawMessage `json:"body,omitempty"`
 }
 
-type accountSnapshot struct {
-	BucketStart  time.Time            `json:"bucket_start"`
-	Observations []accountObservation `json:"observations"`
-}
-
 func (p *Accounts) Discover(req Request) (Discovery, error) {
 	d := Discovery{Health: RootPresentNoMatch, Sniff: SniffOK}
 	if req.Source.Root == "" {
@@ -46,7 +42,7 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 		return d, fmt.Errorf("account collection requires clock, context and home")
 	}
 	bucket := req.Now().UTC().Truncate(accountInterval)
-	name := strings.TrimSuffix(req.Source.ID, "-account") + ".account." + bucket.Format("20060102T150405Z") + ".json"
+	name := strings.TrimSuffix(req.Source.ID, "-account") + ".account." + bucket.Format("20060102T150405Z") + ".jsonl"
 	ctx, cancel := context.WithTimeout(req.Context, 30*time.Second)
 	defer cancel()
 	observations, present := p.collect(ctx, req)
@@ -57,11 +53,17 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 	if err := req.Context.Err(); err != nil {
 		return d, err
 	}
-	raw, err := json.Marshal(accountSnapshot{BucketStart: bucket, Observations: observations})
-	if err != nil {
-		return d, err
+	var raw bytes.Buffer
+	encoder := json.NewEncoder(&raw)
+	for _, obs := range observations {
+		if err := encoder.Encode(struct {
+			BucketStart time.Time `json:"bucket_start"`
+			accountObservation
+		}{bucket, obs}); err != nil {
+			return d, err
+		}
 	}
-	d.Candidates = []Candidate{{Path: name, RelPath: name, Size: int64(len(raw)), MTime: bucket, Content: raw}}
+	d.Candidates = []Candidate{{Path: name, RelPath: name, Size: int64(raw.Len()), MTime: bucket, Content: raw.Bytes()}}
 	d.Health = Collected
 	for _, obs := range observations {
 		if obs.Error != "" {

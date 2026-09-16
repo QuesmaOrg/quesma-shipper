@@ -3,6 +3,7 @@ package engine_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -61,6 +62,15 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 		}
 		if manifest.Derived || manifest.Enricher != nil || manifest.Gather != "account" || manifest.PayloadMTime == nil {
 			t.Fatalf("not a collector: %+v", manifest)
+		}
+		lines := bytes.Split(payload, []byte("\n"))
+		if len(lines) != 3 || len(lines[2]) != 0 {
+			t.Fatalf("expected two newline-terminated records: %s", payload)
+		}
+		for _, line := range lines[:2] {
+			if !json.Valid(line) || !bytes.Contains(line, []byte(`"bucket_start":`)) {
+				t.Fatalf("invalid account record: %s", line)
+			}
 		}
 		if !bytes.Contains(payload, []byte(`"auth_mode":"fresh"`)) || bytes.Contains(payload, []byte("dev@example.org")) {
 			t.Fatalf("fresh payload not scrubbed: %s", payload)

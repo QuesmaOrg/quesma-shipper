@@ -61,7 +61,7 @@ func TestAccountSnapshotsPreserveProviderJSONInMemory(t *testing.T) {
 		t.Fatalf("first: %+v calls %d", first, calls)
 	}
 	c := first.Candidates[0]
-	if c.RelPath != "codex.account.20260916T141500Z.json" {
+	if c.RelPath != "codex.account.20260916T141500Z.jsonl" {
 		t.Fatal(c.RelPath)
 	}
 	raw := c.Content
@@ -168,11 +168,23 @@ func TestClaudeUsesActiveCredentialsAndPreservesLocalAccount(t *testing.T) {
 		t.Fatalf("calls %d", calls)
 	}
 	raw := d.Candidates[0].Content
-	var snap accountSnapshot
-	if err := json.Unmarshal(raw, &snap); err != nil {
-		t.Fatal(err)
+	lines := bytes.Split(raw, []byte("\n"))
+	if len(lines) != 4 || len(lines[3]) != 0 {
+		t.Fatalf("expected three newline-terminated records: %s", raw)
 	}
-	if len(snap.Observations) != 3 || bytes.Contains(raw, []byte("not collected")) || !bytes.Contains(raw, []byte(`"future":42`)) {
+	for i, line := range lines[:3] {
+		var record struct {
+			BucketStart time.Time `json:"bucket_start"`
+			accountObservation
+		}
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatal(err)
+		}
+		if !record.BucketStart.Equal(req.Now().Truncate(accountInterval)) || record.Source == "" || record.ObservedAt.IsZero() || len(record.Body) == 0 {
+			t.Fatalf("incomplete record %d: %s", i, line)
+		}
+	}
+	if bytes.Contains(raw, []byte(`"observations"`)) || bytes.Contains(raw, []byte("not collected")) || !bytes.Contains(raw, []byte(`"future":42`)) {
 		t.Fatalf("%s", raw)
 	}
 }
