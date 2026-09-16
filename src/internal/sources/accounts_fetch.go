@@ -1,12 +1,10 @@
 package sources
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
@@ -39,39 +37,12 @@ func accountJSON(path string, limit int64) (map[string]json.RawMessage, error) {
 	return doc, err
 }
 
-func (p *Accounts) fetch(ctx context.Context, req Request, source, method, endpoint, token, accountID string) accountObservation {
-	obs := accountObservation{Source: source, ObservedAt: req.Now().UTC()}
-	if token == "" {
-		obs.Error = "credentials_unavailable"
-		return obs
-	}
+func (p *Accounts) fetch(obs accountObservation, request *http.Request) accountObservation {
 	client := http.Client{Timeout: 10 * time.Second}
 	if p.client != nil {
 		client = *p.client
 	}
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	var body io.Reader
-	if method == "POST" {
-		body = strings.NewReader("{}")
-	}
-	request, err := http.NewRequestWithContext(ctx, method, endpoint, body)
-	if err != nil {
-		obs.Error = "request_failed"
-		return obs
-	}
-	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("User-Agent", "quesma-shipper")
-	if request.URL.Host == "api.anthropic.com" {
-		request.Header.Set("anthropic-beta", "oauth-2025-04-20")
-	}
-	if accountID != "" {
-		request.Header.Set("ChatGPT-Account-Id", accountID)
-	}
-	if method == "POST" {
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("Connect-Protocol-Version", "1")
-	}
 	response, err := client.Do(request)
 	if err != nil {
 		obs.Error = "request_failed"

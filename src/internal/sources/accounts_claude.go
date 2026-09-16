@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"runtime"
 
@@ -63,7 +64,23 @@ func (p *Accounts) collectClaude(ctx context.Context, req Request) ([]accountObs
 	if credentialErr != nil || !scoped {
 		token = ""
 	}
-	out = append(out, p.fetch(ctx, req, "claude.oauth.profile", "GET", "https://api.anthropic.com/api/oauth/profile", token, ""))
-	out = append(out, p.fetch(ctx, req, "claude.oauth.usage", "GET", "https://api.anthropic.com/api/oauth/usage", token, ""))
+	for _, endpoint := range []string{"profile", "usage"} {
+		obs := accountObservation{Source: "claude.oauth." + endpoint, ObservedAt: req.Now().UTC()}
+		if token == "" {
+			obs.Error = "credentials_unavailable"
+		} else {
+			request, err := http.NewRequestWithContext(ctx, "GET", "https://api.anthropic.com/api/oauth/"+endpoint, nil)
+			if err != nil {
+				obs.Error = "request_failed"
+			} else {
+				request.Header.Set("Authorization", "Bearer "+token)
+				request.Header.Set("Accept", "application/json")
+				request.Header.Set("User-Agent", "quesma-shipper")
+				request.Header.Set("anthropic-beta", "oauth-2025-04-20")
+				obs = p.fetch(obs, request)
+			}
+		}
+		out = append(out, obs)
+	}
 	return out, true
 }
