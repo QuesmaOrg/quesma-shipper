@@ -112,7 +112,8 @@ Claude snapshots contain the OAuth profile and usage responses; Codex captures W
 Cursor captures dashboard plan and current-period usage. Each observation records its source,
 time, HTTP status, and either the provider body or a fixed failure reason. These provider
 endpoints can change, and expired or inaccessible credentials produce partial snapshots.
-Rate-limit cooldowns are kept in memory until the process exits. Doctor, status, and preview do not fetch new usage.
+HTTP errors, including 429, are recorded; the next scheduled run tries again.
+Doctor, status, and preview do not fetch new usage.
 
 Disable an account collector with `sources: [{id: claude-account, enabled: false}]` (likewise
 for Codex/Cursor). Disabling transcripts alone leaves

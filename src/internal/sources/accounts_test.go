@@ -108,6 +108,7 @@ func TestAccountHTTPFailuresAreBoundedAndDoNotLeak(t *testing.T) {
 		want   string
 	}{
 		{"unauthorized", 401, `fixture-secret`, "http_error"},
+		{"rate limited", 429, `fixture-secret`, "http_error"},
 		{"malformed", 200, `{"accessToken":"fixture-secret"`, "invalid_json"},
 		{"oversized", 200, strings.Repeat("x", accountResponseLimit+1), "response_too_large"},
 	} {
@@ -130,31 +131,6 @@ func TestAccountHTTPFailuresAreBoundedAndDoNotLeak(t *testing.T) {
 	obs := p.fetch(context.Background(), accountObservation{}, "GET", origin.URL, "fixture-secret", "")
 	if redirected || obs.HTTPStatus != 302 {
 		t.Fatalf("followed credential redirect: %+v", obs)
-	}
-}
-
-func TestAccountThrottleIsRespectedInMemory(t *testing.T) {
-	req := accountFixture(t)
-	accountFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture"}}`)
-	calls := 0
-	p := Accounts{client: &http.Client{Transport: accountTransport(func(*http.Request) (*http.Response, error) {
-		calls++
-		return &http.Response{StatusCode: 429, Body: io.NopCloser(strings.NewReader("secret error body")), Header: http.Header{"Retry-After": []string{"3600"}}}, nil
-	})}}
-	if _, err := p.Discover(req); err != nil {
-		t.Fatal(err)
-	}
-	req.Now = func() time.Time { return time.Date(2026, 9, 16, 14, 31, 0, 0, time.UTC) }
-	d, err := p.Discover(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if calls != 1 || len(d.Candidates) != 1 {
-		t.Fatalf("lost cooldown: %+v calls %d", d, calls)
-	}
-	raw := d.Candidates[0].Content
-	if !bytes.Contains(raw, []byte(`"error":"throttled"`)) {
-		t.Fatalf("%s", raw)
 	}
 }
 

@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -22,7 +21,7 @@ import (
 
 const accountResponseLimit = 1 << 20
 
-func (p *Accounts) collect(ctx context.Context, req Request, retryAfter time.Time) ([]accountObservation, bool) {
+func (p *Accounts) collect(ctx context.Context, req Request) ([]accountObservation, bool) {
 	env := req.Env
 	if env.Lookup == nil {
 		env.Lookup = func(string) (string, bool) { return "", false }
@@ -42,17 +41,10 @@ func (p *Accounts) collect(ctx context.Context, req Request, retryAfter time.Tim
 	}
 	fetch := func(source, method, endpoint, token, accountID string) {
 		obs := accountObservation{Source: source, ObservedAt: req.Now().UTC()}
-		switch {
-		case token == "":
+		if token == "" {
 			obs.Error = "credentials_unavailable"
-		case req.Now().Before(retryAfter):
-			obs.Error = "throttled"
-			obs.RetryAfter = &retryAfter
-		default:
+		} else {
 			obs = p.fetch(ctx, obs, method, endpoint, token, accountID)
-			if obs.RetryAfter != nil {
-				retryAfter = *obs.RetryAfter
-			}
 		}
 		out = append(out, obs)
 	}
@@ -197,16 +189,6 @@ func (p *Accounts) fetch(ctx context.Context, obs accountObservation, method, en
 	}
 	defer response.Body.Close()
 	obs.HTTPStatus = response.StatusCode
-	if response.StatusCode == http.StatusTooManyRequests {
-		until := obs.ObservedAt.Add(accountInterval)
-		value := response.Header.Get("Retry-After")
-		if seconds, err := strconv.ParseInt(value, 10, 32); err == nil && seconds > 0 {
-			until = obs.ObservedAt.Add(time.Duration(seconds) * time.Second)
-		} else if date, err := http.ParseTime(value); err == nil && date.After(until) {
-			until = date
-		}
-		obs.RetryAfter = &until
-	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		obs.Error = "http_error"
 		return obs
