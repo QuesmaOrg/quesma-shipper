@@ -308,8 +308,10 @@ prints the stamp. Development builds are not stamped. They report their commit a
 self-update.
 
 A push to `main` that touches the shipper builds six platform binaries and the macOS package, signs
-TUF metadata, and publishes to `https://updates.quesma.dev`. The first release through this
-workflow was published on 2026-09-04. A maintainer approves each publication.
+TUF metadata, and publishes to `https://updates.quesma.dev`. It then creates a
+[GitHub release](https://github.com/QuesmaOrg/quesma-shipper/releases) linking the stable downloads.
+The first release through this workflow was published on 2026-09-04. A maintainer approves each
+publication.
 
 ## Contributing
 
