@@ -5,8 +5,11 @@ package app
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -81,6 +84,71 @@ func TestOnlyAnExpiredTicketAsksForAnotherAuthorization(t *testing.T) {
 	transport := errors.New("connection reset")
 	if got := p.classifyPut(transport, expired); got != transport {
 		t.Errorf("a transport failure was rewritten to %v", got)
+	}
+}
+
+func preparedObject(id string) engine.PreparedObject {
+	return engine.PreparedObject{
+		ObjectID: id, Key: "k" + id, Body: []byte("sealed " + id),
+		SourceHash: strings.Repeat("a", 64),
+		Metadata:   map[string]string{"source-id": "claude-code-transcripts"},
+	}
+}
+
+// portAgainst is one vend port whose control plane and store are both fn, so the test sees every
+// request the port makes.
+func portAgainst(t *testing.T, fn http.HandlerFunc) *vendPort {
+	t.Helper()
+	srv := httptest.NewServer(fn)
+	t.Cleanup(srv.Close)
+	_, key, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := controlplane.New(controlplane.Options{
+		Endpoint:  srv.URL,
+		InstallID: "3f2504e0-4f89-41d3-9a0c-0305e82c3301", Organization: "acme",
+		DeviceKey: key,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := upload.NewUploadTarget(upload.TargetSpec{
+		Origin: srv.URL, Addressing: upload.PathStyle, PathPrefix: "/b", AllowLoopbackHTTP: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &vendPort{client: client, uploader: upload.New(), targets: upload.UploadTargetList{target},
+		writerID: "writer", now: time.Now}
+}
+
+// An object the archive already holds is finished at the answer: no ticket validation and no
+// PUT, while the absent one in the same batch is still sent.
+func TestAnAlreadyPresentAnswerSkipsThePutAndTheRestStillShips(t *testing.T) {
+	var puts []string
+	p := portAgainst(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			puts = append(puts, r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"tickets":[`+
+			`{"ticket_id":"b1bd1a73-f16d-4a51-aac6-29f1f48b0658","object_id":"0","already_present":true},`+
+			`{"ticket_id":"b1bd1a73-f16d-4a51-aac6-29f1f48b0659","object_id":"1","method":"PUT",`+
+			`"url":"http://%s/b/k1","expires_at":"2099-01-01T00:00:00Z",`+
+			`"required_headers":{"x-amz-meta-source-hash":"%s","x-amz-meta-ticket-id":"b1bd1a73-f16d-4a51-aac6-29f1f48b0659",`+
+			`"x-amz-meta-source-id":"claude-code-transcripts"},`+
+			`"content_length":8,"content_length_signed":true}]}`, r.Host, strings.Repeat("a", 64))
+	})
+
+	out := p.AuthorizeAndUpload(context.Background(), []engine.PreparedObject{preparedObject("0"), preparedObject("1")})
+	if len(out) != 2 || !errors.Is(out[0], engine.ErrAlreadyPresent) || out[1] != nil {
+		t.Fatalf("the batch did not succeed whole: %v", out)
+	}
+	if len(puts) != 1 || puts[0] != "/b/k1" {
+		t.Errorf("the port PUT %v, want the absent object alone", puts)
 	}
 }
 

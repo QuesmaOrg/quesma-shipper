@@ -50,7 +50,8 @@ type Entry struct {
 	ObjectKey     string `json:"object_key,omitempty"`
 	ConfigVersion int    `json:"config_version,omitempty"`
 
-	// Reason explains a skip, a park, a failure or a rejection.
+	// Reason explains a skip, a park, a failure or a rejection, and marks a shipped entry that sent
+	// no bytes because the control plane answered that the archive already held the object.
 	Reason string `json:"reason,omitempty"`
 }
 

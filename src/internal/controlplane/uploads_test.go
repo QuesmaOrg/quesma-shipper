@@ -15,7 +15,7 @@ import (
 )
 
 // authorizeAgainst spins a server answering every request with one canned reply and returns the
-// client error for a minimal well-formed batch.
+// client's answer for a minimal well-formed batch.
 func authorizeAgainst(t *testing.T, handler http.HandlerFunc) (controlplane.AuthorizeResponse, error) {
 	t.Helper()
 	srv := httptest.NewServer(handler)
@@ -35,6 +35,10 @@ func authorizeAgainst(t *testing.T, handler http.HandlerFunc) (controlplane.Auth
 		t.Fatal(err)
 	}
 	return client.AuthorizeUploads(context.Background(), sampleAuthorizeRequest())
+}
+
+func alreadyPresentTicketJSON() string {
+	return `{"ticket_id":"` + fixtureTicketID + `","object_id":"trajectory-1","already_present":true}`
 }
 
 func sampleAuthorizeRequest() controlplane.AuthorizeRequest {
@@ -89,13 +93,19 @@ func TestAuthorizeUploadsStatusMapping(t *testing.T) {
 	}
 }
 
-func TestAuthorizeUploadsRejectsUnknownResponseField(t *testing.T) {
-	_, err := authorizeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+// A field this build does not know, on the response or inside a ticket, is ignored: the server
+// grows the response first, and nothing the client sends comes from a field it did not validate.
+func TestAuthorizeUploadsIgnoresUnknownResponseFields(t *testing.T) {
+	resp, err := authorizeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tickets":[],"future_field":"unknown"}`))
+		ticket := strings.TrimSuffix(alreadyPresentTicketJSON(), "}") + `,"future_field":"unknown"}`
+		w.Write([]byte(`{"tickets":[` + ticket + `],"future_top_level":1}`))
 	})
-	if err == nil || !strings.Contains(err.Error(), "future_field") {
-		t.Fatalf("an unknown v2 response field must be refused by name, got %v", err)
+	if err != nil {
+		t.Fatalf("an unknown v2 response field was refused: %v", err)
+	}
+	if len(resp.Tickets) != 1 || !resp.Tickets[0].AlreadyPresent {
+		t.Fatalf("want one already-present ticket, got %+v", resp.Tickets)
 	}
 }
 
@@ -193,6 +203,22 @@ func TestAuthorizeUploadsRefusesIncompleteRequest(t *testing.T) {
 				t.Fatalf("a batch missing %s must be refused by name, got %v", field, err)
 			}
 		})
+	}
+}
+
+func TestAuthorizeUploadsAcceptsAnAlreadyPresentTicket(t *testing.T) {
+	resp, err := authorizeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tickets":[` + alreadyPresentTicketJSON() + `]}`))
+	})
+	if err != nil {
+		t.Fatalf("an already-present answer must decode: %v", err)
+	}
+	if len(resp.Tickets) != 1 || !resp.Tickets[0].AlreadyPresent {
+		t.Fatalf("want one already-present ticket, got %+v", resp.Tickets)
+	}
+	if resp.Tickets[0].URL != "" || len(resp.Tickets[0].RequiredHeaders) != 0 {
+		t.Errorf("an already-present ticket carried a capability: %+v", resp.Tickets[0])
 	}
 }
 
