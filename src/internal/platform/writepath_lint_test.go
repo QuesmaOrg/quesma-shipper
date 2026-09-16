@@ -184,19 +184,34 @@ var bannedExec = map[string]map[string]bool{
 }
 
 // TestNoExecOutsidePackaging: os/exec reads as malware to an auditor, so the collector's data path
-// never spawns a subprocess; packaging/ (service install, self-update re-exec) is the only exception.
+// only permits packaging processes and the fixed macOS Keychain reader.
 func TestNoExecOutsidePackaging(t *testing.T) {
 	forEachModuleGoFile(t, func(rel string, file *ast.File, fset *token.FileSet) {
 		if rel == "packaging" || strings.HasPrefix(rel, "packaging/") {
 			return
 		}
 		for _, imp := range file.Imports {
-			if imp.Path.Value == `"os/exec"` {
+			if imp.Path.Value == `"os/exec"` && rel != "internal/sources/accounts_keychain_darwin.go" {
 				t.Errorf("%s:%d: imports os/exec: the data path must not spawn subprocesses (allowed only under packaging/)",
 					rel, fset.Position(imp.Pos()).Line)
 			}
 		}
 		ast.Inspect(file, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok && rel == "internal/sources/accounts_keychain_darwin.go" {
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+					if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "exec" {
+						if sel.Sel.Name != "CommandContext" || len(call.Args) != 8 {
+							t.Error("Keychain reader must use the fixed, bounded security command")
+						} else {
+							for i, want := range map[int]string{1: `"/usr/bin/security"`, 2: `"find-generic-password"`, 3: `"-a"`, 5: `"-s"`, 7: `"-w"`} {
+								if arg, ok := call.Args[i].(*ast.BasicLit); !ok || arg.Value != want {
+									t.Errorf("Keychain command argument %d must be %s", i, want)
+								}
+							}
+						}
+					}
+				}
+			}
 			sel, ok := n.(*ast.SelectorExpr)
 			if !ok {
 				return true
