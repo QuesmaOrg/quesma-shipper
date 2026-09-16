@@ -3,9 +3,9 @@ package accountprobe
 import (
 	"bytes"
 	"database/sql"
-	"encoding/base64"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -103,51 +103,81 @@ func TestDeterminismIsTheChangeSignal(t *testing.T) {
 	}
 }
 
-// A JWT whose claims carry the plan, signed by nobody: the probe reads claims, not signatures.
-func codexJWT(t *testing.T, claims string) string {
+// fakeCodexServer writes a POSIX-shell stand-in for `codex app-server --stdio`. It answers the
+// initialize/account-read handshake with the given account line, so no real codex is needed.
+func fakeCodexServer(t *testing.T, accountResult string) *Codex {
 	t.Helper()
-	seg := func(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
-	return seg(`{"alg":"RS256"}`) + "." + seg(claims) + "." + seg("sig")
-}
-
-func TestCodexExtractsPlanFromTokenClaimsWithoutTheToken(t *testing.T) {
-	tok := codexJWT(t, `{"email": "dev@example.com",
-	  "https://api.openai.com/auth": {"chatgpt_plan_type": "pro",
-	    "chatgpt_subscription_active_until": "2026-09-03T09:00:24+00:00",
-	    "chatgpt_user_id": "user-SHOULD-NOT-SHIP"}}`)
-	p := filepath.Join(t.TempDir(), "auth.json")
-	if err := os.WriteFile(p, []byte(`{"auth_mode": "chatgpt",
-	  "OPENAI_API_KEY": "`+codexToken+`",
-	  "tokens": {"id_token": "`+tok+`", "access_token": "`+codexToken+`",
-	    "refresh_token": "`+codexToken+`", "account_id": "acc-1"}}`), 0o600); err != nil {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake app-server uses POSIX shell")
+	}
+	script := `#!/bin/sh
+read line
+printf '%s\n' '{"id":1,"result":{"userAgent":"fake","codexHome":"/tmp"}}'
+read line
+read line
+printf '%s\n' '{"method":"remoteControl/status/changed","params":{"status":"disabled"}}'
+printf '%s\n' '` + accountResult + `'
+`
+	path := filepath.Join(t.TempDir(), "codex-fake")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	res := NewCodex().Enrich(transforms.Input{DBPath: p})
+	return &Codex{command: path}
+}
+
+func TestCodexReadsPlanFromAppServerWithoutAnyToken(t *testing.T) {
+	e := fakeCodexServer(t, `{"id":2,"result":{"account":{"type":"chatgpt","email":"dev@example.com","planType":"team"},"requiresOpenaiAuth":true}}`)
+	p := filepath.Join(t.TempDir(), "auth.json")
+	if err := os.WriteFile(p, []byte(`{"tokens":{"id_token":"`+codexToken+`"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := e.Enrich(transforms.Input{DBPath: p})
 	if len(res.Objects) != 1 || res.Errors != 0 {
 		t.Fatalf("want 1 object, got %+v", res)
 	}
 	out := string(res.Objects[0].Payload)
-	for _, want := range []string{`"email":"dev@example.com"`, `"plan":"pro"`,
-		`"auth_mode":"chatgpt"`, `"active_until":"2026-09-03T09:00:24+00:00"`} {
+	for _, want := range []string{`"email":"dev@example.com"`, `"plan":"team"`, `"auth_mode":"chatgpt"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("payload missing %s: %s", want, out)
 		}
 	}
-	for _, banned := range []string{codexToken, tok, "SHOULD-NOT-SHIP", "acc-1"} {
-		if strings.Contains(out, banned) {
-			t.Errorf("payload leaked %q: %s", banned, out)
-		}
+	// The gate file holds a token; the probe must never read or ship it.
+	if strings.Contains(out, codexToken) {
+		t.Errorf("payload leaked the auth.json token: %s", out)
+	}
+	if res.Objects[0].NativePath != p+".account.enriched.json" {
+		t.Errorf("derived path %q not beside its store", res.Objects[0].NativePath)
 	}
 }
 
-func TestCodexMangledTokenIsAnErrorNotALeak(t *testing.T) {
+func TestCodexAppServerErrorIsAnErrorNotASkip(t *testing.T) {
+	e := fakeCodexServer(t, `{"id":2,"error":{"code":-32601,"message":"Method not found"}}`)
 	p := filepath.Join(t.TempDir(), "auth.json")
-	if err := os.WriteFile(p, []byte(`{"tokens": {"id_token": "not.a.jwt.at.all"}}`), 0o600); err != nil {
+	if err := os.WriteFile(p, []byte(`{"tokens":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	res := NewCodex().Enrich(transforms.Input{DBPath: p})
+	res := e.Enrich(transforms.Input{DBPath: p})
 	if res.Errors == 0 || len(res.Objects) != 0 {
-		t.Fatalf("mangled token must fail closed: %+v", res)
+		t.Fatalf("rpc error must fail loud: %+v", res)
+	}
+}
+
+func TestCodexSignedOutAppServerIsASkip(t *testing.T) {
+	e := fakeCodexServer(t, `{"id":2,"result":{"account":null,"requiresOpenaiAuth":true}}`)
+	p := filepath.Join(t.TempDir(), "auth.json")
+	if err := os.WriteFile(p, []byte(`{"tokens":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := e.Enrich(transforms.Input{DBPath: p, Units: make([]transforms.RawUnit, 1)})
+	if res.Errors != 0 || len(res.Objects) != 0 || res.Skipped != 1 {
+		t.Fatalf("signed-out app-server: %+v", res)
+	}
+}
+
+func TestCodexNoAuthJSONIsASkip(t *testing.T) {
+	res := NewCodex().Enrich(transforms.Input{DBPath: "", Units: make([]transforms.RawUnit, 2)})
+	if res.Errors != 0 || len(res.Objects) != 0 || res.Skipped != 2 {
+		t.Fatalf("absent auth.json: %+v", res)
 	}
 }
 

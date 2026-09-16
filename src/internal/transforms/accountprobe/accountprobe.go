@@ -8,7 +8,7 @@
 package accountprobe
 
 import (
-	"encoding/base64"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -24,7 +24,7 @@ import (
 type Account struct {
 	Agent string `json:"agent"`
 
-	// For codex this comes from the id_token's claims; the token never reaches the output.
+	// For codex this comes from the app-server, not from any token.
 	Email string `json:"email,omitempty"`
 
 	// Plan is claude organizationType, codex chatgpt_plan_type, cursor stripeMembershipType.
@@ -39,9 +39,6 @@ type Account struct {
 	OrgRole   string `json:"org_role,omitempty"`
 	SeatTier  string `json:"seat_tier,omitempty"`
 	Team      string `json:"team,omitempty"`
-
-	// ActiveUntil is the subscription's recorded end, where the agent stores one (codex).
-	ActiveUntil string `json:"active_until,omitempty"`
 }
 
 // ~/.claude.json also holds per-project state and grows to megabytes, so the read is bounded.
@@ -163,9 +160,13 @@ func (e *Claude) Enrich(in transforms.Input) transforms.EnrichResult {
 
 // ---------------------------------------------------------------- codex
 
-// Codex reads ~/.codex/auth.json, where the plan and the email are claims inside the OAuth
-// id_token; no token reaches the output struct.
-type Codex struct{}
+// Codex reports the account over the app-server's account/read RPC. auth.json's presence is only
+// the logged-in gate; the plan and email come from the app-server, never from a token we decode.
+type Codex struct {
+	// command/args override the resolved `codex app-server` invocation; set only in tests.
+	command string
+	args    []string
+}
 
 func NewCodex() *Codex { return &Codex{} }
 
@@ -174,8 +175,7 @@ func (*Codex) Version() int     { return 1 }
 func (*Codex) Table() string    { return "" }
 func (*Codex) NeedsUnits() bool { return false }
 func (*Codex) Keyspaces() []string {
-	return []string{"auth_mode; tokens.id_token claims: email, chatgpt_plan_type, " +
-		"chatgpt_subscription_active_until"}
+	return []string{"app-server account/read: type, email, planType"}
 }
 
 func (*Codex) DBCandidates() []string {
@@ -185,58 +185,32 @@ func (*Codex) DBCandidates() []string {
 func (e *Codex) Enrich(in transforms.Input) transforms.EnrichResult {
 	res := transforms.EnrichResult{EnricherID: e.ID(), Version: e.Version()}
 	if in.DBPath == "" {
-		return skippedAll(res, in, "no auth.json found: no account to report")
+		return skippedAll(res, in, "no auth.json found: codex not logged in")
 	}
-	raw, err := readStore(in.DBPath)
+	command, args := e.command, e.args
+	if command == "" {
+		bin, err := resolveCodexBinary()
+		if err != nil {
+			return skippedAll(res, in, "codex plan not read: "+err.Error())
+		}
+		command, args = bin, []string{"app-server", "--stdio"}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), codexProbeTimeout)
+	defer cancel()
+	acct, err := readCodexAccount(ctx, command, args...)
 	if err != nil {
-		return failed(res, "codex auth store unreadable", err)
+		return failed(res, "codex app-server account/read", err)
 	}
-	var doc struct {
-		AuthMode string `json:"auth_mode"`
-		Tokens   struct {
-			IDToken string `json:"id_token"`
-		} `json:"tokens"`
+	if acct == nil || (acct.Email == "" && acct.Plan == "") {
+		return skippedAll(res, in, "app-server reports no signed-in codex account")
 	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return failed(res, "codex auth store is not JSON", err)
-	}
-	acct := Account{Agent: "codex", AuthMode: doc.AuthMode}
-	if doc.Tokens.IDToken != "" {
-		var claims struct {
-			Email string `json:"email"`
-			Auth  struct {
-				PlanType    string `json:"chatgpt_plan_type"`
-				ActiveUntil string `json:"chatgpt_subscription_active_until"`
-			} `json:"https://api.openai.com/auth"`
-		}
-		if err := decodeJWTClaims(doc.Tokens.IDToken, &claims); err != nil {
-			res.Errors++
-			res.Notes = append(res.Notes, "codex id_token claims undecodable: "+err.Error())
-			return res
-		}
-		acct.Email = claims.Email
-		acct.Plan = claims.Auth.PlanType
-		acct.ActiveUntil = claims.Auth.ActiveUntil
-	}
-	if acct.Email == "" && acct.Plan == "" && acct.AuthMode == "" {
-		return skippedAll(res, in, "auth.json holds no account fields: not logged in")
-	}
-	emit(&res, in.DBPath, transforms.Hash(raw), acct)
+	emit(&res, in.DBPath, transforms.Hash(acct.raw), Account{
+		Agent:    "codex",
+		Email:    acct.Email,
+		Plan:     acct.Plan,
+		AuthMode: acct.Type,
+	})
 	return res
-}
-
-// No verification: the token came from the agent's own login flow and only allowlisted claims
-// survive into the output.
-func decodeJWTClaims(tok string, dst any) error {
-	parts := strings.Split(tok, ".")
-	if len(parts) != 3 {
-		return fmt.Errorf("not a JWT: %d segments", len(parts))
-	}
-	pay, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(pay, dst)
 }
 
 // ---------------------------------------------------------------- cursor
