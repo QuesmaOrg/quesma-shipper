@@ -81,9 +81,8 @@ func TestVendPathShipsAuthorizedObjectsToTheStore(t *testing.T) {
 func TestVendPathShipsNothingOnASecondRun(t *testing.T) {
 	v := stageWorld(t)
 	stageClaude(t, v, realUsername(t))
-	// The generated project-map sidecar can legitimately change when nothing was collected, so it
-	// is disabled here: the subject is files the client read off the machine.
-	writeConfig(t, v, "sources:\n  - id: project-map\n    enabled: false\n")
+	// Generated observations change each run; this check covers unchanged files.
+	writeConfig(t, v, "sources:\n  - id: project-map\n    enabled: false\n  - id: claude-account\n    enabled: false\n")
 
 	runOneShot(t)
 	first := len(v.store.mirrorPuts())

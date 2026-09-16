@@ -14,8 +14,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
 type accountTransport func(*http.Request) (*http.Response, error)
@@ -25,16 +23,11 @@ func (f accountTransport) RoundTrip(r *http.Request) (*http.Response, error) { r
 func accountFixture(t *testing.T) Request {
 	t.Helper()
 	home := t.TempDir()
-	scrub, err := transforms.New(transforms.DefaultConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
 	return Request{
 		Source:   Resolved{Source: Source{ID: "codex-account", Family: "codex", Gather: "account"}},
 		StateDir: filepath.Join(home, "shipper"), Env: Env{Home: home, Lookup: func(string) (string, bool) { return "", false }},
 		Context: context.Background(), Capture: true,
-		Now:   func() time.Time { return time.Date(2026, 9, 16, 14, 17, 3, 0, time.UTC) },
-		Scrub: func(b []byte) ([]byte, error) { r, e := scrub.Scrub(b, transforms.Hint{JSONL: true}); return r.Out, e },
+		Now: func() time.Time { return time.Date(2026, 9, 16, 14, 17, 3, 0, time.UTC) },
 	}
 }
 
@@ -48,7 +41,7 @@ func accountFile(t *testing.T, path, body string) {
 	}
 }
 
-func TestAccountSnapshotsPreserveProviderJSONAndRetryHistory(t *testing.T) {
+func TestAccountSnapshotsPreserveProviderJSONInMemory(t *testing.T) {
 	req := accountFixture(t)
 	claims := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"dev@example.org","https://api.openai.com/auth":{"chatgpt_plan_type":"pro"}}`))
 	accountFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture-access","refresh_token":"fixture-refresh","account_id":"workspace-1","id_token":"x.`+claims+`.x"}}`)
@@ -71,70 +64,39 @@ func TestAccountSnapshotsPreserveProviderJSONAndRetryHistory(t *testing.T) {
 	if c.RelPath != "codex.account.20260916T141500Z.json" {
 		t.Fatal(c.RelPath)
 	}
-	raw, err := os.ReadFile(c.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, secret := range []string{"fixture-access", "fixture-refresh", "fixture-secret", "dev@example.org"} {
-		if bytes.Contains(raw, []byte(secret)) {
-			t.Fatalf("leaked %s", secret)
-		}
-	}
+	raw := c.Content
 	for _, field := range []string{`"input_tokens":9007199254740993`, `"utilization":123.456`, `"optional":null`, `"windows":[]`, `"chatgpt_plan_type":"pro"`} {
 		if !bytes.Contains(raw, []byte(field)) {
 			t.Fatalf("lost %s: %s", field, raw)
 		}
 	}
 	again, err := p.Discover(req)
-	if err != nil || len(again.Candidates) != 1 || calls != 1 {
+	if err != nil || len(again.Candidates) != 1 || calls != 2 || again.Candidates[0].Path != c.Path {
 		t.Fatalf("same bucket: %+v %v calls %d", again, err, calls)
-	}
-	same, _ := os.ReadFile(c.Path)
-	if !bytes.Equal(raw, same) {
-		t.Fatal("snapshot overwritten")
 	}
 	req.Now = func() time.Time { return time.Date(2026, 9, 16, 14, 31, 0, 0, time.UTC) }
 	next, err := p.Discover(req)
-	if err != nil || len(next.Candidates) != 2 {
-		t.Fatalf("pending history: %+v %v", next, err)
+	if err != nil || len(next.Candidates) != 1 || calls != 3 || next.Candidates[0].Path == c.Path {
+		t.Fatalf("new bucket: %+v %v calls %d", next, err, calls)
 	}
-	req.Committed = func(c Candidate) bool { return c.RelPath == first.Candidates[0].RelPath }
-	req.Now = func() time.Time { return time.Date(2026, 9, 16, 14, 46, 0, 0, time.UTC) }
-	third, err := p.Discover(req)
-	if err != nil || len(third.Candidates) != 2 {
-		t.Fatalf("cleanup: %+v %v", third, err)
-	}
-	if _, err := os.Stat(c.Path); !os.IsNotExist(err) {
-		t.Fatal("committed old snapshot retained")
-	}
-	if _, err := os.Stat(next.Candidates[1].Path); err != nil {
-		t.Fatal("uncommitted snapshot removed", err)
-	}
-	req.Now = func() time.Time { return time.Date(2026, 9, 16, 14, 16, 0, 0, time.UTC) }
-	before := calls
-	if _, err := p.Discover(req); err != nil || calls != before {
-		t.Fatal("clock rollback recaptured", err)
+	if _, err := os.Stat(req.StateDir); !os.IsNotExist(err) {
+		t.Fatal("account collection wrote local state")
 	}
 }
 
-func TestAccountDiscoveryAndScrubFailureDoNotWrite(t *testing.T) {
+func TestAccountDiscoveryDoesNotFetchOrWrite(t *testing.T) {
 	req := accountFixture(t)
-	accountFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"auth_mode":"apikey"}`)
-	p := Accounts{}
+	accountFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture"}}`)
+	p := Accounts{client: &http.Client{Transport: accountTransport(func(*http.Request) (*http.Response, error) {
+		t.Fatal("discovery fetched account data")
+		return nil, nil
+	})}}
 	req.Capture = false
 	if d, err := p.Discover(req); err != nil || len(d.Candidates) != 0 {
 		t.Fatalf("discovery: %+v %v", d, err)
 	}
 	if _, err := os.Stat(req.StateDir); !os.IsNotExist(err) {
 		t.Fatal("discovery wrote state")
-	}
-	req.Capture = true
-	req.Scrub = func([]byte) ([]byte, error) { return nil, errors.New("fixture scrub failure") }
-	if _, err := p.Discover(req); err == nil {
-		t.Fatal("scrub failed open")
-	}
-	if _, err := os.Stat(req.StateDir); !os.IsNotExist(err) {
-		t.Fatal("unscrubbed snapshot saved")
 	}
 }
 
@@ -171,7 +133,7 @@ func TestAccountHTTPFailuresAreBoundedAndDoNotLeak(t *testing.T) {
 	}
 }
 
-func TestAccountThrottleSurvivesRestart(t *testing.T) {
+func TestAccountThrottleIsRespectedInMemory(t *testing.T) {
 	req := accountFixture(t)
 	accountFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture"}}`)
 	calls := 0
@@ -183,15 +145,14 @@ func TestAccountThrottleSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Now = func() time.Time { return time.Date(2026, 9, 16, 14, 31, 0, 0, time.UTC) }
-	restarted := Accounts{client: p.client}
-	d, err := restarted.Discover(req)
+	d, err := p.Discover(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 || len(d.Candidates) != 2 {
+	if calls != 1 || len(d.Candidates) != 1 {
 		t.Fatalf("lost cooldown: %+v calls %d", d, calls)
 	}
-	raw, _ := os.ReadFile(d.Candidates[1].Path)
+	raw := d.Candidates[0].Content
 	if !bytes.Contains(raw, []byte(`"error":"throttled"`)) {
 		t.Fatalf("%s", raw)
 	}
@@ -221,34 +182,12 @@ func TestClaudeUsesActiveCredentialsAndPreservesLocalAccount(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("calls %d", calls)
 	}
-	raw, _ := os.ReadFile(d.Candidates[0].Path)
+	raw := d.Candidates[0].Content
 	var snap accountSnapshot
 	if err := json.Unmarshal(raw, &snap); err != nil {
 		t.Fatal(err)
 	}
 	if len(snap.Observations) != 3 || bytes.Contains(raw, []byte("not collected")) || !bytes.Contains(raw, []byte(`"future":42`)) {
 		t.Fatalf("%s", raw)
-	}
-}
-
-func TestFullAccountBacklogRetainsPendingHistory(t *testing.T) {
-	req := accountFixture(t)
-	start := req.Now().Add(-time.Duration(maxAccountSnapshots+1) * accountInterval)
-	dir := filepath.Join(req.StateDir, "snapshots", req.Source.ID)
-	for i := 0; i < maxAccountSnapshots; i++ {
-		name := "codex.account." + start.Add(time.Duration(i)*accountInterval).Truncate(accountInterval).Format("20060102T150405Z") + ".json"
-		accountFile(t, filepath.Join(dir, name), `{"schema_version":1,"observations":[]}`)
-	}
-	p := Accounts{}
-	d, err := p.Discover(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(d.Candidates) != maxAccountSnapshots || d.Unreadable != 1 || !strings.Contains(d.Reason, "backlog full") {
-		t.Fatalf("backlog: candidates=%d reason=%s err=%v", len(d.Candidates), d.Reason, err)
-	}
-	files, err := os.ReadDir(dir)
-	if err != nil || len(files) != maxAccountSnapshots {
-		t.Fatal("pending history discarded", err)
 	}
 }

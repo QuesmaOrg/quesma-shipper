@@ -40,13 +40,16 @@ const (
 	SniffUnreadable      = formats.SniffUnreadable
 )
 
-// Candidate is one discovered file.
+// Candidate is one discovered file or generated payload.
 type Candidate struct {
-	// Path is absolute, as opened.
+	// Path is absolute for files, or a stable name for generated content.
 	Path string
 
 	// RelPath is relative to the resolved root and derives the mirror key, so a store that moves keeps its keys.
 	RelPath string
+
+	// Content, when non-nil, replaces the file read.
+	Content []byte
 
 	Size  int64
 	MTime time.Time
@@ -108,11 +111,9 @@ type Request struct {
 
 	Now func() time.Time
 
-	Context   context.Context
-	Env       Env
-	Capture   bool
-	Scrub     func([]byte) ([]byte, error)
-	Committed func(Candidate) bool
+	Context context.Context
+	Env     Env
+	Capture bool
 }
 
 // Primitive discovers candidates for one source. Config can never introduce one: primitives are code, sources are data.

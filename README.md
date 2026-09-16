@@ -91,18 +91,16 @@ Two more records are produced by the shipper itself:
   directory, and the git remote as host and path. Credentials embedded in a remote URL are removed
   before the value is written anywhere.
 - **Account and usage history.** Independent `claude-account`, `codex-account`, and
-  `cursor-account` collectors save the first observation in each 15-minute UTC bucket.
+  `cursor-account` collectors upload observations into 15-minute UTC buckets.
   Snapshots preserve provider JSON fields, including unknown fields, percentages, reset
-  windows, and plan details, plus selected local account metadata. They are scrubbed before
-  local persistence and again before encryption and upload.
+  windows, and plan details, plus selected local account metadata. They pass through the existing scrub, encryption, and upload pipeline directly from memory.
 
-Snapshots live under `<state-dir>/snapshots/<source-id>/`, for example
-`claude.account.20260916T141500Z.json`. Each timestamp produces its own encrypted remote
-object; retries use the saved snapshot. Older local snapshots are removed only after a
-confirmed upload, with the latest retained as the sampling marker. Pending history is bounded
-by 672 files and 64 MiB per source; a full backlog pauses new samples and reports the gap,
-without deleting pending uploads. The normal tick defaults to 15 minutes; slower schedules,
-sleep, and offline authentication can leave gaps. Missed observations are never backfilled.
+Snapshot names include the UTC bucket, for example `claude.account.20260916T141500Z.json`.
+Each bucket produces its own encrypted remote object. No snapshot files are written locally;
+repeated runs in the same bucket overwrite its object with current usage. If an upload
+fails, the next run fetches current usage again. Failed observations are not retained across
+runs, and missed buckets are never backfilled. The normal tick defaults to 15 minutes; slower
+schedules, sleep, and offline authentication can leave gaps.
 
 Claude reads the active login's macOS Keychain entry through `purego` (no CGO, subprocess,
 or interactive prompt), with `.credentials.json` as a fallback; other platforms use the file.
@@ -114,7 +112,7 @@ Claude snapshots contain the OAuth profile and usage responses; Codex captures W
 Cursor captures dashboard plan and current-period usage. Each observation records its source,
 time, HTTP status, and either the provider body or a fixed failure reason. These provider
 endpoints can change, and expired or inaccessible credentials produce partial snapshots.
-Rate-limit cooldowns survive restarts. Doctor, status, and preview do not fetch new usage.
+Rate-limit cooldowns are kept in memory until the process exits. Doctor, status, and preview do not fetch new usage.
 
 Disable an account collector with `sources: [{id: claude-account, enabled: false}]` (likewise
 for Codex/Cursor). Old `enrichers: {claude-account: false}` settings on transcript sources

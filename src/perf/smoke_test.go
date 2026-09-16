@@ -43,7 +43,7 @@ const (
 	smokeRoundTrips = (smokeRoundFiles + smokePutWidth - 1) / smokePutWidth
 )
 
-// A heartbeat, project map, and first Claude account snapshot; subsequent syncs reuse the snapshot.
+// A heartbeat, project map, and Claude account snapshot.
 const smokeSidecarObjects = 3
 
 // Measured, and narrow: two runs of unchanged code over this corpus agree to within an HTTP header.

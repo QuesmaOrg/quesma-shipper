@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"fmt"
 	"hash/fnv"
+	"os"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
@@ -59,14 +61,24 @@ func (o Options) prepareFile(
 
 	// Cheap pre-filter on size and mtime only: mtime alone re-ships byte-identical files, so the
 	// content hash below stays the authority. A non-empty SourceHash marks a committed ship.
-	if seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
+	if cand.Content == nil && seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
 		!o.withinRecomputeWindow(staging, cand) {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "size and mtime unchanged"
 		return res, nil
 	}
 
-	raw, info, err := platform.ReadWhole(cand.Path, src.MaxFileBytes)
+	raw, mtime := cand.Content, cand.MTime
+	var err error
+	if raw == nil {
+		var info os.FileInfo
+		raw, info, err = platform.ReadWhole(cand.Path, src.MaxFileBytes)
+		if err == nil {
+			mtime = info.ModTime()
+		}
+	} else if src.MaxFileBytes > 0 && int64(len(raw)) > src.MaxFileBytes {
+		err = fmt.Errorf("%w: generated content exceeds file size limit", platform.ErrTooLarge)
+	}
 	if err != nil {
 		failAndBackOff(o, &res, key, fp, err.Error())
 		return res, nil
@@ -131,7 +143,7 @@ func (o Options) prepareFile(
 	}
 	out.ObjectKey = objectKey
 
-	manifest := o.manifestFor(src, cand, disc, sourceHash, info.ModTime(), scrubbed)
+	manifest := o.manifestFor(src, cand, disc, sourceHash, mtime, scrubbed)
 	// Set BEFORE sealing: Seal takes the manifest by value, and this hash travels in metadata.
 	manifest.ShippedHash = transforms.Hash(scrubbed.Out)
 	obj, err := transforms.Seal(manifest, scrubbed.Out, o.Recipients)

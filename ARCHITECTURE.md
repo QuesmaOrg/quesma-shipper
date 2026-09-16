@@ -144,5 +144,6 @@ plan were recorded separately in the old repository and were not copied here.
 Account collectors use bounded provider HTTP reads during collection only. Credentials stay
 in memory; a separate exact-key SQLite reader supplies Cursor authentication without changing
 the generic collection deny rules. macOS Keychain access uses purego and refuses interaction.
-The engine supplies the scrub callback and durable upload acknowledgements used to persist
-snapshots and clean up confirmed history. Sources do not import transforms or engine.
+Collectors return generated content in memory; the engine scrubs, encrypts, and uploads it
+through the same pipeline as files. Repeated runs overwrite the current bucket. Sources do
+not import transforms or engine.

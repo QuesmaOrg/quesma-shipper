@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -13,7 +14,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
-func TestAccountHistoryIsIndependentAndSurvivesFailedUpload(t *testing.T) {
+func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	f := newFixture(t)
 	home := filepath.Join(f.home, ".codex")
 	if err := os.MkdirAll(home, 0700); err != nil {
@@ -36,26 +37,22 @@ func TestAccountHistoryIsIndependentAndSurvivesFailedUpload(t *testing.T) {
 	if _, err := engine.Run(context.Background(), f.store, o); err != nil {
 		t.Fatal(err)
 	}
-	pending, err := filepath.Glob(filepath.Join(f.stateDir, "snapshots", "codex-account", "*.json"))
-	if err != nil || len(pending) != 1 {
-		t.Fatalf("pending %v %v", pending, err)
+	if _, err := os.Stat(filepath.Join(f.stateDir, "snapshots")); !os.IsNotExist(err) {
+		t.Fatal("account collection staged files")
 	}
-	first, err := os.ReadFile(pending[0])
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(`{"auth_mode":"fresh","tokens":{"id_token":"x.eyJlbWFpbCI6ImRldkBleGFtcGxlLm9yZyJ9.x"}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	f.reopen()
 	f.port.FailAll = nil
-	now = now.Add(15 * time.Minute)
 	rep := runEnrich(t, f, o)
-	if rep.Shipped != 2 {
-		t.Fatalf("retry and new bucket: %+v", rep)
+	if rep.Shipped != 1 {
+		t.Fatalf("retry current bucket: %+v", rep)
 	}
 	keys := f.port.keys()
-	if len(keys) != 2 {
+	if len(keys) != 1 {
 		t.Fatalf("history keys %v", keys)
 	}
-	found := false
 	for _, key := range keys {
 		obj, _ := f.port.get(key)
 		manifest, payload, err := transforms.Open(obj.Body, f.unit.Identity)
@@ -65,27 +62,23 @@ func TestAccountHistoryIsIndependentAndSurvivesFailedUpload(t *testing.T) {
 		if manifest.Derived || manifest.Enricher != nil || manifest.Gather != "account" || manifest.PayloadMTime == nil {
 			t.Fatalf("not a collector: %+v", manifest)
 		}
-		if string(payload) == string(first) {
-			found = true
+		if !bytes.Contains(payload, []byte(`"auth_mode":"fresh"`)) || bytes.Contains(payload, []byte("dev@example.org")) {
+			t.Fatalf("fresh payload not scrubbed: %s", payload)
 		}
 	}
-	if !found {
-		t.Fatal("failed snapshot regenerated on retry")
-	}
+	f.reopen()
+	now = now.Add(time.Minute)
 	rep = runEnrich(t, f, o)
-	if rep.Shipped != 0 {
-		t.Fatalf("same bucket reshipped %+v", rep)
+	if rep.Shipped != 1 || len(f.port.keys()) != 1 {
+		t.Fatalf("same bucket should overwrite existing object: %+v", rep)
 	}
 	now = now.Add(15 * time.Minute)
 	rep = runEnrich(t, f, o)
 	if rep.Shipped != 1 {
 		t.Fatalf("new bucket %+v", rep)
 	}
-	if len(f.port.keys()) != 3 {
+	if len(f.port.keys()) != 2 {
 		t.Fatal("remote history overwritten")
-	}
-	if _, err := os.Stat(pending[0]); !os.IsNotExist(err) {
-		t.Fatal("confirmed old snapshot not cleaned")
 	}
 }
 
