@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"runtime"
+	"slices"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
@@ -55,13 +56,7 @@ func (p *Accounts) collectClaude(ctx context.Context, req Request) ([]accountObs
 	}
 	credentialErr := json.Unmarshal(raw, &creds)
 	token := creds.OAuth.Token
-	scoped := false
-	for _, scope := range creds.OAuth.Scopes {
-		if scope == "user:profile" {
-			scoped = true
-		}
-	}
-	if credentialErr != nil || !scoped {
+	if credentialErr != nil || !slices.Contains(creds.OAuth.Scopes, "user:profile") {
 		token = ""
 	}
 	for _, endpoint := range []string{"profile", "usage"} {

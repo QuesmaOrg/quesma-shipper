@@ -84,4 +84,3 @@ sources:
     emit: account
     sniff:
       kind: jsonl
-      max_scan_bytes: 8388608
