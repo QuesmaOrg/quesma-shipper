@@ -4,6 +4,7 @@ package macos
 
 import (
 	"bytes"
+	"context"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -203,7 +204,7 @@ func UninstallService() error {
 	return nil
 }
 
-func ServiceState() Status {
+func ServiceState(ctx context.Context) Status {
 	st := Status{Kind: common.KindLaunchd}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -215,7 +216,7 @@ func ServiceState() Status {
 		st.Installed = true
 	}
 
-	out, err := exec.Command(launchctl, "print", guiService()).CombinedOutput()
+	out, err := exec.CommandContext(ctx, launchctl, "print", guiService()).CombinedOutput()
 	if err != nil {
 		switch {
 		case st.Installed:
@@ -231,10 +232,10 @@ func ServiceState() Status {
 	return st
 }
 
-func RestartService() error {
-	out, err := exec.Command(launchctl, "kickstart", "-k", guiService()).CombinedOutput()
+func RestartService(ctx context.Context) error {
+	out, err := exec.CommandContext(ctx, launchctl, "kickstart", "-k", guiService()).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("launchctl kickstart: %v: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("launchctl kickstart: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

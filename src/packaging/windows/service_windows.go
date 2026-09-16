@@ -4,6 +4,7 @@ package windows
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -82,7 +83,7 @@ func UninstallService() error {
 	if err == nil {
 		return legacyErr
 	}
-	exists, verifyErr := taskExists(name)
+	exists, verifyErr := taskExists(context.Background(), name)
 	if verifyErr == nil && !exists {
 		return legacyErr
 	}
@@ -134,13 +135,13 @@ func currentUserSID() (string, error) {
 // queryOwnTask prefers this user's own task and falls back to the pre-rename one, so an install
 // made before the rename still reports as installed until its next upgrade migrates it. The
 // per-user name comes back even when nothing is registered: it is what a fresh install will use.
-func queryOwnTask(userSID string) (string, []byte, error) {
+func queryOwnTask(ctx context.Context, userSID string) (string, []byte, error) {
 	name := taskName(userSID)
-	out, err := schtasks("/Query", "/TN", name, "/XML")
+	out, err := schtasksContext(ctx, "/Query", "/TN", name, "/XML")
 	if err == nil {
 		return name, out, nil
 	}
-	legacyOut, legacyErr := schtasks("/Query", "/TN", legacyTaskName, "/XML")
+	legacyOut, legacyErr := schtasksContext(ctx, "/Query", "/TN", legacyTaskName, "/XML")
 	if legacyErr != nil {
 		return name, out, err
 	}
@@ -155,15 +156,15 @@ func queryOwnTask(userSID string) (string, []byte, error) {
 // must not be blocked by it: a user who wants the software gone has to be able to get there.
 var ErrTaskDeleteUnverified = errors.New("supervise: delete scheduled task, outcome unverified")
 
-func ServiceState() Status {
+func ServiceState(ctx context.Context) Status {
 	sid, err := currentUserSID()
 	if err != nil {
 		return Status{Kind: common.KindWindowsTask, Detail: err.Error()}
 	}
-	name, out, err := queryOwnTask(sid)
+	name, out, err := queryOwnTask(ctx, sid)
 	st := Status{Kind: common.KindWindowsTask, Path: name}
 	if err != nil {
-		exists, verifyErr := taskExists(name)
+		exists, verifyErr := taskExists(ctx, name)
 		if verifyErr == nil && !exists {
 			st.Detail = "no scheduled task installed; `quesma-shipper run` works in the foreground"
 		} else {
@@ -193,14 +194,14 @@ func ServiceState() Status {
 	return st
 }
 
-func RestartService() error {
+func RestartService(ctx context.Context) error {
 	sid, err := currentUserSID()
 	if err != nil {
 		return err
 	}
-	name, _, _ := queryOwnTask(sid)
-	_, _ = schtasks("/End", "/TN", name)
-	out, err := schtasks("/Run", "/TN", name)
+	name, _, _ := queryOwnTask(ctx, sid)
+	_, _ = schtasksContext(ctx, "/End", "/TN", name)
+	out, err := schtasksContext(ctx, "/Run", "/TN", name)
 	if err != nil {
 		return fmt.Errorf("restart scheduled task: %s", commandError(err, out))
 	}
@@ -213,7 +214,7 @@ func RestartCommand() string {
 	if err != nil {
 		return ""
 	}
-	name, _, _ := queryOwnTask(sid)
+	name, _, _ := queryOwnTask(context.Background(), sid)
 	return `schtasks /Run /TN "` + name + `"`
 }
 
@@ -239,16 +240,20 @@ func schtasks(args ...string) ([]byte, error) {
 	return exec.Command("schtasks.exe", args...).CombinedOutput()
 }
 
+func schtasksContext(ctx context.Context, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, "schtasks.exe", args...).CombinedOutput()
+}
+
 // schtasksStdout keeps a machine-readable listing clear of the per-task warnings schtasks writes
 // to stderr when it meets a task it cannot read.
-func schtasksStdout(args ...string) ([]byte, error) {
-	return exec.Command("schtasks.exe", args...).Output()
+func schtasksStdout(ctx context.Context, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, "schtasks.exe", args...).Output()
 }
 
 // taskExists enumerates all tasks after a targeted operation failed. A successful enumeration can
 // prove absence without interpreting schtasks' localized text or its catch-all exit code 1.
-func taskExists(name string) (bool, error) {
-	out, err := schtasksStdout("/Query", "/FO", "CSV", "/NH")
+func taskExists(ctx context.Context, name string) (bool, error) {
+	out, err := schtasksStdout(ctx, "/Query", "/FO", "CSV", "/NH")
 	if err != nil {
 		return false, errors.New(commandError(err, out))
 	}

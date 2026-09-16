@@ -1,12 +1,11 @@
 # Release downloads
 
-This document describes the public release repository at `updates.quesma.dev` and the proposed
-friendly download endpoints. It is both an operator guide and a statement of the trust boundary for
-people downloading Quesma Shipper.
+This document describes the public release repository at `updates.quesma.dev` and its friendly
+download endpoints. It is both an operator guide and a statement of the trust boundary for people
+downloading Quesma Shipper.
 
-The TUF repository is live. The friendly `/download/` endpoints described below are not live until
-the Worker route is deployed and verified. Do not publish those links in installation instructions
-before that point.
+The TUF repository and the `/download/` endpoints are both live. They are the supported way to
+install Quesma Shipper, and they are the links the installation instructions use.
 
 ## Public release repository
 
@@ -55,6 +54,12 @@ Each endpoint resolves `timestamp.json`, the referenced snapshot and targets met
 `release.json`, then returns a temporary redirect to the current hash-addressed target. The Worker
 does not copy, rename, overwrite, or delete any TUF object. No Worker deployment is needed for an
 ordinary Shipper release.
+
+The release publisher sets `Content-Disposition` HTTP metadata on every R2 target, using its
+unhashed TUF target name. Browsers therefore save a redirected download as, for example,
+`quesma-shipper-macos-universal.pkg` instead of including the consistent-snapshot hash. Setting the
+header on the Worker's redirect is not sufficient: the browser chooses the filename from the final
+R2 response.
 
 Use a `302` response and do not cache it permanently. A `301` can leave browsers and intermediate
 caches pointing at an older release.
@@ -257,16 +262,17 @@ curl -fsS https://updates.quesma.dev/metadata/timestamp.json >/dev/null
 ```
 
 After deployment, check every friendly endpoint. Each response must be `302`; its `Location` must
-start with `https://updates.quesma.dev/targets/`, and the target request must return `200`:
+start with `https://updates.quesma.dev/targets/`, and the target request must return `200` with an
+unhashed filename in `Content-Disposition`:
 
 ```sh
 curl -fsSI https://updates.quesma.dev/download/quesma-shipper-linux-amd64
-curl -fsSL -o /dev/null https://updates.quesma.dev/download/quesma-shipper-linux-amd64
+curl -fsSIL https://updates.quesma.dev/download/quesma-shipper-linux-amd64
 ```
 
-Also test both architectures on Linux and Windows and install the macOS package on a supported Mac.
-Only after all five endpoints pass should the README switch from hash-addressed URLs to the friendly
-URLs.
+Also test both architectures on Linux, both portable and setup downloads on Windows, and install
+the macOS package on a supported Mac. Only after all seven endpoints pass should the README publish
+the friendly URLs.
 
 The release workflow publishes targets first, versioned metadata second, and `timestamp.json` last.
 Preserve that order: the Worker reads the timestamp first, so it sees either the complete previous
