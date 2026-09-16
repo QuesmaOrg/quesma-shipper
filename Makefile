@@ -100,8 +100,8 @@ perf: ## Run the full local performance tier (needs Docker)
 	cd $(MODULE) && go vet -tags perf ./perf/
 	cd $(MODULE) && go test -tags perf -count=1 -timeout 30m -v ./perf/
 
-# The same instruments and budgets on the PR-sized corpus. The extra tests verify the
-# proxy, resource observations, and downloaded payloads against the real store.
+# The same instruments and budgets on the PR-sized corpus. The extra three tests prove that the
+# proxy and resource observations used by the measured scenarios are live.
 .PHONY: perf-smoke
 perf-smoke: ## Run the CI-sized performance tier (needs Docker)
 	@if ! docker info >/dev/null 2>&1; then \
@@ -110,7 +110,7 @@ perf-smoke: ## Run the CI-sized performance tier (needs Docker)
 	fi
 	cd $(MODULE) && go vet -tags perf ./perf/
 	cd $(MODULE) && go test -tags perf -count=1 -timeout 10m -v -run \
-		'^(TestSmokeTier|TestTheStoreIsReachableOnlyThroughTheProxy|TestASyncAgainstABogusEndpointFailsWithoutFallingBack|TestTheHarnessObservesAChildRun|TestUploadedTranscriptCanBeDownloadedAndDecrypted)$$' \
+		'^(TestSmokeTier|TestTheStoreIsReachableOnlyThroughTheProxy|TestASyncAgainstABogusEndpointFailsWithoutFallingBack|TestTheHarnessObservesAChildRun)$$' \
 		./perf/
 
 .PHONY: cover
