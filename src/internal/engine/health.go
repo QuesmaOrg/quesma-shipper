@@ -33,8 +33,8 @@ type Heartbeat struct {
 	RunID string `json:"run_id,omitempty"`
 
 	// Embedded, so the fields stay at the top level of the document where readers already expect
-	// last_crash. A heartbeat only ships from a run that got far enough to upload, so everything
-	// here describes a PAST failure by construction.
+	// last_crash. A failed or stalled run can now ship its own record, so the newest event may
+	// describe THIS run, not only past ones.
 	formats.FailureRecord
 
 	Sources []SourceHealth `json:"sources"`
@@ -92,8 +92,8 @@ type Input struct {
 	Report         formats.Report
 	Now            time.Time
 
-	// FailureRecord is read back from disk, not built from this run: the run assembling a
-	// heartbeat is by definition one that got far enough to upload.
+	// FailureRecord comes from the caller's judgement layer; it may already include this run's
+	// own failure (the failure and stall heartbeats exist to carry exactly that).
 	FailureRecord formats.FailureRecord
 }
 

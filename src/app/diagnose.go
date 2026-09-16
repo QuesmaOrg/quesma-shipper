@@ -84,7 +84,10 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		if verbose {
 			where = env.Destination() + ", "
 		}
-		if err := env.ProbeHeartbeat(pctx, doctorReport(probes)); err != nil {
+		// Doctor probes the write path with the one state object the protocol authorizes.
+		// mirror=false: doctor collects nothing, and mirroring its all-zero counters would erase
+		// the record of the last real flush, the very thing doctor reads.
+		if err := env.writeHeartbeat(pctx, doctorReport(probes), false); err != nil {
 			shipping = append(shipping, Row{Sev: SevFail, Label: "storage", Brief: "cannot send",
 				Detail: where + "upload check failed: " + err.Error(),
 				Fix:    "nothing can be sent until this works"})
@@ -99,6 +102,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		}
 	}
 	shipping = append(shipping, scheduleRows(paths.StateDir, now)...)
+	shipping = append(shipping, lastFailureRows(paths.StateDir, now, verbose)...)
 	var stateDetail []Row
 	for _, row := range stateRowsFrom(doc, docErr) {
 		if row.Sev == SevWarn {

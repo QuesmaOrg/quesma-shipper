@@ -168,7 +168,8 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 	env.OnCrashShipped = fl.Reported
 
 	out := cmd.OutOrStdout()
-	errOut := cmd.ErrOrStderr()
+	stderr := cmd.ErrOrStderr()
+	errOut := stderr
 	var stream *progressStream
 	if once {
 		stream = newProgressStream(errOut, quiet)
@@ -181,7 +182,9 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 	}
 	reportRemote(errOut, env)
 
-	tick := config.DefaultTick
+	// Resolved for --once too: the interval doubles as the stall watchdog's threshold.
+	tick, tickWarn := config.TickInterval(env.Effective().Schedule)
+	printWarning(errOut, tickWarn)
 	if !once {
 		limit, fromEnv := platform.SetSoftLimit(platform.DefaultSoftLimit)
 		source := "default"
@@ -189,9 +192,6 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 			source = "GOMEMLIMIT"
 		}
 		fmt.Fprintf(out, "memory soft limit %d MB (%s)\n", limit>>20, source)
-		var tickWarn string
-		tick, tickWarn = config.TickInterval(env.Effective().Schedule)
-		printWarning(errOut, tickWarn)
 		fmt.Fprintf(out, "collecting to %s every %s; Ctrl-C to stop\n", env.Destination(), tick)
 	}
 	started := time.Now()
@@ -216,7 +216,18 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 		if drain {
 			rep, complete, err = env.Drain(ctx)
 		} else {
+			// Not armed for a drain, whose legitimate bound is drain_deadline, not the tick interval.
+			// Warns on the raw stderr: the progress bar's writer is not safe for a second goroutine.
+			wctx, stopWatch := context.WithCancel(context.Background())
+			watchdogDone := make(chan struct{})
+			go func() {
+				env.WatchStalledTick(wctx, n, tick, stderr)
+				close(watchdogDone)
+			}()
 			rep, err, panicked = flushRecovered(ctx, env, errOut)
+			// Joined, not just signalled: the judge is about to write the report the watchdog reads.
+			stopWatch()
+			<-watchdogDone
 		}
 		mem := platform.Delta{Before: before, After: platform.ReadMemStats()}
 		if stream != nil {
@@ -228,8 +239,8 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 			}
 			return flushBeforeExit(cmd, out, env)
 		}
-		// Persisted before anything else reports: this tick's own heartbeat ships through the
-		// upload path that may have just failed, so the record has to outlive the run.
+		// Judged before anything else reports: the record has to outlive the run, and a locally
+		// caused failure ships its own failure heartbeat from here.
 		tickErr := env.JudgeTick(err, rep, panicked, mem)
 		if err == nil && !quiet {
 			printRunSummary(out, rep, once && !drain)
@@ -275,7 +286,7 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 		select {
 		case <-ctx.Done():
 			return flushBeforeExit(cmd, out, env)
-		case <-time.After(app.NextDelay(rep, err, panicked, tick)):
+		case <-time.After(app.NextDelay(rep, err, tick)):
 		}
 	}
 }

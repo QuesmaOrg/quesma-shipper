@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -64,9 +65,24 @@ type Runtime struct {
 	runID     string
 	lastCrash *formats.LastCrash
 
+	// rec caches the failure record while the state dir refuses writes (disk full), so the next
+	// heartbeat still carries the judgement; a successful write drops it.
+	recMu sync.Mutex
+	rec   *formats.FailureRecord
+
+	// lastRep is the last completed tick's report, reused by the stall heartbeat so a stalled
+	// install does not blank its own per-source health. Judge writes it, the next tick's watchdog
+	// reads it; the two never overlap (the watchdog is joined before judging).
+	lastRep formats.Report
+
 	// OnCrashShipped fires once, when a heartbeat CARRYING the crash report reached the sink; the
 	// heartbeat fails open, so nothing weaker proves delivery.
 	OnCrashShipped func()
+	crashOnce      sync.Once
+
+	// hbMu serializes heartbeat PUTs: the remote object is overwritten in place, and a stall
+	// heartbeat still in flight must land BEFORE the engine's own, not over it.
+	hbMu sync.Mutex
 }
 
 // The run id lands on every audit entry and heartbeat; the previous run's death rides one out.
@@ -233,14 +249,9 @@ func (r *Runtime) WriteHeartbeat(ctx context.Context, rep formats.Report) error 
 	return r.writeHeartbeat(ctx, rep, true)
 }
 
-// Doctor's write-path probe: same build, authorization and PUT, but it leaves the local mirror
-// alone. Doctor collects nothing, so mirroring its all-zero counters would erase the record of the
-// last real flush -- the very thing doctor reads.
-func (r *Runtime) ProbeHeartbeat(ctx context.Context, rep formats.Report) error {
-	return r.writeHeartbeat(ctx, rep, false)
-}
-
 func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror bool) error {
+	r.hbMu.Lock()
+	defer r.hbMu.Unlock()
 	hb := engine.Build(engine.Input{
 		OrganizationID: r.eff.OrganizationID,
 		InstallID:      r.unit.InstallID.String(),
@@ -250,8 +261,8 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 		RunID:          r.runID,
 		Report:         rep,
 		Now:            time.Now().UTC(),
-		// The crash comes from this process reading the journal; the failures come off disk,
-		// written by whichever earlier run could not upload them itself.
+		// The crash comes from this process reading the journal; the failures come from the
+		// record, which may include this very run's judgement.
 		FailureRecord: r.failureRecord(),
 	})
 	body, err := hb.Encode()
@@ -308,9 +319,9 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 	if len(outcomes) != 1 {
 		return fmt.Errorf("the upload port answered %d outcomes for one heartbeat", len(outcomes))
 	}
+	// Once: the stall watchdog's heartbeat can carry the crash before the engine's own does.
 	if outcomes[0] == nil && r.lastCrash != nil && r.OnCrashShipped != nil {
-		r.OnCrashShipped()
-		r.OnCrashShipped = nil
+		r.crashOnce.Do(r.OnCrashShipped)
 	}
 	return outcomes[0]
 }

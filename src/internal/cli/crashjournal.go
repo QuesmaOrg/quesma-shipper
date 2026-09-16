@@ -31,10 +31,11 @@ func startCrashJournal(errOut io.Writer) (*crashjournal.Log, string, *formats.La
 	fl.Start()
 
 	var crash *formats.LastCrash
-	if prev != nil && !prev.Clean {
+	if prev != nil {
 		crash = &formats.LastCrash{RunID: prev.RunID, Phase: prev.Phase, Consecutive: prev.Crashes}
 		fmt.Fprintf(errOut, "previous run %s never exited: last step %q; %d consecutive unclean run(s)\n",
 			prev.RunID, prev.Phase, prev.Crashes)
+		app.RecordCrash(crash)
 	}
 	return fl, runID, crash
 }
