@@ -35,6 +35,8 @@ jobs:
   version:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       value: ${{ steps.version.outputs.value }}
     steps:
@@ -44,6 +46,24 @@ jobs:
       - name: Compute the release version
         id: version
         run: echo "value=$(sh scripts/release-version.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Reserve the release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_VERSION" --jq .object.sha 2>/dev/null || true)
+          if [[ -n "$tag_sha" ]]; then
+            [[ "$tag_sha" == "$GITHUB_SHA" ]] || {
+              echo "::error::Release tag $RELEASE_VERSION points at $tag_sha, expected $GITHUB_SHA"
+              exit 1
+            }
+            echo "Release tag $RELEASE_VERSION already points at $GITHUB_SHA"
+            exit 0
+          fi
+
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$RELEASE_VERSION" -f sha="$GITHUB_SHA" >/dev/null
 
   build:
     if: github.event_name == 'push'
@@ -263,9 +283,53 @@ jobs:
           remaining=$(( expiry - $(date +%s) ))
           (( remaining >= 2592000 )) || { echo '::error::TUF root expires within 30 days; perform the offline renewal ceremony'; exit 1; }
 
+  prepare-tuftool:
+    name: Prepare tuftool
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/cache/restore@v5
+        id: tuftool-cache
+        with:
+          path: ~/.cache/quesma-ci/tuftool/0.17.0
+          key: tuftool-v1-${{ runner.os }}-${{ runner.arch }}-0.17.0
+
+      - name: Build tuftool
+        if: steps.tuftool-cache.outputs.cache-hit != 'true'
+        run: |
+          tool_dir="$HOME/.cache/quesma-ci/tuftool/0.17.0"
+          install_dir="$RUNNER_TEMP/tuftool-install"
+          mkdir -p "$tool_dir"
+          cargo install tuftool --version 0.17.0 --locked --root "$install_dir"
+          install -m 0755 "$install_dir/bin/tuftool" "$tool_dir/tuftool"
+          cd "$tool_dir"
+          sha256sum tuftool > tuftool.sha256
+
+      - name: Verify tuftool
+        run: |
+          tool_dir="$HOME/.cache/quesma-ci/tuftool/0.17.0"
+          cd "$tool_dir"
+          sha256sum --check --strict tuftool.sha256
+          [[ "$(./tuftool --version)" == "tuftool 0.17.0" ]]
+
+      - uses: actions/cache/save@v5
+        if: steps.tuftool-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/quesma-ci/tuftool/0.17.0
+          key: tuftool-v1-${{ runner.os }}-${{ runner.arch }}-0.17.0
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-tuftool
+          path: |
+            ~/.cache/quesma-ci/tuftool/0.17.0/tuftool
+            ~/.cache/quesma-ci/tuftool/0.17.0/tuftool.sha256
+          compression-level: 0
+          retention-days: 1
+
   publish-tuf:
     name: ${{ github.event_name == 'push' && 'Publish release to TUF/R2' || github.event_name == 'workflow_dispatch' && 'Recover TUF metadata' || 'Refresh TUF metadata' }}
-    needs: [build, build-macos, build-windows-setup, check-tuf-root]
+    needs: [build, build-macos, build-windows-setup, check-tuf-root, prepare-tuftool]
     # A scheduled run skips build; every non-skipped prerequisite must still succeed.
     if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-24.04
@@ -282,8 +346,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install tuftool
-        run: rustup update stable && cargo install tuftool --version 0.17.0 --locked
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-tuftool
+          path: ${{ runner.temp }}/tuftool
+
+      - name: Verify tuftool
+        run: |
+          cd "$RUNNER_TEMP/tuftool"
+          sha256sum --check --strict tuftool.sha256
+          chmod 0755 tuftool
+          [[ "$(./tuftool --version)" == "tuftool 0.17.0" ]]
+          echo "$RUNNER_TEMP/tuftool" >> "$GITHUB_PATH"
 
       - uses: actions/download-artifact@v8
         if: github.event_name == 'push'
@@ -385,7 +459,6 @@ jobs:
 
           gh release create "$RELEASE_VERSION" \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
             --title "Quesma Shipper $RELEASE_VERSION" \
             --notes-file - <<EOF
           Quesma Shipper **$RELEASE_VERSION** is now available.
