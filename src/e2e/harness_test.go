@@ -184,6 +184,18 @@ func (s *fakeStore) heartbeats() []storedPut {
 	return out
 }
 
+// The source hash the newest version under a key was stored with: what a real plane's HEAD reads
+// back, and the only thing that tells "already holds these bytes" from "holds older ones".
+func (s *fakeStore) sourceHash(key string) (string, bool) {
+	hash, held := "", false
+	for _, p := range s.stored() {
+		if p.Key == key {
+			hash, held = p.Headers["x-amz-meta-source-hash"], true
+		}
+	}
+	return hash, held
+}
+
 // The write count under one key, which is the only thing making "the same file shipped twice"
 // observable: the newest version alone cannot tell the two cases apart.
 func (s *fakeStore) versions(key string) int {
@@ -232,6 +244,8 @@ type fakePlane struct {
 	issued int
 	// batches records the keys of each authorize call, in call order.
 	batches [][]string
+	// present records every key answered already_present instead of ticketed.
+	present []string
 	// writers records every distinct writer_id seen.
 	writers map[string]bool
 	// faults are protocol invariants the client broke.
@@ -297,11 +311,21 @@ func (p *fakePlane) serve(w http.ResponseWriter, r *http.Request) {
 
 	tickets := make([]map[string]any, 0, len(req.Objects))
 	keys := make([]string, 0, len(req.Objects))
+	var present []string
 	expires := time.Now().Add(ttl).UTC()
 	for i, obj := range req.Objects {
 		p.check(obj.ObjectID, obj.Key, obj.Size, obj.SourceHash, obj.Metadata)
 		keys = append(keys, obj.Key)
 		ticketID := fmt.Sprintf("ticket-%d-%d", seq, i)
+		// Bytes a landed PUT stored under this source hash are answered for: no capability is
+		// minted, so the client sends nothing for them.
+		if hash, held := p.store.sourceHash(obj.Key); held && hash == obj.SourceHash {
+			present = append(present, obj.Key)
+			tickets = append(tickets, map[string]any{
+				"ticket_id": ticketID, "object_id": obj.ObjectID, "already_present": true,
+			})
+			continue
+		}
 		headers := map[string]string{
 			"x-amz-meta-source-hash": obj.SourceHash,
 			"x-amz-meta-ticket-id":   ticketID,
@@ -324,6 +348,7 @@ func (p *fakePlane) serve(w http.ResponseWriter, r *http.Request) {
 
 	p.mu.Lock()
 	p.batches = append(p.batches, keys)
+	p.present = append(p.present, present...)
 	p.writers[req.WriterID] = true
 	p.mu.Unlock()
 
@@ -390,6 +415,12 @@ func (p *fakePlane) authorizeBatches() [][]string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return append([][]string(nil), p.batches...)
+}
+
+func (p *fakePlane) answeredPresent() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.present...)
 }
 
 func (p *fakePlane) assertClean(t *testing.T) {
@@ -541,6 +572,10 @@ func seedEnrollment(t *testing.T, w *world, endpoint string, deviceKey ed25519.P
 		t.Fatal(err)
 	}
 }
+
+// The generated project-map sidecar can legitimately change when nothing was collected, so tests
+// about change detection count files the client read off the machine and nothing else.
+const withoutProjectMap = "sources:\n  - id: project-map\n    enabled: false\n"
 
 // writeConfig writes the client's own config; extra is appended verbatim, which is how a test says
 // "and this source is disabled" without a second helper.

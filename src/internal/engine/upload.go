@@ -77,7 +77,8 @@ type PreparedObject struct {
 
 // UploadPort is the write path: one call authorizes a bounded batch and PUTs each member.
 // Implementations validate every ticket against the prepared key before sending bytes, and return
-// one result per input object in input order; nil means that object's bytes are on the store.
+// one result per input object in input order; nil means the PUT was confirmed, ErrAlreadyPresent
+// means the control plane answered that the store already holds it.
 type UploadPort interface {
 	AuthorizeAndUpload(ctx context.Context, batch []PreparedObject) []error
 }
@@ -89,6 +90,10 @@ var (
 
 	// ErrTicketExpired is the one verdict worth a second authorization inside a single run.
 	ErrTicketExpired = errors.New("engine: upload ticket had expired")
+
+	// ErrAlreadyPresent commits the fingerprint like a confirmed PUT but marks the audit line, so an
+	// operator can tell a commit resting on the plane's word from one this machine sent.
+	ErrAlreadyPresent = errors.New("engine: the archive already held this object under the same source hash")
 )
 
 // stagedUpload is a prepared object waiting for its authorization group; the accumulator that
@@ -191,6 +196,8 @@ func errorKind(err error) string {
 	return "upload"
 }
 
+const alreadyPresentReason = "no bytes sent: the control plane answered that the archive already holds this object"
+
 // applyUploadOutcome is the verdict-to-decision map. No park branch: a failed upload persists
 // nothing, so the next run re-prepares the same key and a backoff would only delay recovery.
 func (o Options) applyUploadOutcome(it stagedUpload, oc error) (r fileResult) {
@@ -198,7 +205,8 @@ func (o Options) applyUploadOutcome(it stagedUpload, oc error) (r fileResult) {
 	out := &r.outcome
 
 	// No stored-size cross-check here: upload.ValidateTicket is what refuses a length mismatch.
-	if oc != nil {
+	present := errors.Is(oc, ErrAlreadyPresent)
+	if oc != nil && !present {
 		out.Decision = auditlog.DecisionFailed
 		out.Reason = oc.Error()
 		out.Fatal = errors.Is(oc, formats.ErrCredentialsRefused)
@@ -209,6 +217,9 @@ func (o Options) applyUploadOutcome(it stagedUpload, oc error) (r fileResult) {
 	// The fingerprint commits only what this machine read and sent; upload progress stays local.
 	r.intent = intent{kind: intentShipped, key: it.pending.key, fp: it.pending.next}
 	out.Decision = auditlog.DecisionShipped
+	if present {
+		out.Reason = alreadyPresentReason
+	}
 	return r
 }
 
