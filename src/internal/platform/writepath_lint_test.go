@@ -183,11 +183,22 @@ var bannedExec = map[string]map[string]bool{
 	"syscall": {"Exec": true, "ForkExec": true},
 }
 
+// execCapableFiles is the file-granular exec exception. It has one entry, and it earns it by
+// replacing a worse surface, not adding one: codex ships no plan-read API, so the account probe
+// asks `codex app-server` over its sanctioned JSON-RPC rather than decoding the OAuth id_token in
+// process. The spawn stays confined to this one file; the enricher package has no blanket grant.
+var execCapableFiles = []string{
+	"internal/transforms/accountprobe/codex_appserver.go",
+}
+
 // TestNoExecOutsidePackaging: os/exec reads as malware to an auditor, so the collector's data path
 // never spawns a subprocess; packaging/ (service install, self-update re-exec) is the only exception.
 func TestNoExecOutsidePackaging(t *testing.T) {
 	forEachModuleGoFile(t, func(rel string, file *ast.File, fset *token.FileSet) {
 		if rel == "packaging" || strings.HasPrefix(rel, "packaging/") {
+			return
+		}
+		if slices.Contains(execCapableFiles, rel) {
 			return
 		}
 		for _, imp := range file.Imports {
