@@ -32,7 +32,7 @@ import (
 // Pinned: a floating MinIO changes what the store does under concurrency and a floating toxiproxy
 // renames the metrics this file parses, either without a line of shipper code changing.
 const (
-	minioImage     = "quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z"
+	minioImage     = "pgsty/silo:RELEASE.2026-09-03T13-18-01Z"
 	toxiproxyImage = "ghcr.io/shopify/toxiproxy:2.12.0"
 )
 
@@ -123,8 +123,7 @@ func run(m *testing.M) int {
 			"MINIO_PROMETHEUS_AUTH_TYPE": "public",
 			"CI_CD":                      "true",
 		}),
-		// Docker publishes nothing for an internal-only container and the pinned ARM64 image's
-		// curl is not executable, so wait on MinIO's own ready log instead.
+		// The internal-only store has no host port, so wait on its ready log.
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("API:").
 				WithStartupTimeout(2*time.Minute)),
