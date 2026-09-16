@@ -51,7 +51,7 @@ func pidOf(t *testing.T, raw []byte, runID string) string {
 	return ""
 }
 
-func TestCleanRunReportsClean(t *testing.T) {
+func TestCleanRunReportsNoCrash(t *testing.T) {
 	dir := t.TempDir()
 	l, err := Open(dir, "run-a")
 	if err != nil {
@@ -61,9 +61,8 @@ func TestCleanRunReportsClean(t *testing.T) {
 	l.Phase("init")
 	l.Exit()
 
-	s := LastRun(dir)
-	if s == nil || !s.Clean || s.Crashes != 0 || s.RunID != "run-a" {
-		t.Fatalf("want clean run-a, got %+v", s)
+	if s := LastRun(dir); s != nil {
+		t.Fatalf("a clean run is no crash, got %+v", s)
 	}
 }
 
@@ -136,8 +135,7 @@ func TestOnlyAReportedRunClearsTheCrash(t *testing.T) {
 	l.Start()
 	l.Reported()
 	l.Exit()
-	s := LastRun(dir)
-	if s == nil || !s.Clean || s.Crashes != 0 {
+	if s := LastRun(dir); s != nil {
 		t.Fatalf("want the delivered report cleared, got %+v", s)
 	}
 }

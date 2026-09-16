@@ -524,6 +524,27 @@ func scheduleRows(stateDir string, now time.Time) []Row {
 	return rows
 }
 
+// lastFailureRows surfaces the failure record to the machine's owner, the one reader heartbeats
+// never reach. An ongoing streak warns; a recovered failure shows only under verbose.
+func lastFailureRows(stateDir string, now time.Time, verbose bool) []Row {
+	rec := readFailureRecord(stateDir)
+	latest := rec.Latest()
+	if latest == nil {
+		return nil
+	}
+	at, _ := time.Parse(time.RFC3339, latest.At)
+	detail := fmt.Sprintf("%s, %s: %s", Ago(at, now), latest.Kind, latest.Message)
+	if rec.ConsecutiveFailures > 0 {
+		return []Row{{Sev: SevWarn, Label: "last failure", Brief: "runs are failing",
+			Detail: fmt.Sprintf("%s failed in a row; newest %s", CountNoun(rec.ConsecutiveFailures, "run"), detail),
+			Fix:    "`shipper log` shows what each run did"}}
+	}
+	if !verbose {
+		return nil
+	}
+	return []Row{{Sev: SevDim, Label: "last failure", Detail: detail}}
+}
+
 func doctorReport(probes []sourceProbe) formats.Report {
 	var rep formats.Report
 	for _, pr := range probes {

@@ -11,6 +11,8 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
+	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
@@ -310,5 +312,36 @@ func TestHumanCount(t *testing.T) {
 		if got := HumanCount(n); got != want {
 			t.Errorf("HumanCount(%d) = %q, want %q", n, got, want)
 		}
+	}
+}
+
+// The record's one local reader: an ongoing streak must warn, a recovered failure must stay out
+// of the default view, and a clean install must show nothing at all.
+func TestLastFailureRows(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	if rows := lastFailureRows(dir, now, true); rows != nil {
+		t.Fatalf("a clean install shows no failure row, got %+v", rows)
+	}
+
+	r := &Runtime{eff: &config.Effective{StateDir: dir}}
+	r.JudgeTick(errors.New("the sink refused"), formats.Report{}, false, platform.Delta{})
+
+	rows := lastFailureRows(dir, now, false)
+	if len(rows) != 1 || rows[0].Sev != SevWarn {
+		t.Fatalf("an ongoing streak must warn, got %+v", rows)
+	}
+	if !strings.Contains(rows[0].Detail, "1 run failed in a row") || !strings.Contains(rows[0].Detail, "the sink refused") {
+		t.Errorf("the row does not carry the streak and the reason: %q", rows[0].Detail)
+	}
+
+	r.JudgeTick(nil, formats.Report{Shipped: 1}, false, platform.Delta{})
+	if rows := lastFailureRows(dir, now, false); rows != nil {
+		t.Fatalf("a recovered failure must not warn by default, got %+v", rows)
+	}
+	rows = lastFailureRows(dir, now, true)
+	if len(rows) != 1 || rows[0].Sev != SevDim || !strings.Contains(rows[0].Detail, "tick_failed") {
+		t.Fatalf("verbose must still show the recovered failure, got %+v", rows)
 	}
 }
