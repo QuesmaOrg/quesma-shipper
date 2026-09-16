@@ -124,10 +124,7 @@ func agentRows(probes []sourceProbe, names map[string]string, up lastUpload, now
 	var order []string
 	byFam := map[string][]sourceProbe{}
 	for _, pr := range probes {
-		f := pr.src.Family
-		if f == "" {
-			f = pr.src.ID
-		}
+		f := familyOf(pr.src)
 		if _, seen := byFam[f]; !seen {
 			order = append(order, f)
 		}
@@ -137,11 +134,7 @@ func agentRows(probes []sourceProbe, names map[string]string, up lastUpload, now
 		if f == sidecarFamily && !verbose {
 			continue
 		}
-		name := names[f]
-		if name == "" {
-			name = f
-		}
-		famRows, collecting, famFiles := familyRows(name, byFam[f], familyUploadFor(byFam[f], up), now, verbose)
+		famRows, collecting, famFiles := familyRows(cmp.Or(names[f], f), byFam[f], familyUploadFor(byFam[f], up), now, verbose)
 		rows = append(rows, famRows...)
 		if collecting && f != sidecarFamily {
 			agents++

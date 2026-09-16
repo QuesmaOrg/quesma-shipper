@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"time"
 
@@ -23,18 +24,15 @@ func uninstallCmd(b app.Build) *cobra.Command {
 				return err
 			}
 			printHeader(w, p, st, time.Now())
-			to := "your organisation"
-			if st.Organization != "" {
-				to = st.Organization
-			}
+			to := cmp.Or(st.Organization, "your organisation")
 			effect := "deletes the program. Local state is kept\nso a later reinstall can resume this machine."
-			question := "Remove " + app.Title + "?"
+			question := "Remove " + app.Name + "?"
 			if purge {
 				effect = "deletes the program and its local state.\nWhat was already sent stays with your organisation."
-				question = "Remove " + app.Title + " and purge its local state?"
+				question = "Remove " + app.Name + " and purge its local state?"
 			}
 			fmt.Fprintf(w, "\n%s collects your coding-agent sessions on this machine and sends them\n"+
-				"to %s. Removing it stops that and %s\n\n", app.Title, to, effect)
+				"to %s. Removing it stops that and %s\n\n", app.Name, to, effect)
 			agreed, err := confirm(cmd, question)
 			if err != nil {
 				return usage(fmt.Errorf("uninstall asks first, run it in a terminal"))

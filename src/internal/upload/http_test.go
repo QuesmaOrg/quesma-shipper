@@ -88,8 +88,8 @@ func TestUploadSendsExactlyTheAuthorizedRequest(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	prepared, ticket := testTicket(server.URL)
-	target := loopbackTarget(t, server.URL)
-	if err := ValidateTicket(target, prepared, ticket); err != nil {
+	targets := UploadTargetList{loopbackTarget(t, server.URL)}
+	if err := ValidateTicket(targets, prepared, ticket); err != nil {
 		t.Fatalf("ValidateTicket: %v", err)
 	}
 
@@ -173,27 +173,6 @@ func TestUploadNonOKStatusIsAFailure(t *testing.T) {
 	assertNoURLLeak(t, err, ticket.URL)
 }
 
-// A ticket that disagrees with the body never becomes a request.
-func TestUploadRefusesBeforeSending(t *testing.T) {
-	server, _, requests := objectStore(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	_, ticket := testTicket(server.URL)
-	uploader := New()
-
-	if err := uploader.Upload(context.Background(), ticket, []byte("short")); err == nil {
-		t.Fatal("Upload accepted a body the ticket does not authorize")
-	}
-	wrongMethod := ticket
-	wrongMethod.Method = "POST"
-	if err := uploader.Upload(context.Background(), wrongMethod, []byte("sealed-object-bytes")); err == nil {
-		t.Fatal("Upload accepted a ticket that does not authorize PUT")
-	}
-	if requests.Load() != 0 {
-		t.Fatalf("object store saw %d requests, want none", requests.Load())
-	}
-}
-
 // The gate milestone 3 exists for: validation runs before the socket, not after it.
 func TestValidationRefusesBeforeAnyRequest(t *testing.T) {
 	server, _, requests := objectStore(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -212,11 +191,7 @@ func TestValidationRefusesBeforeAnyRequest(t *testing.T) {
 		other := ticket
 		other.URL = server.URL + "/" + canonicalPath(strings.Replace(testKey,
 			"3f2504e0-4f89-41d3-9a0c-0305e82c3301", "11111111-2222-3333-4444-555555555555", 1))
-		target, err := allowed.Match(other.URL)
-		if err != nil {
-			t.Fatalf("Match: %v", err)
-		}
-		if err := ValidateTicket(target, prepared, other); err == nil {
+		if err := ValidateTicket(allowed, prepared, other); err == nil {
 			t.Fatal("a sibling install's key was accepted")
 		}
 	})

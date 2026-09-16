@@ -40,7 +40,7 @@ func TestConformanceRecipients(t *testing.T) {
 	recipients := []age.Recipient{install.Recipient(), org.Recipient(), escrow.Recipient()}
 	payload := []byte("{\"type\":\"user\"}\n")
 
-	obj, err := transforms.Seal(manifest(), payload, recipients)
+	obj, _, err := transforms.Seal(manifest(), payload, recipients)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestConformanceRecipients(t *testing.T) {
 	if v.MinRecipients != 1 {
 		t.Fatalf("min_recipients drifted: %d", v.MinRecipients)
 	}
-	if _, err := transforms.Seal(manifest(), payload, nil); err == nil {
+	if _, _, err := transforms.Seal(manifest(), payload, nil); err == nil {
 		t.Error("sealing to no recipients must be refused")
 	}
 }

@@ -16,7 +16,6 @@ import (
 type LoginResult struct {
 	Organization string
 	Machine      string
-	AlreadyIn    bool
 }
 
 var ErrAlreadyLoggedIn = errors.New("already logged in")
@@ -27,7 +26,7 @@ func Login(ctx context.Context, server, token string) (LoginResult, error) {
 		return LoginResult{}, err
 	}
 	if existing, err := controlplane.LoadEnrollment(paths.StateDir); err == nil {
-		return LoginResult{Organization: existing.Organization, AlreadyIn: true}, ErrAlreadyLoggedIn
+		return LoginResult{Organization: existing.Organization}, ErrAlreadyLoggedIn
 	}
 	unit, err := loadOrMintIdentity(paths.StateDir)
 	if err != nil {

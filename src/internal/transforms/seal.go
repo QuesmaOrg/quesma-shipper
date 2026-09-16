@@ -45,25 +45,19 @@ const maxDecompressedBytes = 8 << 30
 // caller should double its range rather than treat the object as corrupt.
 var ErrPrefixTooShort = errors.New("seal: object prefix too short to contain the manifest")
 
-// Seal builds one mirror object. It computes ShippedHash and PayloadSize; a ShippedHash
-// the caller already set is VERIFIED rather than overwritten, since a caller that hashed
-// different bytes than it passed is a defect worth catching. The manifest is taken by
-// VALUE, so a caller needing these fields (for object metadata) must set them itself.
-func Seal(m Manifest, payload []byte, recipients []age.Recipient) ([]byte, error) {
+// Seal builds one mirror object and returns the manifest as sealed: ShippedHash, PayloadSize
+// and, unless the caller set it, Encryption are filled here, so what a caller needs for object
+// metadata is the returned copy and never its own.
+func Seal(m Manifest, payload []byte, recipients []age.Recipient) ([]byte, Manifest, error) {
 	if len(recipients) == 0 {
 		// An object with no recipient is either unreadable or unencrypted.
-		return nil, errors.New("seal: no age recipients: encryption is not optional")
+		return nil, Manifest{}, errors.New("seal: no age recipients: encryption is not optional")
 	}
 
-	shipped := Hash(payload)
-	if m.ShippedHash != "" && m.ShippedHash != shipped {
-		return nil, fmt.Errorf("seal: manifest shipped_hash %s does not match the payload's %s: "+
-			"the caller hashed different bytes than it passed", m.ShippedHash, shipped)
-	}
-	m.ShippedHash = shipped
+	m.ShippedHash = Hash(payload)
 	m.PayloadSize = int64(len(payload))
 	if m.SealedAt == "" {
-		return nil, errors.New("seal: sealed_at must be set by the caller")
+		return nil, Manifest{}, errors.New("seal: sealed_at must be set by the caller")
 	}
 	if m.Encryption == nil {
 		m.Encryption = &Encryption{Scheme: "age"}
@@ -76,10 +70,14 @@ func Seal(m Manifest, payload []byte, recipients []age.Recipient) ([]byte, error
 
 	manifestJSON, err := m.Encode()
 	if err != nil {
-		return nil, err
+		return nil, Manifest{}, err
 	}
 
-	return writeContainer(manifestJSON, payload, m.PayloadMTime, recipients)
+	obj, err := writeContainer(manifestJSON, payload, m.PayloadMTime, recipients)
+	if err != nil {
+		return nil, Manifest{}, err
+	}
+	return obj, m, nil
 }
 
 // writeContainer streams all three layers into one pre-sized result buffer, so no

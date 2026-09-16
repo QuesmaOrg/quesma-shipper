@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -22,7 +23,7 @@ func Root(b app.Build, out, errOut io.Writer) *cobra.Command {
 	root := &cobra.Command{
 		Use:   app.Name,
 		Short: "Collects your AI-agent sessions, scrubs secrets, encrypts them and sends them to your organisation",
-		Long: app.Title + " collects the sessions your coding agents (Claude Code, Codex, Cursor)\n" +
+		Long: app.Name + " collects the sessions your coding agents (Claude Code, Codex, Cursor)\n" +
 			"leave on this machine, scrubs secrets, encrypts every file and sends it to your\n" +
 			"organisation. It runs in the background.",
 		SilenceUsage:  true,
@@ -45,19 +46,15 @@ func Root(b app.Build, out, errOut io.Writer) *cobra.Command {
 	root.CompletionOptions.HiddenDefaultCmd = true
 	root.SetUsageFunc(func(c *cobra.Command) error { return printUsage(c, pal) })
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
-		if flag, ok := strings.CutPrefix(err.Error(), "unknown flag: "); ok {
-			return fmt.Errorf("unknown flag `%s`", flag)
-		}
-		if flag, ok := strings.CutPrefix(err.Error(), "unknown shorthand flag: "); ok {
-			return fmt.Errorf("unknown flag `%s`", flag)
+		for _, prefix := range []string{"unknown flag: ", "unknown shorthand flag: "} {
+			if flag, ok := strings.CutPrefix(err.Error(), prefix); ok {
+				return usage(fmt.Errorf("unknown flag `%s`", flag))
+			}
 		}
 		return err
 	})
 	root.SetHelpFunc(func(c *cobra.Command, _ []string) {
-		if intro := c.Long; intro != "" || c.Short != "" {
-			if intro == "" {
-				intro = c.Short
-			}
+		if intro := cmp.Or(c.Long, c.Short); intro != "" {
 			fmt.Fprint(c.OutOrStdout(), strings.TrimRightFunc(pal.names(intro, ""), unicode.IsSpace)+"\n\n")
 		}
 		fmt.Fprint(c.OutOrStdout(), c.UsageString())
@@ -106,7 +103,7 @@ func ExitCode(err error) (code int, show bool) {
 		return silent.code, false
 	}
 	var usage usageError
-	if errors.As(err, &usage) || strings.HasPrefix(err.Error(), "unknown command") || strings.HasPrefix(err.Error(), "unknown flag") || strings.HasPrefix(err.Error(), "unknown shorthand") {
+	if errors.As(err, &usage) || strings.HasPrefix(err.Error(), "unknown command") {
 		return 2, true
 	}
 	return 1, true
@@ -149,7 +146,7 @@ func printUsage(c *cobra.Command, pal palette) error {
 }
 
 func flagTable(fs *pflag.FlagSet, pal palette) string {
-	type row struct{ name, usage string }
+	type row struct{ lead, name, usage string }
 	var rows []row
 	width := 0
 	fs.VisitAll(func(f *pflag.Flag) {
@@ -164,12 +161,12 @@ func flagTable(fs *pflag.FlagSet, pal palette) string {
 			name += " <" + f.Name + ">"
 		}
 		width = max(width, len(lead+name))
-		rows = append(rows, row{lead + styled(pal.cyan, name, pal.reset), f.Usage + strings.Repeat(" ", width)})
+		rows = append(rows, row{lead, name, f.Usage})
 	})
 	var b strings.Builder
 	for _, r := range rows {
-		visible := len(r.name) - len(styled(pal.cyan, "", pal.reset))
-		b.WriteString("  " + r.name + strings.Repeat(" ", width-visible) + "   " + strings.TrimRight(r.usage, " ") + "\n")
+		pad := strings.Repeat(" ", width-len(r.lead+r.name))
+		b.WriteString("  " + r.lead + styled(pal.cyan, r.name, pal.reset) + pad + "   " + r.usage + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

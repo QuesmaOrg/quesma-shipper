@@ -48,7 +48,7 @@ func TestSealOpenRoundTrip(t *testing.T) {
 	id := identity(t)
 	payload := []byte("{\"type\":\"user\"}\n{\"type\":\"assistant\"}\n")
 
-	obj, err := transforms.Seal(manifest(), payload, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(manifest(), payload, []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestSealOpenRoundTrip(t *testing.T) {
 // A payload of zero bytes is a real case and must round-trip, not be special-cased.
 func TestSealEmptyPayload(t *testing.T) {
 	id := identity(t)
-	obj, err := transforms.Seal(manifest(), nil, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(manifest(), nil, []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestSealEmptyPayload(t *testing.T) {
 // assert the order at the tar layer directly.
 func TestManifestIsTheFirstTarEntry(t *testing.T) {
 	id := identity(t)
-	obj, err := transforms.Seal(manifest(), bytes.Repeat([]byte("x"), 4096), []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(manifest(), bytes.Repeat([]byte("x"), 4096), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestReadManifestPrefixOnMultiMegabyteObject(t *testing.T) {
 	if _, err := rng.Read(payload); err != nil {
 		t.Fatal(err)
 	}
-	obj, err := transforms.Seal(manifest(), payload, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(manifest(), payload, []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestReadManifestPrefixReportsTooShort(t *testing.T) {
 	id := identity(t)
 	big := make([]byte, 1<<20)
 	rand.New(rand.NewSource(2)).Read(big)
-	obj, err := transforms.Seal(manifest(), big, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(manifest(), big, []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestPrefixDoublingConverges(t *testing.T) {
 	id := identity(t)
 	big := make([]byte, 2<<20)
 	rand.New(rand.NewSource(3)).Read(big)
-	obj, err := transforms.Seal(manifest(), big, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(manifest(), big, []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestObjectIsOpaqueWithoutTheIdentity(t *testing.T) {
 	m.NativePath = secretPath
 	payload := []byte(`{"text":"a distinctive sentence that must not appear in ciphertext"}`)
 
-	obj, err := transforms.Seal(m, payload, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(m, payload, []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,11 +261,11 @@ func TestRecipientSetsDecideWhoCanRead(t *testing.T) {
 	analysis := identity(t)
 	payload := []byte(`{"a":1}`)
 
-	archivalOnly, err := transforms.Seal(manifest(), payload, []age.Recipient{archival.Recipient()})
+	archivalOnly, _, err := transforms.Seal(manifest(), payload, []age.Recipient{archival.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	both, err := transforms.Seal(manifest(), payload,
+	both, _, err := transforms.Seal(manifest(), payload,
 		[]age.Recipient{archival.Recipient(), analysis.Recipient()})
 	if err != nil {
 		t.Fatal(err)
@@ -299,7 +299,7 @@ func TestRecipientSetsDecideWhoCanRead(t *testing.T) {
 }
 
 func TestSealRefusesWithNoRecipients(t *testing.T) {
-	if _, err := transforms.Seal(manifest(), []byte("x"), nil); err == nil {
+	if _, _, err := transforms.Seal(manifest(), []byte("x"), nil); err == nil {
 		t.Fatal("sealing with no recipients must fail: encryption is not optional")
 	}
 }
@@ -310,25 +310,25 @@ func TestSealValidatesTheManifestAgainstItsSchema(t *testing.T) {
 
 	bad := manifest()
 	bad.ArtifactClass = "whatever"
-	if _, err := transforms.Seal(bad, []byte("x"), []age.Recipient{id.Recipient()}); err == nil {
+	if _, _, err := transforms.Seal(bad, []byte("x"), []age.Recipient{id.Recipient()}); err == nil {
 		t.Error("an artifact_class outside the enum must be refused")
 	}
 
 	bad = manifest()
 	bad.ShapeSniff = "probably-fine"
-	if _, err := transforms.Seal(bad, []byte("x"), []age.Recipient{id.Recipient()}); err == nil {
+	if _, _, err := transforms.Seal(bad, []byte("x"), []age.Recipient{id.Recipient()}); err == nil {
 		t.Error("a shape_sniff outside the closed enum must be refused")
 	}
 
 	bad = manifest()
 	bad.SourceHash = "deadbeef"
-	if _, err := transforms.Seal(bad, []byte("x"), []age.Recipient{id.Recipient()}); err == nil {
+	if _, _, err := transforms.Seal(bad, []byte("x"), []age.Recipient{id.Recipient()}); err == nil {
 		t.Error("a malformed source_hash must be refused")
 	}
 
 	bad = manifest()
 	bad.Derived = true
-	if _, err := transforms.Seal(bad, []byte("x"), []age.Recipient{id.Recipient()}); err == nil {
+	if _, _, err := transforms.Seal(bad, []byte("x"), []age.Recipient{id.Recipient()}); err == nil {
 		t.Error("derived without enricher provenance must be refused")
 	}
 }
@@ -409,21 +409,18 @@ func TestObjectMetadataNeverCarriesThePath(t *testing.T) {
 	}
 }
 
-// The integrity hash must reach OBJECT METADATA, not only the sealed manifest: Seal takes the
-// manifest by value, so a computed ShippedHash is invisible to the caller, and objects once
-// shipped `shipped-hash: ""` in metadata while the manifest inside the ciphertext was correct.
+// The integrity hash must reach OBJECT METADATA, not only the sealed manifest: the manifest Seal
+// returns is the one a caller builds metadata from, and objects once shipped `shipped-hash: ""`
+// in metadata while the manifest inside the ciphertext was correct.
 func TestShippedHashReachesObjectMetadata(t *testing.T) {
 	id := identity(t)
 	payload := []byte(`{"line":"one"}` + "\n")
 
-	m := manifest()
-	m.ShippedHash = sha256Hex(payload)
-
-	obj, err := transforms.Seal(m, payload, []age.Recipient{id.Recipient()})
+	obj, sealedM, err := transforms.Seal(manifest(), payload, []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := m.ObjectMetadata()["shipped-hash"]; got != sha256Hex(payload) {
+	if got := sealedM.ObjectMetadata()["shipped-hash"]; got != sha256Hex(payload) {
 		t.Errorf("object metadata shipped-hash = %q, want the payload hash", got)
 	}
 
@@ -434,21 +431,6 @@ func TestShippedHashReachesObjectMetadata(t *testing.T) {
 	}
 	if sealed.ShippedHash != sha256Hex(payload) {
 		t.Errorf("sealed manifest shipped_hash = %q", sealed.ShippedHash)
-	}
-}
-
-// A caller that hashed different bytes than it passed is a defect worth refusing.
-func TestSealRefusesAShippedHashThatDoesNotMatchThePayload(t *testing.T) {
-	id := identity(t)
-	m := manifest()
-	m.ShippedHash = sha256Hex([]byte("some other bytes"))
-
-	_, err := transforms.Seal(m, []byte("the real payload"), []age.Recipient{id.Recipient()})
-	if err == nil {
-		t.Fatal("a manifest whose shipped_hash describes different bytes was accepted")
-	}
-	if !strings.Contains(err.Error(), "different bytes") {
-		t.Errorf("the error does not name the mismatch: %v", err)
 	}
 }
 
@@ -475,7 +457,7 @@ func TestTheManifestRecordsWhichBuildSealedTheObject(t *testing.T) {
 		Arch:      "amd64",
 	}
 
-	sealed, err := transforms.Seal(m, []byte("{}\n"), []age.Recipient{id.Recipient()})
+	sealed, _, err := transforms.Seal(m, []byte("{}\n"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,7 +487,7 @@ func TestABuildWithNoStampSealsWithoutTheOptionalFields(t *testing.T) {
 	m := manifest()
 	m.Client = transforms.Client{Version: "unknown"}
 
-	sealed, err := transforms.Seal(m, []byte("{}\n"), []age.Recipient{id.Recipient()})
+	sealed, _, err := transforms.Seal(m, []byte("{}\n"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatalf("a manifest from an unstamped build did not seal: %v", err)
 	}

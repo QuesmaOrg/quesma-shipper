@@ -117,19 +117,26 @@ func (t UploadTarget) Origin() string {
 // this package holds one. An empty list is unpinned: the ticket's own origin becomes the target,
 // but every other check still applies, so an owner trusts the plane on WHERE, never on WHAT.
 func (l UploadTargetList) Match(rawURL string) (UploadTarget, error) {
+	t, _, err := l.match(rawURL)
+	return t, err
+}
+
+// match is Match keeping the parsed URL, so validation never parses a ticket twice.
+func (l UploadTargetList) match(rawURL string) (UploadTarget, *url.URL, error) {
 	u, err := parseTicketURL(rawURL)
 	if err != nil {
-		return UploadTarget{}, err
+		return UploadTarget{}, nil, err
 	}
 	if len(l) == 0 {
-		return unpinnedTarget(u)
+		t, err := unpinnedTarget(u)
+		return t, u, err
 	}
 	for _, t := range l {
 		if t.matchesOrigin(u) {
-			return t, nil
+			return t, u, nil
 		}
 	}
-	return UploadTarget{}, fmt.Errorf("%w: %s", ErrNoTarget, originOf(u))
+	return UploadTarget{}, nil, fmt.Errorf("%w: %s", ErrNoTarget, originOf(u))
 }
 
 // unpinnedTarget adopts a ticket's own origin, https only: with no pinned entry there is no

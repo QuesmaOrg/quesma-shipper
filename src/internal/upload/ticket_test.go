@@ -14,7 +14,7 @@ func TestValidateTicketAcceptsGolden(t *testing.T) {
 	} {
 		t.Run(pair.request, func(t *testing.T) {
 			prepared, ticket := goldenPair(t, pair.request, pair.response)
-			if err := ValidateTicket(goldenTarget(t), prepared, ticket); err != nil {
+			if err := ValidateTicket(UploadTargetList{goldenTarget(t)}, prepared, ticket); err != nil {
 				t.Fatalf("golden ticket refused: %v", err)
 			}
 		})
@@ -54,7 +54,7 @@ func TestValidateTicketAcceptsEveryProviderDialect(t *testing.T) {
 			for name, value := range tc.extra {
 				ticket.RequiredHeaders[name] = value
 			}
-			if err := ValidateTicket(goldenTarget(t), prepared, ticket); err != nil {
+			if err := ValidateTicket(UploadTargetList{goldenTarget(t)}, prepared, ticket); err != nil {
 				t.Fatalf("%s ticket refused: %v", tc.name, err)
 			}
 		})
@@ -63,7 +63,7 @@ func TestValidateTicketAcceptsEveryProviderDialect(t *testing.T) {
 
 func TestValidateTicketRejects(t *testing.T) {
 	base, baseTicket := goldenPair(t, "request.json", "response.json")
-	target := goldenTarget(t)
+	targets := UploadTargetList{goldenTarget(t)}
 	pathOf := func(key string) string {
 		return "https://archive.example.invalid/" + canonicalPath(key) + "?X-Amz-Signature=FIXTURE"
 	}
@@ -170,7 +170,7 @@ func TestValidateTicketRejects(t *testing.T) {
 			ticket.RequiredHeaders = maps.Clone(baseTicket.RequiredHeaders)
 			c.mutate(&prepared, &ticket)
 
-			err := ValidateTicket(target, prepared, ticket)
+			err := ValidateTicket(targets, prepared, ticket)
 			if err == nil {
 				t.Fatalf("ValidateTicket accepted the %s case", c.name)
 			}
@@ -191,10 +191,11 @@ func TestValidateTicketPathStyle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build target: %v", err)
 	}
+	targets := UploadTargetList{target}
 	prepared, ticket := goldenPair(t, "request.json", "response.json")
 	origin := "https://minio.example.invalid:9000"
 	ticket.URL = origin + "/trajectories/" + canonicalPath(prepared.Key) + "?X-Amz-Signature=FIXTURE"
-	if err := ValidateTicket(target, prepared, ticket); err != nil {
+	if err := ValidateTicket(targets, prepared, ticket); err != nil {
 		t.Fatalf("path-style ticket refused: %v", err)
 	}
 
@@ -207,7 +208,7 @@ func TestValidateTicketPathStyle(t *testing.T) {
 	for name, raw := range refused {
 		t.Run(name, func(t *testing.T) {
 			ticket.URL = raw
-			if err := ValidateTicket(target, prepared, ticket); err == nil {
+			if err := ValidateTicket(targets, prepared, ticket); err == nil {
 				t.Fatalf("path-style validation accepted %q", raw)
 			}
 		})
@@ -218,24 +219,17 @@ func TestValidateTicketPathStyle(t *testing.T) {
 // produce: the key at the root, or below exactly one bucket segment, and nothing else.
 func TestValidateTicketUnpinned(t *testing.T) {
 	prepared, ticket := goldenPair(t, "request.json", "response.json")
-	unpinned := func(t *testing.T, rawURL string) UploadTarget {
-		t.Helper()
-		target, err := (UploadTargetList{}).Match(rawURL)
-		if err != nil {
-			t.Fatalf("unpinned match: %v", err)
-		}
-		return target
-	}
+	unpinned := UploadTargetList{}
 
 	// The golden ticket as issued: virtual-hosted spelling.
-	if err := ValidateTicket(unpinned(t, ticket.URL), prepared, ticket); err != nil {
+	if err := ValidateTicket(unpinned, prepared, ticket); err != nil {
 		t.Fatalf("unpinned virtual-hosted ticket refused: %v", err)
 	}
 
 	// The same key below exactly one bucket segment: path-style spelling.
 	origin := "https://minio.example.invalid:9000"
 	ticket.URL = origin + "/trajectories/" + canonicalPath(prepared.Key) + "?X-Amz-Signature=FIXTURE"
-	if err := ValidateTicket(unpinned(t, ticket.URL), prepared, ticket); err != nil {
+	if err := ValidateTicket(unpinned, prepared, ticket); err != nil {
 		t.Fatalf("unpinned path-style ticket refused: %v", err)
 	}
 
@@ -249,7 +243,7 @@ func TestValidateTicketUnpinned(t *testing.T) {
 	for name, raw := range refused {
 		t.Run(name, func(t *testing.T) {
 			ticket.URL = raw
-			if err := ValidateTicket(unpinned(t, raw), prepared, ticket); err == nil {
+			if err := ValidateTicket(unpinned, prepared, ticket); err == nil {
 				t.Fatalf("unpinned validation accepted %q", raw)
 			}
 		})
@@ -261,7 +255,7 @@ func TestValidateTicketUnknownAddressing(t *testing.T) {
 	prepared, ticket := goldenPair(t, "request.json", "response.json")
 	target := goldenTarget(t)
 	target.addressing = Addressing("dns-style")
-	if err := ValidateTicket(target, prepared, ticket); err == nil {
+	if err := ValidateTicket(UploadTargetList{target}, prepared, ticket); err == nil {
 		t.Fatal("unknown addressing was accepted")
 	}
 }

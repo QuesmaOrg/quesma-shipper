@@ -15,6 +15,7 @@ import (
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
+	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
@@ -71,7 +72,8 @@ func recycleDue(started, now time.Time, serviceLoaded func() bool) bool {
 	return now.Sub(started) >= recycleAfter && serviceLoaded()
 }
 
-func flushBeforeExit(cmd *cobra.Command, out io.Writer, env *app.Runtime) error {
+func flushBeforeExit(cmd *cobra.Command, env *app.Runtime) error {
+	out := cmd.OutOrStdout()
 	fmt.Fprintln(out, "\nsignal received, shipping one final slice before exit")
 	ctx, cancel := context.WithTimeout(context.Background(), env.Effective().DrainDeadline)
 	defer cancel()
@@ -115,13 +117,13 @@ func runCmd(build app.Build) *cobra.Command {
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
-			// Resolved once, outside the loop: a config that will not parse also reads as "not
-			// logged in" and cannot repair itself between polls, so waiting on it waits forever.
-			// A resolve error skips the wait entirely and lets app.New report the real reason.
-			_, _, resolveErr := app.ResolveEffective()
+			// Resolved once, offline: a config that will not parse also reads as "not logged in"
+			// and cannot repair itself between polls, so waiting on it waits forever. A resolve
+			// error skips the wait and the gates below, and lets app.New report the real reason.
+			eff, paths, resolveErr := app.ResolveEffective()
 			waiting := false
 			for resolveErr == nil {
-				if _, ok := app.LoggedIn(); ok {
+				if _, err := controlplane.LoadEnrollment(paths.StateDir); err == nil {
 					break
 				}
 				if !waiting {
@@ -133,15 +135,23 @@ func runCmd(build app.Build) *cobra.Command {
 					return nil
 				case <-time.After(enrollmentPollInterval):
 				}
+				// Login can land in a state_dir edited during the wait: each poll reads the
+				// current one, and the gates below see the config as of enrollment.
+				eff, paths, resolveErr = app.ResolveEffective()
 			}
 			if !once {
-				maybeSelfUpdate(ctx, build, cmd.ErrOrStderr())
+				maybeSelfUpdate(ctx, build, resolveErr != nil || eff.AutoupdateEnabled, cmd.ErrOrStderr())
 			}
 
 			// After the self-update, whose re-exec never returns and would read as a death. NOT
 			// deferred: a panic has to unwind past the Exit call, and that missing entry is the
-			// crash record.
-			fl, runID, lastCrash := startCrashJournal(cmd.ErrOrStderr())
+			// crash record. A config too broken to resolve still gets a journal, in the default
+			// state directory, the way pause does.
+			stateDir, dirErr := paths.StateDir, error(nil)
+			if resolveErr != nil {
+				stateDir, dirErr = app.StateDirWithoutConfig()
+			}
+			fl, runID, lastCrash := startCrashJournal(cmd.ErrOrStderr(), stateDir, dirErr)
 			err := runLoop(cmd, ctx, build, once, drain, quiet, fl, runID, lastCrash)
 			fl.Exit()
 			return err
@@ -237,7 +247,7 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 			if once {
 				return err
 			}
-			return flushBeforeExit(cmd, out, env)
+			return flushBeforeExit(cmd, env)
 		}
 		// Judged before anything else reports: the record has to outlive the run, and a locally
 		// caused failure ships its own failure heartbeat from here.
@@ -285,7 +295,7 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 
 		select {
 		case <-ctx.Done():
-			return flushBeforeExit(cmd, out, env)
+			return flushBeforeExit(cmd, env)
 		case <-time.After(app.NextDelay(rep, err, tick)):
 		}
 	}

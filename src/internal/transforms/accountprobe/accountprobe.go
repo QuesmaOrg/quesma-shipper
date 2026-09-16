@@ -274,8 +274,6 @@ func (e *Cursor) Enrich(in transforms.Input) transforms.EnrichResult {
 		prov = append(prov, '=')
 		prov = append(prov, row.Value...)
 		prov = append(prov, '\n')
-	}
-	for _, row := range read.Rows {
 		val := strings.TrimSpace(string(row.Value))
 		switch row.Key {
 		case "cursorAuth/stripeMembershipType":

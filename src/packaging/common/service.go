@@ -116,13 +116,6 @@ func ValidateInstall(spec Spec) error {
 	return nil
 }
 
-func HomeFor(spec Spec) (string, error) {
-	if spec.Home != "" {
-		return spec.Home, nil
-	}
-	return os.UserHomeDir()
-}
-
 // ErrCronManual signals that the caller must print the hint rather than claim an install.
 var ErrCronManual = errors.New("supervise: this host has no systemd --user; " +
 	"add the printed crontab line yourself")

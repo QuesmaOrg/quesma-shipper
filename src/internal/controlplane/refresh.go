@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
@@ -51,8 +50,6 @@ type RefreshOptions struct {
 	// Offline skips the network and resolves from the cache: what the read-only verbs use, since
 	// `config show` must explain the config in force without a round-trip that changes it.
 	Offline bool
-
-	HTTPClient *http.Client
 }
 
 // Refresh produces the remote layer for one run: a fetch that parses wins and is cached, and ANY
@@ -116,7 +113,6 @@ func fetch(ctx context.Context, o RefreshOptions) (Remote, error) {
 		InstallID:    o.Enrollment.InstallID,
 		Organization: o.Enrollment.Organization,
 		DeviceKey:    deviceKey,
-		HTTPClient:   o.HTTPClient,
 	})
 	if err != nil {
 		return Remote{}, err

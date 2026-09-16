@@ -49,14 +49,14 @@ func stageAll(t *testing.T, sizes []int) [][]int {
 	p := &sourcePass{o: Options{Upload: port}}
 	// Buffered past the group count, so the accumulator's send never blocks the staging loop.
 	batches := make(chan []fileResult, len(sizes)+1)
-	p.staged = &batcher[stagedUpload]{
+	p.staged = &batcher{
 		maxObjects: maxBatchObjects,
 		send:       func(items []stagedUpload) { batches <- p.o.sendBatch(ctx, items) },
 	}
 
 	for i, sz := range sizes {
-		if done := p.stageUpload(stagedFor(i, sz)); len(done) != 0 {
-			t.Fatalf("object %d was not staged: %+v", i, done[0].outcome)
+		if done, final := p.stageUpload(stagedFor(i, sz)); final {
+			t.Fatalf("object %d was not staged: %+v", i, done.outcome)
 		}
 	}
 	p.staged.flush()

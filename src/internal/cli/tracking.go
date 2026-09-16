@@ -222,16 +222,12 @@ func styled(style, s, reset string) string {
 }
 func browseTracking(cmd *cobra.Command) error {
 	out := cmd.OutOrStdout()
-	catalog, err := sources.Load()
-	if err != nil {
-		return err
-	}
-	view := &browser{attr: catalog.RepoFilter(), names: app.FamilyNames(catalog), pal: paletteFor(out)}
+	view := &browser{pal: paletteFor(out)}
 	if err := view.refresh(); err != nil {
 		return err
 	}
-	stdin, isFile := cmd.InOrStdin().(*os.File)
-	if !isFile || !isTerminal(stdin) || !isTerminal(out) {
+	stdin, ok := tty(cmd)
+	if !ok {
 		fmt.Fprint(out, view.screen(time.Now(), false))
 		return nil
 	}
@@ -244,10 +240,10 @@ func browseTracking(cmd *cobra.Command) error {
 }
 
 type browser struct {
-	attr  *sources.RepoFilter
-	names map[string]string
-	rows  []app.AgentRow
-	pal   palette
+	// attr outlives a refresh: its cwd cache is what keeps a toggle from re-probing every file.
+	attr *sources.RepoFilter
+	rows []app.AgentRow
+	pal  palette
 
 	open        string
 	sel         int
@@ -266,7 +262,10 @@ func (b *browser) refresh() error {
 	if err != nil {
 		return err
 	}
-	b.rows = app.Survey(eff, paths, b.attr, b.names)
+	if b.attr == nil {
+		b.attr = eff.Catalog.RepoFilter()
+	}
+	b.rows = app.Survey(eff, paths, b.attr)
 	if b.agent() == nil {
 		b.open = ""
 	}
@@ -357,11 +356,11 @@ func (b *browser) interact(stdin *os.File, out io.Writer) error {
 			b.height = h
 		}
 		fmt.Fprint(out, "\x1b[H\x1b[2J"+b.screen(time.Now(), true))
-		n, err := stdin.Read(buf)
-		if err != nil || n == 0 {
+		k, ok := readKey(stdin, buf)
+		if !ok {
 			return nil
 		}
-		switch decodeKey(buf[:n]) {
+		switch k {
 		case keyQuit:
 			return nil
 		case keyUp:

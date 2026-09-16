@@ -259,27 +259,23 @@ func namesCompatible(display string, t *toolFormerData) bool {
 	if d == "callmcptool" && strings.HasPrefix(in, "mcp") {
 		return true
 	}
-	pairs := map[string][]string{
-		"shell":      {"runterminalcommandv2", "runterminalcmd"},
-		"strreplace": {"editfilev2", "searchreplace"},
-		"write":      {"editfilev2", "writefile", "createfilev2"},
-	}
-	for _, want := range pairs[d] {
-		if in == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(toolNamePairs[d], in)
+}
+
+// toolNamePairs are the display names whose internal name shares no substring with them.
+var toolNamePairs = map[string][]string{
+	"shell":      {"runterminalcommandv2", "runterminalcmd"},
+	"strreplace": {"editfilev2", "searchreplace"},
+	"write":      {"editfilev2", "writefile", "createfilev2"},
 }
 
 func normaliseToolName(s string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(s) {
+	return strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
+			return r
 		}
-	}
-	return b.String()
+		return -1
+	}, strings.ToLower(s))
 }
 
 // jsonEscaped is the string as it appears inside a JSON document, without the quotes.

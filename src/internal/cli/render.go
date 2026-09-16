@@ -77,7 +77,7 @@ func (p palette) glyph(s app.Severity) string {
 
 // banner is the "<Title> <state>  (<why>)" line a verb ends on; an empty why drops the parenthetical.
 func banner(w io.Writer, p palette, colour, state, why string) {
-	line := styled(p.bold, app.Title, p.reset) + " " + styled(colour+p.bold, state, p.reset)
+	line := styled(p.bold, app.Name, p.reset) + " " + styled(colour+p.bold, state, p.reset)
 	if why != "" {
 		line += "  " + styled(p.dim, "("+why+")", p.reset)
 	}
