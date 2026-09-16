@@ -90,48 +90,19 @@ Two more records are produced by the shipper itself:
 - **Project map.** For each project directory an agent used: the directory name, the working
   directory, and the git remote as host and path. Credentials embedded in a remote URL are removed
   before the value is written anywhere.
-- **Account and usage history.** Independent `claude-account`, `codex-account`, and
-  `cursor-account` collectors upload observations into 15-minute UTC buckets.
-  Snapshots preserve provider JSON fields, including unknown fields, percentages, reset
-  windows, and plan details, plus selected local account metadata. They pass through the existing scrub, encryption, and upload pipeline directly from memory.
-
-Snapshot names include the UTC bucket, for example `claude.account.20260916T141500Z.json`.
-Each bucket produces its own encrypted remote object. No snapshot files are written locally;
-repeated runs in the same bucket overwrite its object with current usage. If an upload
-fails, the next run fetches current usage again. Failed observations are not retained across
-runs, and missed buckets are never backfilled. The normal tick defaults to 15 minutes; slower
-schedules, sleep, and offline authentication can leave gaps.
-
-Claude reads the active login's macOS Keychain entry through `purego` (no CGO, subprocess,
-or interactive prompt), with `.credentials.json` as a fallback; other platforms use the file.
-Codex reads `$CODEX_HOME/auth.json` or `~/.codex/auth.json`. Cursor reads exact account keys
-and its access token from `state.vscdb` read-only. Credentials only authenticate requests;
-they are never added to the snapshot, refreshed, or written back to an agent's store.
-
-Claude snapshots contain the OAuth profile and usage responses; Codex captures WHAM usage;
-Cursor captures dashboard plan and current-period usage. Each observation records its source,
-time, HTTP status, and either the provider body or a fixed failure reason. These provider
-endpoints can change, and expired or inaccessible credentials produce partial snapshots.
-HTTP errors, including 429, are recorded; the next scheduled run tries again.
-Doctor, status, and preview do not fetch new usage.
-
-Disable an account collector with `sources: [{id: claude-account, enabled: false}]` (likewise
-for Codex/Cursor). Disabling transcripts alone leaves
-account collection enabled. Existing remote account objects are retained; historical data
-cannot be recovered from their latest snapshots. New objects use `gather: account` and
-an envelope around provider data rather than the previous flat account struct.
-Session token usage remains in the collected transcripts; no session totals or pricing are
-calculated by these collectors. Cursor billing exports and session attribution are not included.
+- **Account and usage history.** Independent Claude Code, Codex, and Cursor collectors upload
+  account metadata and provider usage JSON in 15-minute UTC buckets. Unknown fields are preserved;
+  credentials and PII are scrubbed before encryption and upload.
 
 Every file above passes through the scrub stage before encryption. The control plane receives no
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.
 
 Never uploaded as files: credential stores such as Claude Code's `.credentials.json` and
 `~/.claude.json`, Codex's `auth.json`, and Cursor's `state.vscdb`. A compiled deny list blocks
-these paths even when a configured glob would match them. Account collectors read selected
-metadata and credentials separately; the auth stores themselves never become upload candidates.
-The remaining transcript enricher reads only its declared database scope:
+these paths even when a configured glob would match them. Collectors and enrichers read only
+the data they need from these stores:
 
+- Account collectors read account metadata and use credentials only to authenticate provider requests.
 - The Cursor enricher reads conversation records from `state.vscdb` and writes the conversation
   text, tool calls, and model names it finds into the transcript record, because Cursor's own
   transcript files lack them. The `cursorAuth/*` keys and the encryption-key fields are stripped
