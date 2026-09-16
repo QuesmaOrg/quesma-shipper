@@ -118,8 +118,8 @@ Doctor, status, and preview do not fetch new usage.
 Disable an account collector with `sources: [{id: claude-account, enabled: false}]` (likewise
 for Codex/Cursor). Disabling transcripts alone leaves
 account collection enabled. Existing remote account objects are retained; historical data
-cannot be recovered from their latest snapshots. New objects use `gather: account` and a
-versioned envelope around provider data rather than the previous flat account struct.
+cannot be recovered from their latest snapshots. New objects use `gather: account` and
+an envelope around provider data rather than the previous flat account struct.
 Session token usage remains in the collected transcripts; no session totals or pricing are
 calculated by these collectors. Cursor billing exports and session attribution are not included.
 

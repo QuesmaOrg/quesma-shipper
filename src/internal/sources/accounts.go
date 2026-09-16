@@ -27,9 +27,8 @@ type accountObservation struct {
 }
 
 type accountSnapshot struct {
-	SchemaVersion int                  `json:"schema_version"`
-	BucketStart   time.Time            `json:"bucket_start"`
-	Observations  []accountObservation `json:"observations"`
+	BucketStart  time.Time            `json:"bucket_start"`
+	Observations []accountObservation `json:"observations"`
 }
 
 func (p *Accounts) Discover(req Request) (Discovery, error) {
@@ -56,7 +55,7 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 	if err := req.Context.Err(); err != nil {
 		return d, err
 	}
-	raw, err := json.Marshal(accountSnapshot{SchemaVersion: 1, BucketStart: bucket, Observations: observations})
+	raw, err := json.Marshal(accountSnapshot{BucketStart: bucket, Observations: observations})
 	if err != nil {
 		return d, err
 	}
