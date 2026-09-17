@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
 
 type Accounts struct {
@@ -44,16 +47,28 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 	}
 	bucket := req.Now().UTC().Truncate(req.Interval)
 	name := strings.TrimSuffix(req.Source.ID, "-account") + ".account." + bucket.Format("20060102T150405Z") + ".jsonl"
-	ctx, cancel := context.WithTimeout(req.Context, 30*time.Second)
+	// The size bound stays stable within a bucket and reserves memory before loading.
+	d.Candidates = []Candidate{{Path: name, RelPath: name, Size: req.Source.MaxFileBytes, MTime: bucket,
+		Load: func(ctx context.Context) (Payload, error) { return p.load(ctx, req, bucket) },
+	}}
+	d.Health = Collected
+	return d, nil
+}
+
+func (p *Accounts) load(ctx context.Context, req Request, bucket time.Time) (Payload, error) {
+	if err := ctx.Err(); err != nil {
+		return Payload{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	observations, present := p.collect(ctx, req)
 	if !present {
-		d.Health = AgentAbsent
-		return d, nil
+		return Payload{}, os.ErrNotExist
 	}
-	if err := req.Context.Err(); err != nil {
-		return d, err
+	if err := ctx.Err(); err != nil {
+		return Payload{}, err
 	}
+	payload := Payload{MTime: bucket}
 	var raw bytes.Buffer
 	encoder := json.NewEncoder(&raw)
 	for _, obs := range observations {
@@ -61,21 +76,17 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 			BucketStart time.Time `json:"bucket_start"`
 			accountObservation
 		}{bucket, obs}); err != nil {
-			return d, err
+			return Payload{}, err
 		}
-	}
-	d.Candidates = []Candidate{{Path: name, RelPath: name, Size: int64(raw.Len()), MTime: bucket, Content: raw.Bytes()}}
-	d.Health = Collected
-	for _, obs := range observations {
 		if obs.Error != "" {
-			d.Unreadable++
-			d.UnreadableReason = obs.Source + ": " + obs.Error
+			payload.Warning = "partial account snapshot: " + obs.Source + ": " + obs.Error
 		}
 	}
-	if d.Unreadable > 0 {
-		d.Reason = "partial account snapshot: " + d.UnreadableReason
+	if req.Source.MaxFileBytes > 0 && int64(raw.Len()) > req.Source.MaxFileBytes {
+		return Payload{}, fmt.Errorf("%w: generated content exceeds file size limit", platform.ErrTooLarge)
 	}
-	return d, nil
+	payload.Bytes = raw.Bytes()
+	return payload, nil
 }
 
 func (p *Accounts) collect(ctx context.Context, req Request) ([]accountObservation, bool) {

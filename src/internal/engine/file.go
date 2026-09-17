@@ -1,12 +1,10 @@
 package engine
 
 import (
-	"fmt"
+	"context"
 	"hash/fnv"
-	"os"
 	"time"
 
-	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
@@ -30,6 +28,7 @@ type pendingPut struct {
 // prepareFile is the compute leg: change detection, read, scrub, seal. A non-nil pendingPut
 // means the file wants the network.
 func (o Options) prepareFile(
+	ctx context.Context,
 	job fileJob,
 	src sources.Resolved,
 	disc sources.Discovery,
@@ -61,28 +60,21 @@ func (o Options) prepareFile(
 
 	// Cheap pre-filter on size and mtime only: mtime alone re-ships byte-identical files, so the
 	// content hash below stays the authority. A non-empty SourceHash marks a committed ship.
-	if cand.Content == nil && seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
+	if seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
 		!o.withinRecomputeWindow(staging, cand) {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "size and mtime unchanged"
 		return res, nil
 	}
 
-	raw, mtime := cand.Content, cand.MTime
-	var err error
-	if raw == nil {
-		var info os.FileInfo
-		raw, info, err = platform.ReadWhole(cand.Path, src.MaxFileBytes)
-		if err == nil {
-			mtime = info.ModTime()
-		}
-	} else if src.MaxFileBytes > 0 && int64(len(raw)) > src.MaxFileBytes {
-		err = fmt.Errorf("%w: generated content exceeds file size limit", platform.ErrTooLarge)
-	}
+	payload, err := cand.Load(ctx)
 	if err != nil {
 		failAndBackOff(o, &res, key, fp, err.Error())
 		return res, nil
 	}
+	raw, mtime := payload.Bytes, payload.MTime
+	res.loadWarning = payload.Warning
+	out.Reason = payload.Warning
 	out.BytesIn = int64(len(raw))
 	sourceHash := transforms.Hash(raw)
 

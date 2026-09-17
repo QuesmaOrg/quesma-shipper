@@ -48,8 +48,11 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	f.reopen()
 	f.port.FailAll = nil
 	rep := runEnrich(t, f, o)
-	if rep.Shipped != 1 {
-		t.Fatalf("retry current bucket: %+v", rep)
+	if len(rep.Sources) != 1 {
+		t.Fatalf("expected one account source, got %d", len(rep.Sources))
+	}
+	if rep.Shipped != 1 || rep.Sources[0].Unreadable != 1 || rep.Sources[0].Reason == "" {
+		t.Fatalf("retry current bucket must upload and report partial snapshot: %+v", rep)
 	}
 	keys := f.port.keys()
 	if len(keys) != 1 {
@@ -80,8 +83,8 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	f.reopen()
 	now = now.Add(time.Minute)
 	rep = runEnrich(t, f, o)
-	if rep.Shipped != 1 || len(f.port.keys()) != 1 {
-		t.Fatalf("same bucket should overwrite existing object: %+v", rep)
+	if rep.Shipped != 0 || rep.Unchanged != 1 || len(f.port.keys()) != 1 {
+		t.Fatalf("same bucket should skip uploaded object: %+v", rep)
 	}
 	now = now.Add(5 * time.Minute)
 	rep = runEnrich(t, f, o)

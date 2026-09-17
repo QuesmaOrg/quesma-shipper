@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
 
 type accountTransport func(*http.Request) (*http.Response, error)
@@ -57,26 +59,33 @@ func TestAccountSnapshotsPreserveProviderJSONInMemory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(first.Candidates) != 1 || calls != 1 {
+	if len(first.Candidates) != 1 || calls != 0 {
 		t.Fatalf("first: %+v calls %d", first, calls)
 	}
 	c := first.Candidates[0]
 	if c.RelPath != "codex.account.20260916T141500Z.jsonl" {
 		t.Fatal(c.RelPath)
 	}
-	raw := c.Content
+	payload, err := c.Load(req.Context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("load calls %d", calls)
+	}
+	raw := payload.Bytes
 	for _, field := range []string{`"input_tokens":9007199254740993`, `"utilization":123.456`, `"optional":null`, `"windows":[]`, `"chatgpt_plan_type":"pro"`} {
 		if !bytes.Contains(raw, []byte(field)) {
 			t.Fatalf("lost %s: %s", field, raw)
 		}
 	}
 	again, err := p.Discover(req)
-	if err != nil || len(again.Candidates) != 1 || calls != 2 || again.Candidates[0].Path != c.Path {
+	if err != nil || len(again.Candidates) != 1 || calls != 1 || again.Candidates[0].Path != c.Path {
 		t.Fatalf("same bucket: %+v %v calls %d", again, err, calls)
 	}
 	req.Now = func() time.Time { return time.Date(2026, 9, 16, 14, 31, 0, 0, time.UTC) }
 	next, err := p.Discover(req)
-	if err != nil || len(next.Candidates) != 1 || calls != 3 || next.Candidates[0].Path == c.Path {
+	if err != nil || len(next.Candidates) != 1 || calls != 1 || next.Candidates[0].Path == c.Path {
 		t.Fatalf("new bucket: %+v %v calls %d", next, err, calls)
 	}
 	if _, err := os.Stat(req.StateDir); !os.IsNotExist(err) {
@@ -91,9 +100,12 @@ func TestAccountDiscoveryDoesNotFetchOrWrite(t *testing.T) {
 		t.Fatal("discovery fetched account data")
 		return nil, nil
 	})}}
-	req.Capture = false
-	if d, err := p.Discover(req); err != nil || len(d.Candidates) != 0 {
-		t.Fatalf("discovery: %+v %v", d, err)
+	for _, capture := range []bool{false, true} {
+		req.Capture = capture
+		d, err := p.Discover(req)
+		if err != nil || (len(d.Candidates) == 1) != capture {
+			t.Fatalf("capture=%v discovery: %+v %v", capture, d, err)
+		}
 	}
 	if _, err := os.Stat(req.StateDir); !os.IsNotExist(err) {
 		t.Fatal("discovery wrote state")
@@ -164,10 +176,14 @@ func TestClaudeUsesActiveCredentialsAndPreservesLocalAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	payload, err := d.Candidates[0].Load(req.Context)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if calls != 2 {
 		t.Fatalf("calls %d", calls)
 	}
-	raw := d.Candidates[0].Content
+	raw := payload.Bytes
 	lines := bytes.Split(raw, []byte("\n"))
 	if len(lines) != 4 || len(lines[3]) != 0 {
 		t.Fatalf("expected three newline-terminated records: %s", raw)
@@ -210,7 +226,11 @@ func TestAccountBucketUsesCollectionInterval(t *testing.T) {
 			if c.RelPath != "codex.account."+bucket.Format("20060102T150405Z")+".jsonl" {
 				t.Fatal(c.RelPath)
 			}
-			for _, line := range bytes.Split(bytes.TrimSpace(c.Content), []byte("\n")) {
+			payload, err := c.Load(req.Context)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, line := range bytes.Split(bytes.TrimSpace(payload.Bytes), []byte("\n")) {
 				var record struct {
 					BucketStart time.Time `json:"bucket_start"`
 				}
@@ -219,5 +239,26 @@ func TestAccountBucketUsesCollectionInterval(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCandidateLoadLimitsAndCancellation(t *testing.T) {
+	req := accountFixture(t)
+	req.Source.MaxFileBytes = 1
+	path := filepath.Join(req.Source.Root, "auth.json")
+	accountFile(t, path, `{}`)
+	d, err := (&Accounts{}).Discover(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, load := range []func(context.Context) (Payload, error){fileLoader(path, 1), d.Candidates[0].Load} {
+		if _, err := load(context.Background()); !errors.Is(err, platform.ErrTooLarge) {
+			t.Fatalf("expected size limit: %v", err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if _, err := load(ctx); !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected cancellation: %v", err)
+		}
 	}
 }
