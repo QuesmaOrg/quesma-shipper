@@ -124,6 +124,7 @@ func (p *Sidecar) Discover(req Request) (Discovery, error) {
 		return d, err
 	}
 
+	inventory.Load = fileLoader(inventory.Path, src.MaxFileBytes)
 	d.Health = Collected
 	d.Candidates = []Candidate{inventory}
 	d.Reason = fmt.Sprintf("%d project directories mapped", len(records))

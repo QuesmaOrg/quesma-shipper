@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
@@ -124,4 +126,41 @@ func TestAdmissionGates(t *testing.T) {
 			t.Error("two files admitted together past the overridden cap")
 		}
 	})
+}
+
+func TestGeneratedFileChecksUploadStateBeforeLoading(t *testing.T) {
+	for _, hash := range []string{"", "uploaded"} {
+		t.Run("hash="+hash, func(t *testing.T) {
+			loads := 0
+			cand := sources.Candidate{Path: "snapshot.jsonl", Immutable: true, Load: func(context.Context) (sources.Payload, error) {
+				loads++
+				return sources.Payload{}, errors.New("fixture load failure")
+			}}
+			o := Options{DryRun: true, Now: time.Now}
+			result, pending := o.prepareFile(context.Background(), fileJob{cand: cand, seen: true, fp: Fingerprint{SourceHash: hash}},
+				sources.Resolved{}, sources.Discovery{}, nil, nil, false)
+			if pending != nil {
+				t.Fatal("unexpected upload")
+			}
+			if hash != "" {
+				if loads != 0 || result.outcome.Decision != "unchanged" {
+					t.Fatalf("reloaded uploaded snapshot: loads=%d, %+v", loads, result.outcome)
+				}
+			} else if loads != 1 || result.outcome.Decision != "parked" {
+				t.Fatalf("did not retry uncommitted snapshot: loads=%d, %+v", loads, result.outcome)
+			}
+		})
+	}
+}
+
+func TestSpentBudgetDoesNotLoadCandidates(t *testing.T) {
+	p := admissionPass(0, 1024)
+	p.rep, p.out = &Report{}, &SourceOutcome{}
+	p.disc.Candidates[0].Load = func(context.Context) (sources.Payload, error) {
+		t.Error("loaded a candidate without an upload slot")
+		return sources.Payload{}, nil
+	}
+	if err := p.run(context.Background()); err != nil || !p.rep.Truncated || p.out.Remaining != 1 {
+		t.Fatalf("budget: %+v, %v", p.out, err)
+	}
 }

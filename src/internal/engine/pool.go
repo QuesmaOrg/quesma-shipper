@@ -43,6 +43,7 @@ type fileResult struct {
 
 	// unavailable stops this run's uploads without outcome.Fatal's permanent-kill meaning.
 	unavailable bool
+	loadWarning string
 }
 
 // intent is the durable write a file's outcome asks for; only the loop thread applies it.
@@ -163,7 +164,7 @@ func (p *sourcePass) run(ctx context.Context) error {
 			p.inFlightBytes += job.cand.Size
 			go func() {
 				computeSlots <- struct{}{}
-				r, pending := p.o.prepareFile(job, p.src, p.disc, p.scrubber, p.scrubErr, p.staging)
+				r, pending := p.o.prepareFile(ctx, job, p.src, p.disc, p.scrubber, p.scrubErr, p.staging)
 				<-computeSlots
 				// A sealed object goes back to the loop thread to join an authorization group.
 				r.pending = pending
@@ -298,6 +299,11 @@ func (p *sourcePass) fold(r fileResult) {
 	}
 
 	p.applyIntent(&r)
+	if r.loadWarning != "" {
+		p.out.Unreadable++
+		p.out.UnreadableReason = r.loadWarning
+		p.out.Reason = r.loadWarning
+	}
 	p.slots[r.idx], p.filled[r.idx] = r.outcome, true
 	p.units[r.idx] = r.unit
 	p.decided++

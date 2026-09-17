@@ -1,6 +1,4 @@
-// Package sources discovers what there is to collect. It never reads file contents: the
-// engine owns reading, through platform. An undetected discovery failure is permanent loss,
-// so Discover emits health even when it finds zero bytes.
+// Package sources discovers candidates and loads their content when the engine requests it.
 package sources
 
 import (
@@ -48,11 +46,32 @@ type Candidate struct {
 	// RelPath is relative to the resolved root and derives the mirror key, so a store that moves keeps its keys.
 	RelPath string
 
-	// Content, when non-nil, replaces the file read.
-	Content []byte
+	Load func(context.Context) (Payload, error)
+
+	// Immutable candidates need no reload after a successful upload.
+	Immutable bool
 
 	Size  int64
 	MTime time.Time
+}
+
+type Payload struct {
+	Bytes   []byte
+	MTime   time.Time
+	Warning string
+}
+
+func fileLoader(path string, maxBytes int64) func(context.Context) (Payload, error) {
+	return func(ctx context.Context) (Payload, error) {
+		if err := ctx.Err(); err != nil {
+			return Payload{}, err
+		}
+		raw, info, err := platform.ReadWhole(path, maxBytes)
+		if err != nil {
+			return Payload{}, err
+		}
+		return Payload{Bytes: raw, MTime: info.ModTime()}, nil
+	}
 }
 
 // Discovery is what one source's discovery pass found, plus why.
@@ -373,6 +392,7 @@ func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Ove
 		// Reported under the CONFIGURED root, not the resolved one: native_path, the audit log and the state key must
 		// keep the operator's spelling, or resolving a symlink orphans every fingerprint in the archive.
 		out = append(out, Candidate{
+			Load:    fileLoader(named, src.MaxFileBytes),
 			Path:    named,
 			RelPath: rel,
 			Size:    info.Size(),
