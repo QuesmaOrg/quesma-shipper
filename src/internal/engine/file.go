@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"fmt"
 	"hash/fnv"
+	"os"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
@@ -59,14 +61,24 @@ func (o Options) prepareFile(
 
 	// Cheap pre-filter on size and mtime only: mtime alone re-ships byte-identical files, so the
 	// content hash below stays the authority. A non-empty SourceHash marks a committed ship.
-	if seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
+	if cand.Content == nil && seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
 		!o.withinRecomputeWindow(staging, cand) {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "size and mtime unchanged"
 		return res, nil
 	}
 
-	raw, info, err := platform.ReadWhole(cand.Path, src.MaxFileBytes)
+	raw, mtime := cand.Content, cand.MTime
+	var err error
+	if raw == nil {
+		var info os.FileInfo
+		raw, info, err = platform.ReadWhole(cand.Path, src.MaxFileBytes)
+		if err == nil {
+			mtime = info.ModTime()
+		}
+	} else if src.MaxFileBytes > 0 && int64(len(raw)) > src.MaxFileBytes {
+		err = fmt.Errorf("%w: generated content exceeds file size limit", platform.ErrTooLarge)
+	}
 	if err != nil {
 		failAndBackOff(o, &res, key, fp, err.Error())
 		return res, nil
@@ -109,11 +121,7 @@ func (o Options) prepareFile(
 		out.Reason = "file shrank: truncation or rewrite"
 	}
 
-	if scrubErr != nil {
-		failAndBackOff(o, &res, key, fp, scrubErr.Error())
-		return res, nil
-	}
-	scrubbed, err := scrubber.Scrub(raw, transforms.Hint{Family: src.Family, JSONL: isJSONL(src)})
+	scrubbed, err := scrubSource(src, raw, isJSONL(src), scrubber, scrubErr)
 	if err != nil {
 		// Fail closed: a scrub-ENGINE error means this file does not upload.
 		failAndBackOff(o, &res, key, fp, "scrub failed closed: "+err.Error())
@@ -131,7 +139,7 @@ func (o Options) prepareFile(
 	}
 	out.ObjectKey = objectKey
 
-	manifest := o.manifestFor(src, cand, disc, sourceHash, info.ModTime(), scrubbed)
+	manifest := o.manifestFor(src, cand, disc, sourceHash, mtime, scrubbed)
 	// Set BEFORE sealing: Seal takes the manifest by value, and this hash travels in metadata.
 	manifest.ShippedHash = transforms.Hash(scrubbed.Out)
 	obj, err := transforms.Seal(manifest, scrubbed.Out, o.Recipients)
@@ -188,4 +196,14 @@ func failAndBackOff(o Options, res *fileResult, key Key, fp Fingerprint, reason 
 	// Spread by the file's own key so correlated failures do not all wake in the same second.
 	next.BackoffUntil = o.Now().Add(backoffFor(attempts, keySpread(key)))
 	res.intent = intent{kind: intentBackoff, key: key, fp: next, reason: reason}
+}
+
+func scrubSource(src sources.Resolved, raw []byte, jsonl bool, scrubber *transforms.Scrubber, scrubErr error) (transforms.Result, error) {
+	if src.Scrub != nil && !*src.Scrub {
+		return transforms.Result{Out: raw, BytesTotal: len(raw)}, nil
+	}
+	if scrubErr != nil {
+		return transforms.Result{}, scrubErr
+	}
+	return scrubber.Scrub(raw, transforms.Hint{Family: src.Family, JSONL: jsonl})
 }

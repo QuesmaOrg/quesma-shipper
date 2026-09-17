@@ -237,6 +237,7 @@
     },
     "gather_name": {
       "enum": [
+        "account",
         "file_glob",
         "dir_tree",
         "snapshot_dir",

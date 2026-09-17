@@ -54,7 +54,7 @@ would compile, so the table is the reference for what direction is intended.
 
 | Package | May import |
 | --- | --- |
-| `src/app` | `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/identity`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/sources`, `src/internal/transforms`, `src/internal/transforms/accountprobe`, `src/internal/transforms/cursorjoin`, `src/internal/upload`, `src/packaging` |
+| `src/app` | `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/identity`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/sources`, `src/internal/transforms`, `src/internal/transforms/cursorjoin`, `src/internal/upload`, `src/packaging` |
 | `src/cmd/quesma-shipper` | `src/app`, `src/internal/cli`, `src/internal/platform` |
 | `src/e2e` | — |
 | `src/internal/cli` | `src/app`, `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/identity`, `src/internal/legal`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/platform/crashjournal`, `src/internal/sources`, `src/packaging` |
@@ -68,10 +68,9 @@ would compile, so the table is the reference for what direction is intended.
 | `src/internal/platform` | — |
 | `src/internal/platform/auditlog` | `src/internal/formats`, `src/internal/platform` |
 | `src/internal/platform/crashjournal` | `src/internal/platform` |
-| `src/internal/sources` | `src/internal/formats`, `src/internal/formats/catalogdata`, `src/internal/platform` |
+| `src/internal/sources` | `src/internal/formats`, `src/internal/formats/catalogdata`, `src/internal/platform`, `src/internal/sources/sqliteread` |
 | `src/internal/sources/sqliteread` | — |
 | `src/internal/transforms` | `src/internal/formats`, `src/internal/transforms/packs` |
-| `src/internal/transforms/accountprobe` | `src/internal/sources/sqliteread`, `src/internal/transforms` |
 | `src/internal/transforms/cursorjoin` | `src/internal/sources/sqliteread`, `src/internal/transforms` |
 | `src/internal/transforms/packs` | — |
 | `src/internal/upload` | — |
@@ -141,3 +140,11 @@ the packages into the tree above and replaced the layer machinery with the per-e
 allowlist; the invariants themselves — zero-network, fail-closed scrub, write-path
 discipline, dependency confinement — moved unchanged. The design discussion and migration
 plan were recorded separately in the old repository and were not copied here.
+
+Account collectors use bounded provider HTTP reads during collection only. Credentials stay
+in memory; a separate exact-key SQLite reader supplies Cursor authentication without changing
+the generic collection deny rules. macOS Keychain access invokes only `/usr/bin/security find-generic-password` with a five-second
+timeout, using the system reader’s existing permissions.
+Collectors return generated content in memory; the engine encrypts and uploads it
+through the same pipeline as files. Their compiled catalog entries set `scrub: false`. Repeated runs overwrite the current bucket. Sources do
+not import transforms or engine.

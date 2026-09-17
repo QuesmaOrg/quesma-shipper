@@ -90,20 +90,19 @@ Two more records are produced by the shipper itself:
 - **Project map.** For each project directory an agent used: the directory name, the working
   directory, and the git remote as host and path. Credentials embedded in a remote URL are removed
   before the value is written anywhere.
-- **Account metadata.** From each agent's account store: email, plan, rate-limit tier, auth mode,
-  billing type, organisation name and role, seat tier, team, and subscription end date. Tokens
-  cannot appear in this record. The output is a fixed struct, so unknown fields are dropped.
+- **Account and usage history.** Independent Claude Code, Codex, and Cursor collectors upload
+  account metadata and provider usage JSON in UTC buckets matching the collection interval (default 15 minutes). Unknown fields are preserved;
+  these records skip scrubbing and ship encrypted.
 
-Every file above passes through the scrub stage before encryption. The control plane receives no
+All other files above pass through the scrub stage before encryption. The control plane receives no
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.
 
 Never uploaded as files: credential stores such as Claude Code's `.credentials.json` and
 `~/.claude.json`, Codex's `auth.json`, and Cursor's `state.vscdb`. A compiled deny list blocks
-these paths even when a configured glob would match them. Two enrichers read from them and ship
-only derived fields:
+these paths even when a configured glob would match them. Collectors and enrichers read only
+the data they need from these stores:
 
-- The account probe reads the account fields listed above into a fixed struct. A token cannot
-  appear in it.
+- Account collectors read account metadata and use credentials only to authenticate provider requests.
 - The Cursor enricher reads conversation records from `state.vscdb` and writes the conversation
   text, tool calls, and model names it finds into the transcript record, because Cursor's own
   transcript files lack them. The `cursorAuth/*` keys and the encryption-key fields are stripped

@@ -5,6 +5,7 @@ package sources
 
 import (
 	"cmp"
+	"context"
 	"encoding/hex"
 	"fmt"
 	"io/fs"
@@ -39,13 +40,16 @@ const (
 	SniffUnreadable      = formats.SniffUnreadable
 )
 
-// Candidate is one discovered file.
+// Candidate is one discovered file or generated payload.
 type Candidate struct {
-	// Path is absolute, as opened.
+	// Path is absolute for files, or a stable name for generated content.
 	Path string
 
 	// RelPath is relative to the resolved root and derives the mirror key, so a store that moves keeps its keys.
 	RelPath string
+
+	// Content, when non-nil, replaces the file read.
+	Content []byte
 
 	Size  int64
 	MTime time.Time
@@ -54,6 +58,9 @@ type Candidate struct {
 // Discovery is what one source's discovery pass found, plus why.
 type Discovery struct {
 	Health HealthState
+
+	// Deferred means inspection skipped a check that requires collection.
+	Deferred bool
 
 	// SniffFailures counts sampled files that were unreadable or the wrong shape; it is a source-wide verdict only when every sample failed.
 	SniffFailures int
@@ -105,7 +112,12 @@ type Request struct {
 	// Username feeds the path placeholder, so an inventory record carries a pseudonymised path.
 	Username string
 
-	Now func() time.Time
+	Now      func() time.Time
+	Interval time.Duration
+
+	Context context.Context
+	Env     Env
+	Capture bool
 }
 
 // Primitive discovers candidates for one source. Config can never introduce one: primitives are code, sources are data.
@@ -128,6 +140,7 @@ func NewRegistry() *Registry {
 		globPrimitive{name: "file_glob"},
 		globPrimitive{name: "compressed_file"},
 		&Sidecar{},
+		&Accounts{},
 	} {
 		r.primitives[p.Name()] = p
 	}

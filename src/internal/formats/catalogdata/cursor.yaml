@@ -43,11 +43,6 @@ sources:
       - "**/agent-transcripts/**/*.jsonl"
     enrichers:
       cursor-transcript-join: true
-      # Which account and plan produced these transcripts, from four exact
-      # display keys in the same store's cursorAuth keyspace. The keyspace
-      # stays prefix-denied inside sqliteread; the four keys are the compiled
-      # exceptions, named one by one.
-      cursor-account: true
     sniff:
       kind: jsonl
       max_scan_bytes: 65536
@@ -73,3 +68,19 @@ sources:
     max_file_bytes: 8388608
     sniff:
       kind: none
+
+  - id: cursor-account
+    description: Account and raw provider usage snapshots each collection interval.
+    gather: account
+    scrub: false
+    roots:
+      - ~/Library/Application Support/Cursor/User/globalStorage
+      - $APPDATA/Cursor/User/globalStorage
+      - $XDG_CONFIG_HOME/Cursor/User/globalStorage
+      - ~/.config/Cursor/User/globalStorage
+      - ~/.config/cursor/User/globalStorage
+    artifact_class: context
+    max_file_bytes: 8388608
+    emit: account
+    sniff:
+      kind: jsonl

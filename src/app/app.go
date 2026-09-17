@@ -24,7 +24,6 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
-	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/accountprobe"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/cursorjoin"
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
@@ -168,8 +167,7 @@ func (r *Runtime) options(dryRun bool) engine.Options {
 // Enrichers is the compiled enricher registry, shared with doctor so "in this build" cannot
 // drift from what the engine runs. Config can disable an entry; no layer can add one.
 func Enrichers() *transforms.Registry {
-	return transforms.NewRegistry(cursorjoin.New(),
-		accountprobe.NewClaude(), accountprobe.NewCodex(), accountprobe.NewCursor())
+	return transforms.NewRegistry(cursorjoin.New())
 }
 
 // Flush opens the store, runs once, and closes. Every path goes through here, so all of them
@@ -329,7 +327,9 @@ func ignoreFilter() *sources.RepoFilter {
 // planFor is the one place configuration becomes something the loop can read: the core gets
 // values, never the resolver, so adding a config key does not touch the engine.
 func planFor(eff *config.Effective) engine.Plan {
+	interval, _ := config.TickInterval(eff.Schedule)
 	return engine.Plan{
+		Interval:       interval,
 		OrganizationID: eff.OrganizationID,
 		StateDir:       eff.StateDir,
 		MaxFilesPerRun: eff.MaxFilesPerRun,

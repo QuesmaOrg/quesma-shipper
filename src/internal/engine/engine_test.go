@@ -1039,7 +1039,9 @@ func TestADrainOnAPausedInstallStillShipsNothing(t *testing.T) {
 
 // planOf mirrors the app layer's planFor, over a realistic resolved configuration.
 func planOf(eff *config.Effective) engine.Plan {
+	interval, _ := config.TickInterval(eff.Schedule)
 	return engine.Plan{
+		Interval:       interval,
 		OrganizationID: eff.OrganizationID,
 		StateDir:       eff.StateDir,
 		MaxFilesPerRun: eff.MaxFilesPerRun,

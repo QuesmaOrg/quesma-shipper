@@ -43,9 +43,8 @@ const (
 	smokeRoundTrips = (smokeRoundFiles + smokePutWidth - 1) / smokePutWidth
 )
 
-// A heartbeat and a project map. Exact rather than a floor: a third per-sync object is the kind of
-// change this tier exists to notice.
-const smokeSidecarObjects = 2
+// A heartbeat, project map, and Claude account snapshot.
+const smokeSidecarObjects = 3
 
 // Measured, and narrow: two runs of unchanged code over this corpus agree to within an HTTP header.
 const (
