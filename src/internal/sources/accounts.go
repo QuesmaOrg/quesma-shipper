@@ -47,9 +47,9 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 	}
 	bucket := req.Now().UTC().Truncate(req.Interval)
 	name := strings.TrimSuffix(req.Source.ID, "-account") + ".account." + bucket.Format("20060102T150405Z") + ".jsonl"
+	// The size bound stays stable within a bucket and reserves memory before loading.
 	d.Candidates = []Candidate{{Path: name, RelPath: name, Size: req.Source.MaxFileBytes, MTime: bucket,
-		Immutable: true,
-		Load:      func(ctx context.Context) (Payload, error) { return p.load(ctx, req, bucket) },
+		Load: func(ctx context.Context) (Payload, error) { return p.load(ctx, req, bucket) },
 	}}
 	d.Health = Collected
 	return d, nil

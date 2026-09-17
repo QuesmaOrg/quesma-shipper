@@ -58,14 +58,9 @@ func (o Options) prepareFile(
 		return res, nil
 	}
 
-	if cand.Immutable && seen && fp.SourceHash != "" {
-		out.Decision = auditlog.DecisionUnchanged
-		out.Reason = "generated file already uploaded"
-		return res, nil
-	}
 	// Cheap pre-filter on size and mtime only: mtime alone re-ships byte-identical files, so the
 	// content hash below stays the authority. A non-empty SourceHash marks a committed ship.
-	if !cand.Immutable && seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
+	if seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
 		!o.withinRecomputeWindow(staging, cand) {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "size and mtime unchanged"
@@ -114,7 +109,7 @@ func (o Options) prepareFile(
 	}
 
 	// Drift signal only: the whole file ships regardless, but truncation stops looking like growth.
-	if !cand.Immutable && seen && cand.Size < fp.SourceSize {
+	if seen && cand.Size < fp.SourceSize {
 		out.Reason = "file shrank: truncation or rewrite"
 	}
 
@@ -162,7 +157,7 @@ func (o Options) prepareFile(
 		obj:       obj,
 		md:        manifest.ObjectMetadata(),
 		next: Fingerprint{
-			SourceSize:  out.BytesIn,
+			SourceSize:  cand.Size,
 			SourceMTime: cand.MTime,
 			SourceHash:  sourceHash,
 		},

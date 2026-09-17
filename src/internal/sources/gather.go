@@ -48,9 +48,6 @@ type Candidate struct {
 
 	Load func(context.Context) (Payload, error)
 
-	// Immutable candidates need no reload after a successful upload.
-	Immutable bool
-
 	Size  int64
 	MTime time.Time
 }

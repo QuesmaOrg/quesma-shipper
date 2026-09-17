@@ -132,12 +132,12 @@ func TestGeneratedFileChecksUploadStateBeforeLoading(t *testing.T) {
 	for _, hash := range []string{"", "uploaded"} {
 		t.Run("hash="+hash, func(t *testing.T) {
 			loads := 0
-			cand := sources.Candidate{Path: "snapshot.jsonl", Immutable: true, Load: func(context.Context) (sources.Payload, error) {
+			cand := sources.Candidate{Path: "snapshot.jsonl", Size: 1024, MTime: time.Unix(1000, 0), Load: func(context.Context) (sources.Payload, error) {
 				loads++
 				return sources.Payload{}, errors.New("fixture load failure")
 			}}
 			o := Options{DryRun: true, Now: time.Now}
-			result, pending := o.prepareFile(context.Background(), fileJob{cand: cand, seen: true, fp: Fingerprint{SourceHash: hash}},
+			result, pending := o.prepareFile(context.Background(), fileJob{cand: cand, seen: true, fp: Fingerprint{SourceHash: hash, SourceSize: cand.Size, SourceMTime: cand.MTime}},
 				sources.Resolved{}, sources.Discovery{}, nil, nil, false)
 			if pending != nil {
 				t.Fatal("unexpected upload")
