@@ -217,6 +217,27 @@ func (r *FailureRecord) Append(e FailureEvent) {
 	}
 }
 
+// Counted reports whether ConsecutiveFailures includes this kind. The uncounted kinds ride the
+// same log while answering a different question, so anything attributing the streak must skip them.
+func (e FailureEvent) Counted() bool {
+	switch e.Kind {
+	case FailureTick, FailureShutdown, FailureInit:
+		return true
+	}
+	return false
+}
+
+// LatestCounted is the newest event the streak includes, or nil when the bounded log has evicted
+// them all: twenty uncounted events can outlive the failures they followed.
+func (r *FailureRecord) LatestCounted() *FailureEvent {
+	for i := len(r.Recent) - 1; i >= 0; i-- {
+		if r.Recent[i].Counted() {
+			return &r.Recent[i]
+		}
+	}
+	return nil
+}
+
 // Latest is the newest event, or nil on an install that has never failed.
 func (r *FailureRecord) Latest() *FailureEvent {
 	if len(r.Recent) == 0 {

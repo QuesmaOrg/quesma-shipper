@@ -634,7 +634,7 @@ func TestResetForgetsEverythingButOnlyWithApply(t *testing.T) {
 	}
 	s.Close()
 
-	removed, err := engine.Reset(dir, installID, true)
+	removed, _, err := engine.Reset(dir, installID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -647,9 +647,12 @@ func TestResetForgetsEverythingButOnlyWithApply(t *testing.T) {
 	}
 	s2.Close()
 
-	removed, err = engine.Reset(dir, installID, false)
+	removed, adopted, err := engine.Reset(dir, installID, false)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if adopted {
+		t.Error("an install resetting its OWN document reported an adoption")
 	}
 	if removed != 2 {
 		t.Errorf("apply should count what it forgot, counted %d", removed)
@@ -671,7 +674,7 @@ func TestResetKeepsTheInstallID(t *testing.T) {
 	}
 	s.Close()
 
-	if _, err := engine.Reset(dir, installID, false); err != nil {
+	if _, _, err := engine.Reset(dir, installID, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := engine.Open(dir, "00000000-0000-0000-0000-000000000000"); err == nil {
@@ -685,7 +688,7 @@ func TestResetOnAnEmptyStoreIsANoOp(t *testing.T) {
 	s := open(t, dir)
 	s.Close()
 
-	removed, err := engine.Reset(dir, installID, false)
+	removed, _, err := engine.Reset(dir, installID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -700,7 +703,7 @@ func TestResetIsRefusedWhileLocked(t *testing.T) {
 	s := open(t, dir)
 	defer s.Close()
 
-	if _, err := engine.Reset(dir, installID, false); !errors.Is(err, engine.ErrLocked) {
+	if _, _, err := engine.Reset(dir, installID, false); !errors.Is(err, engine.ErrLocked) {
 		t.Errorf("reset under a held lock: err = %v, want ErrLocked", err)
 	}
 }
@@ -747,12 +750,15 @@ func TestResetAdoptsAnotherInstallsDocument(t *testing.T) {
 		t.Fatalf("Open under a new install: err = %v, want ErrInstallMismatch", err)
 	}
 
-	removed, err := engine.Reset(dir, installID, false)
+	removed, adopted, err := engine.Reset(dir, installID, false)
 	if err != nil {
 		t.Fatalf("reset could not repair the state it exists to repair: %v", err)
 	}
 	if removed != 1 {
 		t.Errorf("reset forgot %d entries, want 1", removed)
+	}
+	if !adopted {
+		t.Error("reset took over a foreign document without reporting it")
 	}
 
 	s2, err := engine.Open(dir, installID)
@@ -781,12 +787,15 @@ func TestResetRewritesTheInstallIDWithNothingToForget(t *testing.T) {
 	}
 	s.Close()
 
-	removed, err := engine.Reset(dir, installID, false)
+	removed, adopted, err := engine.Reset(dir, installID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if removed != 0 {
 		t.Errorf("an entryless document forgot %d entries", removed)
+	}
+	if !adopted {
+		t.Error("an entryless foreign document reported no adoption, so the CLI says nothing to do")
 	}
 	s2, err := engine.Open(dir, installID)
 	if err != nil {
@@ -809,12 +818,15 @@ func TestResetDryRunDoesNotAdopt(t *testing.T) {
 	}
 	s.Close()
 
-	removed, err := engine.Reset(dir, installID, true)
+	removed, adopted, err := engine.Reset(dir, installID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if removed != 1 {
 		t.Errorf("dry run counted %d, want 1", removed)
+	}
+	if !adopted {
+		t.Error("dry run must still report the adoption it would perform")
 	}
 	if _, err := engine.Open(dir, installID); !errors.Is(err, engine.ErrInstallMismatch) {
 		t.Errorf("dry run adopted the document: err = %v, want ErrInstallMismatch", err)

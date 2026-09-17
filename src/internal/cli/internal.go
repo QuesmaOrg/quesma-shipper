@@ -235,11 +235,11 @@ func stateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			removed, err := engine.Reset(paths.StateDir, unit.InstallID.String(), !apply)
+			removed, adopted, err := engine.Reset(paths.StateDir, unit.InstallID.String(), !apply)
 			if err != nil {
 				return err
 			}
-			reportStateChange(cmd.OutOrStdout(), removed, 0, apply, "forgotten")
+			reportStateChange(cmd.OutOrStdout(), removed, 0, apply, adopted, "forgotten")
 			return nil
 		}}
 	prune := &cobra.Command{Use: "prune", Short: "Forget files that no longer exist", Args: cobra.NoArgs,
@@ -256,7 +256,7 @@ func stateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			reportStateChange(cmd.OutOrStdout(), removed, kept, apply, "pruned")
+			reportStateChange(cmd.OutOrStdout(), removed, kept, apply, false, "pruned")
 			return nil
 		}}
 	for _, c := range []*cobra.Command{reset, prune} {
@@ -266,7 +266,19 @@ func stateCmd() *cobra.Command {
 	return cmd
 }
 
-func reportStateChange(w io.Writer, removed, kept int, apply bool, verb string) {
+func reportStateChange(w io.Writer, removed, kept int, apply, adopted bool, verb string) {
+	// Taking over another install's document is the change, whether or not it held any entries, so
+	// this case cannot fall through to "nothing to do": that reading is what leaves an install
+	// stuck, told there was nothing to apply.
+	if adopted {
+		if apply {
+			fmt.Fprintf(w, "another install's record replaced; %d entries %s, %d remain\n", removed, verb, kept)
+		} else {
+			fmt.Fprintf(w, "another install's record would be replaced and %d entries %s; re-run with --apply\n",
+				removed, verb)
+		}
+		return
+	}
 	switch {
 	case removed == 0:
 		fmt.Fprintf(w, "nothing to do (%d entries)\n", kept)

@@ -170,24 +170,24 @@ func (s *Store) Close() error {
 
 // editStore is the shell both operator overrides share: it reads past maxDocumentBytes, since a
 // past-the-ceiling document must not lock out the override, and writes only what edit changed.
-func editStore(stateDir, installID string, dryRun, adopt bool, edit func(*Store) int) (int, error) {
+func editStore(stateDir, installID string, dryRun, adopt bool, edit func(*Store) int) (int, bool, error) {
 	s, err := open(stateDir, installID, pruneMaxDocumentBytes, adopt)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	defer s.Close()
 
 	changed := edit(s)
 	if dryRun || (changed == 0 && !s.adopted) {
-		return changed, nil
+		return changed, s.adopted, nil
 	}
-	return changed, s.flush()
+	return changed, s.adopted, s.flush()
 }
 
 // Prune removes entries whose file is gone. It tests existence on disk, so a file on an unmounted
 // volume reads as gone, which is why it stays a command.
 func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err error) {
-	removed, err = editStore(stateDir, installID, dryRun, false, func(s *Store) int {
+	removed, _, err = editStore(stateDir, installID, dryRun, false, func(s *Store) int {
 		gone := 0
 		for k := range s.entries {
 			if _, statErr := os.Lstat(k.NativePath); statErr == nil {
@@ -210,7 +210,10 @@ func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err erro
 // It adopts a document another install wrote rather than refusing it: this is the only way out of
 // an install mismatch, and a command that cannot repair the one state it exists to repair is a
 // dead end. What it forgets was never this install's to keep.
-func Reset(stateDir, installID string, dryRun bool) (removed int, err error) {
+// adopted reports that the document belonged to another install, which the caller must say out
+// loud: a foreign document with no entries is still work, and "nothing to do" would send the
+// operator away from the one command that unblocks them.
+func Reset(stateDir, installID string, dryRun bool) (removed int, adopted bool, err error) {
 	return editStore(stateDir, installID, dryRun, true, func(s *Store) int {
 		removed := len(s.entries)
 		if !dryRun {

@@ -416,3 +416,60 @@ func TestStateRowsNameAnInstallMismatch(t *testing.T) {
 		}
 	}
 }
+
+// The streak counts collecting runs, but the log also carries uncounted events: a failed
+// self-update, a panic in a one-shot verb. Attributing the streak to the newest event of ANY kind
+// sent the operator to the update channel while the sink was what refused every run.
+func TestFailureRowsIgnoreUncountedEvents(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 9, 17, 13, 0, 0, 0, time.UTC)
+
+	rec := formats.FailureRecord{ConsecutiveFailures: 5}
+	rec.Append(formats.FailureEvent{
+		At:      now.Add(-30 * time.Minute).Format(time.RFC3339),
+		Kind:    formats.FailureTick,
+		Message: "the run shipped nothing: all 3 attempted uploads failed: connection refused",
+	})
+	rec.Append(formats.FailureEvent{
+		At:      now.Add(-1 * time.Minute).Format(time.RFC3339),
+		Kind:    formats.FailureUpdate,
+		Message: "self-update from v1.2.3 did not happen",
+	})
+	if err := writeFailureRecord(dir, rec); err != nil {
+		t.Fatal(err)
+	}
+
+	rows := failureRows(dir, now)
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if strings.Contains(rows[0].Fix, "self-update") {
+		t.Errorf("fix %q blamed an uncounted event for the streak", rows[0].Fix)
+	}
+	if !strings.Contains(rows[0].Fix, "connection refused") {
+		t.Errorf("fix %q lost the reason the runs actually failed", rows[0].Fix)
+	}
+	if !strings.Contains(rows[0].Detail, "30 min ago") {
+		t.Errorf("detail %q dated the streak from an uncounted event", rows[0].Detail)
+	}
+}
+
+// Twenty uncounted events can evict every counted one from the bounded log. The count is still
+// true, so the row stays; only the reason is gone.
+func TestFailureRowsSurviveALogWithNoCountedEvent(t *testing.T) {
+	dir := t.TempDir()
+	rec := formats.FailureRecord{ConsecutiveFailures: 3}
+	rec.Append(formats.FailureEvent{
+		At: time.Now().Format(time.RFC3339), Kind: formats.FailureUpdate, Message: "update failed",
+	})
+	if err := writeFailureRecord(dir, rec); err != nil {
+		t.Fatal(err)
+	}
+	rows := failureRows(dir, time.Now())
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if strings.Contains(rows[0].Fix, "update failed") {
+		t.Errorf("fix %q fell back to an uncounted event", rows[0].Fix)
+	}
+}

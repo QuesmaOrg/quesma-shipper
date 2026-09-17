@@ -549,8 +549,10 @@ func failureRows(stateDir string, now time.Time) []Row {
 	detail := fmt.Sprintf("the last %d %s failed, so nothing has been sent since",
 		rec.ConsecutiveFailures, Plural(rec.ConsecutiveFailures, "run"))
 	fix := "`quesma-shipper log` shows what each run did"
-	if n := len(rec.Recent); n > 0 {
-		last := rec.Recent[n-1]
+	// The newest COUNTED event, not the newest event: an uncounted one (a failed self-update, a
+	// panic in a one-shot verb) rides the same log and would misattribute the streak, pointing at
+	// the update channel while the sink is what is refusing.
+	if last := rec.LatestCounted(); last != nil {
 		if at, err := time.Parse(time.RFC3339, last.At); err == nil {
 			detail += ", most recently " + Ago(at, now)
 		}
