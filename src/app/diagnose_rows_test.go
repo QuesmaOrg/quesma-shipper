@@ -11,6 +11,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
+	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
@@ -133,7 +134,8 @@ func TestAdvisoryRowsNeverFail(t *testing.T) {
 	dir := t.TempDir()
 	var rows []Row
 	rows = append(rows, scheduleRows(dir, time.Now())...)
-	rows = append(rows, stateRowsFrom(engine.Peek(dir))...)
+	doc, docErr := engine.Peek(dir)
+	rows = append(rows, stateRowsFrom(doc, docErr, "")...)
 	rows = append(rows, enrollmentRows(dir, nil, os.ErrNotExist, &config.Effective{}, controlplane.Remote{})...)
 	rows = append(rows, enrollmentRows(dir, nil, errors.New("corrupt"), &config.Effective{}, controlplane.Remote{})...)
 	for _, row := range rows {
@@ -328,5 +330,89 @@ func TestAccountInspectionIsNeutral(t *testing.T) {
 	rows := discoveryRows(src, d)
 	if len(rows) != 1 || rows[0].Sev != SevDim || rows[0].Detail != d.Reason || rows[0].Fix != "" {
 		t.Fatalf("unexpected source inspection: %+v", rows)
+	}
+}
+
+// Nineteen consecutive failed ticks used to leave doctor entirely green: the service row reports
+// only that launchd loaded the job, and nothing else read the failure record. This pins the row
+// that makes a silently failing install visible, and that it carries the reason.
+func TestFailureRowsReportConsecutiveFailures(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 9, 17, 13, 0, 0, 0, time.UTC)
+
+	if rows := failureRows(dir, now); rows != nil {
+		t.Fatalf("a store with no failure record produced %d rows", len(rows))
+	}
+
+	rec := formats.FailureRecord{ConsecutiveFailures: 19}
+	rec.Append(formats.FailureEvent{
+		At:      now.Add(-15 * time.Minute).Format(time.RFC3339),
+		Kind:    formats.FailureTick,
+		Message: "state: document belongs to a different install",
+	})
+	if err := writeFailureRecord(dir, rec); err != nil {
+		t.Fatal(err)
+	}
+
+	rows := failureRows(dir, now)
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	got := rows[0]
+	if got.Sev != SevWarn {
+		t.Errorf("severity = %v, want SevWarn", got.Sev)
+	}
+	if !strings.Contains(got.Detail, "19") {
+		t.Errorf("detail %q must count the failed runs", got.Detail)
+	}
+	if !strings.Contains(got.Fix, "different install") {
+		t.Errorf("fix %q must carry the reason the runs failed", got.Fix)
+	}
+}
+
+// A run that succeeds clears the counter, and the row goes with it.
+func TestFailureRowsSilentAfterASuccess(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeFailureRecord(dir, formats.FailureRecord{ConsecutiveFailures: 0}); err != nil {
+		t.Fatal(err)
+	}
+	if rows := failureRows(dir, time.Now()); rows != nil {
+		t.Errorf("a healthy install produced %d rows", len(rows))
+	}
+}
+
+// Peek skips Open's guard, so doctor must name the mismatch itself rather than wait for a run.
+func TestStateRowsNameAnInstallMismatch(t *testing.T) {
+	const mine, theirs = "c033b5b2-c3ac-4f39-911f-7ea632b7727c", "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
+	doc := engine.Document{InstallID: theirs, Entries: map[engine.Key]engine.Fingerprint{}}
+
+	var found *Row
+	for _, row := range stateRowsFrom(doc, nil, mine) {
+		if row.Sev == SevWarn {
+			r := row
+			found = &r
+		}
+	}
+	if found == nil {
+		t.Fatal("a document written by another install produced no warning")
+	}
+	if !strings.Contains(found.Detail, theirs) || !strings.Contains(found.Detail, mine) {
+		t.Errorf("detail %q must name both installs", found.Detail)
+	}
+	if !strings.Contains(found.Fix, "state reset") {
+		t.Errorf("fix %q must name the command that repairs it", found.Fix)
+	}
+
+	// The same document under its own install is ordinary state, not a finding.
+	for _, row := range stateRowsFrom(engine.Document{InstallID: mine}, nil, mine) {
+		if row.Sev == SevWarn {
+			t.Errorf("matching install ids warned: %+v", row)
+		}
+	}
+	// An install whose identity could not be read cannot judge the document either way.
+	for _, row := range stateRowsFrom(doc, nil, "") {
+		if row.Sev == SevWarn {
+			t.Errorf("warned with no identity to compare against: %+v", row)
+		}
 	}
 }

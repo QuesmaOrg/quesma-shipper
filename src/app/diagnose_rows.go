@@ -515,6 +515,8 @@ func scheduleRows(stateDir string, now time.Time) []Row {
 			Fix:    "`quesma-shipper resume`"})
 	}
 
+	rows = append(rows, failureRows(stateDir, now)...)
+
 	st := packaging.ServiceState(stateDir)
 	switch {
 	case st.Loaded && st.LastRun.IsZero():
@@ -534,6 +536,30 @@ func scheduleRows(stateDir string, now time.Time) []Row {
 			Fix:    "re-run the Quesma Shipper installer"})
 	}
 	return rows
+}
+
+// A loaded service whose every tick fails looks identical to a healthy one from the outside: the
+// launchd job is fine, the runs are not, and the last-upload line reads as merely stale. The
+// failure record is the only place that difference is visible, so doctor states it outright.
+func failureRows(stateDir string, now time.Time) []Row {
+	rec := readFailureRecord(stateDir)
+	if rec.ConsecutiveFailures == 0 {
+		return nil
+	}
+	detail := fmt.Sprintf("the last %d %s failed, so nothing has been sent since",
+		rec.ConsecutiveFailures, Plural(rec.ConsecutiveFailures, "run"))
+	fix := "`quesma-shipper log` shows what each run did"
+	if n := len(rec.Recent); n > 0 {
+		last := rec.Recent[n-1]
+		if at, err := time.Parse(time.RFC3339, last.At); err == nil {
+			detail += ", most recently " + Ago(at, now)
+		}
+		// The reason, not just the count: every one of these runs failed the same way, and the
+		// message is what tells a stale record apart from an unreachable sink.
+		fix = last.Message
+	}
+	return []Row{{Sev: SevWarn, Label: "recent runs", Brief: "recent runs are failing",
+		Detail: detail, Fix: fix}}
 }
 
 func doctorReport(probes []sourceProbe) formats.Report {
