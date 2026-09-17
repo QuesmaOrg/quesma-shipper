@@ -217,12 +217,16 @@ func (r *FailureRecord) Append(e FailureEvent) {
 	}
 }
 
-// Counted reports whether ConsecutiveFailures includes this kind. The uncounted kinds ride the
-// same log while answering a different question, so anything attributing the streak must skip them.
+// Counted reports whether ConsecutiveFailures includes this event, so a reader attributing the
+// streak skips the kinds that ride the same log answering a different question. A panic splits on
+// the run id: only the run loop has one, so a panicked tick is a failed collecting run and counts,
+// while a panic in a one-shot verb does not.
 func (e FailureEvent) Counted() bool {
 	switch e.Kind {
 	case FailureTick, FailureShutdown, FailureInit:
 		return true
+	case FailurePanic:
+		return e.RunID != ""
 	}
 	return false
 }

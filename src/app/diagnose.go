@@ -99,7 +99,8 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 			shipping = append(shipping, row)
 		}
 	}
-	shipping = append(shipping, scheduleRows(paths.StateDir, now)...)
+	// A foreign document is named by its own row below, which carries the remedy too.
+	shipping = append(shipping, scheduleRows(paths.StateDir, now, docErr == nil && doc.ForeignTo(installID))...)
 	var stateDetail []Row
 	for _, row := range stateRowsFrom(doc, docErr, installID) {
 		if row.Sev == SevWarn {
@@ -156,7 +157,7 @@ func stateRowsFrom(doc engine.Document, err error, installID string) []Row {
 	rows := []Row{{Sev: SevDim, Label: "tracked_files", Detail: fmt.Sprintf("%d", len(doc.Entries))}}
 	// Peek does not apply Open's guard, so doctor is the one place this is visible before a run
 	// hits it. Named here rather than left to the failing-runs row, which only echoes the error.
-	if doc.InstallID != "" && installID != "" && doc.InstallID != installID {
+	if doc.ForeignTo(installID) {
 		rows = append(rows, Row{Sev: SevWarn, Label: "local state", Brief: "local state belongs to another install",
 			Detail: fmt.Sprintf("written by install %s, this install is %s: every run is refused",
 				doc.InstallID, installID),

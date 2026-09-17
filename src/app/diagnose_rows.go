@@ -507,7 +507,7 @@ func controlPlaneRows(enr *controlplane.Enrollment, enrErr error,
 	return rows
 }
 
-func scheduleRows(stateDir string, now time.Time) []Row {
+func scheduleRows(stateDir string, now time.Time, causeNamed bool) []Row {
 	var rows []Row
 	if p := platform.Read(stateDir); p.Paused {
 		rows = append(rows, Row{Sev: SevWarn, Label: "collecting", Brief: "paused",
@@ -515,7 +515,7 @@ func scheduleRows(stateDir string, now time.Time) []Row {
 			Fix:    "`quesma-shipper resume`"})
 	}
 
-	rows = append(rows, failureRows(stateDir, now)...)
+	rows = append(rows, failureRows(stateDir, now, causeNamed)...)
 
 	st := packaging.ServiceState(stateDir)
 	switch {
@@ -538,27 +538,27 @@ func scheduleRows(stateDir string, now time.Time) []Row {
 	return rows
 }
 
-// A loaded service whose every tick fails looks identical to a healthy one from the outside: the
-// launchd job is fine, the runs are not, and the last-upload line reads as merely stale. The
-// failure record is the only place that difference is visible, so doctor states it outright.
-func failureRows(stateDir string, now time.Time) []Row {
+// A loaded service whose every tick fails looks identical to a healthy one: the job is fine, the
+// runs are not, and only the failure record shows the difference.
+func failureRows(stateDir string, now time.Time, causeNamed bool) []Row {
 	rec := readFailureRecord(stateDir)
 	if rec.ConsecutiveFailures == 0 {
 		return nil
 	}
-	detail := fmt.Sprintf("the last %d %s failed, so nothing has been sent since",
-		rec.ConsecutiveFailures, Plural(rec.ConsecutiveFailures, "run"))
+	detail := "the last " + CountNoun(rec.ConsecutiveFailures, "run") + " failed, so nothing has been sent since"
 	fix := "`quesma-shipper log` shows what each run did"
-	// The newest COUNTED event, not the newest event: an uncounted one (a failed self-update, a
-	// panic in a one-shot verb) rides the same log and would misattribute the streak, pointing at
-	// the update channel while the sink is what is refusing.
+	// Counted, not merely newest: an uncounted event rides the same log and would blame the streak
+	// on the update channel while the sink is what refused every run.
 	if last := rec.LatestCounted(); last != nil {
 		if at, err := time.Parse(time.RFC3339, last.At); err == nil {
 			detail += ", most recently " + Ago(at, now)
 		}
-		// The reason, not just the count: every one of these runs failed the same way, and the
-		// message is what tells a stale record apart from an unreachable sink.
 		fix = last.Message
+	}
+	// Another row already names this cause and its remedy, so the count is all this one adds:
+	// printing the same instruction twice reads as two problems.
+	if causeNamed {
+		fix = ""
 	}
 	return []Row{{Sev: SevWarn, Label: "recent runs", Brief: "recent runs are failing",
 		Detail: detail, Fix: fix}}

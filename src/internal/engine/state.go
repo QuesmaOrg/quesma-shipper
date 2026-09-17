@@ -93,6 +93,13 @@ type Document struct {
 	Corrupt bool
 }
 
+// ForeignTo reports that this document was written by a different install, which makes its entries
+// say nothing about what installID has shipped: they name objects under another key root. An
+// unstamped document belongs to whoever opens it, so an empty id on either side is never foreign.
+func (d Document) ForeignTo(installID string) bool {
+	return d.InstallID != "" && installID != "" && d.InstallID != installID
+}
+
 // Store is an open, locked fingerprint store.
 type Store struct {
 	dir       string
@@ -103,8 +110,8 @@ type Store struct {
 
 	corrupt bool
 
-	// Set when open took over another install's document, so the flush below happens even when the
-	// edit changed nothing: the stale install id is itself the thing that has to be rewritten.
+	// Set when open took over another install's document: the stale install id is itself a change,
+	// so editStore must flush even when the edit forgot nothing.
 	adopted bool
 }
 
@@ -119,10 +126,7 @@ func Open(stateDir, installID string) (*Store, error) {
 // pruneMaxDocumentBytes is what Prune and Reset may read: larger than the ordinary cap, still bounded.
 const pruneMaxDocumentBytes = 512 << 20
 
-// adopt lets a caller that is about to discard every entry take over a document another install
-// wrote, instead of being refused by the guard below. Only Reset may pass it: forgetting foreign
-// entries is always safe, whereas keeping them would claim another install's uploads as this
-// install's own.
+// Only Reset passes adopt: forgetting a foreign document's entries is safe, keeping them is not.
 func open(stateDir, installID string, maxBytes int64, adopt bool) (*Store, error) {
 	if err := platform.EnsureDir(stateDir, 0o700); err != nil {
 		return nil, err
@@ -144,7 +148,8 @@ func open(stateDir, installID string, maxBytes int64, adopt bool) (*Store, error
 		s.Close()
 		return nil, err
 	}
-	if doc.InstallID != "" && installID != "" && doc.InstallID != installID && !adopt {
+	foreign := doc.ForeignTo(installID)
+	if foreign && !adopt {
 		s.Close()
 		// The fix travels with the error: every run hits this guard, and until the record is
 		// forgotten the install ships nothing at all.
@@ -153,7 +158,7 @@ func open(stateDir, installID string, maxBytes int64, adopt bool) (*Store, error
 			"this install's whole history", ErrInstallMismatch, doc.InstallID, installID)
 	}
 	s.specs, s.entries, s.corrupt = doc.SourceSpecs, doc.Entries, doc.Corrupt
-	s.adopted = doc.InstallID != "" && installID != "" && doc.InstallID != installID
+	s.adopted = foreign
 	return s, nil
 }
 
@@ -207,12 +212,11 @@ func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err erro
 // Reset forgets every fingerprint, so the next sync re-ships the whole history onto existing keys.
 // The document is replaced with an empty one rather than deleted, so the install id survives.
 //
-// It adopts a document another install wrote rather than refusing it: this is the only way out of
-// an install mismatch, and a command that cannot repair the one state it exists to repair is a
-// dead end. What it forgets was never this install's to keep.
+// It adopts a document another install wrote rather than refusing it: a command that cannot repair
+// the one state it exists to repair is a dead end, and what it forgets was never this install's to
+// keep. Recovery, not prevention -- nothing here stops the mismatch being created.
 // adopted reports that the document belonged to another install, which the caller must say out
-// loud: a foreign document with no entries is still work, and "nothing to do" would send the
-// operator away from the one command that unblocks them.
+// loud: "nothing to do" over a foreign document sends the operator away from the fix.
 func Reset(stateDir, installID string, dryRun bool) (removed int, adopted bool, err error) {
 	return editStore(stateDir, installID, dryRun, true, func(s *Store) int {
 		removed := len(s.entries)

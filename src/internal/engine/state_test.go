@@ -15,6 +15,21 @@ import (
 const installID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
 const sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 const otherSha = "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
+const otherInstall = "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
+
+// seedForeignDoc leaves a one-entry document stamped with another install: what a re-enrolled
+// machine wakes up to.
+func seedForeignDoc(t *testing.T, dir string) {
+	t.Helper()
+	s, err := engine.Open(dir, otherInstall)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := commit(s, key("/x/a.jsonl"), fingerprint()); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+}
 
 func key(path string) engine.Key {
 	return engine.Key{
@@ -415,7 +430,7 @@ func TestDocumentFromAnotherInstallIsRejected(t *testing.T) {
 	}
 	s.Close()
 
-	if _, err := engine.Open(dir, "11111111-2222-3333-4444-555555555555"); err == nil {
+	if _, err := engine.Open(dir, otherInstall); err == nil {
 		t.Fatal("a document belonging to another install must be refused")
 	}
 }
@@ -734,17 +749,9 @@ func TestAStrandedOwnPidTempDoesNotWedgeTheCommit(t *testing.T) {
 // fingerprints.json is not, and every run is refused until the record is forgotten. Reset is the
 // documented way out, so it must be able to open what Open refuses.
 func TestResetAdoptsAnotherInstallsDocument(t *testing.T) {
-	const otherInstall = "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
 	dir := t.TempDir()
 
-	s, err := engine.Open(dir, otherInstall)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := commit(s, key("/x/a.jsonl"), fingerprint()); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
+	seedForeignDoc(t, dir)
 
 	if _, err := engine.Open(dir, installID); !errors.Is(err, engine.ErrInstallMismatch) {
 		t.Fatalf("Open under a new install: err = %v, want ErrInstallMismatch", err)
@@ -775,7 +782,6 @@ func TestResetAdoptsAnotherInstallsDocument(t *testing.T) {
 // skip the flush and leave the stale install id in place: reset reported success and the next run
 // was refused exactly as before.
 func TestResetRewritesTheInstallIDWithNothingToForget(t *testing.T) {
-	const otherInstall = "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
 	dir := t.TempDir()
 
 	s, err := engine.Open(dir, otherInstall)
@@ -806,17 +812,9 @@ func TestResetRewritesTheInstallIDWithNothingToForget(t *testing.T) {
 
 // A dry run must not adopt: it reports what it would forget and leaves the document alone.
 func TestResetDryRunDoesNotAdopt(t *testing.T) {
-	const otherInstall = "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
 	dir := t.TempDir()
 
-	s, err := engine.Open(dir, otherInstall)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := commit(s, key("/x/a.jsonl"), fingerprint()); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
+	seedForeignDoc(t, dir)
 
 	removed, adopted, err := engine.Reset(dir, installID, true)
 	if err != nil {
@@ -836,17 +834,9 @@ func TestResetDryRunDoesNotAdopt(t *testing.T) {
 // Prune keeps entries, so adopting would claim another install's uploads as this install's own:
 // Article 5 holds and it stays refused, pointed at reset.
 func TestPruneStillRefusesAnotherInstallsDocument(t *testing.T) {
-	const otherInstall = "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
 	dir := t.TempDir()
 
-	s, err := engine.Open(dir, otherInstall)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := commit(s, key("/x/a.jsonl"), fingerprint()); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
+	seedForeignDoc(t, dir)
 
 	if _, _, err := engine.Prune(dir, installID, false); !errors.Is(err, engine.ErrInstallMismatch) {
 		t.Errorf("prune adopted a foreign document: err = %v, want ErrInstallMismatch", err)

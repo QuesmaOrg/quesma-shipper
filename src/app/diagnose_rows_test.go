@@ -133,7 +133,7 @@ func TestCheckUpdate(t *testing.T) {
 func TestAdvisoryRowsNeverFail(t *testing.T) {
 	dir := t.TempDir()
 	var rows []Row
-	rows = append(rows, scheduleRows(dir, time.Now())...)
+	rows = append(rows, scheduleRows(dir, time.Now(), false)...)
 	doc, docErr := engine.Peek(dir)
 	rows = append(rows, stateRowsFrom(doc, docErr, "")...)
 	rows = append(rows, enrollmentRows(dir, nil, os.ErrNotExist, &config.Effective{}, controlplane.Remote{})...)
@@ -340,7 +340,7 @@ func TestFailureRowsReportConsecutiveFailures(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 9, 17, 13, 0, 0, 0, time.UTC)
 
-	if rows := failureRows(dir, now); rows != nil {
+	if rows := failureRows(dir, now, false); rows != nil {
 		t.Fatalf("a store with no failure record produced %d rows", len(rows))
 	}
 
@@ -354,7 +354,7 @@ func TestFailureRowsReportConsecutiveFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows := failureRows(dir, now)
+	rows := failureRows(dir, now, false)
 	if len(rows) != 1 {
 		t.Fatalf("got %d rows, want 1", len(rows))
 	}
@@ -376,7 +376,7 @@ func TestFailureRowsSilentAfterASuccess(t *testing.T) {
 	if err := writeFailureRecord(dir, formats.FailureRecord{ConsecutiveFailures: 0}); err != nil {
 		t.Fatal(err)
 	}
-	if rows := failureRows(dir, time.Now()); rows != nil {
+	if rows := failureRows(dir, time.Now(), false); rows != nil {
 		t.Errorf("a healthy install produced %d rows", len(rows))
 	}
 }
@@ -439,7 +439,7 @@ func TestFailureRowsIgnoreUncountedEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows := failureRows(dir, now)
+	rows := failureRows(dir, now, false)
 	if len(rows) != 1 {
 		t.Fatalf("got %d rows, want 1", len(rows))
 	}
@@ -465,11 +465,37 @@ func TestFailureRowsSurviveALogWithNoCountedEvent(t *testing.T) {
 	if err := writeFailureRecord(dir, rec); err != nil {
 		t.Fatal(err)
 	}
-	rows := failureRows(dir, time.Now())
+	rows := failureRows(dir, time.Now(), false)
 	if len(rows) != 1 {
 		t.Fatalf("got %d rows, want 1", len(rows))
 	}
 	if strings.Contains(rows[0].Fix, "update failed") {
 		t.Errorf("fix %q fell back to an uncounted event", rows[0].Fix)
+	}
+}
+
+// When the state row already names a foreign document and how to repair it, the streak row keeps
+// the count and drops the instruction: the same remedy twice reads as two separate problems.
+func TestFailureRowsDropTheFixWhenTheCauseIsNamedElsewhere(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	rec := formats.FailureRecord{ConsecutiveFailures: 4}
+	rec.Append(formats.FailureEvent{
+		At: now.Format(time.RFC3339), Kind: formats.FailureTick,
+		Message: "state: document belongs to a different install",
+	})
+	if err := writeFailureRecord(dir, rec); err != nil {
+		t.Fatal(err)
+	}
+
+	rows := failureRows(dir, now, true)
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].Fix != "" {
+		t.Errorf("fix %q repeats what the state row already says", rows[0].Fix)
+	}
+	if !strings.Contains(rows[0].Detail, "4") {
+		t.Errorf("detail %q dropped the count, which is all this row still adds", rows[0].Detail)
 	}
 }

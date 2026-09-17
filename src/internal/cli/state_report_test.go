@@ -20,12 +20,9 @@ func TestReportStateChangeNeverSaysNothingToDoAfterAnAdoption(t *testing.T) {
 		if !strings.Contains(got, "another install's record") {
 			t.Errorf("apply=%v: %q does not say what was replaced", apply, got)
 		}
-	}
-
-	var dry bytes.Buffer
-	reportStateChange(&dry, 0, 0, false, true, "forgotten")
-	if !strings.Contains(dry.String(), "--apply") {
-		t.Errorf("a dry run over a foreign document must still name --apply: %q", dry.String())
+		if !apply && !strings.Contains(got, "--apply") {
+			t.Errorf("a dry run over a foreign document must still name --apply: %q", got)
+		}
 	}
 }
 
