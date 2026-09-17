@@ -48,6 +48,9 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	f.reopen()
 	f.port.FailAll = nil
 	rep := runEnrich(t, f, o)
+	if len(rep.Sources) != 1 {
+		t.Fatalf("expected one account source, got %d", len(rep.Sources))
+	}
 	if rep.Shipped != 1 || rep.Sources[0].Unreadable != 1 || rep.Sources[0].Reason == "" {
 		t.Fatalf("retry current bucket must upload and report partial snapshot: %+v", rep)
 	}
