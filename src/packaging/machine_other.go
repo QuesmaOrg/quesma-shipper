@@ -3,16 +3,10 @@
 package packaging
 
 import (
-	"fmt"
 	"os"
-	"runtime"
 
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
-
-func InstallMachineService() error {
-	return fmt.Errorf("a machine-scope service is not supported on %s", runtime.GOOS)
-}
 
 func SupersededByMachineInstall() bool { return false }
 
