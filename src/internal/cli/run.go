@@ -231,6 +231,9 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 		// Persisted before anything else reports: this tick's own heartbeat ships through the
 		// upload path that may have just failed, so the record has to outlive the run.
 		tickErr := env.JudgeTick(err, rep, panicked, mem)
+		// After judging, so this tick's own outcome is in what gets reported, and outside the flush,
+		// so a slow collector delays nothing that ships bytes. Fails open and says so at most once.
+		env.SubmitTelemetry(cmd.Context())
 		if err == nil && !quiet {
 			printRunSummary(out, rep, once && !drain)
 			if !once {

@@ -38,6 +38,16 @@ type Runtime struct {
 	upload    engine.UploadPort
 	uploadErr error
 
+	// telemetry is the same control-plane client the upload port holds, for the one call that
+	// ships no bytes. Nil on an install that could not build a port, which is also an install that
+	// has nothing to report.
+	telemetry telemetrySubmitter
+
+	// hostname is read once, and it is the only thing in a telemetry event that the control plane
+	// could not have supplied itself: it forwards the body verbatim, so a name added in transit
+	// would break the signature over it.
+	hostname string
+
 	log   *auditlog.Log
 	build Build
 
@@ -114,16 +124,19 @@ func NewFrom(
 	// plane. The port stays interface-typed and is assigned only on success: a failed *vendPort
 	// would box a typed nil and panic on first use instead of reporting uploadErr.
 	var up engine.UploadPort
+	var telemetry telemetrySubmitter
 	port, upErr := newUploadPort(paths.StateDir, eff)
 	if upErr == nil {
-		up = port
+		up, telemetry = port, port
 	}
 
 	env, err := sources.OSEnv()
 	if err != nil {
 		return nil, err
 	}
-	return &Runtime{eff: eff, unit: unit, upload: up, uploadErr: upErr, log: log, build: build,
+	hostname, _ := os.Hostname()
+	return &Runtime{eff: eff, unit: unit, upload: up, uploadErr: upErr, telemetry: telemetry,
+		hostname: hostname, log: log, build: build,
 		remote: remote, env: env, recipients: recipients}, nil
 }
 

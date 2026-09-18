@@ -6,6 +6,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -70,6 +71,13 @@ func newUploadPort(stateDir string, eff *config.Effective) (*vendPort, error) {
 		writerID: controlplane.NewWriterID(),
 		now:      time.Now,
 	}, nil
+}
+
+// SubmitTelemetry lends this port's control-plane client to the one call that is not an upload.
+// The port is where an authenticated client already exists; building a second one would mean a
+// second enrollment read and a second device key in memory for the same install.
+func (p *vendPort) SubmitTelemetry(ctx context.Context, path, batchID string, issuedAt time.Time, payload json.RawMessage) error {
+	return p.client.SubmitTelemetry(ctx, path, batchID, issuedAt, payload)
 }
 
 // AuthorizeAndUpload spends one bounded group: one authorization, then one PUT per ticket. The

@@ -1,0 +1,115 @@
+// Submitting operational telemetry to the control plane.
+//
+// This is the one call that is not part of collecting or uploading anything. It says how collection
+// is going, so that a fleet's operator learns about a machine that is failing without someone
+// walking to it. The control plane authenticates the install, checks whether its organization has a
+// collector, and forwards the body onwards under its own signature; it does not read the payload.
+//
+// Because the body is forwarded VERBATIM, whatever is put in it is what the collector verifies and
+// renders. Nothing downstream can add to it, so anything the far end needs -- the machine's name,
+// most of all -- has to be in here.
+package controlplane
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// TelemetryPreamble domain-separates this signature the way the v2 upload one is separated: the
+// signed bytes are this exact prefix followed immediately by the body, with no canonicalization.
+// The path is inside it, so a signature collected here cannot be replayed onto another route.
+const TelemetryPreamble = "trajectory-shipper-telemetry-v1\nPOST\n/v1/telemetry\n"
+
+// telemetrySchema is the envelope version. The payload inside it carries its own event name and is
+// opaque to the control plane.
+const telemetrySchema = 1
+
+// MaxTelemetryBody is what the control plane accepts. Submitting more is refused permanently, so
+// this side checks first rather than spending a request to find out.
+const MaxTelemetryBody = 1 << 20
+
+// TelemetryRequest is one submission. IssuedAt is stamped by the caller, which is the freshness the
+// control plane checks, so the signed bytes and the sent bytes are the same object.
+type TelemetryRequest struct {
+	Schema   int             `json:"schema"`
+	BatchID  string          `json:"batch_id"`
+	IssuedAt time.Time       `json:"issued_at"`
+	Payload  json.RawMessage `json:"payload"`
+}
+
+// ErrTelemetryDisabled says this install's organization has no collector. It is not a failure: the
+// caller stops submitting until its next configuration load, because the answer will not change
+// before then.
+var ErrTelemetryDisabled = errors.New("controlplane: telemetry is disabled for this organization")
+
+// ErrTelemetryRejected is a submission this control plane will never accept -- a malformed
+// envelope, a stale timestamp, a body too large, or a collector refusing the payload. Retrying is
+// pointless and the batch should be dropped.
+var ErrTelemetryRejected = errors.New("controlplane: telemetry submission was rejected")
+
+// ErrTelemetryUnavailable is a failure that may not recur: a rate limit, a collector that could not
+// be reached, an unprovisioned deployment. Nothing here retries -- retry is re-run, as it is
+// everywhere else in this client -- so the next tick's submission is the retry, with its own batch
+// id and its own window of failures.
+//
+// When bounded retry is added, this is where the server's Retry-After header has to arrive, and
+// exchange will have to surface response headers to carry it.
+var ErrTelemetryUnavailable = errors.New("controlplane: telemetry could not be delivered")
+
+// SubmitTelemetry posts one event to path, which the caller takes from served configuration and
+// which is a path rather than a URL: it is resolved against the enrolled control-plane origin, so a
+// served document cannot point telemetry at a third party.
+//
+// The batch id is the caller's and must survive a retry of the same event, because that is what
+// lets the far end recognise a duplicate rather than say the same thing twice.
+func (c *Client) SubmitTelemetry(ctx context.Context, path, batchID string, issuedAt time.Time, payload json.RawMessage) error {
+	if c.installID == "" {
+		return ErrNotEnrolled
+	}
+	switch {
+	case path == "":
+		return ErrTelemetryDisabled
+	case batchID == "":
+		return errors.New("controlplane: telemetry submission carries no batch_id")
+	case issuedAt.IsZero():
+		return errors.New("controlplane: telemetry submission carries no issued_at")
+	case len(payload) == 0:
+		return errors.New("controlplane: telemetry submission carries no payload")
+	}
+
+	body, err := json.Marshal(TelemetryRequest{
+		Schema: telemetrySchema, BatchID: batchID, IssuedAt: issuedAt, Payload: payload,
+	})
+	if err != nil {
+		return fmt.Errorf("controlplane: encode telemetry submission: %w", err)
+	}
+	if len(body) > MaxTelemetryBody {
+		// Refused for the same reason the server would refuse it, without spending the request.
+		return fmt.Errorf("%w: %d bytes is past the %d limit", ErrTelemetryRejected, len(body), MaxTelemetryBody)
+	}
+
+	status, raw, err := c.exchange(ctx, path, TelemetryPreamble, body, true)
+	if err != nil {
+		return err
+	}
+	reason := truncate(strings.TrimSpace(string(raw)), 200)
+
+	switch {
+	case status == http.StatusNoContent, status/100 == 2:
+		return nil
+	case status == http.StatusForbidden:
+		// Disabled for this organization, or this install was revoked. Either way nothing changes
+		// until configuration is loaded again.
+		return ErrTelemetryDisabled
+	case status == http.StatusBadRequest, status == http.StatusConflict,
+		status == http.StatusRequestEntityTooLarge, status == http.StatusUnprocessableEntity:
+		return fmt.Errorf("%w (HTTP %d): %s", ErrTelemetryRejected, status, reason)
+	default:
+		return fmt.Errorf("%w (HTTP %d): %s", ErrTelemetryUnavailable, status, reason)
+	}
+}
