@@ -3,13 +3,86 @@
 package macos
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
+
+func TestHomebrewUpdateReexec(t *testing.T) {
+	if os.Getenv("QUESMA_TEST_BREW_REEXEC") == "1" {
+		release := common.Release{Targets: map[string]string{"darwin/" + runtime.GOARCH: "raw-binary", "darwin/pkg": "package"}}
+		if got := UpdateTarget(release); got != "raw-binary" {
+			t.Fatalf("update target = %q", got)
+		}
+		raw, err := os.ReadFile(os.Getenv("QUESMA_TEST_BREW_REPLACEMENT"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ApplyTarget(raw, "1.0.1"); err != nil {
+			t.Fatal(err)
+		}
+		os.Args = []string{os.Args[0], "self-update restarted"}
+		t.Fatal(common.ReExec())
+	}
+	root := t.TempDir()
+	helper := filepath.Join(root, "replacement.go")
+	if err := os.WriteFile(helper, []byte("package main\nimport (\"fmt\"; \"os\")\nfunc main() { fmt.Println(os.Args[1]) }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	replacement := filepath.Join(root, "replacement")
+	if out, err := exec.Command("go", "build", "-o", replacement, helper).CombinedOutput(); err != nil {
+		t.Fatalf("build replacement: %v, %s", err, out)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(root, "Caskroom", "quesma-shipper", "1.0.0", "quesma-shipper")
+	if err := os.MkdirAll(filepath.Dir(installed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, raw, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "shipper")
+	if err := os.Symlink(installed, link); err != nil {
+		t.Fatal(err)
+	}
+	plist := filepath.Join(root, "agent.plist")
+	spec := testSpec()
+	spec.Executable = installed
+	if err := os.WriteFile(plist, []byte(renderPlist(spec)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(link, "-test.run=^TestHomebrewUpdateReexec$")
+	cmd.Env = append(os.Environ(), "QUESMA_TEST_BREW_REEXEC=1", "QUESMA_TEST_BREW_REPLACEMENT="+replacement)
+	if out, err := cmd.CombinedOutput(); err != nil || string(out) != "self-update restarted\n" {
+		t.Fatalf("update and reexec: %v, %s", err, out)
+	}
+	if target, err := os.Readlink(link); err != nil || target != installed {
+		t.Fatalf("command link changed: %q, %v", target, err)
+	}
+	if got := common.ServiceProgram(Status{Path: plist}); got != installed {
+		t.Fatalf("service program changed: %q", got)
+	}
+	updated, err := os.ReadFile(installed)
+	if err != nil || bytes.Equal(raw, updated) {
+		t.Fatalf("binary was not replaced: %v", err)
+	}
+	if out, err := exec.Command(link, "next launch").CombinedOutput(); err != nil || string(out) != "next launch\n" {
+		t.Fatalf("launch after update: %v, %s", err, out)
+	}
+}
 
 func TestHomebrewServiceOwnership(t *testing.T) {
 	brew := "/opt/brew & tools/Caskroom/quesma-shipper/1.0.0/quesma-shipper"

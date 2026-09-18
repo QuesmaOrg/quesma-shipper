@@ -5,7 +5,6 @@ import (
 	"runtime"
 )
 
-const BrewUpgrade = "brew upgrade --cask quesmaorg/tap/quesma-shipper"
 const BrewUninstall = "brew uninstall --cask quesmaorg/tap/quesma-shipper"
 
 // HomebrewCaskRoot recognizes the installed payload, including custom Homebrew prefixes.

@@ -117,7 +117,7 @@ Everything derived this way passes through the scrub stage like any other file.
 
 ### From a release
 
-Release builds installed with the native installers use the signed TUF repository to update themselves. Homebrew installations update through Brew. The public
+Release builds, including Homebrew installations, use the signed TUF repository to update themselves. The public
 repository and stable download endpoints are described in
 [RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md).
 
@@ -133,8 +133,8 @@ The cask installs the command on your Homebrew `PATH` and starts a per-user back
 which waits for enrollment. It supports macOS 13 or newer on Apple Silicon and Intel, without
 administrator rights. Run the login command below after installing.
 
-Use `brew upgrade --cask quesmaorg/tap/quesma-shipper` to update, and
-`brew uninstall --cask quesmaorg/tap/quesma-shipper` to remove it. Uninstall keeps enrollment and
+The shipper updates itself automatically; run `quesma-shipper update` to update immediately.
+Use `brew uninstall --cask quesmaorg/tap/quesma-shipper` to remove it. Uninstall keeps enrollment and
 upload history. Before switching between Homebrew and the `.pkg`, uninstall the previous installation
 without purging local state.
 

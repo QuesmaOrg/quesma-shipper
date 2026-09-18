@@ -18,6 +18,7 @@ class CaskReleaseTests(unittest.TestCase):
             for payload in payloads.values():
                 self.assertIn(hashlib.sha256(payload).hexdigest(), cask)
             self.assertIn('version "0.1.0-123.abcdef"', cask)
+            self.assertIn("auto_updates true", cask)
             self.assertNotIn("@", cask)
 
     def test_invalid_release_cannot_inject_ruby(self):

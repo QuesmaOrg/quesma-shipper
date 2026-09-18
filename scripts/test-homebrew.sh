@@ -57,13 +57,11 @@ check_service 1.0.0
 state="$HOME/.local/state/trajectory-shipper"
 mkdir -p "$state"
 printf 'preserve\n' > "$state/brew-smoke-marker"
-if quesma-shipper update > "$work/update.txt" 2>&1; then exit 1; fi
-grep -q 'brew upgrade' "$work/update.txt"
 if quesma-shipper uninstall > "$work/uninstall.txt" 2>&1; then exit 1; fi
 grep -q 'brew uninstall' "$work/uninstall.txt"
 
 write_cask 1.0.1
-brew upgrade --cask --yes quesma-test/shipper/quesma-shipper
+brew upgrade --cask --greedy --yes quesma-test/shipper/quesma-shipper
 check_service 1.0.1
 brew uninstall --cask quesma-test/shipper/quesma-shipper
 [[ ! -e "$plist" ]]

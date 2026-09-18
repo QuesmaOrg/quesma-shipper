@@ -10,6 +10,7 @@ cask "quesma-shipper" do
   desc "Collect coding-agent history for your Quesma dashboard"
   homepage "https://github.com/QuesmaOrg/quesma-shipper"
 
+  auto_updates true
   depends_on macos: :ventura
   container type: :naked
 
@@ -31,7 +32,8 @@ cask "quesma-shipper" do
   caveats <<~EOS
     Connect this computer using the login command from your Quesma dashboard.
     The background service starts automatically and waits for login.
-    Updates: brew upgrade --cask quesmaorg/tap/quesma-shipper
+    The shipper updates itself automatically from its signed update channel.
+    To update immediately: quesma-shipper update
     Uninstall keeps enrollment and upload history for a later reinstall.
   EOS
 end

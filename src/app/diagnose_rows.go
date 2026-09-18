@@ -39,9 +39,6 @@ type UpdateStatus struct {
 
 func checkUpdate(ctx context.Context, build Build, autoupdate bool, getenv func(string) string,
 	check func(context.Context, packaging.UpdateOptions) (string, time.Time, bool, error)) UpdateStatus {
-	if packaging.HomebrewManaged() {
-		return UpdateStatus{State: "disabled", Detail: "self-update disabled; updates managed by Homebrew", Fix: packaging.BrewUpgrade}
-	}
 	if getenv(NoSelfUpdateEnv) != "" {
 		return UpdateStatus{State: "disabled", Detail: "check disabled by " + NoSelfUpdateEnv}
 	}

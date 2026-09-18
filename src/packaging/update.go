@@ -3,7 +3,6 @@ package packaging
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
@@ -12,7 +11,6 @@ import (
 type UpdateOptions = common.Options
 type UpdateResult = common.Result
 
-const BrewUpgrade = common.BrewUpgrade
 const BrewUninstall = common.BrewUninstall
 
 func HomebrewManaged() bool { return common.HomebrewManaged() }
@@ -22,9 +20,6 @@ func CheckUpdate(ctx context.Context, o UpdateOptions) (string, time.Time, bool,
 }
 
 func Update(ctx context.Context, o UpdateOptions) (UpdateResult, error) {
-	if HomebrewManaged() {
-		return UpdateResult{}, fmt.Errorf("Homebrew manages this installation; run `%s`", BrewUpgrade)
-	}
 	return common.Update(ctx, o, updateTarget, applyTarget)
 }
 

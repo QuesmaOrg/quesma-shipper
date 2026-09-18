@@ -28,9 +28,6 @@ func updateCmd(build app.Build) *cobra.Command {
 		Short: "Install the newest version",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if packaging.HomebrewManaged() {
-				return fmt.Errorf("Homebrew manages this installation; run `%s`", packaging.BrewUpgrade)
-			}
 			w := cmd.OutOrStdout()
 			p := paletteFor(w)
 			opts := packaging.UpdateOptions{Current: build.Version, Out: cmd.ErrOrStderr()}
@@ -149,9 +146,6 @@ func selfUpdateGate(build app.Build, getenv func(string) string, persistedHop st
 }
 
 func maybeSelfUpdate(ctx context.Context, build app.Build, errOut io.Writer) {
-	if packaging.HomebrewManaged() {
-		return
-	}
 	stateDir, stateErr := app.StateDirWithoutConfig()
 	persistedHop := ""
 	if stateErr == nil {
