@@ -8,9 +8,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
 func RemoveProgram(executable string) (string, error) {
+	if common.HomebrewCaskRoot(executable) != "" {
+		return executable, fmt.Errorf("Homebrew manages this installation; run `%s`", common.BrewUninstall)
+	}
 	app, ok := containingApp(executable)
 	if !ok {
 		if err := os.Remove(executable); err != nil && !errors.Is(err, os.ErrNotExist) {

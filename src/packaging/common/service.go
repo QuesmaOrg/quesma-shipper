@@ -3,6 +3,7 @@
 package common
 
 import (
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
@@ -184,7 +185,11 @@ func ServiceProgram(st Status) string {
 	if _, after, ok := strings.Cut(text, "<key>ProgramArguments</key>"); ok {
 		if _, after, ok = strings.Cut(after, "<string>"); ok {
 			program, _, _ := strings.Cut(after, "</string>")
-			return program
+			var decoded string
+			if xml.Unmarshal([]byte("<string>"+program+"</string>"), &decoded) == nil {
+				return decoded
+			}
+			return ""
 		}
 	}
 	if _, after, ok := strings.Cut(text, "\nExecStart="); ok {

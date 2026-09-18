@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
+	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
 
 func uninstallCmd(b app.Build) *cobra.Command {
@@ -16,6 +17,9 @@ func uninstallCmd(b app.Build) *cobra.Command {
 		Short: "Remove the service and program, keeping local state",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if packaging.HomebrewManaged() {
+				return fmt.Errorf("Homebrew manages this installation; run `%s`; local state is kept", packaging.BrewUninstall)
+			}
 			w := cmd.OutOrStdout()
 			p := paletteFor(w)
 			st, err := app.CurrentStatus(b)

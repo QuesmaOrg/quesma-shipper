@@ -33,6 +33,7 @@ jobs:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
       - run: make check
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: make tidy
       - run: make build
 
@@ -162,3 +163,5 @@ jobs:
           pkgutil --payload-files bin/dist/quesma-shipper-macos-universal.pkg | grep -q '.local/bin/quesma-shipper'
           (cd src && QUESMA_SHIPPER_PKG="$PWD/../bin/dist/quesma-shipper-macos-universal.pkg" \
             QUESMA_SHIPPER_RELEASE_VERSION="$version" go test ./packaging/macos/ -run BuiltPackage -v)
+      - name: Install, upgrade, and remove the Homebrew cask
+        run: bash scripts/test-homebrew.sh
