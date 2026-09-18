@@ -821,7 +821,7 @@ func TestResetDryRunDoesNotAdopt(t *testing.T) {
 	}
 }
 
-// Prune keeps entries, so adopting would claim another install's uploads as this one's (Article 5).
+// Prune keeps entries, so adopting would claim another install's uploads as this one's.
 func TestPruneStillRefusesAnotherInstallsDocument(t *testing.T) {
 	dir := t.TempDir()
 

@@ -43,7 +43,7 @@ var (
 	ErrSchemaMismatch = errors.New("state: document schema mismatch")
 
 	// ErrInstallMismatch means another install wrote the document, so its entries name objects under
-	// that install's key root (Article 5) and say nothing about what this one has shipped.
+	// that install's key root and say nothing about what this one has shipped.
 	ErrInstallMismatch = errors.New("state: document belongs to a different install")
 )
 
