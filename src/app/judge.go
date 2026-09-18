@@ -71,8 +71,13 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 		// the baseline that makes the next one's readable.
 		rec.ConsecutiveFailures = 0
 	} else {
-		rec.Append(newEvent(r.eff.StateDir, r.runID, kind, err.Error()))
-		rec.ConsecutiveFailures++
+		// Counted through the event, not at this call site: the streak and LatestCounted must read
+		// the same rule, or the doctor row names a failure the count does not include.
+		ev := newEvent(r.eff.StateDir, r.runID, kind, err.Error())
+		rec.Append(ev)
+		if ev.Counted() {
+			rec.ConsecutiveFailures++
+		}
 	}
 
 	if werr := writeFailureRecord(r.eff.StateDir, rec); werr != nil {

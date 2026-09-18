@@ -13,7 +13,9 @@ import (
 )
 
 func TestJudgeTick(t *testing.T) {
-	r := &Runtime{eff: &config.Effective{StateDir: t.TempDir()}}
+	// With a run id, as the run loop always has one: a panicked tick counts only because it carries
+	// one, and a fixture without it would assert the one-shot verb's rule against the tick's path.
+	r := &Runtime{eff: &config.Effective{StateDir: t.TempDir()}, runID: "0123456789abcdef"}
 
 	r.JudgeTick(errors.New("flush failed"), formats.Report{}, false, platform.Delta{})
 	rec := readFailureRecord(r.eff.StateDir)
