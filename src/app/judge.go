@@ -78,8 +78,7 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 	if werr := writeFailureRecord(r.eff.StateDir, rec); werr != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not record the tick outcome: %v\n", werr)
 	}
-	// Kept so whatever reports this outcome reads it from here rather than parsing back the file
-	// that was just written.
+	// Kept so a reporter reads it here rather than parsing back the file just written.
 	r.judged = &rec
 	return err
 }
@@ -163,8 +162,8 @@ func newEvent(stateDir, runID, kind, message string) formats.FailureEvent {
 
 // What the heartbeat carries: the persisted failures, plus the crash read out of the journal.
 func (r *Runtime) failureRecord() formats.FailureRecord {
-	// The record judging just wrote, when this process has judged anything: reading it back off disk
-	// a statement later would parse what is already in memory.
+	// What judging just wrote, if anything: reading it off disk would parse what is already in
+	// memory.
 	rec := r.judged
 	if rec == nil {
 		loaded := readFailureRecord(r.eff.StateDir)

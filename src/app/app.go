@@ -38,20 +38,16 @@ type Runtime struct {
 	upload    engine.UploadPort
 	uploadErr error
 
-	// telemetry is the authenticated client, for the one call that ships no bytes. It survives an
-	// install whose upload targets will not resolve, because that install is exactly the one whose
-	// failures someone should hear about.
+	// telemetry outlives a failed upload port: an install that cannot upload is exactly the one
+	// whose failures someone should hear about.
 	telemetry telemetrySubmitter
 
 	// telemetryOff latches when the control plane says this organization has no collector. Run
-	// scoped, and deliberately not a write back into the resolved configuration: that struct
-	// carries provenance and is what `config show` reports, and a network answer has no business
-	// rewriting it.
+	// scoped, not written back into the resolved configuration, which carries provenance.
 	telemetryOff bool
 
-	// hostname is read once, and it is the only thing in a telemetry event that the control plane
-	// could not have supplied itself: it forwards the body verbatim, so a name added in transit
-	// would break the signature over it.
+	// hostname has to be in the event: the control plane forwards the body verbatim as the bytes it
+	// signs, so nothing downstream can add one.
 	hostname string
 
 	log   *auditlog.Log
@@ -75,8 +71,8 @@ type Runtime struct {
 	// per-run artifact from here, not at startup, where it would reset another's.
 	OnLocked func()
 
-	// judged is the failure record this process last wrote, so a reader after a tick does not parse
-	// back the file judging just produced. Nil until something has been judged.
+	// judged is the record this process last wrote, so a reader after a tick need not parse the file
+	// back. Nil until something has been judged.
 	judged *formats.FailureRecord
 
 	// runID and lastCrash come from the CLI's crash journal; audit entries and heartbeats carry them.

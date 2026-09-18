@@ -35,11 +35,10 @@ type Document struct {
 
 	Autoupdate *Autoupdate `yaml:"autoupdate"`
 
-	// TelemetryEndpoint is the path this install submits operational telemetry to, served by the
-	// control plane as `/v1/telemetry` when its organization has a collector and "" when it does
-	// not. A PATH and never a URL: it is resolved against the enrolled control-plane origin, so a
-	// served document cannot redirect telemetry anywhere else. Absent means disabled, which is what
-	// every control plane older than the feature serves.
+	// TelemetryEndpoint is where this install submits telemetry, served as `/v1/telemetry` or "".
+	// A path, never a URL: it resolves against the enrolled control-plane origin, so a served
+	// document cannot redirect telemetry elsewhere. Absent means disabled, which is what an older
+	// control plane serves.
 	TelemetryEndpoint *string `yaml:"telemetry_endpoint"`
 }
 

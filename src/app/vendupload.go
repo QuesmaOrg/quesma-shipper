@@ -34,14 +34,10 @@ type vendPort struct {
 	now func() time.Time
 }
 
-// newUploadPort assembles the write path. The enrollment record is mandatory, the allowlist is not:
-// with no upload_targets the tickets decide the destination, https only and exact key enforced.
 // newControlPlaneClient builds the authenticated client from the enrollment record alone.
 //
 // Separate from the upload port because the two fail for different reasons: a client needs only an
-// enrolment, while a port also needs usable upload targets. Telemetry depends on the first and not
-// the second, and an install whose configuration will not let it upload is precisely the one whose
-// failures someone should hear about.
+// enrolment, a port also needs usable upload targets. Telemetry depends on the first, not the second.
 func newControlPlaneClient(stateDir string) (*controlplane.Client, error) {
 	enrollment, err := controlplane.LoadEnrollment(stateDir)
 	if err != nil {
@@ -64,6 +60,8 @@ func newControlPlaneClient(stateDir string) (*controlplane.Client, error) {
 	})
 }
 
+// newUploadPort assembles the write path. The enrollment record is mandatory, the allowlist is not:
+// with no upload_targets the tickets decide the destination, https only and exact key enforced.
 func newUploadPort(client *controlplane.Client, eff *config.Effective) (*vendPort, error) {
 	targets, err := uploadTargets(eff)
 	if err != nil {

@@ -1,13 +1,10 @@
 // Submitting operational telemetry to the control plane.
 //
-// This is the one call that is not part of collecting or uploading anything. It says how collection
-// is going, so that a fleet's operator learns about a machine that is failing without someone
-// walking to it. The control plane authenticates the install, checks whether its organization has a
-// collector, and forwards the body onwards under its own signature; it does not read the payload.
+// The control plane authenticates the install, checks whether its organization has a collector, and
+// forwards the body under its own signature without reading it.
 //
-// Because the body is forwarded VERBATIM, whatever is put in it is what the collector verifies and
-// renders. Nothing downstream can add to it, so anything the far end needs -- the machine's name,
-// most of all -- has to be in here.
+// Because the body is forwarded VERBATIM, anything the far end needs -- the machine's name, most of
+// all -- has to be in here: nothing downstream can add to it.
 package controlplane
 
 import (
@@ -23,25 +20,24 @@ import (
 )
 
 // TelemetryPreamble domain-separates this signature the way the v2 upload one is separated: the
-// signed bytes are this exact prefix followed immediately by the body, with no canonicalization.
-// The path is inside it, so a signature collected here cannot be replayed onto another route.
+// signed bytes are this prefix followed by the body, with no canonicalization. The path is inside
+// it, so a signature cannot be replayed onto another route.
 const TelemetryPreamble = "trajectory-shipper-telemetry-v1\nPOST\n" + TelemetryPath + "\n"
 
 // TelemetryPath is the one route this signature is valid for. The control plane builds the same
-// preamble from the same literal, so a served path that differs would be signed here and verified
-// against something else -- a 401 with nothing to explain it. Refused locally instead.
+// preamble from the same literal, so a served path that differs would be verified against something
+// else -- a 401 with nothing to explain it. Refused locally instead.
 const TelemetryPath = "/v1/telemetry"
 
-// telemetrySchema is the envelope version. The payload inside it carries its own event name and is
-// opaque to the control plane.
+// telemetrySchema is the envelope version; the payload carries its own event name.
 const telemetrySchema = 1
 
-// MaxTelemetryBody is what the control plane accepts. Submitting more is refused permanently, so
-// this side checks first rather than spending a request to find out.
+// MaxTelemetryBody is what the control plane accepts. More is refused permanently, so this side
+// checks first rather than spending a request to find out.
 const MaxTelemetryBody = 1 << 20
 
-// TelemetryRequest is one submission. IssuedAt is stamped by the caller, which is the freshness the
-// control plane checks, so the signed bytes and the sent bytes are the same object.
+// TelemetryRequest is one submission. IssuedAt is the caller's stamp and is the freshness the
+// control plane checks.
 type TelemetryRequest struct {
 	Schema   int             `json:"schema"`
 	BatchID  string          `json:"batch_id"`
@@ -49,36 +45,29 @@ type TelemetryRequest struct {
 	Payload  json.RawMessage `json:"payload"`
 }
 
-// NewBatchID mints the identifier for one event. It belongs to the EVENT rather than to the request
-// that carries it: the far end deduplicates on it, so a resend of the same event has to present the
-// same id or saying something twice looks like two things happening.
+// NewBatchID mints the identifier for one event, not for the request carrying it: the far end
+// deduplicates on it, so a resend of the same event has to present the same id.
 func NewBatchID() string { return uuid.NewString() }
 
-// ErrTelemetryDisabled says this install's organization has no collector. It is not a failure: the
-// caller stops submitting until its next configuration load, because the answer will not change
-// before then.
+// ErrTelemetryDisabled says this install's organization has no collector. Not a failure: the caller
+// stops submitting until its next configuration load, because the answer cannot change before then.
 var ErrTelemetryDisabled = errors.New("controlplane: telemetry is disabled for this organization")
 
 // ErrTelemetryRejected is a submission this control plane will never accept -- a malformed
-// envelope, a stale timestamp, a body too large, or a collector refusing the payload. Retrying is
-// pointless and the batch should be dropped.
+// envelope, a stale timestamp, an oversized body, or a collector refusing the payload.
 var ErrTelemetryRejected = errors.New("controlplane: telemetry submission was rejected")
 
-// ErrTelemetryUnavailable is a failure that may not recur: a rate limit, a collector that could not
-// be reached, an unprovisioned deployment. Nothing here retries -- retry is re-run, as it is
-// everywhere else in this client -- so the next tick's submission is the retry, with its own batch
-// id and its own window of failures.
+// ErrTelemetryUnavailable is a failure that may not recur: a rate limit, an unreachable collector,
+// an unprovisioned deployment. Nothing here retries -- the next tick's submission is the retry.
 //
 // When bounded retry is added, this is where the server's Retry-After header has to arrive, and
 // exchange will have to surface response headers to carry it.
 var ErrTelemetryUnavailable = errors.New("controlplane: telemetry could not be delivered")
 
-// SubmitTelemetry posts one event to path, which the caller takes from served configuration and
-// which is a path rather than a URL: it is resolved against the enrolled control-plane origin, so a
-// served document cannot point telemetry at a third party.
-//
-// The batch id is the caller's and must survive a retry of the same event, because that is what
-// lets the far end recognise a duplicate rather than say the same thing twice.
+// SubmitTelemetry posts one event to path, taken from served configuration. A path rather than a
+// URL: it resolves against the enrolled control-plane origin, so a served document cannot point
+// telemetry at a third party. The batch id is the caller's and must survive a retry of the same
+// event, which is what lets the far end recognise a duplicate.
 func (c *Client) SubmitTelemetry(ctx context.Context, path, batchID string, issuedAt time.Time, payload json.RawMessage) error {
 	if c.installID == "" {
 		return ErrNotEnrolled
@@ -112,15 +101,14 @@ func (c *Client) SubmitTelemetry(ctx context.Context, path, batchID string, issu
 	if err != nil {
 		return err
 	}
-	// Read only on a failure status: an accepted submission answers with no body worth allocating.
+	// Read only on a failure status: an accepted submission answers with nothing worth allocating.
 	reason := func() string { return truncate(strings.TrimSpace(string(raw)), 200) }
 
 	switch {
 	case status/100 == 2:
 		return nil
 	case status == http.StatusForbidden:
-		// Disabled for this organization, or this install was revoked. Either way nothing changes
-		// until configuration is loaded again.
+		// Disabled for this organization, or this install was revoked.
 		return ErrTelemetryDisabled
 	case status == http.StatusBadRequest, status == http.StatusConflict,
 		status == http.StatusRequestEntityTooLarge, status == http.StatusUnprocessableEntity:

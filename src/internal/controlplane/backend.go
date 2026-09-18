@@ -3,10 +3,8 @@
 // authorization and telemetry submission, and must never offer an upload-status endpoint, a cursor
 // API or per-object acks.
 //
-// Telemetry is the one verb here that ships nothing and asks for nothing: it says how collection is
-// going, and the control plane forwards it without reading it. The rule above still holds -- what
-// is forbidden is a channel through which the control plane could learn what was collected, and a
-// report about the collector is not one.
+// Telemetry says how collection is going and is forwarded without being read. The rule above still
+// holds: what is forbidden is a channel revealing what was collected, and this is not one.
 package controlplane
 
 import (

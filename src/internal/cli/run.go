@@ -71,10 +71,8 @@ func recycleDue(started, now time.Time, serviceLoaded func() bool) bool {
 	return now.Sub(started) >= recycleAfter && serviceLoaded()
 }
 
-// reportOutcome submits telemetry for whatever was just judged, under a bound of its own. It ships
-// no bytes and nothing consumes its result, so it may not spend the caller's whole budget: on the
-// drain path that budget is the deadline the final slice needs, and on a tick it is the gap before
-// the next one.
+// reportOutcome submits telemetry for whatever was just judged, under a bound of its own so it
+// cannot spend the caller's budget: the drain deadline, or the gap before the next tick.
 func reportOutcome(ctx context.Context, env *app.Runtime) {
 	ctx, cancel := context.WithTimeout(ctx, telemetryDeadline)
 	defer cancel()
@@ -95,8 +93,7 @@ func flushBeforeExit(cmd *cobra.Command, out io.Writer, env *app.Runtime) error 
 	// the shape a tick catches, returning nil having failed every upload.
 	mem := platform.Delta{Before: before, After: platform.ReadMemStats()}
 	tickErr := env.JudgeFinalSlice(err, rep, mem)
-	// The last thing this machine does. A final slice that failed every upload is written to the
-	// record precisely so it outlives the process, and reporting it here is what stops it being the
+	// The last thing this machine does: without it, a final slice that failed every upload is the
 	// one outcome an operator never sees.
 	reportOutcome(ctx, env)
 	if err != nil {
@@ -254,9 +251,8 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 				fmt.Fprintf(out, "  memory\t%s\n", mem)
 			}
 		}
-		// After judging, so this tick's own outcome is in what gets reported, and after the summary,
-		// so a collector that is slow to answer does not hold back the line the operator reads. The
-		// tick's own context, so a signal cancels it like everything else in this loop.
+		// After judging, so this tick's outcome is included, and after the summary, so a slow
+		// collector cannot hold back the line the operator reads.
 		reportOutcome(ctx, env)
 
 		// The flush keeps its own error and exit code -- lock contention still reads as the refusal
