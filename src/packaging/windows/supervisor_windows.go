@@ -21,6 +21,9 @@ func RunSupervisor() {
 	logDir := ""
 	if len(os.Args) > 1 {
 		logDir = os.Args[1]
+	} else if home, err := os.UserHomeDir(); err == nil {
+		// The all-users task passes no directory: this is the default state directory's log folder.
+		logDir = filepath.Join(home, ".local", "state", "trajectory-shipper", "logs")
 	}
 	err := supervise(logDir)
 	if err == nil {

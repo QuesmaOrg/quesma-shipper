@@ -21,6 +21,9 @@ const (
 	KindSystemd     Kind = "systemd-user"
 	KindWindowsTask Kind = "windows-task"
 
+	// KindWindowsMachineTask is the one entry a machine-scope install registers for every user.
+	KindWindowsMachineTask Kind = "windows-task (all users)"
+
 	// KindCron is the non-systemd Linux fallback: the client prints a crontab line, never edits one.
 	KindCron Kind = "cron"
 

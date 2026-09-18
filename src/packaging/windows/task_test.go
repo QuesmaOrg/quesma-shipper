@@ -41,6 +41,38 @@ func TestTaskRunsAsTheInteractiveUserAndSurvivesUpdates(t *testing.T) {
 	}
 }
 
+func TestMachineTaskRunsInEveryUsersSession(t *testing.T) {
+	exe := `C:\Program Files\Quesma Shipper\quesma-shipper.exe`
+	raw := renderMachineTask(exe)
+	for _, want := range []string{
+		`<GroupId>S-1-5-32-545</GroupId>`,
+		`<SecurityDescriptor>D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;BU)</SecurityDescriptor>`,
+		`<URI>\Quesma Shipper (all users)</URI>`,
+		`C:\Program Files\Quesma Shipper\quesma-shipper-supervisor.exe`,
+	} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("machine task XML lacks %q:\n%s", want, raw)
+		}
+	}
+	// One definition serves every profile only if it names no user and no user's directories, and
+	// schtasks /Create rejects a group principal that also states a LogonType (verified on 26200).
+	for _, banned := range []string{`<UserId>`, `<Arguments>`, `<LogonType>`} {
+		if strings.Contains(raw, banned) {
+			t.Errorf("machine task XML must not contain %q:\n%s", banned, raw)
+		}
+	}
+	if err := xml.Unmarshal([]byte(raw), new(any)); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := parseTask([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !doc.enabled() || doc.Actions.Exec.Command != taskRunner(exe) {
+		t.Fatalf("parsed task = %+v", doc)
+	}
+}
+
 func TestParseTaskAcceptsSchtasksUTF16Output(t *testing.T) {
 	raw := `<?xml version="1.0" encoding="UTF-16"?><Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><Settings><Enabled>true</Enabled></Settings><Actions><Exec><Command>C:\shipper.exe</Command></Exec></Actions></Task>`
 	units := utf16.Encode([]rune(raw))

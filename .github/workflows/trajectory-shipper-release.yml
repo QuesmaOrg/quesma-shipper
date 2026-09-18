@@ -100,6 +100,8 @@ jobs:
                 "windows/arm64": "quesma-shipper-windows-arm64.exe",
                 "windows/amd64/setup": "QuesmaShipperSetup-amd64.exe",
                 "windows/arm64/setup": "QuesmaShipperSetup-arm64.exe",
+                "windows/amd64/setup-machine": "QuesmaShipperSetup-machine-amd64.exe",
+                "windows/arm64/setup-machine": "QuesmaShipperSetup-machine-arm64.exe",
                 "darwin/pkg": "quesma-shipper-macos-universal.pkg"
               }
             }' > bin/dist/release.json
@@ -169,16 +171,19 @@ jobs:
       #     file-digest: SHA256
       #     timestamp-rfc3161: http://timestamp.acs.microsoft.com
       #     timestamp-digest: SHA256
-      - name: Build the per-user setup executables
+      - name: Build the per-user and all-users setup executables
         shell: pwsh
         run: |
           foreach ($arch in @("amd64", "arm64")) {
-            src/packaging/windows/build-setup.ps1 `
-              -ReleaseVersion "${{ needs.version.outputs.value }}" `
-              -Architecture $arch `
-              -BinaryPath "bin/dist/quesma-shipper-windows-$arch.exe" `
-              -SupervisorPath "bin/dist/quesma-shipper-windows-$arch-supervisor.exe" `
-              -OutputDir "bin/dist"
+            foreach ($scope in @("user", "machine")) {
+              src/packaging/windows/build-setup.ps1 `
+                -ReleaseVersion "${{ needs.version.outputs.value }}" `
+                -Architecture $arch `
+                -Scope $scope `
+                -BinaryPath "bin/dist/quesma-shipper-windows-$arch.exe" `
+                -SupervisorPath "bin/dist/quesma-shipper-windows-$arch-supervisor.exe" `
+                -OutputDir "bin/dist"
+            }
           }
       # - name: Sign the setup executables
       #   uses: azure/artifact-signing-action@v2

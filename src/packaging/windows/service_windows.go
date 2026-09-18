@@ -19,17 +19,11 @@ import (
 )
 
 func InstallService(spec Spec) (Status, error) {
-	if err := common.ValidateInstall(spec); err != nil {
-		return Status{}, err
-	}
-	if _, err := os.Stat(taskRunner(spec.Executable)); err != nil {
-		return Status{}, fmt.Errorf("supervise: task runner beside installed program: %w", err)
-	}
 	current, err := currentUser()
 	if err != nil {
 		return Status{}, err
 	}
-	if err := verifyInstallDir(filepath.Dir(spec.Executable), current.Uid); err != nil {
+	if err := checkInstall(spec, current.Uid); err != nil {
 		return Status{}, err
 	}
 	// Retired before the new task is registered: the two would otherwise both be live, and the
@@ -38,27 +32,9 @@ func InstallService(spec Spec) (Status, error) {
 		return Status{}, err
 	}
 	name := taskName(current.Uid)
-
-	f, err := os.CreateTemp("", "quesma-shipper-task-*.xml")
+	st, err := installTask(common.KindWindowsTask, spec.Executable, name, renderTask(spec, current.Uid, current.Username))
 	if err != nil {
-		return Status{}, fmt.Errorf("supervise: create task definition: %w", err)
-	}
-	path := f.Name()
-	defer os.Remove(path)
-	if _, err := f.Write(taskXMLForSchtasks(renderTask(spec, current.Uid, current.Username))); err != nil {
-		f.Close()
-		return Status{}, fmt.Errorf("supervise: write task definition: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return Status{}, fmt.Errorf("supervise: close task definition: %w", err)
-	}
-
-	st := Status{Kind: common.KindWindowsTask, Installed: true, Path: name, Program: spec.Executable}
-	// /F is an overwrite of this user's own task now that the name carries their SID.
-	if out, err := schtasks("/Create", "/TN", name, "/XML", path, "/F"); err != nil {
-		st.Installed = false
-		st.Detail = "task registration failed: " + commandError(err, out)
-		return st, fmt.Errorf("supervise: register scheduled task: %s", commandError(err, out))
+		return st, err
 	}
 	if out, err := schtasks("/Run", "/TN", name); err != nil {
 		st.Detail = "registered but the first start failed: " + commandError(err, out)
@@ -69,23 +45,85 @@ func InstallService(spec Spec) (Status, error) {
 	return st, nil
 }
 
+// InstallMachineService registers the all-users task from an elevated installer. No installer SID is
+// trusted: write access to the directory would be code execution in every user's session.
+func InstallMachineService(executable string) error {
+	if err := checkInstall(Spec{Executable: executable}, ""); err != nil {
+		return err
+	}
+	if _, err := installTask(common.KindWindowsMachineTask, executable, machineTaskName, renderMachineTask(executable)); err != nil {
+		return err
+	}
+	// Best effort: the installer rarely has an interactive session, and every logon starts it anyway.
+	_, _ = schtasks("/Run", "/TN", machineTaskName)
+	return nil
+}
+
+func UninstallMachineService() error { return deleteTask(machineTaskName) }
+
+func checkInstall(spec Spec, installerSID string) error {
+	if err := common.ValidateInstall(spec); err != nil {
+		return err
+	}
+	if _, err := os.Stat(taskRunner(spec.Executable)); err != nil {
+		return fmt.Errorf("supervise: task runner beside installed program: %w", err)
+	}
+	return verifyInstallDir(filepath.Dir(spec.Executable), installerSID)
+}
+
+func installTask(kind common.Kind, executable, name, definition string) (Status, error) {
+	st := Status{Kind: kind, Installed: true, Path: name, Program: executable}
+	if out, err := registerTask(name, definition); err != nil {
+		st.Installed = false
+		st.Detail = "task registration failed: " + commandError(err, out)
+		return st, fmt.Errorf("supervise: register scheduled task: %s", commandError(err, out))
+	}
+	return st, nil
+}
+
+// registerTask hands schtasks the definition through a file: /XML is the only way to state the
+// principal, the trigger and the settings together. /F overwrites a same-named task.
+func registerTask(name, definition string) ([]byte, error) {
+	f, err := os.CreateTemp("", "quesma-shipper-task-*.xml")
+	if err != nil {
+		return nil, fmt.Errorf("create task definition: %w", err)
+	}
+	path := f.Name()
+	defer os.Remove(path)
+	if _, err := f.Write(taskXMLForSchtasks(definition)); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("write task definition: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return nil, fmt.Errorf("close task definition: %w", err)
+	}
+	return schtasks("/Create", "/TN", name, "/XML", path, "/F")
+}
+
 func UninstallService() error {
 	sid, err := currentUserSID()
 	if err != nil {
 		return err
 	}
-	name := taskName(sid)
 	// An install that predates per-user names is removed too, or uninstalling would leave it live.
 	legacyErr := retireLegacyTask(sid)
+	if err := deleteTask(taskName(sid)); err != nil {
+		return err
+	}
+	return legacyErr
+}
 
+// deleteTask ends and removes the task. When schtasks refuses, an enumeration that proves the task
+// absent still counts as removed.
+func deleteTask(name string) error {
 	_, _ = schtasks("/End", "/TN", name)
 	out, err := schtasks("/Delete", "/TN", name, "/F")
 	if err == nil {
-		return legacyErr
+		return nil
 	}
 	exists, verifyErr := taskExists(context.Background(), name)
 	if verifyErr == nil && !exists {
-		return legacyErr
+		return nil
 	}
 	if verifyErr != nil {
 		return fmt.Errorf("%w: %s (could not verify absence: %v)",
@@ -105,10 +143,8 @@ func retireLegacyTask(userSID string) error {
 	if err != nil || !legacyTaskIsOurs(doc, userSID) {
 		return nil
 	}
-	_, _ = schtasks("/End", "/TN", legacyTaskName)
-	if out, err := schtasks("/Delete", "/TN", legacyTaskName, "/F"); err != nil {
-		return fmt.Errorf("supervise: retire the former scheduled task %q: %s",
-			legacyTaskName, commandError(err, out))
+	if err := deleteTask(legacyTaskName); err != nil {
+		return fmt.Errorf("supervise: retire the former scheduled task %q: %w", legacyTaskName, err)
 	}
 	return nil
 }
@@ -133,9 +169,14 @@ func currentUserSID() (string, error) {
 }
 
 // queryOwnTask prefers this user's own task and falls back to the pre-rename one, so an install
-// made before the rename still reports as installed until its next upgrade migrates it. The
-// per-user name comes back even when nothing is registered: it is what a fresh install will use.
+// made before the rename still reports as installed until its next upgrade migrates it. A managed
+// install has only the all-users task. The per-user name comes back even when nothing is
+// registered: it is what a fresh install will use.
 func queryOwnTask(ctx context.Context, userSID string) (string, []byte, error) {
+	if exe, err := common.CurrentExecutable(); err == nil && common.ManagedInstall(exe) {
+		out, err := schtasksContext(ctx, "/Query", "/TN", machineTaskName, "/XML")
+		return machineTaskName, out, err
+	}
 	name := taskName(userSID)
 	out, err := schtasksContext(ctx, "/Query", "/TN", name, "/XML")
 	if err == nil {
@@ -163,6 +204,9 @@ func ServiceState(ctx context.Context) Status {
 	}
 	name, out, err := queryOwnTask(ctx, sid)
 	st := Status{Kind: common.KindWindowsTask, Path: name}
+	if name == machineTaskName {
+		st.Kind = common.KindWindowsMachineTask
+	}
 	if err != nil {
 		exists, verifyErr := taskExists(ctx, name)
 		if verifyErr == nil && !exists {

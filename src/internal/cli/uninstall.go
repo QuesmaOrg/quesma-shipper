@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
+	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
 
 func uninstallCmd(b app.Build) *cobra.Command {
@@ -16,6 +17,10 @@ func uninstallCmd(b app.Build) *cobra.Command {
 		Short: "Remove the service and program, keeping local state",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Before the prompt: a refusal after "yes" would be swallowed into the failure banner.
+			if packaging.ManagedInstall() {
+				return packaging.ErrManagedInstall
+			}
 			w := cmd.OutOrStdout()
 			p := paletteFor(w)
 			st, err := app.CurrentStatus(b)

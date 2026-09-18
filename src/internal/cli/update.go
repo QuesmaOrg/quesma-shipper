@@ -129,9 +129,12 @@ func restartTimeoutWarning(budget time.Duration) string {
 
 // selfUpdateGate blocks the hop that did not land: we updated to persistedHop, restarted, and are
 // still not running it. A hop that matches this build has done its job and the caller clears it.
-func selfUpdateGate(build app.Build, getenv func(string) string, persistedHop string) (run bool, why string) {
+func selfUpdateGate(build app.Build, getenv func(string) string, persistedHop string, managed bool) (run bool, why string) {
 	if !build.Release {
 		return false, ""
+	}
+	if managed {
+		return false, "off, this install is managed by a machine package"
 	}
 	if getenv(app.NoSelfUpdateEnv) != "" {
 		return false, "disabled by " + app.NoSelfUpdateEnv
@@ -154,7 +157,7 @@ func maybeSelfUpdate(ctx context.Context, build app.Build, errOut io.Writer) {
 			_ = packaging.ClearSelfUpdateHop(stateDir)
 		}
 	}
-	run, why := selfUpdateGate(build, os.Getenv, persistedHop)
+	run, why := selfUpdateGate(build, os.Getenv, persistedHop, packaging.ManagedInstall())
 	if !run {
 		if why != "" {
 			fmt.Fprintf(errOut, "self-update: %s\n", why)

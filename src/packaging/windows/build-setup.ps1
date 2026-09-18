@@ -1,15 +1,18 @@
-# Builds one architecture-specific per-user setup executable with the Inno compiler on the runner.
+# Builds one architecture-specific setup executable with the Inno compiler on the runner: the
+# per-user one by default, or the all-users one for managed fleets with -Scope machine.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseVersion,
     [Parameter(Mandatory = $true)][ValidateSet("amd64", "arm64")][string]$Architecture,
     [Parameter(Mandatory = $true)][string]$BinaryPath,
     [Parameter(Mandatory = $true)][string]$SupervisorPath,
-    [Parameter(Mandatory = $true)][string]$OutputDir
+    [Parameter(Mandatory = $true)][string]$OutputDir,
+    [ValidateSet("user", "machine")][string]$Scope = "user"
 )
 
 $ErrorActionPreference = "Stop"
 $Here = $PSScriptRoot
+$baseName = if ($Scope -eq "machine") { "QuesmaShipperSetup-machine-$Architecture" } else { "QuesmaShipperSetup-$Architecture" }
 $BinaryPath = (Resolve-Path $BinaryPath).Path
 $SupervisorPath = (Resolve-Path $SupervisorPath).Path
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
@@ -57,12 +60,12 @@ $fileVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3]).$($Matches[4])"
 
 & $compilerPath "/DReleaseVersion=$ReleaseVersion" "/DFileVersion=$fileVersion" `
     "/DArchitecture=$Architecture" "/DBinaryPath=$BinaryPath" `
-    "/DSupervisorPath=$SupervisorPath" "/DOutputDir=$OutputDir" "$Here\setup.iss"
+    "/DSupervisorPath=$SupervisorPath" "/DOutputDir=$OutputDir" "/DScope=$Scope" "$Here\setup.iss"
 if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup failed with exit code $LASTEXITCODE"
 }
 
-$setup = Join-Path $OutputDir "QuesmaShipperSetup-$Architecture.exe"
+$setup = Join-Path $OutputDir "$baseName.exe"
 if (-not (Test-Path $setup)) {
     throw "Inno Setup did not create $setup"
 }

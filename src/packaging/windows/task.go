@@ -1,5 +1,6 @@
-// Package windows owns the per-user Task Scheduler entry. The task runs in the interactive
-// user's security context because the shipper reads that user's coding-agent stores.
+// Package windows owns the Task Scheduler entries: one per user, or one for every user from a
+// machine-scope install. Either way the task runs in the interactive user's security context,
+// because the shipper reads that user's coding-agent stores.
 //
 // Task Scheduler terminates an action rather than delivering the Unix signals used by the
 // shipper's drain path. The supervisor therefore puts the child in a kill-on-close Job Object:
@@ -52,27 +53,52 @@ func programFromTask(command string) string {
 // renderTask points at the stable runner so every TUF replacement remains under Task Scheduler.
 // The account name goes in the description because the name itself carries only the SID.
 func renderTask(spec Spec, userSID, userName string) string {
+	userID := "      <UserId>" + xmlText(userSID) + "</UserId>\n"
+	return taskXML(taskName(userSID), "Installed for "+userName+".", "", userID,
+		userID+"      <LogonType>InteractiveToken</LogonType>\n",
+		spec.Executable, `"`+xmlText(spec.LogDir)+`"`)
+}
+
+// machineTaskName is the one entry a machine-scope (MDM) install registers; its principal is the Users
+// group, so the task starts in the session of whichever member logs on.
+const machineTaskName = `\Quesma Shipper (all users)`
+
+// machineTaskSD lets every user read and stop the task their session runs, so status and doctor
+// work; starting it stays with administrators.
+const machineTaskSD = "D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;BU)"
+
+// renderMachineTask passes no log directory: the runner derives it from the session's own profile.
+// A group principal takes no LogonType: Task Scheduler rejects the definition with one.
+func renderMachineTask(executable string) string {
+	return taskXML(machineTaskName, "Installed for every user of this machine.", machineTaskSD, "",
+		"      <GroupId>"+sidUsersGroup+"</GroupId>\n", executable, "")
+}
+
+func taskXML(name, description, sd, triggerUser, principal, executable, arguments string) string {
+	if sd != "" {
+		sd = "    <SecurityDescriptor>" + sd + "</SecurityDescriptor>\n"
+	}
+	if arguments != "" {
+		arguments = "      <Arguments>" + arguments + "</Arguments>\n"
+	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Collect local AI-agent trajectories, scrub and encrypt them, and send them to your organisation. Installed for %s.</Description>
+    <Description>Collect local AI-agent trajectories, scrub and encrypt them, and send them to your organisation. %s</Description>
     <URI>%s</URI>
-  </RegistrationInfo>
+%s  </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
       <Enabled>true</Enabled>
       <Delay>PT30S</Delay>
-      <UserId>%s</UserId>
-      <Repetition>
+%s      <Repetition>
         <Interval>PT1H</Interval>
       </Repetition>
     </LogonTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <UserId>%s</UserId>
-      <LogonType>InteractiveToken</LogonType>
-      <RunLevel>LeastPrivilege</RunLevel>
+%s      <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
   </Principals>
   <Settings>
@@ -94,12 +120,10 @@ func renderTask(spec Spec, userSID, userName string) string {
   <Actions Context="Author">
     <Exec>
       <Command>%s</Command>
-      <Arguments>"%s"</Arguments>
-    </Exec>
+%s    </Exec>
   </Actions>
 </Task>
-`, xmlText(userName), xmlText(taskName(userSID)), xmlText(userSID), xmlText(userSID),
-		xmlText(taskRunner(spec.Executable)), xmlText(spec.LogDir))
+`, xmlText(description), xmlText(name), sd, triggerUser, principal, xmlText(taskRunner(executable)), arguments)
 }
 
 type taskDocument struct {

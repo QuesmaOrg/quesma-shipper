@@ -20,7 +20,7 @@ quesma-shipper/
       common/             TUF verification, re-exec, shared service types and run markers
       macos/              app/pkg assets, launchd, app-bundle update and removal
       linux/              systemd user service
-      windows/            Inno Setup assets and per-user Task Scheduler integration
+      windows/            Inno Setup assets and Task Scheduler integration, per-user or all-users
     internal/
       cli/                cobra verbs and rendering — formats, never decides
       config/             policy: the layer merge, the authority rulebook, the served document
@@ -74,10 +74,11 @@ would compile, so the table is the reference for what direction is intended.
 | `src/internal/transforms/cursorjoin` | `src/internal/sources/sqliteread`, `src/internal/transforms` |
 | `src/internal/transforms/packs` | — |
 | `src/internal/upload` | — |
-| `src/packaging` | `src/packaging/common`, and the current OS package (`src/packaging/macos` or `src/packaging/linux`) |
+| `src/packaging` | `src/packaging/common`, and the current OS package (`src/packaging/macos`, `src/packaging/linux` or `src/packaging/windows`) |
 | `src/packaging/common` | `src/internal/platform` |
 | `src/packaging/macos` | `src/internal/platform`, `src/packaging/common` |
 | `src/packaging/linux` | `src/internal/platform`, `src/packaging/common` |
+| `src/packaging/windows` | `src/packaging/common` |
 
 Banned by name, with the temptation each forestalls:
 

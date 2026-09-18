@@ -109,7 +109,7 @@ func TestTheBootGateKeepsItsPromises(t *testing.T) {
 			release.Version, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			run, why := selfUpdateGate(tc.build, env(tc.vars), tc.hop)
+			run, why := selfUpdateGate(tc.build, env(tc.vars), tc.hop, false)
 			if run != tc.wantRun {
 				t.Errorf("run = %v, want %v", run, tc.wantRun)
 			}
@@ -117,5 +117,10 @@ func TestTheBootGateKeepsItsPromises(t *testing.T) {
 				t.Errorf("why = %q, want loud=%v", why, tc.loud)
 			}
 		})
+	}
+
+	// A machine package owns the binary; the gate stands down and says so.
+	if run, why := selfUpdateGate(release, env(nil), "", true); run || why == "" {
+		t.Errorf("managed install: run = %v, why = %q", run, why)
 	}
 }

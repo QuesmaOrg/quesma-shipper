@@ -56,6 +56,8 @@ func checkUpdate(ctx context.Context, build Build, autoupdate bool, getenv func(
 		when = ", " + published.Format("2006-01-02")
 	}
 	switch {
+	case errors.Is(err, packaging.ErrManagedInstall):
+		return UpdateStatus{State: "disabled", Detail: "updates arrive through the machine package"}
 	case err != nil:
 		return UpdateStatus{State: "failed", Detail: fmt.Sprintf("check failed - %v", err)}
 	case available:

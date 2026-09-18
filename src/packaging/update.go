@@ -12,10 +12,16 @@ type UpdateOptions = common.Options
 type UpdateResult = common.Result
 
 func CheckUpdate(ctx context.Context, o UpdateOptions) (string, time.Time, bool, error) {
+	if ManagedInstall() {
+		return "", time.Time{}, false, ErrManagedInstall
+	}
 	return common.Check(ctx, o)
 }
 
 func Update(ctx context.Context, o UpdateOptions) (UpdateResult, error) {
+	if ManagedInstall() {
+		return UpdateResult{}, ErrManagedInstall
+	}
 	return common.Update(ctx, o, updateTarget, applyTarget)
 }
 

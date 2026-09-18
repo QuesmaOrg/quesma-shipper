@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
@@ -66,6 +68,8 @@ func firstStackFrame(stack string) string {
 
 const recycleAfter = 3 * time.Hour
 const enrollmentPollInterval = 5 * time.Second
+const provisionRetryInterval = time.Minute
+const provisionRetryCap = 15 * time.Minute
 
 func recycleDue(started, now time.Time, serviceLoaded func() bool) bool {
 	return now.Sub(started) >= recycleAfter && serviceLoaded()
@@ -113,6 +117,10 @@ func runCmd(build app.Build) *cobra.Command {
 			if !once && (drain || quiet) {
 				return fmt.Errorf("--drain and --quiet require --once")
 			}
+			if packaging.SupersededByMachineInstall() {
+				fmt.Fprintln(cmd.ErrOrStderr(), "a machine-scope install serves every user here; this per-user copy stands down")
+				return nil
+			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 			// Resolved once, outside the loop: a config that will not parse also reads as "not
@@ -120,12 +128,32 @@ func runCmd(build app.Build) *cobra.Command {
 			// A resolve error skips the wait entirely and lets app.New report the real reason.
 			_, _, resolveErr := app.ResolveEffective()
 			waiting := false
+			var provisionAt time.Time
+			provisionDelay, provisioned := provisionRetryInterval, false
 			for resolveErr == nil {
 				if _, ok := app.LoggedIn(); ok {
 					break
 				}
+				// A machine-provisioned fleet enrolls itself here; failures back off so every session
+				// on every machine does not hit the control plane once a minute for good.
+				if now := time.Now(); !now.Before(provisionAt) {
+					res, err := app.Provision(ctx)
+					if err == nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "enrolled with %s from the machine provisioning file\n", res.Organization)
+						break
+					}
+					if !errors.Is(err, os.ErrNotExist) {
+						fmt.Fprintf(cmd.ErrOrStderr(), "machine provisioning: %v\n", err)
+						provisionDelay, provisioned = min(provisionDelay*2, provisionRetryCap), true
+					}
+					provisionAt = now.Add(provisionDelay)
+				}
 				if !waiting {
-					fmt.Fprintln(cmd.ErrOrStderr(), "waiting for enrollment; run `quesma-shipper login` to continue")
+					if provisioned {
+						fmt.Fprintln(cmd.ErrOrStderr(), "waiting for enrollment from the machine provisioning file")
+					} else {
+						fmt.Fprintln(cmd.ErrOrStderr(), "waiting for enrollment; run `quesma-shipper login` to continue")
+					}
 					waiting = true
 				}
 				select {

@@ -43,6 +43,9 @@ const (
 // sidEveryone stands in for a NULL DACL, which grants every account full access.
 const sidEveryone = "S-1-1-0"
 
+// sidUsersGroup is the all-users task's principal: BUILTIN\Users.
+const sidUsersGroup = "S-1-5-32-545"
+
 type ace struct {
 	SID         string
 	Mask        uint32

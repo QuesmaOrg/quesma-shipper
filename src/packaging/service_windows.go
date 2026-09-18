@@ -23,6 +23,9 @@ func NewServiceSpec(stateDir string, stopTimeout, tick time.Duration) (ServiceSp
 
 func InstallService(spec ServiceSpec) (ServiceStatus, error) { return windowspkg.InstallService(spec) }
 func UninstallService() (ServiceKind, error) {
+	if ManagedInstall() {
+		return common.KindWindowsMachineTask, windowspkg.UninstallMachineService()
+	}
 	return serviceWindowsTask, windowspkg.UninstallService()
 }
 func serviceState(ctx context.Context) ServiceStatus  { return windowspkg.ServiceState(ctx) }

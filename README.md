@@ -151,6 +151,14 @@ on an Arm PC and run it as your normal user. The setup installs the command unde
 your user `PATH`, and registers a scheduled task that starts immediately and at login without
 administrator rights. Re-running setup repairs that integration without changing enrollment.
 
+For a managed fleet, `QuesmaShipperSetup-machine-amd64.exe` (or `-arm64`) installs for every user
+of the machine: it needs administrator rights, lands in `Program Files`, and registers one scheduled
+task that starts the shipper in each user's session. Deploy it from Intune or another MDM as a
+system-context install with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SERVER=<control-plane URL>
+/ENROLLTOKEN=<token>`. The server and token go to `%ProgramData%\Quesma Shipper\provisioning.json`,
+which each user's first run enrolls from; use a token the organisation is willing to share with
+every account on the machine. A machine install does not update itself: push the next package.
+
 Windows release signing is temporarily disabled while the publisher identity is validated. Until
 it is restored, Microsoft Defender SmartScreen may warn about the download, and managed devices
 whose application-control policy requires a trusted publisher may block it.

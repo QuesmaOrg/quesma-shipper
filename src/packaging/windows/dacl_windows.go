@@ -29,14 +29,49 @@ func verifyInstallDir(dir, installerSID string) error {
 		dir, strings.Join(describeTrustees(writers), ", "))
 }
 
+// TrustedMachineFile accepts a file only an administrator could have put there. Its directory is not
+// judged: ProgramData lets any user create files by design, and ownership is what a planted file cannot fake.
+func TrustedMachineFile(path string) error {
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return fmt.Errorf("provisioning: read the permissions of %s: %w", path, err)
+	}
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return fmt.Errorf("provisioning: read the owner of %s: %w", path, err)
+	}
+	if !trustedTrustee(owner.String(), "") {
+		return fmt.Errorf("provisioning: %s is owned by %s, not by an administrator",
+			path, describeTrustee(owner.String()))
+	}
+	aces, err := descriptorACEs(sd)
+	if err != nil {
+		return fmt.Errorf("provisioning: read the permissions of %s: %w", path, err)
+	}
+	if writers := untrustedWriters(aces, ""); len(writers) > 0 {
+		return fmt.Errorf("provisioning: %s can be modified by %s",
+			path, strings.Join(describeTrustees(writers), ", "))
+	}
+	return nil
+}
+
 func directoryACEs(dir string) ([]ace, error) {
 	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		return nil, fmt.Errorf("supervise: read the permissions of %s: %w", dir, err)
 	}
-	acl, _, err := sd.DACL()
+	aces, err := descriptorACEs(sd)
 	if err != nil {
 		return nil, fmt.Errorf("supervise: read the permissions of %s: %w", dir, err)
+	}
+	return aces, nil
+}
+
+func descriptorACEs(sd *windows.SECURITY_DESCRIPTOR) ([]ace, error) {
+	acl, _, err := sd.DACL()
+	if err != nil {
+		return nil, err
 	}
 	// A NULL DACL is not an empty one: it grants every account full access.
 	if acl == nil {
