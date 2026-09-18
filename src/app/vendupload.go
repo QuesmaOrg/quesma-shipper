@@ -6,7 +6,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -37,7 +36,13 @@ type vendPort struct {
 
 // newUploadPort assembles the write path. The enrollment record is mandatory, the allowlist is not:
 // with no upload_targets the tickets decide the destination, https only and exact key enforced.
-func newUploadPort(stateDir string, eff *config.Effective) (*vendPort, error) {
+// newControlPlaneClient builds the authenticated client from the enrollment record alone.
+//
+// Separate from the upload port because the two fail for different reasons: a client needs only an
+// enrolment, while a port also needs usable upload targets. Telemetry depends on the first and not
+// the second, and an install whose configuration will not let it upload is precisely the one whose
+// failures someone should hear about.
+func newControlPlaneClient(stateDir string) (*controlplane.Client, error) {
 	enrollment, err := controlplane.LoadEnrollment(stateDir)
 	if err != nil {
 		return nil, fmt.Errorf("%w\n\nEvery upload is authorized by the control plane named in "+
@@ -47,20 +52,20 @@ func newUploadPort(stateDir string, eff *config.Effective) (*vendPort, error) {
 		return nil, errors.New("uploading needs an enrolled control plane to authorize every object; " +
 			"`quesma-shipper login` first (`quesma-shipper preview` works without it)")
 	}
-	targets, err := uploadTargets(eff)
-	if err != nil {
-		return nil, err
-	}
 	deviceKey, err := enrollment.PrivateKey()
 	if err != nil {
 		return nil, err
 	}
-	client, err := controlplane.New(controlplane.Options{
+	return controlplane.New(controlplane.Options{
 		Endpoint:     enrollment.Endpoint,
 		InstallID:    enrollment.InstallID,
 		Organization: enrollment.Organization,
 		DeviceKey:    deviceKey,
 	})
+}
+
+func newUploadPort(client *controlplane.Client, eff *config.Effective) (*vendPort, error) {
+	targets, err := uploadTargets(eff)
 	if err != nil {
 		return nil, err
 	}
@@ -71,13 +76,6 @@ func newUploadPort(stateDir string, eff *config.Effective) (*vendPort, error) {
 		writerID: controlplane.NewWriterID(),
 		now:      time.Now,
 	}, nil
-}
-
-// SubmitTelemetry lends this port's control-plane client to the one call that is not an upload.
-// The port is where an authenticated client already exists; building a second one would mean a
-// second enrollment read and a second device key in memory for the same install.
-func (p *vendPort) SubmitTelemetry(ctx context.Context, path, batchID string, issuedAt time.Time, payload json.RawMessage) error {
-	return p.client.SubmitTelemetry(ctx, path, batchID, issuedAt, payload)
 }
 
 // AuthorizeAndUpload spends one bounded group: one authorization, then one PUT per ticket. The

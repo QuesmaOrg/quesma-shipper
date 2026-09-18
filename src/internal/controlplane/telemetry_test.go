@@ -1,4 +1,4 @@
-package controlplane
+package controlplane_test
 
 import (
 	"context"
@@ -7,16 +7,23 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 )
 
 // telemetrySigningPrefix is the domain-separating preamble, spelled out here rather than taken from
 // the constant it tests, so a silent change to the client fails this rather than redefining it.
 const telemetrySigningPrefix = "trajectory-shipper-telemetry-v1\nPOST\n/v1/telemetry\n"
+
+// batchID is any valid uuid: what it is does not matter, only that one value is used throughout.
+const batchID = "1fe3a22f-e2a1-4e83-bdaf-61dfd9d1bf30"
 
 type submission struct {
 	path          string
@@ -42,15 +49,15 @@ func collector(t *testing.T, status int, answer string) (*httptest.Server, *subm
 	return server, got
 }
 
-func client(t *testing.T, endpoint string) (*Client, ed25519.PublicKey) {
+func client(t *testing.T, endpoint string) (*controlplane.Client, ed25519.PublicKey) {
 	t.Helper()
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := New(Options{
+	c, err := controlplane.New(controlplane.Options{
 		Endpoint:     endpoint,
-		InstallID:    "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+		InstallID:    fixtureInstallID,
 		Organization: "acme",
 		DeviceKey:    priv,
 	})
@@ -76,11 +83,11 @@ func TestTelemetrySignatureCoversThePrefixAndTheExactBody(t *testing.T) {
 	c, pub := client(t, server.URL)
 
 	if err := c.SubmitTelemetry(context.Background(), "/v1/telemetry",
-		"1fe3a22f-e2a1-4e83-bdaf-61dfd9d1bf30", time.Now().UTC(), payload(t)); err != nil {
+		batchID, time.Now().UTC(), payload(t)); err != nil {
 		t.Fatalf("submit: %v", err)
 	}
 
-	want := "Shipper-Device org=acme, install=3f2504e0-4f89-41d3-9a0c-0305e82c3301, sig="
+	want := "Shipper-Device org=acme, install=" + fixtureInstallID + ", sig="
 	if !strings.HasPrefix(got.authorization, want) {
 		t.Fatalf("authorization %q does not open with %q", got.authorization, want)
 	}
@@ -109,7 +116,7 @@ func TestTelemetryEnvelopeIsExactlyTheContract(t *testing.T) {
 
 	issued := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
 	if err := c.SubmitTelemetry(context.Background(), "/v1/telemetry",
-		"1fe3a22f-e2a1-4e83-bdaf-61dfd9d1bf30", issued, payload(t)); err != nil {
+		batchID, issued, payload(t)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -123,19 +130,11 @@ func TestTelemetryEnvelopeIsExactlyTheContract(t *testing.T) {
 		}
 	}
 	if len(fields) != 4 {
-		t.Errorf("the envelope carries %d fields, the contract allows 4: %v", len(fields), keys(fields))
+		t.Errorf("the envelope carries %d fields, the contract allows 4: %v", len(fields), slices.Sorted(maps.Keys(fields)))
 	}
 	if string(fields["issued_at"]) != `"2026-09-18T12:00:00Z"` {
 		t.Errorf("issued_at = %s, want the caller's stamp in RFC3339", fields["issued_at"])
 	}
-}
-
-func keys(m map[string]json.RawMessage) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
 }
 
 // The path is where a submission goes and what the signature covers, and it comes from served
@@ -145,7 +144,7 @@ func TestTelemetryUsesTheServedPath(t *testing.T) {
 	c, _ := client(t, server.URL)
 
 	if err := c.SubmitTelemetry(context.Background(), "/v1/telemetry",
-		"1fe3a22f-e2a1-4e83-bdaf-61dfd9d1bf30", time.Now().UTC(), payload(t)); err != nil {
+		batchID, time.Now().UTC(), payload(t)); err != nil {
 		t.Fatal(err)
 	}
 	if got.path != "/v1/telemetry" {
@@ -161,20 +160,20 @@ func TestTelemetryStatusMapping(t *testing.T) {
 	}{
 		"accepted":       {http.StatusNoContent, nil},
 		"also accepted":  {http.StatusOK, nil},
-		"disabled":       {http.StatusForbidden, ErrTelemetryDisabled},
-		"invalid":        {http.StatusBadRequest, ErrTelemetryRejected},
-		"too large":      {http.StatusRequestEntityTooLarge, ErrTelemetryRejected},
-		"unprocessable":  {http.StatusUnprocessableEntity, ErrTelemetryRejected},
-		"conflict":       {http.StatusConflict, ErrTelemetryRejected},
-		"rate limited":   {http.StatusTooManyRequests, ErrTelemetryUnavailable},
-		"collector down": {http.StatusBadGateway, ErrTelemetryUnavailable},
-		"upstream slow":  {http.StatusGatewayTimeout, ErrTelemetryUnavailable},
-		"unprovisioned":  {http.StatusServiceUnavailable, ErrTelemetryUnavailable},
+		"disabled":       {http.StatusForbidden, controlplane.ErrTelemetryDisabled},
+		"invalid":        {http.StatusBadRequest, controlplane.ErrTelemetryRejected},
+		"too large":      {http.StatusRequestEntityTooLarge, controlplane.ErrTelemetryRejected},
+		"unprocessable":  {http.StatusUnprocessableEntity, controlplane.ErrTelemetryRejected},
+		"conflict":       {http.StatusConflict, controlplane.ErrTelemetryRejected},
+		"rate limited":   {http.StatusTooManyRequests, controlplane.ErrTelemetryUnavailable},
+		"collector down": {http.StatusBadGateway, controlplane.ErrTelemetryUnavailable},
+		"upstream slow":  {http.StatusGatewayTimeout, controlplane.ErrTelemetryUnavailable},
+		"unprovisioned":  {http.StatusServiceUnavailable, controlplane.ErrTelemetryUnavailable},
 	} {
 		server, _ := collector(t, tc.status, `{"error":"telemetry_something"}`)
 		c, _ := client(t, server.URL)
 		err := c.SubmitTelemetry(context.Background(), "/v1/telemetry",
-			"1fe3a22f-e2a1-4e83-bdaf-61dfd9d1bf30", time.Now().UTC(), payload(t))
+			batchID, time.Now().UTC(), payload(t))
 		switch {
 		case tc.want == nil && err != nil:
 			t.Errorf("%s: %v", name, err)
@@ -190,10 +189,10 @@ func TestTelemetryWithNoPathIsDisabledWithoutARequest(t *testing.T) {
 	server, got := collector(t, http.StatusNoContent, "")
 	c, _ := client(t, server.URL)
 
-	err := c.SubmitTelemetry(context.Background(), "", "1fe3a22f-e2a1-4e83-bdaf-61dfd9d1bf30",
+	err := c.SubmitTelemetry(context.Background(), "", batchID,
 		time.Now().UTC(), payload(t))
-	if !errors.Is(err, ErrTelemetryDisabled) {
-		t.Fatalf("got %v, want ErrTelemetryDisabled", err)
+	if !errors.Is(err, controlplane.ErrTelemetryDisabled) {
+		t.Fatalf("got %v, want controlplane.ErrTelemetryDisabled", err)
 	}
 	if got.path != "" {
 		t.Error("a request was sent for a disabled organization")
@@ -205,16 +204,32 @@ func TestAnOversizedSubmissionIsRefusedLocally(t *testing.T) {
 	server, got := collector(t, http.StatusNoContent, "")
 	c, _ := client(t, server.URL)
 
-	big, err := json.Marshal(map[string]string{"event": strings.Repeat("x", MaxTelemetryBody)})
+	big, err := json.Marshal(map[string]string{"event": strings.Repeat("x", controlplane.MaxTelemetryBody)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	err = c.SubmitTelemetry(context.Background(), "/v1/telemetry",
-		"1fe3a22f-e2a1-4e83-bdaf-61dfd9d1bf30", time.Now().UTC(), big)
-	if !errors.Is(err, ErrTelemetryRejected) {
-		t.Fatalf("got %v, want ErrTelemetryRejected", err)
+		batchID, time.Now().UTC(), big)
+	if !errors.Is(err, controlplane.ErrTelemetryRejected) {
+		t.Fatalf("got %v, want controlplane.ErrTelemetryRejected", err)
 	}
 	if got.path != "" {
 		t.Error("an oversized submission was sent anyway")
+	}
+}
+
+// The route is fixed by the protocol: the control plane builds the same preamble from the same
+// literal, so a served path that differs would be signed here and verified against something else.
+// Refused locally, where the reason is visible, rather than as an unexplained 401.
+func TestAServedPathThatIsNotTheProtocolsIsRefused(t *testing.T) {
+	server, got := collector(t, http.StatusNoContent, "")
+	c, _ := client(t, server.URL)
+
+	err := c.SubmitTelemetry(context.Background(), "/v1/elsewhere", batchID, time.Now().UTC(), payload(t))
+	if !errors.Is(err, controlplane.ErrTelemetryRejected) {
+		t.Fatalf("got %v, want controlplane.ErrTelemetryRejected", err)
+	}
+	if got.path != "" {
+		t.Error("a submission was signed for one path and sent to another")
 	}
 }

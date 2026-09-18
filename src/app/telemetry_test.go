@@ -90,7 +90,7 @@ func TestTheEventCarriesTheFieldsTheCollectorReads(t *testing.T) {
 	// carries: failureRecord overwrites what is on disk with it.
 	r.lastCrash = &formats.LastCrash{RunID: "r0", Phase: "tick 1", Consecutive: 1}
 
-	body, err := json.Marshal(r.installHealth())
+	_, body, err := r.installHealth(time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,8 +128,25 @@ func TestTheEventCarriesTheFieldsTheCollectorReads(t *testing.T) {
 // bytes it signs, so nothing downstream can add one.
 func TestTheEventNamesTheMachine(t *testing.T) {
 	r := telemetryRuntime(t, formats.FailureRecord{})
-	if r.installHealth().Hostname != "ci-runner-3" {
-		t.Fatal("the event does not name the machine")
+	_, body, err := r.installHealth(time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"hostname":"ci-runner-3"`) {
+		t.Fatalf("the event does not name the machine: %s", body)
+	}
+}
+
+// The identity the far end deduplicates on belongs to the event, so the two arrive together and a
+// resend of the same event can present the same id.
+func TestTheEventCarriesItsOwnBatchIdentity(t *testing.T) {
+	r := telemetryRuntime(t, formats.FailureRecord{})
+	batch, _, err := r.installHealth(time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batch == "" {
+		t.Fatal("the event has no batch identity")
 	}
 }
 
@@ -156,8 +173,13 @@ func TestDisabledStopsAskingForTheRestOfTheRun(t *testing.T) {
 	if s.calls != 1 {
 		t.Fatalf("asked %d times after being told it is disabled", s.calls)
 	}
-	if r.eff.TelemetryEndpoint != "" {
-		t.Error("the endpoint survived a disabled answer")
+	// The latch is the runtime's. Resolved configuration carries provenance and is what `config
+	// show` reports, so a network answer must not rewrite it.
+	if r.eff.TelemetryEndpoint != "/v1/telemetry" {
+		t.Error("a 403 rewrote the resolved configuration")
+	}
+	if !r.telemetryOff {
+		t.Error("the run did not latch off")
 	}
 }
 

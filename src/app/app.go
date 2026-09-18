@@ -38,10 +38,16 @@ type Runtime struct {
 	upload    engine.UploadPort
 	uploadErr error
 
-	// telemetry is the same control-plane client the upload port holds, for the one call that
-	// ships no bytes. Nil on an install that could not build a port, which is also an install that
-	// has nothing to report.
+	// telemetry is the authenticated client, for the one call that ships no bytes. It survives an
+	// install whose upload targets will not resolve, because that install is exactly the one whose
+	// failures someone should hear about.
 	telemetry telemetrySubmitter
+
+	// telemetryOff latches when the control plane says this organization has no collector. Run
+	// scoped, and deliberately not a write back into the resolved configuration: that struct
+	// carries provenance and is what `config show` reports, and a network answer has no business
+	// rewriting it.
+	telemetryOff bool
 
 	// hostname is read once, and it is the only thing in a telemetry event that the control plane
 	// could not have supplied itself: it forwards the body verbatim, so a name added in transit
@@ -68,6 +74,10 @@ type Runtime struct {
 	// OnLocked runs once a flush holds the store lock. The lock is non-blocking, so a verb resets a
 	// per-run artifact from here, not at startup, where it would reset another's.
 	OnLocked func()
+
+	// judged is the failure record this process last wrote, so a reader after a tick does not parse
+	// back the file judging just produced. Nil until something has been judged.
+	judged *formats.FailureRecord
 
 	// runID and lastCrash come from the CLI's crash journal; audit entries and heartbeats carry them.
 	runID     string
@@ -123,11 +133,16 @@ func NewFrom(
 	// Held rather than returned so `preview` keeps working on an install that has no control
 	// plane. The port stays interface-typed and is assigned only on success: a failed *vendPort
 	// would box a typed nil and panic on first use instead of reporting uploadErr.
+	// Built first and kept regardless of what the port makes of it.
 	var up engine.UploadPort
 	var telemetry telemetrySubmitter
-	port, upErr := newUploadPort(paths.StateDir, eff)
+	client, upErr := newControlPlaneClient(paths.StateDir)
 	if upErr == nil {
-		up, telemetry = port, port
+		telemetry = client
+		var port *vendPort
+		if port, upErr = newUploadPort(client, eff); upErr == nil {
+			up = port
+		}
 	}
 
 	env, err := sources.OSEnv()

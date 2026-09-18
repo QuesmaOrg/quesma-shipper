@@ -14,14 +14,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/google/uuid"
-
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
-	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 )
 
 // telemetrySubmitter is the one call this package needs from a control-plane client. An interface
@@ -50,12 +48,21 @@ const maxTelemetryMessage = 400
 type telemetryEvent struct {
 	Event string `json:"event"`
 
-	Hostname      string             `json:"hostname,omitempty"`
-	At            string             `json:"at,omitempty"`
-	ClientVersion string             `json:"client_version,omitempty"`
-	Consecutive   int                `json:"consecutive_failures,omitempty"`
-	Faults        []telemetryFault   `json:"faults,omitempty"`
-	LastCrash     *formats.LastCrash `json:"last_crash,omitempty"`
+	Hostname      string           `json:"hostname,omitempty"`
+	At            string           `json:"at,omitempty"`
+	ClientVersion string           `json:"client_version,omitempty"`
+	Consecutive   int              `json:"consecutive_failures,omitempty"`
+	Faults        []telemetryFault `json:"faults,omitempty"`
+	LastCrash     *telemetryCrash  `json:"last_crash,omitempty"`
+}
+
+// telemetryCrash is how the previous run died. Projected rather than embedding the record's own
+// type, so that a field added to that type for the heartbeat's benefit -- which is sealed -- does
+// not silently start crossing in the clear too. Phase comes from a closed vocabulary, "tick N".
+type telemetryCrash struct {
+	RunID       string `json:"run_id"`
+	Phase       string `json:"phase"`
+	Consecutive int    `json:"consecutive,omitempty"`
 }
 
 // telemetryFault is one failure, as the collector groups them. Kind comes from this package's
@@ -78,23 +85,23 @@ type telemetryFault struct {
 // this program -- the next tick carries its own batch id and the same bounded window of failures,
 // so one lost submission costs nothing a later one does not say again.
 func (r *Runtime) SubmitTelemetry(ctx context.Context) {
-	endpoint := r.eff.TelemetryEndpoint
-	if endpoint == "" || r.telemetry == nil {
+	if r.eff.TelemetryEndpoint == "" || r.telemetry == nil || r.telemetryOff {
 		return
 	}
 
-	payload, err := json.Marshal(r.installHealth())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: telemetry: %v\n", err)
-		return
+	// One instant for both stamps: the envelope's and the event's are meant to describe the same
+	// moment, and two clock reads make them disagree for no reason.
+	now := time.Now().UTC()
+	batch, payload, err := r.installHealth(now)
+	if err == nil {
+		err = r.telemetry.SubmitTelemetry(ctx, r.eff.TelemetryEndpoint, batch, now, payload)
 	}
-	err = r.telemetry.SubmitTelemetry(ctx, endpoint, uuid.NewString(), time.Now().UTC(), payload)
 	switch {
 	case err == nil:
 	case errors.Is(err, controlplane.ErrTelemetryDisabled):
 		// The organization turned it off, or this install was revoked. Either way the answer does
-		// not change until configuration is loaded again, so stop asking for the rest of this run.
-		r.eff.TelemetryEndpoint = ""
+		// not change until configuration is loaded again, which is the next process.
+		r.telemetryOff = true
 	default:
 		// Rejected or undeliverable, and both are the same to this side: say so once and carry on
 		// collecting, which is the thing that actually matters.
@@ -102,23 +109,33 @@ func (r *Runtime) SubmitTelemetry(ctx context.Context) {
 	}
 }
 
-// installHealth is the event, built from the record the heartbeat also reads.
-func (r *Runtime) installHealth() telemetryEvent {
+// installHealth is the event, built from the record the heartbeat also reads, with the identity the
+// far end deduplicates on. The id and the body are returned together because they are one thing: an
+// id minted at the moment of sending would identify the request rather than the event, which is the
+// one property that makes it useful when a resend arrives.
+func (r *Runtime) installHealth(now time.Time) (batchID string, payload []byte, err error) {
 	record := r.failureRecord()
 	event := telemetryEvent{
 		Event:         InstallHealthEvent,
 		Hostname:      r.hostname,
-		At:            time.Now().UTC().Format(time.RFC3339),
+		At:            now.Format(time.RFC3339),
 		ClientVersion: r.build.Version,
 		Consecutive:   record.ConsecutiveFailures,
-		LastCrash:     record.LastCrash,
 	}
+	if c := record.LastCrash; c != nil {
+		event.LastCrash = &telemetryCrash{RunID: c.RunID, Phase: c.Phase, Consecutive: c.Consecutive}
+	}
+	event.Faults = make([]telemetryFault, 0, len(record.Recent))
 	for _, f := range record.Recent {
 		event.Faults = append(event.Faults, telemetryFault{
 			At: f.At, Kind: f.Kind, RunID: f.RunID, Message: telemetryMessage(f.Message),
 		})
 	}
-	return event
+	payload, err = json.Marshal(event)
+	if err != nil {
+		return "", nil, fmt.Errorf("telemetry: %w", err)
+	}
+	return controlplane.NewBatchID(), payload, nil
 }
 
 // telemetryMessage is what a fault's text becomes on the way out.
@@ -143,38 +160,19 @@ func telemetryMessage(message string) string {
 	return marker + tail
 }
 
+// absolutePath is a run of three or more slash-prefixed segments. Three, because fewer is a route
+// or a fraction rather than somewhere on this machine, and the delimiters are what ends a path when
+// it sits inside a sentence.
+var absolutePath = regexp.MustCompile(`(?:/[^/ \t\n"',;:)]+){3,}`)
+
 // shortenTelemetryPaths keeps the last two segments of any absolute path, so a message says which
 // file without saying where on the machine it lived.
 func shortenTelemetryPaths(message string) string {
-	var out strings.Builder
-	for i := 0; i < len(message); {
-		if message[i] != '/' {
-			out.WriteByte(message[i])
-			i++
-			continue
-		}
-		end := i
-		var segments []string
-		for end < len(message) && message[end] == '/' {
-			start := end + 1
-			stop := start
-			for stop < len(message) && !strings.ContainsRune("/ \t\n\"',;:)", rune(message[stop])) {
-				stop++
-			}
-			if stop == start {
-				break
-			}
-			segments = append(segments, message[start:stop])
-			end = stop
-		}
-		if len(segments) < 3 {
-			// Not a path worth shortening: written back as it was, including the slashes.
-			out.WriteString(message[i:max(end, i+1)])
-			i = max(end, i+1)
-			continue
-		}
-		out.WriteString("…/" + strings.Join(segments[len(segments)-2:], "/"))
-		i = end
+	if !strings.Contains(message, "/") {
+		return message
 	}
-	return out.String()
+	return absolutePath.ReplaceAllStringFunc(message, func(path string) string {
+		segments := strings.Split(path, "/")
+		return "…/" + strings.Join(segments[len(segments)-2:], "/")
+	})
 }

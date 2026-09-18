@@ -18,12 +18,19 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // TelemetryPreamble domain-separates this signature the way the v2 upload one is separated: the
 // signed bytes are this exact prefix followed immediately by the body, with no canonicalization.
 // The path is inside it, so a signature collected here cannot be replayed onto another route.
-const TelemetryPreamble = "trajectory-shipper-telemetry-v1\nPOST\n/v1/telemetry\n"
+const TelemetryPreamble = "trajectory-shipper-telemetry-v1\nPOST\n" + TelemetryPath + "\n"
+
+// TelemetryPath is the one route this signature is valid for. The control plane builds the same
+// preamble from the same literal, so a served path that differs would be signed here and verified
+// against something else -- a 401 with nothing to explain it. Refused locally instead.
+const TelemetryPath = "/v1/telemetry"
 
 // telemetrySchema is the envelope version. The payload inside it carries its own event name and is
 // opaque to the control plane.
@@ -41,6 +48,11 @@ type TelemetryRequest struct {
 	IssuedAt time.Time       `json:"issued_at"`
 	Payload  json.RawMessage `json:"payload"`
 }
+
+// NewBatchID mints the identifier for one event. It belongs to the EVENT rather than to the request
+// that carries it: the far end deduplicates on it, so a resend of the same event has to present the
+// same id or saying something twice looks like two things happening.
+func NewBatchID() string { return uuid.NewString() }
 
 // ErrTelemetryDisabled says this install's organization has no collector. It is not a failure: the
 // caller stops submitting until its next configuration load, because the answer will not change
@@ -74,6 +86,9 @@ func (c *Client) SubmitTelemetry(ctx context.Context, path, batchID string, issu
 	switch {
 	case path == "":
 		return ErrTelemetryDisabled
+	case path != TelemetryPath:
+		return fmt.Errorf("%w: the signature is only valid for %s, not %q",
+			ErrTelemetryRejected, TelemetryPath, path)
 	case batchID == "":
 		return errors.New("controlplane: telemetry submission carries no batch_id")
 	case issuedAt.IsZero():
@@ -97,10 +112,11 @@ func (c *Client) SubmitTelemetry(ctx context.Context, path, batchID string, issu
 	if err != nil {
 		return err
 	}
-	reason := truncate(strings.TrimSpace(string(raw)), 200)
+	// Read only on a failure status: an accepted submission answers with no body worth allocating.
+	reason := func() string { return truncate(strings.TrimSpace(string(raw)), 200) }
 
 	switch {
-	case status == http.StatusNoContent, status/100 == 2:
+	case status/100 == 2:
 		return nil
 	case status == http.StatusForbidden:
 		// Disabled for this organization, or this install was revoked. Either way nothing changes
@@ -108,8 +124,8 @@ func (c *Client) SubmitTelemetry(ctx context.Context, path, batchID string, issu
 		return ErrTelemetryDisabled
 	case status == http.StatusBadRequest, status == http.StatusConflict,
 		status == http.StatusRequestEntityTooLarge, status == http.StatusUnprocessableEntity:
-		return fmt.Errorf("%w (HTTP %d): %s", ErrTelemetryRejected, status, reason)
+		return fmt.Errorf("%w (HTTP %d): %s", ErrTelemetryRejected, status, reason())
 	default:
-		return fmt.Errorf("%w (HTTP %d): %s", ErrTelemetryUnavailable, status, reason)
+		return fmt.Errorf("%w (HTTP %d): %s", ErrTelemetryUnavailable, status, reason())
 	}
 }

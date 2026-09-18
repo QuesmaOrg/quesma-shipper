@@ -71,6 +71,19 @@ func recycleDue(started, now time.Time, serviceLoaded func() bool) bool {
 	return now.Sub(started) >= recycleAfter && serviceLoaded()
 }
 
+// reportOutcome submits telemetry for whatever was just judged, under a bound of its own. It ships
+// no bytes and nothing consumes its result, so it may not spend the caller's whole budget: on the
+// drain path that budget is the deadline the final slice needs, and on a tick it is the gap before
+// the next one.
+func reportOutcome(ctx context.Context, env *app.Runtime) {
+	ctx, cancel := context.WithTimeout(ctx, telemetryDeadline)
+	defer cancel()
+	env.SubmitTelemetry(ctx)
+}
+
+// telemetryDeadline is short on purpose: a report about collection must never be what delays it.
+const telemetryDeadline = 5 * time.Second
+
 func flushBeforeExit(cmd *cobra.Command, out io.Writer, env *app.Runtime) error {
 	fmt.Fprintln(out, "\nsignal received, shipping one final slice before exit")
 	ctx, cancel := context.WithTimeout(context.Background(), env.Effective().DrainDeadline)
@@ -82,6 +95,10 @@ func flushBeforeExit(cmd *cobra.Command, out io.Writer, env *app.Runtime) error 
 	// the shape a tick catches, returning nil having failed every upload.
 	mem := platform.Delta{Before: before, After: platform.ReadMemStats()}
 	tickErr := env.JudgeFinalSlice(err, rep, mem)
+	// The last thing this machine does. A final slice that failed every upload is written to the
+	// record precisely so it outlives the process, and reporting it here is what stops it being the
+	// one outcome an operator never sees.
+	reportOutcome(ctx, env)
 	if err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "final slice failed: %v\n", err)
 		return nil
@@ -231,15 +248,17 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 		// Persisted before anything else reports: this tick's own heartbeat ships through the
 		// upload path that may have just failed, so the record has to outlive the run.
 		tickErr := env.JudgeTick(err, rep, panicked, mem)
-		// After judging, so this tick's own outcome is in what gets reported, and outside the flush,
-		// so a slow collector delays nothing that ships bytes. Fails open and says so at most once.
-		env.SubmitTelemetry(cmd.Context())
 		if err == nil && !quiet {
 			printRunSummary(out, rep, once && !drain)
 			if !once {
 				fmt.Fprintf(out, "  memory\t%s\n", mem)
 			}
 		}
+		// After judging, so this tick's own outcome is in what gets reported, and after the summary,
+		// so a collector that is slow to answer does not hold back the line the operator reads. The
+		// tick's own context, so a signal cancels it like everything else in this loop.
+		reportOutcome(ctx, env)
+
 		// The flush keeps its own error and exit code -- lock contention still reads as the refusal
 		// it always did; the verdict only ADDS the run that completed and sent nothing.
 		outcome := err
