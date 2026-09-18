@@ -34,9 +34,11 @@ type vendPort struct {
 	now func() time.Time
 }
 
-// newUploadPort assembles the write path. The enrollment record is mandatory, the allowlist is not:
-// with no upload_targets the tickets decide the destination, https only and exact key enforced.
-func newUploadPort(stateDir string, eff *config.Effective) (*vendPort, error) {
+// newControlPlaneClient builds the authenticated client from the enrollment record alone.
+//
+// Separate from the upload port because the two fail for different reasons: a client needs only an
+// enrolment, a port also needs usable upload targets. Telemetry depends on the first, not the second.
+func newControlPlaneClient(stateDir string) (*controlplane.Client, error) {
 	enrollment, err := controlplane.LoadEnrollment(stateDir)
 	if err != nil {
 		return nil, fmt.Errorf("%w\n\nEvery upload is authorized by the control plane named in "+
@@ -46,20 +48,22 @@ func newUploadPort(stateDir string, eff *config.Effective) (*vendPort, error) {
 		return nil, errors.New("uploading needs an enrolled control plane to authorize every object; " +
 			"`quesma-shipper login` first (`quesma-shipper preview` works without it)")
 	}
-	targets, err := uploadTargets(eff)
-	if err != nil {
-		return nil, err
-	}
 	deviceKey, err := enrollment.PrivateKey()
 	if err != nil {
 		return nil, err
 	}
-	client, err := controlplane.New(controlplane.Options{
+	return controlplane.New(controlplane.Options{
 		Endpoint:     enrollment.Endpoint,
 		InstallID:    enrollment.InstallID,
 		Organization: enrollment.Organization,
 		DeviceKey:    deviceKey,
 	})
+}
+
+// newUploadPort assembles the write path. The enrollment record is mandatory, the allowlist is not:
+// with no upload_targets the tickets decide the destination, https only and exact key enforced.
+func newUploadPort(client *controlplane.Client, eff *config.Effective) (*vendPort, error) {
+	targets, err := uploadTargets(eff)
 	if err != nil {
 		return nil, err
 	}

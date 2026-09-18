@@ -34,6 +34,12 @@ type Document struct {
 	CrashReport map[string]any `yaml:"crash_report"`
 
 	Autoupdate *Autoupdate `yaml:"autoupdate"`
+
+	// TelemetryEndpoint is where this install submits telemetry, served as `/v1/telemetry` or "".
+	// A path, never a URL: it resolves against the enrolled control-plane origin, so a served
+	// document cannot redirect telemetry elsewhere. Absent means disabled, which is what an older
+	// control plane serves.
+	TelemetryEndpoint *string `yaml:"telemetry_endpoint"`
 }
 
 // Autoupdate switches self-update at daemon startup; off is free from any layer, re-enabling is not.

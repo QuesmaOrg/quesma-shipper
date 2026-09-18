@@ -38,6 +38,18 @@ type Runtime struct {
 	upload    engine.UploadPort
 	uploadErr error
 
+	// telemetry outlives a failed upload port: an install that cannot upload is exactly the one
+	// whose failures someone should hear about.
+	telemetry telemetrySubmitter
+
+	// telemetryOff latches when the control plane says this organization has no collector. Run
+	// scoped, not written back into the resolved configuration, which carries provenance.
+	telemetryOff bool
+
+	// hostname has to be in the event: the control plane forwards the body verbatim as the bytes it
+	// signs, so nothing downstream can add one.
+	hostname string
+
 	log   *auditlog.Log
 	build Build
 
@@ -58,6 +70,10 @@ type Runtime struct {
 	// OnLocked runs once a flush holds the store lock. The lock is non-blocking, so a verb resets a
 	// per-run artifact from here, not at startup, where it would reset another's.
 	OnLocked func()
+
+	// judged is the record this process last wrote, so a reader after a tick need not parse the file
+	// back. Nil until something has been judged.
+	judged *formats.FailureRecord
 
 	// runID and lastCrash come from the CLI's crash journal; audit entries and heartbeats carry them.
 	runID     string
@@ -112,18 +128,26 @@ func NewFrom(
 
 	// Held rather than returned so `preview` keeps working on an install that has no control
 	// plane. The port stays interface-typed and is assigned only on success: a failed *vendPort
-	// would box a typed nil and panic on first use instead of reporting uploadErr.
+	// would box a typed nil and panic on first use instead of reporting uploadErr. The client is
+	// built first and kept even when the port is not.
 	var up engine.UploadPort
-	port, upErr := newUploadPort(paths.StateDir, eff)
+	var telemetry telemetrySubmitter
+	client, upErr := newControlPlaneClient(paths.StateDir)
 	if upErr == nil {
-		up = port
+		telemetry = client
+		var port *vendPort
+		if port, upErr = newUploadPort(client, eff); upErr == nil {
+			up = port
+		}
 	}
 
 	env, err := sources.OSEnv()
 	if err != nil {
 		return nil, err
 	}
-	return &Runtime{eff: eff, unit: unit, upload: up, uploadErr: upErr, log: log, build: build,
+	hostname, _ := os.Hostname()
+	return &Runtime{eff: eff, unit: unit, upload: up, uploadErr: upErr, telemetry: telemetry,
+		hostname: hostname, log: log, build: build,
 		remote: remote, env: env, recipients: recipients}, nil
 }
 

@@ -71,6 +71,17 @@ func recycleDue(started, now time.Time, serviceLoaded func() bool) bool {
 	return now.Sub(started) >= recycleAfter && serviceLoaded()
 }
 
+// reportOutcome submits telemetry for whatever was just judged, under a bound of its own so it
+// cannot spend the caller's budget: the drain deadline, or the gap before the next tick.
+func reportOutcome(ctx context.Context, env *app.Runtime) {
+	ctx, cancel := context.WithTimeout(ctx, telemetryDeadline)
+	defer cancel()
+	env.SubmitTelemetry(ctx)
+}
+
+// telemetryDeadline is short on purpose: a report about collection must never be what delays it.
+const telemetryDeadline = 5 * time.Second
+
 func flushBeforeExit(cmd *cobra.Command, out io.Writer, env *app.Runtime) error {
 	fmt.Fprintln(out, "\nsignal received, shipping one final slice before exit")
 	ctx, cancel := context.WithTimeout(context.Background(), env.Effective().DrainDeadline)
@@ -82,6 +93,9 @@ func flushBeforeExit(cmd *cobra.Command, out io.Writer, env *app.Runtime) error 
 	// the shape a tick catches, returning nil having failed every upload.
 	mem := platform.Delta{Before: before, After: platform.ReadMemStats()}
 	tickErr := env.JudgeFinalSlice(err, rep, mem)
+	// The last thing this machine does: without it, a final slice that failed every upload is the
+	// one outcome an operator never sees.
+	reportOutcome(ctx, env)
 	if err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "final slice failed: %v\n", err)
 		return nil
@@ -237,6 +251,10 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 				fmt.Fprintf(out, "  memory\t%s\n", mem)
 			}
 		}
+		// After judging, so this tick's outcome is included, and after the summary, so a slow
+		// collector cannot hold back the line the operator reads.
+		reportOutcome(ctx, env)
+
 		// The flush keeps its own error and exit code -- lock contention still reads as the refusal
 		// it always did; the verdict only ADDS the run that completed and sent nothing.
 		outcome := err

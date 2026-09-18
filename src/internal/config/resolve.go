@@ -59,6 +59,10 @@ type Effective struct {
 	// AutoupdateEnabled says a released build may replace itself at daemon startup; dev builds never self-update.
 	AutoupdateEnabled bool
 
+	// TelemetryEndpoint is the control-plane path telemetry is submitted to, empty for an
+	// organization with no collector. Empty is the default, so telemetry is off unless served on.
+	TelemetryEndpoint string
+
 	// Provenance attributes every value to the layer that set it, for `config show --with-provenance`.
 	Provenance map[string]Origin
 }
@@ -243,6 +247,20 @@ func applyDocument(eff *Effective, ld LayeredDocument) *RejectionError {
 		}
 		eff.AutoupdateEnabled = *d.Autoupdate.Enabled
 		eff.setOrigin("autoupdate.enabled", l)
+	}
+	if d.TelemetryEndpoint != nil {
+		// The remote layer's alone: the value names a route on the control plane that serves it.
+		if l.IsLocal() {
+			return &RejectionError{l, "telemetry_endpoint",
+				"served by the control plane only: it names a route on the control plane this install is enrolled with"}
+		}
+		endpoint := strings.TrimSpace(*d.TelemetryEndpoint)
+		if endpoint != "" && !strings.HasPrefix(endpoint, "/") {
+			return &RejectionError{l, "telemetry_endpoint",
+				"must be a path beginning with /, resolved against the enrolled control-plane origin, never a URL"}
+		}
+		eff.TelemetryEndpoint = endpoint
+		eff.setOrigin("telemetry_endpoint", l)
 	}
 	if d.StateDir != nil {
 		if !l.IsLocal() {
