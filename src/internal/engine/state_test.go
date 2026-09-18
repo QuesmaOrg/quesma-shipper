@@ -17,8 +17,7 @@ const sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 const otherSha = "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
 const otherInstall = "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
 
-// seedForeignDoc leaves a one-entry document stamped with another install: what a re-enrolled
-// machine wakes up to.
+// A one-entry document stamped with another install: what a re-enrolled machine wakes up to.
 func seedForeignDoc(t *testing.T, dir string) {
 	t.Helper()
 	s, err := engine.Open(dir, otherInstall)
@@ -741,9 +740,7 @@ func TestAStrandedOwnPidTempDoesNotWedgeTheCommit(t *testing.T) {
 	}
 }
 
-// The mismatch guard is the one a re-enrolled install hits every tick: identity.json is replaced,
-// fingerprints.json is not, and every run is refused until the record is forgotten. Reset is the
-// documented way out, so it must be able to open what Open refuses.
+// Reset is the documented way out, so it must open what Open refuses.
 func TestResetAdoptsAnotherInstallsDocument(t *testing.T) {
 	dir := t.TempDir()
 
@@ -774,9 +771,7 @@ func TestResetAdoptsAnotherInstallsDocument(t *testing.T) {
 	}
 }
 
-// An empty foreign document has nothing to forget, so the early return on "changed nothing" used to
-// skip the flush and leave the stale install id in place: reset reported success and the next run
-// was refused exactly as before.
+// Nothing to forget used to skip the flush, leaving the stale install id and the next run refused.
 func TestResetRewritesTheInstallIDWithNothingToForget(t *testing.T) {
 	dir := t.TempDir()
 
@@ -806,7 +801,6 @@ func TestResetRewritesTheInstallIDWithNothingToForget(t *testing.T) {
 	s2.Close()
 }
 
-// A dry run must not adopt: it reports what it would forget and leaves the document alone.
 func TestResetDryRunDoesNotAdopt(t *testing.T) {
 	dir := t.TempDir()
 
@@ -827,8 +821,7 @@ func TestResetDryRunDoesNotAdopt(t *testing.T) {
 	}
 }
 
-// Prune keeps entries, so adopting would claim another install's uploads as this install's own:
-// Article 5 holds and it stays refused, pointed at reset.
+// Prune keeps entries, so adopting would claim another install's uploads as this one's (Article 5).
 func TestPruneStillRefusesAnotherInstallsDocument(t *testing.T) {
 	dir := t.TempDir()
 

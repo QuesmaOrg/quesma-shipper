@@ -267,8 +267,7 @@ func stateCmd() *cobra.Command {
 }
 
 func reportStateChange(w io.Writer, removed, kept int, apply, adopted bool, verb string) {
-	// Taking over another install's document is itself the change, so an adoption must never reach
-	// "nothing to do": that reading is what leaves an install stuck, told there was nothing to apply.
+	// An adoption is itself the change, so it must never reach "nothing to do" below.
 	if adopted {
 		fmt.Fprintln(w, "another install's record is being replaced")
 	}

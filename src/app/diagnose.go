@@ -154,8 +154,7 @@ func stateRowsFrom(doc engine.Document, err error, installID string) []Row {
 			Detail: fmt.Sprintf("unreadable: %v", err), Fix: "`quesma-shipper state` inspects and repairs it"}}
 	}
 	rows := []Row{{Sev: SevDim, Label: "tracked_files", Detail: fmt.Sprintf("%d", len(doc.Entries))}}
-	// Peek does not apply Open's guard, so doctor is the one place this is visible before a run
-	// hits it. Named here rather than left to the failing-runs row, which only echoes the error.
+	// Peek does not apply Open's guard, so doctor names this before any run hits it.
 	if doc.ForeignTo(installID) {
 		rows = append(rows, Row{Sev: SevWarn, Label: "local state", Brief: "local state belongs to another install",
 			Detail: fmt.Sprintf("written by install %s, this install is %s: every run is refused",

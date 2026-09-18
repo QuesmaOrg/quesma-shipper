@@ -333,7 +333,6 @@ func TestAccountInspectionIsNeutral(t *testing.T) {
 	}
 }
 
-// Peek skips Open's guard, so doctor must name the mismatch itself rather than wait for a run.
 func TestStateRowsNameAnInstallMismatch(t *testing.T) {
 	const mine, theirs = "c033b5b2-c3ac-4f39-911f-7ea632b7727c", "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
 	doc := engine.Document{InstallID: theirs, Entries: map[engine.Key]engine.Fingerprint{}}
@@ -355,13 +354,11 @@ func TestStateRowsNameAnInstallMismatch(t *testing.T) {
 		t.Errorf("fix %q must name the command that repairs it", found.Fix)
 	}
 
-	// The same document under its own install is ordinary state, not a finding.
 	for _, row := range stateRowsFrom(engine.Document{InstallID: mine}, nil, mine) {
 		if row.Sev == SevWarn {
 			t.Errorf("matching install ids warned: %+v", row)
 		}
 	}
-	// An install whose identity could not be read cannot judge the document either way.
 	for _, row := range stateRowsFrom(doc, nil, "") {
 		if row.Sev == SevWarn {
 			t.Errorf("warned with no identity to compare against: %+v", row)
@@ -369,8 +366,6 @@ func TestStateRowsNameAnInstallMismatch(t *testing.T) {
 	}
 }
 
-// seedFailures writes a record with a streak and the events behind it, the shape every row test
-// below needs.
 func seedFailures(t *testing.T, dir string, streak int, events ...formats.FailureEvent) {
 	t.Helper()
 	rec := formats.FailureRecord{ConsecutiveFailures: streak}
@@ -386,10 +381,7 @@ func event(at time.Time, kind, message string) formats.FailureEvent {
 	return formats.FailureEvent{At: at.Format(time.RFC3339), Kind: kind, Message: message}
 }
 
-// Nineteen consecutive failed ticks used to leave doctor entirely green: the service row reports
-// only that launchd loaded the job, and nothing else read the failure record. This pins the row
-// that makes a silently failing install visible, that it carries the reason, and that it says
-// nothing once a run succeeds and clears the streak.
+// Nineteen consecutive failed ticks used to leave doctor entirely green.
 func TestFailureRowsReportConsecutiveFailures(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 9, 17, 13, 0, 0, 0, time.UTC)
@@ -421,9 +413,7 @@ func TestFailureRowsReportConsecutiveFailures(t *testing.T) {
 	}
 }
 
-// The streak counts collecting runs, but the log also carries uncounted events: a failed
-// self-update, a panic in a one-shot verb. Attributing it to the newest event of ANY kind sent the
-// operator to the update channel while the sink was what refused every run.
+// A failed self-update in the log used to be blamed for a streak of refused uploads.
 func TestFailureRowsIgnoreUncountedEvents(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 9, 17, 13, 0, 0, 0, time.UTC)
@@ -448,8 +438,7 @@ func TestFailureRowsIgnoreUncountedEvents(t *testing.T) {
 	}
 }
 
-// Twenty uncounted events can evict every counted one from the bounded log. The count is still
-// true, so the row stays; only the reason is gone.
+// The count is still true once the bounded log has evicted every counted event; only the reason goes.
 func TestFailureRowsSurviveALogWithNoCountedEvent(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
@@ -464,8 +453,7 @@ func TestFailureRowsSurviveALogWithNoCountedEvent(t *testing.T) {
 	}
 }
 
-// A recorded error carries its remedy in a later paragraph, and the row that owns that remedy
-// prints it. This row takes the reason only, so doctor never states one fix twice.
+// The row that owns the remedy prints it, so doctor never states one fix twice.
 func TestFailureRowsShowTheReasonNotTheRemedy(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()

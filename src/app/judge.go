@@ -141,8 +141,6 @@ func recordWithoutRuntime(runID, kind, message string) {
 	rec := readFailureRecord(dir)
 	ev := newEvent(dir, runID, kind, message)
 	rec.Append(ev)
-	// The event's own kind decides this, so the rule is stated once and readers cannot attribute
-	// the streak by a different one than the writer counted by.
 	if ev.Counted() {
 		rec.ConsecutiveFailures++
 	}

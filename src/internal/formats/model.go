@@ -217,10 +217,8 @@ func (r *FailureRecord) Append(e FailureEvent) {
 	}
 }
 
-// Counted reports whether ConsecutiveFailures includes this event, so a reader attributing the
-// streak skips the kinds that ride the same log answering a different question. A panic splits on
-// the run id: only the run loop has one, so a panicked tick is a failed collecting run and counts,
-// while a panic in a one-shot verb does not.
+// Counted reports whether ConsecutiveFailures includes this event. A panic splits on the run id:
+// only the run loop has one, so a panicked tick counts and a panic in a one-shot verb does not.
 func (e FailureEvent) Counted() bool {
 	switch e.Kind {
 	case FailureTick, FailureShutdown, FailureInit:
@@ -231,8 +229,7 @@ func (e FailureEvent) Counted() bool {
 	return false
 }
 
-// LatestCounted is the newest event the streak includes, or nil when the bounded log has evicted
-// them all: twenty uncounted events can outlive the failures they followed.
+// LatestCounted is the newest event the streak includes, or nil once the bounded log evicted them.
 func (r *FailureRecord) LatestCounted() *FailureEvent {
 	for i := len(r.Recent) - 1; i >= 0; i-- {
 		if r.Recent[i].Counted() {

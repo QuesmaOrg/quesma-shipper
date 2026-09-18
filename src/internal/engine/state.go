@@ -42,14 +42,12 @@ var (
 	// ErrSchemaMismatch means the document was written by a different version.
 	ErrSchemaMismatch = errors.New("state: document schema mismatch")
 
-	// ErrInstallMismatch means the document was written by another install on this machine. Its
-	// entries name objects under that install's key root (Article 5), so none of them says anything
-	// about what THIS install has shipped: the record is unusable rather than merely stale.
+	// ErrInstallMismatch means another install wrote the document, so its entries name objects under
+	// that install's key root (Article 5) and say nothing about what this one has shipped.
 	ErrInstallMismatch = errors.New("state: document belongs to a different install")
 )
 
-// InstallMismatchRemedy is the one spelling of the way out, so the guard's error and the row doctor
-// prints cannot drift apart over the command that repairs them.
+// One spelling, so the guard's error and doctor's row cannot drift apart over the command.
 const InstallMismatchRemedy = "Run `quesma-shipper state reset --apply` to forget that install's " +
 	"record and re-ship this install's whole history"
 
@@ -98,9 +96,7 @@ type Document struct {
 	Corrupt bool
 }
 
-// ForeignTo reports that this document was written by a different install, which makes its entries
-// say nothing about what installID has shipped: they name objects under another key root. An
-// unstamped document belongs to whoever opens it, so an empty id on either side is never foreign.
+// An unstamped document belongs to whoever opens it, so an empty id on either side is never foreign.
 func (d Document) ForeignTo(installID string) bool {
 	return d.InstallID != "" && installID != "" && d.InstallID != installID
 }
@@ -115,8 +111,7 @@ type Store struct {
 
 	corrupt bool
 
-	// Set when open took over another install's document: the stale install id is itself a change,
-	// so editStore must flush even when the edit forgot nothing.
+	// The stale install id is itself a change, so editStore flushes even when the edit forgot nothing.
 	adopted bool
 }
 
@@ -156,8 +151,7 @@ func open(stateDir, installID string, maxBytes int64, adopt bool) (*Store, error
 	foreign := doc.ForeignTo(installID)
 	if foreign && !adopt {
 		s.Close()
-		// Reason first, remedy after a blank line: every run hits this guard, so the way out has to
-		// travel with it, and a reader that already has its own remedy can keep the first paragraph.
+		// Reason first, remedy after a blank line: a reader with its own remedy keeps paragraph one.
 		return nil, fmt.Errorf("%w: it was written by %s and this install is %s\n\n%s",
 			ErrInstallMismatch, doc.InstallID, installID, InstallMismatchRemedy)
 	}
@@ -214,13 +208,8 @@ func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err erro
 }
 
 // Reset forgets every fingerprint, so the next sync re-ships the whole history onto existing keys.
-// The document is replaced with an empty one rather than deleted, so the install id survives.
-//
-// It adopts a document another install wrote rather than refusing it: a command that cannot repair
-// the one state it exists to repair is a dead end, and what it forgets was never this install's to
-// keep. Recovery, not prevention -- nothing here stops the mismatch being created.
-// adopted reports that the document belonged to another install, which the caller must say out
-// loud: "nothing to do" over a foreign document sends the operator away from the fix.
+// It adopts a document another install wrote, since what it forgets was never this install's to
+// keep; adopted reports that, because "nothing to do" would send the operator away from the fix.
 func Reset(stateDir, installID string, dryRun bool) (removed int, adopted bool, err error) {
 	return editStore(stateDir, installID, dryRun, true, func(s *Store) int {
 		removed := len(s.entries)

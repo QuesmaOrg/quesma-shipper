@@ -6,9 +6,7 @@ import (
 	"testing"
 )
 
-// An adopted document with nothing to forget used to print "nothing to do (0 entries)": the
-// operator ran reset without --apply, was told there was nothing to apply, and stayed locked out of
-// the one command that unblocks them.
+// This used to print "nothing to do (0 entries)", stranding the operator before --apply.
 func TestReportStateChangeNeverSaysNothingToDoAfterAnAdoption(t *testing.T) {
 	for _, apply := range []bool{false, true} {
 		var buf bytes.Buffer
@@ -26,7 +24,6 @@ func TestReportStateChangeNeverSaysNothingToDoAfterAnAdoption(t *testing.T) {
 	}
 }
 
-// Without an adoption the ordinary wording stands, so prune and a same-install reset are unchanged.
 func TestReportStateChangeKeepsTheOrdinaryWording(t *testing.T) {
 	var empty bytes.Buffer
 	reportStateChange(&empty, 0, 7, true, false, "pruned")

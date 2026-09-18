@@ -507,7 +507,6 @@ func controlPlaneRows(enr *controlplane.Enrollment, enrErr error,
 	return rows
 }
 
-// Two rows point at the run log; one spelling of that instruction.
 const fixSeeRunLog = "`quesma-shipper log` shows what each run did"
 
 func scheduleRows(stateDir string, now time.Time) []Row {
@@ -541,8 +540,7 @@ func scheduleRows(stateDir string, now time.Time) []Row {
 	return rows
 }
 
-// A loaded service whose every tick fails looks identical to a healthy one: the job is fine, the
-// runs are not, and only the failure record shows the difference.
+// A loaded service whose every tick fails looks identical to a healthy one from the outside.
 func failureRows(stateDir string, now time.Time) []Row {
 	rec := readFailureRecord(stateDir)
 	if rec.ConsecutiveFailures == 0 {
@@ -550,14 +548,12 @@ func failureRows(stateDir string, now time.Time) []Row {
 	}
 	detail := "the last " + CountNoun(rec.ConsecutiveFailures, "run") + " failed, so nothing has been sent since"
 	fix := fixSeeRunLog
-	// Counted, not merely newest: an uncounted event rides the same log and would blame the streak
-	// on the update channel while the sink is what refused every run.
+	// Counted, not merely newest: an uncounted event would blame the streak on the wrong thing.
 	if last := rec.LatestCounted(); last != nil {
 		if at, err := time.Parse(time.RFC3339, last.At); err == nil {
 			detail += ", most recently " + Ago(at, now)
 		}
-		// The reason only. A recorded error puts its remedy in a later paragraph, and the row that
-		// owns that remedy prints it; repeating it here reads as two problems rather than one.
+		// The reason only: the row that owns the remedy prints the paragraph after it.
 		fix, _, _ = strings.Cut(last.Message, "\n\n")
 	}
 	return []Row{{Sev: SevWarn, Label: "recent runs", Brief: "recent runs are failing",
