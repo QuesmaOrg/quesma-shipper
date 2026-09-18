@@ -235,11 +235,11 @@ func stateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			removed, err := engine.Reset(paths.StateDir, unit.InstallID.String(), !apply)
+			removed, adopted, err := engine.Reset(paths.StateDir, unit.InstallID.String(), !apply)
 			if err != nil {
 				return err
 			}
-			reportStateChange(cmd.OutOrStdout(), removed, 0, apply, "forgotten")
+			reportStateChange(cmd.OutOrStdout(), removed, 0, apply, adopted, "forgotten")
 			return nil
 		}}
 	prune := &cobra.Command{Use: "prune", Short: "Forget files that no longer exist", Args: cobra.NoArgs,
@@ -256,7 +256,7 @@ func stateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			reportStateChange(cmd.OutOrStdout(), removed, kept, apply, "pruned")
+			reportStateChange(cmd.OutOrStdout(), removed, kept, apply, false, "pruned")
 			return nil
 		}}
 	for _, c := range []*cobra.Command{reset, prune} {
@@ -266,9 +266,13 @@ func stateCmd() *cobra.Command {
 	return cmd
 }
 
-func reportStateChange(w io.Writer, removed, kept int, apply bool, verb string) {
+func reportStateChange(w io.Writer, removed, kept int, apply, adopted bool, verb string) {
+	// An adoption is itself the change, so it must never reach "nothing to do" below.
+	if adopted {
+		fmt.Fprintln(w, "another install's record is being replaced")
+	}
 	switch {
-	case removed == 0:
+	case removed == 0 && !adopted:
 		fmt.Fprintf(w, "nothing to do (%d entries)\n", kept)
 	case apply:
 		fmt.Fprintf(w, "%d entries %s, %d remain\n", removed, verb, kept)

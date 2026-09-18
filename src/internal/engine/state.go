@@ -41,7 +41,15 @@ var (
 
 	// ErrSchemaMismatch means the document was written by a different version.
 	ErrSchemaMismatch = errors.New("state: document schema mismatch")
+
+	// ErrInstallMismatch means another install wrote the document, so its entries name objects under
+	// that install's key root and say nothing about what this one has shipped.
+	ErrInstallMismatch = errors.New("state: document belongs to a different install")
 )
+
+// InstallMismatchRemedy is shared by the guard's error and doctor's row, so the two cannot drift.
+const InstallMismatchRemedy = "Run `quesma-shipper state reset --apply` to forget that install's " +
+	"record and re-ship this install's whole history"
 
 // Key identifies one fingerprint.
 type Key struct {
@@ -88,6 +96,12 @@ type Document struct {
 	Corrupt bool
 }
 
+// ForeignTo reports whether another install wrote this document. An unstamped one belongs to
+// whoever opens it, so an empty id on either side is never foreign.
+func (d Document) ForeignTo(installID string) bool {
+	return d.InstallID != "" && installID != "" && d.InstallID != installID
+}
+
 // Store is an open, locked fingerprint store.
 type Store struct {
 	dir       string
@@ -97,6 +111,9 @@ type Store struct {
 	entries   map[Key]Fingerprint
 
 	corrupt bool
+
+	// The stale install id is itself a change, so editStore flushes even when the edit forgot nothing.
+	adopted bool
 }
 
 // Carries the discard out to the run, so it is reported rather than only survived.
@@ -104,13 +121,14 @@ func (s *Store) Corrupt() bool { return s.corrupt }
 
 // Open takes the flock, non-blocking, and loads the document: a busy store is refused, not queued.
 func Open(stateDir, installID string) (*Store, error) {
-	return open(stateDir, installID, maxDocumentBytes)
+	return open(stateDir, installID, maxDocumentBytes, false)
 }
 
 // pruneMaxDocumentBytes is what Prune and Reset may read: larger than the ordinary cap, still bounded.
 const pruneMaxDocumentBytes = 512 << 20
 
-func open(stateDir, installID string, maxBytes int64) (*Store, error) {
+// Only Reset passes adopt: forgetting a foreign document's entries is safe, keeping them is not.
+func open(stateDir, installID string, maxBytes int64, adopt bool) (*Store, error) {
 	if err := platform.EnsureDir(stateDir, 0o700); err != nil {
 		return nil, err
 	}
@@ -131,12 +149,15 @@ func open(stateDir, installID string, maxBytes int64) (*Store, error) {
 		s.Close()
 		return nil, err
 	}
-	if doc.InstallID != "" && installID != "" && doc.InstallID != installID {
+	foreign := doc.ForeignTo(installID)
+	if foreign && !adopt {
 		s.Close()
-		return nil, fmt.Errorf("state: document belongs to install %s, this install is %s",
-			doc.InstallID, installID)
+		// Reason first, remedy after a blank line: a reader with its own remedy keeps paragraph one.
+		return nil, fmt.Errorf("%w: it was written by %s and this install is %s\n\n%s",
+			ErrInstallMismatch, doc.InstallID, installID, InstallMismatchRemedy)
 	}
 	s.specs, s.entries, s.corrupt = doc.SourceSpecs, doc.Entries, doc.Corrupt
+	s.adopted = foreign
 	return s, nil
 }
 
@@ -153,24 +174,24 @@ func (s *Store) Close() error {
 
 // editStore is the shell both operator overrides share: it reads past maxDocumentBytes, since a
 // past-the-ceiling document must not lock out the override, and writes only what edit changed.
-func editStore(stateDir, installID string, dryRun bool, edit func(*Store) int) (int, error) {
-	s, err := open(stateDir, installID, pruneMaxDocumentBytes)
+func editStore(stateDir, installID string, dryRun, adopt bool, edit func(*Store) int) (int, bool, error) {
+	s, err := open(stateDir, installID, pruneMaxDocumentBytes, adopt)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	defer s.Close()
 
 	changed := edit(s)
-	if dryRun || changed == 0 {
-		return changed, nil
+	if dryRun || (changed == 0 && !s.adopted) {
+		return changed, s.adopted, nil
 	}
-	return changed, s.flush()
+	return changed, s.adopted, s.flush()
 }
 
 // Prune removes entries whose file is gone. It tests existence on disk, so a file on an unmounted
 // volume reads as gone, which is why it stays a command.
 func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err error) {
-	removed, err = editStore(stateDir, installID, dryRun, func(s *Store) int {
+	removed, _, err = editStore(stateDir, installID, dryRun, false, func(s *Store) int {
 		gone := 0
 		for k := range s.entries {
 			if _, statErr := os.Lstat(k.NativePath); statErr == nil {
@@ -188,9 +209,10 @@ func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err erro
 }
 
 // Reset forgets every fingerprint, so the next sync re-ships the whole history onto existing keys.
-// The document is replaced with an empty one rather than deleted, so the install id survives.
-func Reset(stateDir, installID string, dryRun bool) (removed int, err error) {
-	return editStore(stateDir, installID, dryRun, func(s *Store) int {
+// The document is replaced rather than deleted, and comes back stamped with this install: adopted
+// reports when that meant taking over one another install left behind.
+func Reset(stateDir, installID string, dryRun bool) (removed int, adopted bool, err error) {
+	return editStore(stateDir, installID, dryRun, true, func(s *Store) int {
 		removed := len(s.entries)
 		if !dryRun {
 			s.entries = map[Key]Fingerprint{}

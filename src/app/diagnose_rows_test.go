@@ -11,6 +11,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
+	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
@@ -133,7 +134,8 @@ func TestAdvisoryRowsNeverFail(t *testing.T) {
 	dir := t.TempDir()
 	var rows []Row
 	rows = append(rows, scheduleRows(dir, time.Now())...)
-	rows = append(rows, stateRowsFrom(engine.Peek(dir))...)
+	doc, docErr := engine.Peek(dir)
+	rows = append(rows, stateRowsFrom(doc, docErr, "")...)
 	rows = append(rows, enrollmentRows(dir, nil, os.ErrNotExist, &config.Effective{}, controlplane.Remote{})...)
 	rows = append(rows, enrollmentRows(dir, nil, errors.New("corrupt"), &config.Effective{}, controlplane.Remote{})...)
 	for _, row := range rows {
@@ -328,5 +330,145 @@ func TestAccountInspectionIsNeutral(t *testing.T) {
 	rows := discoveryRows(src, d)
 	if len(rows) != 1 || rows[0].Sev != SevDim || rows[0].Detail != d.Reason || rows[0].Fix != "" {
 		t.Fatalf("unexpected source inspection: %+v", rows)
+	}
+}
+
+func TestStateRowsNameAnInstallMismatch(t *testing.T) {
+	const mine, theirs = "c033b5b2-c3ac-4f39-911f-7ea632b7727c", "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
+	doc := engine.Document{InstallID: theirs, Entries: map[engine.Key]engine.Fingerprint{}}
+
+	var found *Row
+	for _, row := range stateRowsFrom(doc, nil, mine) {
+		if row.Sev == SevWarn {
+			r := row
+			found = &r
+		}
+	}
+	if found == nil {
+		t.Fatal("a document written by another install produced no warning")
+	}
+	if !strings.Contains(found.Detail, theirs) || !strings.Contains(found.Detail, mine) {
+		t.Errorf("detail %q must name both installs", found.Detail)
+	}
+	if !strings.Contains(found.Fix, "state reset") {
+		t.Errorf("fix %q must name the command that repairs it", found.Fix)
+	}
+
+	for _, row := range stateRowsFrom(engine.Document{InstallID: mine}, nil, mine) {
+		if row.Sev == SevWarn {
+			t.Errorf("matching install ids warned: %+v", row)
+		}
+	}
+	for _, row := range stateRowsFrom(doc, nil, "") {
+		if row.Sev == SevWarn {
+			t.Errorf("warned with no identity to compare against: %+v", row)
+		}
+	}
+}
+
+func seedFailures(t *testing.T, dir string, streak int, events ...formats.FailureEvent) {
+	t.Helper()
+	rec := formats.FailureRecord{ConsecutiveFailures: streak}
+	for _, e := range events {
+		rec.Append(e)
+	}
+	if err := writeFailureRecord(dir, rec); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func event(at time.Time, kind, message string) formats.FailureEvent {
+	return formats.FailureEvent{At: at.Format(time.RFC3339), Kind: kind, Message: message}
+}
+
+// Nineteen consecutive failed ticks used to leave doctor entirely green.
+func TestFailureRowsReportConsecutiveFailures(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 9, 17, 13, 0, 0, 0, time.UTC)
+
+	if rows := failureRows(dir, now); rows != nil {
+		t.Fatalf("a store with no failure record produced %d rows", len(rows))
+	}
+
+	seedFailures(t, dir, 19, event(now.Add(-15*time.Minute), formats.FailureTick,
+		"state: document belongs to a different install"))
+	rows := failureRows(dir, now)
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	got := rows[0]
+	if got.Sev != SevWarn {
+		t.Errorf("severity = %v, want SevWarn", got.Sev)
+	}
+	if !strings.Contains(got.Detail, "19") {
+		t.Errorf("detail %q must count the failed runs", got.Detail)
+	}
+	if !strings.Contains(got.Fix, "different install") {
+		t.Errorf("fix %q must carry the reason the runs failed", got.Fix)
+	}
+
+	seedFailures(t, dir, 0)
+	if rows := failureRows(dir, now); rows != nil {
+		t.Errorf("a healthy install produced %d rows", len(rows))
+	}
+}
+
+// A failed self-update in the log used to be blamed for a streak of refused uploads.
+func TestFailureRowsIgnoreUncountedEvents(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 9, 17, 13, 0, 0, 0, time.UTC)
+
+	seedFailures(t, dir, 5,
+		event(now.Add(-30*time.Minute), formats.FailureTick,
+			"the run shipped nothing: all 3 attempted uploads failed: connection refused"),
+		event(now.Add(-1*time.Minute), formats.FailureUpdate, "self-update from v1.2.3 did not happen"))
+
+	rows := failureRows(dir, now)
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if strings.Contains(rows[0].Fix, "self-update") {
+		t.Errorf("fix %q blamed an uncounted event for the streak", rows[0].Fix)
+	}
+	if !strings.Contains(rows[0].Fix, "connection refused") {
+		t.Errorf("fix %q lost the reason the runs actually failed", rows[0].Fix)
+	}
+	if !strings.Contains(rows[0].Detail, "30 min ago") {
+		t.Errorf("detail %q dated the streak from an uncounted event", rows[0].Detail)
+	}
+}
+
+// The count is still true once the bounded log has evicted every counted event; only the reason goes.
+func TestFailureRowsSurviveALogWithNoCountedEvent(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	seedFailures(t, dir, 3, event(now, formats.FailureUpdate, "update failed"))
+
+	rows := failureRows(dir, now)
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if strings.Contains(rows[0].Fix, "update failed") {
+		t.Errorf("fix %q fell back to an uncounted event", rows[0].Fix)
+	}
+}
+
+// The row that owns the remedy prints it, so doctor never states one fix twice.
+func TestFailureRowsShowTheReasonNotTheRemedy(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	seedFailures(t, dir, 4, event(now, formats.FailureTick,
+		"state: document belongs to a different install: it was written by 85a7e04c and this install is c033b5b2\n\n"+
+			engine.InstallMismatchRemedy))
+
+	rows := failureRows(dir, now)
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if strings.Contains(rows[0].Fix, "state reset") {
+		t.Errorf("fix %q repeats the remedy the state row already prints", rows[0].Fix)
+	}
+	if !strings.Contains(rows[0].Fix, "written by 85a7e04c") {
+		t.Errorf("fix %q dropped the reason", rows[0].Fix)
 	}
 }
