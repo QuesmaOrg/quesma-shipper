@@ -13,7 +13,9 @@ tap="$(brew --repository)/Library/Taps/quesma-test/homebrew-shipper"
 mkdir -p "$tap/Casks"
 work=$(mktemp -d)
 cleanup() {
-  brew uninstall --cask quesma-test/shipper/quesma-shipper || true
+  if brew list --cask quesma-test/shipper/quesma-shipper >/dev/null 2>&1; then
+    brew uninstall --cask quesma-test/shipper/quesma-shipper || true
+  fi
   rm -rf "$tap" "$work"
 }
 trap cleanup EXIT
@@ -28,6 +30,12 @@ text = source.read_text().replace(
     'https://updates.quesma.dev/targets/#{sha256}.quesma-shipper-darwin-#{arch}',
     artifacts.as_uri() + '/quesma-shipper-darwin-#{arch}',
 )
+# Only the locally built CI fixture lacks production signing and notarization.
+text = text.replace('  uninstall script:', '''  preflight_steps do
+    run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{staged_path}}/quesma-shipper"]
+  end
+
+  uninstall script:''')
 target.write_text(text)
 PY
 }
@@ -43,7 +51,7 @@ check_service() {
 }
 
 write_cask 1.0.0
-brew install --cask --no-quarantine quesma-test/shipper/quesma-shipper
+brew install --cask --yes quesma-test/shipper/quesma-shipper
 quesma-shipper --version
 check_service 1.0.0
 state="$HOME/.local/state/trajectory-shipper"
@@ -55,7 +63,7 @@ if quesma-shipper uninstall > "$work/uninstall.txt" 2>&1; then exit 1; fi
 grep -q 'brew uninstall' "$work/uninstall.txt"
 
 write_cask 1.0.1
-brew upgrade --cask --no-quarantine quesma-test/shipper/quesma-shipper
+brew upgrade --cask --yes quesma-test/shipper/quesma-shipper
 check_service 1.0.1
 brew uninstall --cask quesma-test/shipper/quesma-shipper
 [[ ! -e "$plist" ]]

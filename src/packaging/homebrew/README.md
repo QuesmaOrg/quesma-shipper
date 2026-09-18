@@ -31,5 +31,6 @@ and do not defer updates to Brew. No new signing credentials or cross-repository
 The Darwin tests cover package ownership and run the CLI from a simulated Caskroom through a symlink,
 checking that manual/automatic updates and self-uninstall cannot alter the package or local state.
 `scripts/test-homebrew.sh` installs, upgrades, and removes a local cask on a disposable macOS CI runner,
-checks launchd and state preservation, and bypasses quarantine only for that unsigned CI build.
+checks launchd and state preservation, and removes quarantine from the staged unsigned CI binary
+using a preflight step injected only into the temporary test cask.
 Production casks keep Homebrew's normal Gatekeeper checks enabled.
