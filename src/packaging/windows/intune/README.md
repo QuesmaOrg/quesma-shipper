@@ -56,28 +56,10 @@ using a plain-text editor, keeping the `.ps1` extension:
 | `Organization` | The exact organization name reported by the control plane |
 | `Grant` | Your enrollment grant, replacing `REPLACE_WITH_ENROLLMENT_GRANT` |
 | `InstallerUrl` | An HTTPS URL to the setup executable that the device can download without an interactive sign-in |
-| `InstallerSha256` | The SHA-256 of that exact approved setup executable |
 | `InstallerPath` | Leave empty for this route |
 
-Prefer a version-specific download URL. If a moving download URL starts returning a
-new release, the hash check fails until you approve that release and update the hash.
+Prefer a version-specific download URL so new installations use the intended release.
 If a value contains a single quote, double it inside the PowerShell single-quoted string.
-
-Calculate the hash of your approved installer on your Mac:
-
-```sh
-shasum -a 256 ~/Downloads/QuesmaShipperSetup-amd64.exe
-```
-
-Or on Windows:
-
-```powershell
-(Get-FileHash .\QuesmaShipperSetup-amd64.exe -Algorithm SHA256).Hash
-```
-
-Copy only the 64-character hash. The script checks the downloaded bytes before
-executing them. Obtaining the hash from your approved artifact establishes which
-bytes you intend to deploy; a hash is not a substitute for trusting that artifact.
 
 ### Click through Intune
 
@@ -117,7 +99,7 @@ C:\QuesmaIntune\Source\
     QuesmaShipperSetup-amd64.exe
 ```
 
-Configure `Server`, `Organization`, `Grant`, and `InstallerSha256` in `Install.ps1`
+Configure `Server`, `Organization`, and `Grant` in `Install.ps1`
 as above. `InstallerUrl` is unused because the install command supplies
 `-InstallerPath`. Separately copy [Detect.ps1](Detect.ps1), and set its `Server` and
 `Organization` to exactly the same values. Detection needs no grant.
@@ -210,8 +192,8 @@ not prove that collection has found files or that an upload has reached the sink
 
 Test a rerun after enrollment and a failed enrollment before expanding the group.
 For failures, inspect Intune's script/app status and the user's shipper logs (by
-default `%USERPROFILE%\.local\state\trajectory-shipper\logs`). A hash mismatch,
-wrong architecture, blocked unsigned program, expired grant, and missing network
+default `%USERPROFILE%\.local\state\trajectory-shipper\logs`). Wrong
+architecture, a blocked unsigned program, an expired grant, and missing network
 access require different fixes. Never paste grants or unredacted logs into public
 issues.
 

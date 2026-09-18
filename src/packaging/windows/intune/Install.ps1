@@ -6,7 +6,6 @@ param(
     [string]$Organization = 'Example Organization',
     [string]$Grant = 'REPLACE_WITH_ENROLLMENT_GRANT',
     [string]$InstallerUrl = 'https://downloads.example.com/QuesmaShipperSetup-amd64.exe',
-    [string]$InstallerSha256 = 'REPLACE_WITH_INSTALLER_SHA256',
     [string]$InstallerPath = ''
 )
 
@@ -54,9 +53,6 @@ try {
 
     # Reusing the installed copy preserves self-updates when enrollment is retried.
     if (-not $status -or -not $status.service_ok -or -not (Test-Path -LiteralPath $supervisor -PathType Leaf)) {
-        if ($InstallerSha256 -notmatch '^[0-9a-fA-F]{64}$') {
-            throw 'Set InstallerSha256 to the SHA-256 of the approved setup executable.'
-        }
         if (-not $InstallerPath) {
             if (([uri]$InstallerUrl).Scheme -ne 'https' -or ([uri]$InstallerUrl).Host -eq 'downloads.example.com') {
                 throw 'Set InstallerUrl to an HTTPS download of the approved setup executable.'
@@ -66,9 +62,6 @@ try {
             $InstallerPath = Join-Path $downloadDir 'setup.exe'
             [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri $InstallerUrl -OutFile $InstallerPath -UseBasicParsing -TimeoutSec 300
-        }
-        if ((Get-FileHash -LiteralPath $InstallerPath -Algorithm SHA256).Hash -ne $InstallerSha256) {
-            throw 'Installer SHA-256 mismatch; no installer was executed.'
         }
         $setup = Start-Process -FilePath (Resolve-Path -LiteralPath $InstallerPath).Path -Wait -PassThru `
             -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'
