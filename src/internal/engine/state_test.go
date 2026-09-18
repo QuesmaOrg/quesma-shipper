@@ -55,6 +55,9 @@ func TestFirstRunIsEmptyNotAnError(t *testing.T) {
 	if s.Len() != 0 {
 		t.Errorf("a fresh store should be empty, has %d entries", s.Len())
 	}
+	if s.Corrupt() {
+		t.Error("a missing document is a first run, not a discarded one")
+	}
 	if _, ok := s.Get(key("/x/a.jsonl")); ok {
 		t.Error("a fresh store should know nothing")
 	}
@@ -155,43 +158,6 @@ func TestPeekWorksWhileLocked(t *testing.T) {
 	}
 }
 
-// A document from a different version is rejected: a wiped store re-uploads onto existing keys.
-func TestForeignSchemaIsRejected(t *testing.T) {
-	dir := t.TempDir()
-	s := open(t, dir)
-	if err := commit(s, key("/x/a.jsonl"), fingerprint()); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-
-	path := filepath.Join(dir, engine.FileName)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bumped := strings.Replace(string(raw), `"state_schema": 1`, `"state_schema": 2`, 1)
-	if bumped == string(raw) {
-		t.Fatal("could not bump state_schema; document shape changed")
-	}
-	if err := os.WriteFile(path, []byte(bumped), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := engine.Open(dir, installID); err == nil {
-		t.Fatal("a foreign state_schema must be rejected, never guessed at")
-	}
-}
-
-func TestCorruptDocumentIsRejected(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, engine.FileName), []byte("{not json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := engine.Open(dir, installID); err == nil {
-		t.Fatal("a corrupt document must be rejected")
-	}
-}
-
 // The failure the checksum exists for: a source_hash flipped in place still parses, still
 // satisfies the schema, and reads as a completed ship. Trusting it loses that file forever.
 func TestAnInPlaceCorruptionIsCaughtByTheChecksum(t *testing.T) {
@@ -215,44 +181,8 @@ func TestAnInPlaceCorruptionIsCaughtByTheChecksum(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	doc, err := engine.Peek(dir)
-	if err != nil {
-		t.Fatalf("a corrupt store must not fail the run: %v", err)
-	}
-	if !doc.Corrupt {
-		t.Error("the tampered document was trusted")
-	}
-	if len(doc.Entries) != 0 {
-		t.Errorf("a document that failed its checksum must be discarded whole, kept %d entries", len(doc.Entries))
-	}
-}
-
-// Discarding is not erroring: the next run re-ships onto the keys that already exist, which is the
-// cost the store's design already accepts. Refusing to run would turn this into an outage.
-func TestACorruptStoreStillCollects(t *testing.T) {
-	dir := t.TempDir()
-	s := open(t, dir)
-	if err := commit(s, key("/x/a.jsonl"), fingerprint()); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-
-	path := filepath.Join(dir, engine.FileName)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(strings.Replace(string(raw), sha, otherSha, 1)), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	s2, err := engine.Open(dir, installID)
-	if err != nil {
-		t.Fatalf("open over a corrupt document must succeed: %v", err)
-	}
-	defer s2.Close()
-	if _, ok := s2.Get(key("/x/a.jsonl")); ok {
-		t.Error("a discarded document must not still answer for its entries")
+	if _, err := engine.Peek(dir); err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("the tampered document was trusted: %v", err)
 	}
 }
 
@@ -264,12 +194,8 @@ func TestADocumentWithoutAChecksumStillLoads(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, engine.FileName), []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := engine.Peek(dir)
-	if err != nil {
+	if _, err := engine.Peek(dir); err != nil {
 		t.Fatalf("a pre-checksum document must load: %v", err)
-	}
-	if got.Corrupt {
-		t.Error("an absent checksum is not a failed one")
 	}
 
 	s := open(t, dir)
@@ -403,20 +329,6 @@ func TestCommitOfAnUnserializableEntryFails(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Error("the rejected commit reached the disk")
-	}
-}
-
-// A state file with the wrong identity would attribute another install's uploads to this one.
-func TestDocumentFromAnotherInstallIsRejected(t *testing.T) {
-	dir := t.TempDir()
-	s := open(t, dir)
-	if err := commit(s, key("/x/a.jsonl"), fingerprint()); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-
-	if _, err := engine.Open(dir, "11111111-2222-3333-4444-555555555555"); err == nil {
-		t.Fatal("a document belonging to another install must be refused")
 	}
 }
 
@@ -661,7 +573,7 @@ func TestResetForgetsEverythingButOnlyWithApply(t *testing.T) {
 	}
 }
 
-// A reset store keeps its install id, so a later open under another identity is still refused.
+// A reset store keeps its install id, so a later open under another identity still discards it.
 func TestResetKeepsTheInstallID(t *testing.T) {
 	dir := t.TempDir()
 
@@ -674,8 +586,12 @@ func TestResetKeepsTheInstallID(t *testing.T) {
 	if _, err := engine.Reset(dir, installID, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := engine.Open(dir, "00000000-0000-0000-0000-000000000000"); err == nil {
-		t.Error("a reset document lost its install id: a foreign install opened it")
+	doc, err := engine.Peek(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.InstallID != installID {
+		t.Errorf("a reset document lost its install id: %q", doc.InstallID)
 	}
 }
 
@@ -691,6 +607,21 @@ func TestResetOnAnEmptyStoreIsANoOp(t *testing.T) {
 	}
 	if removed != 0 {
 		t.Errorf("an empty store forgot %d entries", removed)
+	}
+}
+
+// An unloadable document is what an operator runs reset against, so --apply must replace it even
+// though the discarded store forgot nothing.
+func TestResetReplacesAnUnloadableDocument(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, engine.FileName), []byte("not a document\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Reset(dir, installID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Peek(dir); err != nil {
+		t.Fatalf("the document was not replaced: %v", err)
 	}
 }
 

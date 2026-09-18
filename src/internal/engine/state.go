@@ -1,6 +1,6 @@
 // The local fingerprint store is authoritative for upload progress: no backend tracks what was
 // uploaded. One JSON document, replaced atomically under a process flock; retry is re-run, so a
-// wiped or rejected document costs one re-ship onto existing keys and zero new objects.
+// wiped or unloadable document costs a re-hash and a per-object probe, never a lost file.
 package engine
 
 import (
@@ -82,10 +82,6 @@ type Document struct {
 	UpdatedAt   time.Time
 	SourceSpecs map[string]string
 	Entries     map[Key]Fingerprint
-
-	// The document failed its own checksum and was discarded. Reported rather than returned as an
-	// error: collection continues from an empty store, costing one re-ship onto existing keys.
-	Corrupt bool
 }
 
 // Store is an open, locked fingerprint store.
@@ -99,7 +95,8 @@ type Store struct {
 	corrupt bool
 }
 
-// Carries the discard out to the run, so it is reported rather than only survived.
+// Corrupt says the document could not be loaded and was discarded: the run continues from an empty
+// store and the first flush replaces the file. Carried out so the discard is reported, not survived.
 func (s *Store) Corrupt() bool { return s.corrupt }
 
 // Open takes the flock, non-blocking, and loads the document: a busy store is refused, not queued.
@@ -126,17 +123,19 @@ func open(stateDir, installID string, maxBytes int64) (*Store, error) {
 	}
 	s := &Store{dir: stateDir, installID: installID, lock: lock}
 
+	// Any document that cannot be loaded is discarded, never fatal: the archive answers for what it
+	// already holds, so an empty store costs a re-hash, not a re-upload.
 	doc, err := load(stateDir, maxBytes)
+	if err == nil && doc.InstallID != "" && installID != "" && doc.InstallID != installID {
+		err = fmt.Errorf("state: %s belongs to install %s, this install is %s",
+			filepath.Join(stateDir, FileName), doc.InstallID, installID)
+	}
 	if err != nil {
-		s.Close()
-		return nil, err
+		fmt.Fprintf(os.Stderr, "warning: %s could not be loaded (%v); continuing from an empty store\n", FileName, err)
+		doc = Document{SourceSpecs: map[string]string{}, Entries: map[Key]Fingerprint{}}
+		s.corrupt = true
 	}
-	if doc.InstallID != "" && installID != "" && doc.InstallID != installID {
-		s.Close()
-		return nil, fmt.Errorf("state: document belongs to install %s, this install is %s",
-			doc.InstallID, installID)
-	}
-	s.specs, s.entries, s.corrupt = doc.SourceSpecs, doc.Entries, doc.Corrupt
+	s.specs, s.entries = doc.SourceSpecs, doc.Entries
 	return s, nil
 }
 
@@ -153,6 +152,7 @@ func (s *Store) Close() error {
 
 // editStore is the shell both operator overrides share: it reads past maxDocumentBytes, since a
 // past-the-ceiling document must not lock out the override, and writes only what edit changed.
+// A discarded document is always written back: the override is the operator's chance to replace it.
 func editStore(stateDir, installID string, dryRun bool, edit func(*Store) int) (int, error) {
 	s, err := open(stateDir, installID, pruneMaxDocumentBytes)
 	if err != nil {
@@ -161,7 +161,7 @@ func editStore(stateDir, installID string, dryRun bool, edit func(*Store) int) (
 	defer s.Close()
 
 	changed := edit(s)
-	if dryRun || changed == 0 {
+	if dryRun || (changed == 0 && !s.corrupt) {
 		return changed, nil
 	}
 	return changed, s.flush()
@@ -187,7 +187,8 @@ func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err erro
 	return removed, kept, err
 }
 
-// Reset forgets every fingerprint, so the next sync re-ships the whole history onto existing keys.
+// Reset forgets every fingerprint, so the next sync re-hashes the whole history and re-probes the
+// archive; unchanged bytes come back already_present, so a reset never forces a re-seal.
 // The document is replaced with an empty one rather than deleted, so the install id survives.
 func Reset(stateDir, installID string, dryRun bool) (removed int, err error) {
 	return editStore(stateDir, installID, dryRun, func(s *Store) int {
@@ -397,12 +398,6 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 			// First run. An empty store is not an error: everything is simply unshipped.
 			return Document{Entries: map[Key]Fingerprint{}}, nil
 		}
-		if errors.Is(err, platform.ErrTooLarge) {
-			// Past the ceiling every verb fails, so the overrides are named where the wall is.
-			return Document{}, fmt.Errorf("%w\n\nRun `quesma-shipper state prune` to drop the "+
-				"entries whose files are gone, or `quesma-shipper state reset` to forget "+
-				"everything and re-ship the install's whole history", err)
-		}
 		return Document{}, fmt.Errorf("state: read %s: %w", path, err)
 	}
 
@@ -421,14 +416,14 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 			ErrSchemaMismatch, doc.StateSchema, StateSchema)
 	}
 	// Absent means written before the field existed; it earns one on the next rewrite. A wrong one
-	// is discarded whole, because a partly-trusted store is the failure this catches.
+	// fails the whole load, because a partly-trusted store is the failure this catches.
 	if doc.Checksum != "" {
 		want, err := checksumOf(doc)
 		if err != nil {
 			return Document{}, err
 		}
 		if want != doc.Checksum {
-			return Document{Entries: map[Key]Fingerprint{}, Corrupt: true}, nil
+			return Document{}, fmt.Errorf("state: %s failed its checksum", path)
 		}
 	}
 

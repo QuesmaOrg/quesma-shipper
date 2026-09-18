@@ -225,7 +225,7 @@ func stateCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "state", Short: "Inspect and repair the local record of what was sent", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
 	var apply bool
-	reset := &cobra.Command{Use: "reset", Short: "Forget everything so the next run re-sends every file", Args: cobra.NoArgs,
+	reset := &cobra.Command{Use: "reset", Short: "Forget everything so the next run re-hashes every file and asks the archive what it already holds", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, paths, err := app.ResolveEffective()
 			if err != nil {

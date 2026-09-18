@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -186,7 +187,8 @@ func (o Options) shipDerivedGroups(
 func (o Options) commitDerived(
 	store *commitBuffer, fo FileOutcome, pending *pendingPut, oc error,
 ) FileOutcome {
-	if oc != nil {
+	present := errors.Is(oc, ErrAlreadyPresent)
+	if oc != nil && !present {
 		fo.Decision = auditlog.DecisionFailed
 		fo.Reason = oc.Error()
 		return fo
@@ -197,6 +199,9 @@ func (o Options) commitDerived(
 		return fo
 	}
 	fo.Decision = auditlog.DecisionShipped
+	if present {
+		fo.Reason = alreadyPresentReason
+	}
 	return fo
 }
 
