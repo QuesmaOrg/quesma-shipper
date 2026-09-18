@@ -32,8 +32,9 @@ type submission struct {
 	contentType   string
 }
 
-// collector stands in for the control plane: it records what arrived and answers with a status.
-func collector(t *testing.T, status int, answer string) (*httptest.Server, *submission) {
+// controlPlane stands in for the control plane, which is what the client talks to: it records what
+// arrived and answers with a status. The collector is a different service, one hop further on.
+func controlPlane(t *testing.T, status int, answer string) (*httptest.Server, *submission) {
 	t.Helper()
 	got := &submission{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +80,7 @@ func payload(t *testing.T) json.RawMessage {
 // The signature the far end verifies covers the domain prefix and the exact bytes sent, with no
 // canonicalization. If this drifts, every submission is refused and nothing here would say why.
 func TestTelemetrySignatureCoversThePrefixAndTheExactBody(t *testing.T) {
-	server, got := collector(t, http.StatusNoContent, "")
+	server, got := controlPlane(t, http.StatusNoContent, "")
 	c, pub := client(t, server.URL)
 
 	if err := c.SubmitTelemetry(context.Background(), "/v1/telemetry",
@@ -111,7 +112,7 @@ func TestTelemetrySignatureCoversThePrefixAndTheExactBody(t *testing.T) {
 // The envelope is exactly four fields. The control plane strict-decodes it, so a fifth would be
 // refused for every install at once.
 func TestTelemetryEnvelopeIsExactlyTheContract(t *testing.T) {
-	server, got := collector(t, http.StatusNoContent, "")
+	server, got := controlPlane(t, http.StatusNoContent, "")
 	c, _ := client(t, server.URL)
 
 	issued := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
@@ -140,7 +141,7 @@ func TestTelemetryEnvelopeIsExactlyTheContract(t *testing.T) {
 // The path is where a submission goes and what the signature covers, and it comes from served
 // configuration. It is used as given.
 func TestTelemetryUsesTheServedPath(t *testing.T) {
-	server, got := collector(t, http.StatusNoContent, "")
+	server, got := controlPlane(t, http.StatusNoContent, "")
 	c, _ := client(t, server.URL)
 
 	if err := c.SubmitTelemetry(context.Background(), "/v1/telemetry",
@@ -170,7 +171,7 @@ func TestTelemetryStatusMapping(t *testing.T) {
 		"upstream slow":  {http.StatusGatewayTimeout, controlplane.ErrTelemetryUnavailable},
 		"unprovisioned":  {http.StatusServiceUnavailable, controlplane.ErrTelemetryUnavailable},
 	} {
-		server, _ := collector(t, tc.status, `{"error":"telemetry_something"}`)
+		server, _ := controlPlane(t, tc.status, `{"error":"telemetry_something"}`)
 		c, _ := client(t, server.URL)
 		err := c.SubmitTelemetry(context.Background(), "/v1/telemetry",
 			batchID, time.Now().UTC(), payload(t))
@@ -186,7 +187,7 @@ func TestTelemetryStatusMapping(t *testing.T) {
 // An empty path is a disabled organization, and asking anyway would spend a signed request to be
 // told what configuration already said.
 func TestTelemetryWithNoPathIsDisabledWithoutARequest(t *testing.T) {
-	server, got := collector(t, http.StatusNoContent, "")
+	server, got := controlPlane(t, http.StatusNoContent, "")
 	c, _ := client(t, server.URL)
 
 	err := c.SubmitTelemetry(context.Background(), "", batchID,
@@ -201,7 +202,7 @@ func TestTelemetryWithNoPathIsDisabledWithoutARequest(t *testing.T) {
 
 // Refused here rather than spending a request to be refused there.
 func TestAnOversizedSubmissionIsRefusedLocally(t *testing.T) {
-	server, got := collector(t, http.StatusNoContent, "")
+	server, got := controlPlane(t, http.StatusNoContent, "")
 	c, _ := client(t, server.URL)
 
 	big, err := json.Marshal(map[string]string{"event": strings.Repeat("x", controlplane.MaxTelemetryBody)})
@@ -222,7 +223,7 @@ func TestAnOversizedSubmissionIsRefusedLocally(t *testing.T) {
 // literal, so a served path that differs would be signed here and verified against something else.
 // Refused locally, where the reason is visible, rather than as an unexplained 401.
 func TestAServedPathThatIsNotTheProtocolsIsRefused(t *testing.T) {
-	server, got := collector(t, http.StatusNoContent, "")
+	server, got := controlPlane(t, http.StatusNoContent, "")
 	c, _ := client(t, server.URL)
 
 	err := c.SubmitTelemetry(context.Background(), "/v1/elsewhere", batchID, time.Now().UTC(), payload(t))

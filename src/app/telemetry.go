@@ -30,8 +30,8 @@ type telemetrySubmitter interface {
 // collector: an unrecognised event is counted rather than rendered, so a rename goes silent.
 const InstallHealthEvent = "install_health"
 
-// maxTelemetryMessage bounds one fault's text. The collector truncates to the same length, so
-// cutting here makes what is sent and what is stored the same thing.
+// maxTelemetryMessage bounds one fault's text on the wire. The collector cuts much shorter again
+// when it renders, so this only keeps a pathological message from crowding the envelope.
 const maxTelemetryMessage = 400
 
 // telemetryEvent is what the collector reads. Field names match its own, and unknown fields are
@@ -57,8 +57,8 @@ type telemetryCrash struct {
 	Consecutive int    `json:"consecutive,omitempty"`
 }
 
-// telemetryFault is one failure, as the collector groups them. Kind comes from this package's
-// closed set, so the far end groups on it without parsing prose.
+// telemetryFault is one failure, as the collector groups them. Kind comes from the closed set in
+// formats, so the far end groups on it without parsing prose.
 type telemetryFault struct {
 	At      string `json:"at"`
 	Kind    string `json:"kind"`
@@ -68,10 +68,10 @@ type telemetryFault struct {
 
 // SubmitTelemetry sends one install-health event, if this install's organization has a collector.
 //
-// Called by the tick loop AFTER the outcome is judged, and off the collection and upload path, so a
-// slow collector can never delay shipping. Fail-open like the heartbeat beside it: telemetry must
-// never become the problem it reports. Nothing retries -- the next tick carries its own batch id
-// and the same bounded window, so one lost submission says nothing a later one does not repeat.
+// Called AFTER an outcome is judged, by the tick loop and by the drain, and off the collection and
+// upload path, so a slow collector can never delay shipping. Fail-open like the heartbeat beside it:
+// telemetry must never become the problem it reports. Nothing retries -- the next tick carries its
+// own batch id and the same bounded window.
 func (r *Runtime) SubmitTelemetry(ctx context.Context) {
 	if r.eff.TelemetryEndpoint == "" || r.telemetry == nil || r.telemetryOff {
 		return
@@ -140,8 +140,8 @@ func telemetryMessage(message string) string {
 	return marker + tail
 }
 
-// absolutePath is a run of three or more slash-prefixed segments. Three, because fewer is a route
-// or a fraction rather than a place on this machine.
+// absolutePath is a run of three or more slash-prefixed segments. Three leaves a short system path
+// and a fraction alone; a route long enough to reach it is shortened too, which costs nothing.
 var absolutePath = regexp.MustCompile(`(?:/[^/ \t\n"',;:)]+){3,}`)
 
 // shortenTelemetryPaths keeps the last two segments of any absolute path, so a message says which

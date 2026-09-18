@@ -128,8 +128,8 @@ func NewFrom(
 
 	// Held rather than returned so `preview` keeps working on an install that has no control
 	// plane. The port stays interface-typed and is assigned only on success: a failed *vendPort
-	// would box a typed nil and panic on first use instead of reporting uploadErr.
-	// Built first and kept regardless of what the port makes of it.
+	// would box a typed nil and panic on first use instead of reporting uploadErr. The client is
+	// built first and kept even when the port is not.
 	var up engine.UploadPort
 	var telemetry telemetrySubmitter
 	client, upErr := newControlPlaneClient(paths.StateDir)

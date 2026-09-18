@@ -35,7 +35,7 @@ func TestAbsolutePathsAreShortenedOnTheWayOut(t *testing.T) {
 			"ratio 3/4 exceeded",
 			"ratio 3/4 exceeded",
 		},
-		"no path at all": {
+		"a route is shortened too": {
 			"backend: /v2/uploads/authorize: 503",
 			"backend: …/uploads/authorize: 503",
 		},
@@ -58,7 +58,7 @@ func TestALongMessageKeepsItsCause(t *testing.T) {
 	}
 }
 
-// runtime builds the least that installHealth needs: a state directory holding a failure record.
+// telemetryRuntime builds the least installHealth needs: a state directory holding a failure record.
 func telemetryRuntime(t *testing.T, record formats.FailureRecord) *Runtime {
 	t.Helper()
 	dir := t.TempDir()
