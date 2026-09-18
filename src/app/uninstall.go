@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -15,6 +16,9 @@ type UninstallStep struct {
 }
 
 func Uninstall(purge bool, report func(UninstallStep)) (bool, error) {
+	if packaging.HomebrewManaged() {
+		return false, fmt.Errorf("Homebrew manages this installation; run `%s`; local state is kept", packaging.BrewUninstall)
+	}
 	_, paths, err := ResolveEffective()
 	if err != nil {
 		return false, err

@@ -148,10 +148,27 @@ func PostInstall() (Status, error) {
 	if resolved, err := filepath.EvalSymlinks(expected); err == nil {
 		expected = resolved
 	}
-	if exe != expected {
+	if exe != expected && common.HomebrewCaskRoot(exe) == "" {
 		return Status{}, fmt.Errorf("postinstall must run from %s, not %s", expected, exe)
 	}
+	if err := checkInstallOwner(exe, launchdPath(home)); err != nil {
+		return Status{}, err
+	}
 	return supervise(exe, home)
+}
+
+func checkInstallOwner(exe, plist string) error {
+	if _, err := os.Stat(plist); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	previous := common.ServiceProgram(Status{Path: plist})
+	oldRoot, newRoot := common.HomebrewCaskRoot(previous), common.HomebrewCaskRoot(exe)
+	if (oldRoot != "" || newRoot != "") && (oldRoot != newRoot || previous == "") {
+		return fmt.Errorf("another installation owns the background service (%s); uninstall it without purging local state before changing installation methods", previous)
+	}
+	return nil
 }
 
 // supervise registers exe as the LaunchAgent with the default state directory: packaging cannot
@@ -188,6 +205,13 @@ func UninstallService() error {
 		return err
 	}
 	path := launchdPath(home)
+	if exe, err := common.CurrentExecutable(); err != nil {
+		return err
+	} else if root := common.HomebrewCaskRoot(exe); root != "" {
+		if owned, err := ownsHomebrewService(exe, path); err != nil || !owned {
+			return err
+		}
+	}
 	target := guiService()
 
 	// Unload BEFORE removing the file, or a running agent survives with no plist to stop it.
@@ -202,6 +226,20 @@ func UninstallService() error {
 		return fmt.Errorf("supervise: remove %s: %w", path, err)
 	}
 	return nil
+}
+
+// An old cask must not stop a replacement installation during cleanup or rollback.
+func ownsHomebrewService(exe, plist string) (bool, error) {
+	if _, err := os.Stat(plist); os.IsNotExist(err) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	previous := common.ServiceProgram(Status{Path: plist})
+	if previous == "" {
+		return false, fmt.Errorf("cannot determine which executable owns %s; service left untouched", plist)
+	}
+	return previous == exe, nil
 }
 
 func ServiceState(ctx context.Context) Status {

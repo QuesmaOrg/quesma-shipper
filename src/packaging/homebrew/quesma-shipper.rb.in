@@ -1,0 +1,37 @@
+cask "quesma-shipper" do
+  arch arm: "arm64", intel: "amd64"
+
+  version "@VERSION@"
+  sha256 arm:   "@ARM64_SHA256@",
+         intel: "@AMD64_SHA256@"
+
+  url "https://updates.quesma.dev/targets/#{sha256}.quesma-shipper-darwin-#{arch}"
+  name "Quesma Shipper"
+  desc "Collect coding-agent history for your Quesma dashboard"
+  homepage "https://github.com/QuesmaOrg/quesma-shipper"
+
+  depends_on macos: :ventura
+  container type: :naked
+
+  rename "*quesma-shipper-darwin-#{arch}", "quesma-shipper"
+
+  installer script: {
+    executable: "quesma-shipper",
+    args:       ["postinstall"],
+    sudo:       false,
+  }
+  binary "quesma-shipper"
+
+  uninstall script: {
+    executable: "#{staged_path}/quesma-shipper",
+    args:       ["service", "uninstall"],
+    sudo:       false,
+  }
+
+  caveats <<~EOS
+    Connect this computer using the login command from your Quesma dashboard.
+    The background service starts automatically and waits for login.
+    Updates: brew upgrade --cask quesmaorg/tap/quesma-shipper
+    Uninstall keeps enrollment and upload history for a later reinstall.
+  EOS
+end
