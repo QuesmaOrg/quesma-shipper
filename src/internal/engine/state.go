@@ -47,7 +47,7 @@ var (
 	ErrInstallMismatch = errors.New("state: document belongs to a different install")
 )
 
-// One spelling, so the guard's error and doctor's row cannot drift apart over the command.
+// InstallMismatchRemedy is shared by the guard's error and doctor's row, so the two cannot drift.
 const InstallMismatchRemedy = "Run `quesma-shipper state reset --apply` to forget that install's " +
 	"record and re-ship this install's whole history"
 
@@ -96,7 +96,8 @@ type Document struct {
 	Corrupt bool
 }
 
-// An unstamped document belongs to whoever opens it, so an empty id on either side is never foreign.
+// ForeignTo reports whether another install wrote this document. An unstamped one belongs to
+// whoever opens it, so an empty id on either side is never foreign.
 func (d Document) ForeignTo(installID string) bool {
 	return d.InstallID != "" && installID != "" && d.InstallID != installID
 }
@@ -208,8 +209,8 @@ func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err erro
 }
 
 // Reset forgets every fingerprint, so the next sync re-ships the whole history onto existing keys.
-// It adopts a document another install wrote, since what it forgets was never this install's to
-// keep; adopted reports that, because "nothing to do" would send the operator away from the fix.
+// The document is replaced rather than deleted, and comes back stamped with this install: adopted
+// reports when that meant taking over one another install left behind.
 func Reset(stateDir, installID string, dryRun bool) (removed int, adopted bool, err error) {
 	return editStore(stateDir, installID, dryRun, true, func(s *Store) int {
 		removed := len(s.entries)
