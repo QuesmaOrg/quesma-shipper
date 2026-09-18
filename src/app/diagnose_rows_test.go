@@ -133,7 +133,7 @@ func TestCheckUpdate(t *testing.T) {
 func TestAdvisoryRowsNeverFail(t *testing.T) {
 	dir := t.TempDir()
 	var rows []Row
-	rows = append(rows, scheduleRows(dir, time.Now(), false)...)
+	rows = append(rows, scheduleRows(dir, time.Now())...)
 	doc, docErr := engine.Peek(dir)
 	rows = append(rows, stateRowsFrom(doc, docErr, "")...)
 	rows = append(rows, enrollmentRows(dir, nil, os.ErrNotExist, &config.Effective{}, controlplane.Remote{})...)
@@ -333,54 +333,6 @@ func TestAccountInspectionIsNeutral(t *testing.T) {
 	}
 }
 
-// Nineteen consecutive failed ticks used to leave doctor entirely green: the service row reports
-// only that launchd loaded the job, and nothing else read the failure record. This pins the row
-// that makes a silently failing install visible, and that it carries the reason.
-func TestFailureRowsReportConsecutiveFailures(t *testing.T) {
-	dir := t.TempDir()
-	now := time.Date(2026, 9, 17, 13, 0, 0, 0, time.UTC)
-
-	if rows := failureRows(dir, now, false); rows != nil {
-		t.Fatalf("a store with no failure record produced %d rows", len(rows))
-	}
-
-	rec := formats.FailureRecord{ConsecutiveFailures: 19}
-	rec.Append(formats.FailureEvent{
-		At:      now.Add(-15 * time.Minute).Format(time.RFC3339),
-		Kind:    formats.FailureTick,
-		Message: "state: document belongs to a different install",
-	})
-	if err := writeFailureRecord(dir, rec); err != nil {
-		t.Fatal(err)
-	}
-
-	rows := failureRows(dir, now, false)
-	if len(rows) != 1 {
-		t.Fatalf("got %d rows, want 1", len(rows))
-	}
-	got := rows[0]
-	if got.Sev != SevWarn {
-		t.Errorf("severity = %v, want SevWarn", got.Sev)
-	}
-	if !strings.Contains(got.Detail, "19") {
-		t.Errorf("detail %q must count the failed runs", got.Detail)
-	}
-	if !strings.Contains(got.Fix, "different install") {
-		t.Errorf("fix %q must carry the reason the runs failed", got.Fix)
-	}
-}
-
-// A run that succeeds clears the counter, and the row goes with it.
-func TestFailureRowsSilentAfterASuccess(t *testing.T) {
-	dir := t.TempDir()
-	if err := writeFailureRecord(dir, formats.FailureRecord{ConsecutiveFailures: 0}); err != nil {
-		t.Fatal(err)
-	}
-	if rows := failureRows(dir, time.Now(), false); rows != nil {
-		t.Errorf("a healthy install produced %d rows", len(rows))
-	}
-}
-
 // Peek skips Open's guard, so doctor must name the mismatch itself rather than wait for a run.
 func TestStateRowsNameAnInstallMismatch(t *testing.T) {
 	const mine, theirs = "c033b5b2-c3ac-4f39-911f-7ea632b7727c", "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
@@ -417,29 +369,71 @@ func TestStateRowsNameAnInstallMismatch(t *testing.T) {
 	}
 }
 
+// seedFailures writes a record with a streak and the events behind it, the shape every row test
+// below needs.
+func seedFailures(t *testing.T, dir string, streak int, events ...formats.FailureEvent) {
+	t.Helper()
+	rec := formats.FailureRecord{ConsecutiveFailures: streak}
+	for _, e := range events {
+		rec.Append(e)
+	}
+	if err := writeFailureRecord(dir, rec); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func event(at time.Time, kind, message string) formats.FailureEvent {
+	return formats.FailureEvent{At: at.Format(time.RFC3339), Kind: kind, Message: message}
+}
+
+// Nineteen consecutive failed ticks used to leave doctor entirely green: the service row reports
+// only that launchd loaded the job, and nothing else read the failure record. This pins the row
+// that makes a silently failing install visible, that it carries the reason, and that it says
+// nothing once a run succeeds and clears the streak.
+func TestFailureRowsReportConsecutiveFailures(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 9, 17, 13, 0, 0, 0, time.UTC)
+
+	if rows := failureRows(dir, now); rows != nil {
+		t.Fatalf("a store with no failure record produced %d rows", len(rows))
+	}
+
+	seedFailures(t, dir, 19, event(now.Add(-15*time.Minute), formats.FailureTick,
+		"state: document belongs to a different install"))
+	rows := failureRows(dir, now)
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	got := rows[0]
+	if got.Sev != SevWarn {
+		t.Errorf("severity = %v, want SevWarn", got.Sev)
+	}
+	if !strings.Contains(got.Detail, "19") {
+		t.Errorf("detail %q must count the failed runs", got.Detail)
+	}
+	if !strings.Contains(got.Fix, "different install") {
+		t.Errorf("fix %q must carry the reason the runs failed", got.Fix)
+	}
+
+	seedFailures(t, dir, 0)
+	if rows := failureRows(dir, now); rows != nil {
+		t.Errorf("a healthy install produced %d rows", len(rows))
+	}
+}
+
 // The streak counts collecting runs, but the log also carries uncounted events: a failed
-// self-update, a panic in a one-shot verb. Attributing the streak to the newest event of ANY kind
-// sent the operator to the update channel while the sink was what refused every run.
+// self-update, a panic in a one-shot verb. Attributing it to the newest event of ANY kind sent the
+// operator to the update channel while the sink was what refused every run.
 func TestFailureRowsIgnoreUncountedEvents(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 9, 17, 13, 0, 0, 0, time.UTC)
 
-	rec := formats.FailureRecord{ConsecutiveFailures: 5}
-	rec.Append(formats.FailureEvent{
-		At:      now.Add(-30 * time.Minute).Format(time.RFC3339),
-		Kind:    formats.FailureTick,
-		Message: "the run shipped nothing: all 3 attempted uploads failed: connection refused",
-	})
-	rec.Append(formats.FailureEvent{
-		At:      now.Add(-1 * time.Minute).Format(time.RFC3339),
-		Kind:    formats.FailureUpdate,
-		Message: "self-update from v1.2.3 did not happen",
-	})
-	if err := writeFailureRecord(dir, rec); err != nil {
-		t.Fatal(err)
-	}
+	seedFailures(t, dir, 5,
+		event(now.Add(-30*time.Minute), formats.FailureTick,
+			"the run shipped nothing: all 3 attempted uploads failed: connection refused"),
+		event(now.Add(-1*time.Minute), formats.FailureUpdate, "self-update from v1.2.3 did not happen"))
 
-	rows := failureRows(dir, now, false)
+	rows := failureRows(dir, now)
 	if len(rows) != 1 {
 		t.Fatalf("got %d rows, want 1", len(rows))
 	}
@@ -458,14 +452,10 @@ func TestFailureRowsIgnoreUncountedEvents(t *testing.T) {
 // true, so the row stays; only the reason is gone.
 func TestFailureRowsSurviveALogWithNoCountedEvent(t *testing.T) {
 	dir := t.TempDir()
-	rec := formats.FailureRecord{ConsecutiveFailures: 3}
-	rec.Append(formats.FailureEvent{
-		At: time.Now().Format(time.RFC3339), Kind: formats.FailureUpdate, Message: "update failed",
-	})
-	if err := writeFailureRecord(dir, rec); err != nil {
-		t.Fatal(err)
-	}
-	rows := failureRows(dir, time.Now(), false)
+	now := time.Now()
+	seedFailures(t, dir, 3, event(now, formats.FailureUpdate, "update failed"))
+
+	rows := failureRows(dir, now)
 	if len(rows) != 1 {
 		t.Fatalf("got %d rows, want 1", len(rows))
 	}
@@ -474,28 +464,23 @@ func TestFailureRowsSurviveALogWithNoCountedEvent(t *testing.T) {
 	}
 }
 
-// When the state row already names a foreign document and how to repair it, the streak row keeps
-// the count and drops the instruction: the same remedy twice reads as two separate problems.
-func TestFailureRowsDropTheFixWhenTheCauseIsNamedElsewhere(t *testing.T) {
+// A recorded error carries its remedy in a later paragraph, and the row that owns that remedy
+// prints it. This row takes the reason only, so doctor never states one fix twice.
+func TestFailureRowsShowTheReasonNotTheRemedy(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
-	rec := formats.FailureRecord{ConsecutiveFailures: 4}
-	rec.Append(formats.FailureEvent{
-		At: now.Format(time.RFC3339), Kind: formats.FailureTick,
-		Message: "state: document belongs to a different install",
-	})
-	if err := writeFailureRecord(dir, rec); err != nil {
-		t.Fatal(err)
-	}
+	seedFailures(t, dir, 4, event(now, formats.FailureTick,
+		"state: document belongs to a different install: it was written by 85a7e04c and this install is c033b5b2\n\n"+
+			engine.InstallMismatchRemedy))
 
-	rows := failureRows(dir, now, true)
+	rows := failureRows(dir, now)
 	if len(rows) != 1 {
 		t.Fatalf("got %d rows, want 1", len(rows))
 	}
-	if rows[0].Fix != "" {
-		t.Errorf("fix %q repeats what the state row already says", rows[0].Fix)
+	if strings.Contains(rows[0].Fix, "state reset") {
+		t.Errorf("fix %q repeats the remedy the state row already prints", rows[0].Fix)
 	}
-	if !strings.Contains(rows[0].Detail, "4") {
-		t.Errorf("detail %q dropped the count, which is all this row still adds", rows[0].Detail)
+	if !strings.Contains(rows[0].Fix, "written by 85a7e04c") {
+		t.Errorf("fix %q dropped the reason", rows[0].Fix)
 	}
 }

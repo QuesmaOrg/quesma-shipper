@@ -507,7 +507,10 @@ func controlPlaneRows(enr *controlplane.Enrollment, enrErr error,
 	return rows
 }
 
-func scheduleRows(stateDir string, now time.Time, causeNamed bool) []Row {
+// Two rows point at the run log; one spelling of that instruction.
+const fixSeeRunLog = "`quesma-shipper log` shows what each run did"
+
+func scheduleRows(stateDir string, now time.Time) []Row {
 	var rows []Row
 	if p := platform.Read(stateDir); p.Paused {
 		rows = append(rows, Row{Sev: SevWarn, Label: "collecting", Brief: "paused",
@@ -515,14 +518,14 @@ func scheduleRows(stateDir string, now time.Time, causeNamed bool) []Row {
 			Fix:    "`quesma-shipper resume`"})
 	}
 
-	rows = append(rows, failureRows(stateDir, now, causeNamed)...)
+	rows = append(rows, failureRows(stateDir, now)...)
 
 	st := packaging.ServiceState(stateDir)
 	switch {
 	case st.Loaded && st.LastRun.IsZero():
 		rows = append(rows, Row{Sev: SevWarn, Label: "background service", Brief: "background service never ran",
 			Detail: "loaded but it has never completed a run",
-			Fix:    "`quesma-shipper log` shows what each run did"})
+			Fix:    fixSeeRunLog})
 	case st.Loaded:
 		rows = append(rows, Row{Sev: SevOK, Label: "background service",
 			Detail: "running"})
@@ -540,25 +543,22 @@ func scheduleRows(stateDir string, now time.Time, causeNamed bool) []Row {
 
 // A loaded service whose every tick fails looks identical to a healthy one: the job is fine, the
 // runs are not, and only the failure record shows the difference.
-func failureRows(stateDir string, now time.Time, causeNamed bool) []Row {
+func failureRows(stateDir string, now time.Time) []Row {
 	rec := readFailureRecord(stateDir)
 	if rec.ConsecutiveFailures == 0 {
 		return nil
 	}
 	detail := "the last " + CountNoun(rec.ConsecutiveFailures, "run") + " failed, so nothing has been sent since"
-	fix := "`quesma-shipper log` shows what each run did"
+	fix := fixSeeRunLog
 	// Counted, not merely newest: an uncounted event rides the same log and would blame the streak
 	// on the update channel while the sink is what refused every run.
 	if last := rec.LatestCounted(); last != nil {
 		if at, err := time.Parse(time.RFC3339, last.At); err == nil {
 			detail += ", most recently " + Ago(at, now)
 		}
-		fix = last.Message
-	}
-	// Another row already names this cause and its remedy, so the count is all this one adds:
-	// printing the same instruction twice reads as two problems.
-	if causeNamed {
-		fix = ""
+		// The reason only. A recorded error puts its remedy in a later paragraph, and the row that
+		// owns that remedy prints it; repeating it here reads as two problems rather than one.
+		fix, _, _ = strings.Cut(last.Message, "\n\n")
 	}
 	return []Row{{Sev: SevWarn, Label: "recent runs", Brief: "recent runs are failing",
 		Detail: detail, Fix: fix}}

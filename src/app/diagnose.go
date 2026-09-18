@@ -99,8 +99,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 			shipping = append(shipping, row)
 		}
 	}
-	// A foreign document is named by its own row below, which carries the remedy too.
-	shipping = append(shipping, scheduleRows(paths.StateDir, now, docErr == nil && doc.ForeignTo(installID))...)
+	shipping = append(shipping, scheduleRows(paths.StateDir, now)...)
 	var stateDetail []Row
 	for _, row := range stateRowsFrom(doc, docErr, installID) {
 		if row.Sev == SevWarn {
@@ -120,7 +119,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		if unitErr != nil {
 			conf = append(conf, Row{Sev: SevFail, Label: "identity", Detail: fmt.Sprintf("missing: %v", unitErr), Fix: "`quesma-shipper login`"})
 		} else {
-			conf = append(conf, Row{Sev: SevDim, Label: "install_id", Detail: unit.InstallID.String()})
+			conf = append(conf, Row{Sev: SevDim, Label: "install_id", Detail: installID})
 		}
 		conf = append(conf,
 			Row{Sev: SevDim, Label: "state_dir", Detail: paths.StateDir},
@@ -161,7 +160,7 @@ func stateRowsFrom(doc engine.Document, err error, installID string) []Row {
 		rows = append(rows, Row{Sev: SevWarn, Label: "local state", Brief: "local state belongs to another install",
 			Detail: fmt.Sprintf("written by install %s, this install is %s: every run is refused",
 				doc.InstallID, installID),
-			Fix: "`quesma-shipper state reset --apply` forgets it and re-ships this install's history"})
+			Fix: engine.InstallMismatchRemedy})
 	}
 	parked := 0
 	var fixes []string

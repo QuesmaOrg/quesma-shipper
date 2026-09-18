@@ -48,6 +48,11 @@ var (
 	ErrInstallMismatch = errors.New("state: document belongs to a different install")
 )
 
+// InstallMismatchRemedy is the one spelling of the way out, so the guard's error and the row doctor
+// prints cannot drift apart over the command that repairs them.
+const InstallMismatchRemedy = "Run `quesma-shipper state reset --apply` to forget that install's " +
+	"record and re-ship this install's whole history"
+
 // Key identifies one fingerprint.
 type Key struct {
 	SourceID   string
@@ -151,11 +156,10 @@ func open(stateDir, installID string, maxBytes int64, adopt bool) (*Store, error
 	foreign := doc.ForeignTo(installID)
 	if foreign && !adopt {
 		s.Close()
-		// The fix travels with the error: every run hits this guard, and until the record is
-		// forgotten the install ships nothing at all.
-		return nil, fmt.Errorf("%w: it was written by %s and this install is %s\n\n"+
-			"Run `quesma-shipper state reset --apply` to forget that install's record and re-ship "+
-			"this install's whole history", ErrInstallMismatch, doc.InstallID, installID)
+		// Reason first, remedy after a blank line: every run hits this guard, so the way out has to
+		// travel with it, and a reader that already has its own remedy can keep the first paragraph.
+		return nil, fmt.Errorf("%w: it was written by %s and this install is %s\n\n%s",
+			ErrInstallMismatch, doc.InstallID, installID, InstallMismatchRemedy)
 	}
 	s.specs, s.entries, s.corrupt = doc.SourceSpecs, doc.Entries, doc.Corrupt
 	s.adopted = foreign

@@ -424,14 +424,10 @@ func TestCommitOfAnUnserializableEntryFails(t *testing.T) {
 // A state file with the wrong identity would attribute another install's uploads to this one.
 func TestDocumentFromAnotherInstallIsRejected(t *testing.T) {
 	dir := t.TempDir()
-	s := open(t, dir)
-	if err := commit(s, key("/x/a.jsonl"), fingerprint()); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
+	seedForeignDoc(t, dir)
 
-	if _, err := engine.Open(dir, otherInstall); err == nil {
-		t.Fatal("a document belonging to another install must be refused")
+	if _, err := engine.Open(dir, installID); !errors.Is(err, engine.ErrInstallMismatch) {
+		t.Fatalf("a document belonging to another install: err = %v, want ErrInstallMismatch", err)
 	}
 }
 
