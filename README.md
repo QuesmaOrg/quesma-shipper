@@ -151,6 +151,10 @@ on an Arm PC and run it as your normal user. The setup installs the command unde
 your user `PATH`, and registers a scheduled task that starts immediately and at login without
 administrator rights. Re-running setup repairs that integration without changing enrollment.
 
+For managed deployments, follow the [Intune setup guide](src/packaging/windows/intune/README.md).
+It includes user-context installation and unattended enrollment, a platform-script route you can
+configure from macOS, and a Win32 app package route with detection and uninstall scripts.
+
 Windows release signing is temporarily disabled while the publisher identity is validated. Until
 it is restored, Microsoft Defender SmartScreen may warn about the download, and managed devices
 whose application-control policy requires a trusted publisher may block it.
