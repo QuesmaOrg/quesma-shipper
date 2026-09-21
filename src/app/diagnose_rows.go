@@ -124,10 +124,7 @@ func agentRows(probes []sourceProbe, names map[string]string, up lastUpload, now
 	var order []string
 	byFam := map[string][]sourceProbe{}
 	for _, pr := range probes {
-		f := pr.src.Family
-		if f == "" {
-			f = pr.src.ID
-		}
+		f := familyOf(pr.src)
 		if _, seen := byFam[f]; !seen {
 			order = append(order, f)
 		}
@@ -137,11 +134,7 @@ func agentRows(probes []sourceProbe, names map[string]string, up lastUpload, now
 		if f == sidecarFamily && !verbose {
 			continue
 		}
-		name := names[f]
-		if name == "" {
-			name = f
-		}
-		famRows, collecting, famFiles := familyRows(name, byFam[f], familyUploadFor(byFam[f], up), now, verbose)
+		famRows, collecting, famFiles := familyRows(cmp.Or(names[f], f), byFam[f], familyUploadFor(byFam[f], up), now, verbose)
 		rows = append(rows, famRows...)
 		if collecting && f != sidecarFamily {
 			agents++
@@ -557,6 +550,24 @@ func failureRows(stateDir string, now time.Time) []Row {
 	}
 	return []Row{{Sev: SevWarn, Label: "recent runs", Brief: "recent runs are failing",
 		Detail: detail, Fix: fix}}
+}
+
+// lastFailureRows adds recovered failures to verbose output; scheduleRows already reports an ongoing streak.
+func lastFailureRows(stateDir string, now time.Time, verbose bool) []Row {
+	if !verbose {
+		return nil
+	}
+	rec := readFailureRecord(stateDir)
+	if rec.ConsecutiveFailures > 0 {
+		return nil
+	}
+	latest := rec.Latest()
+	if latest == nil {
+		return nil
+	}
+	at, _ := time.Parse(time.RFC3339, latest.At)
+	detail := fmt.Sprintf("%s, %s: %s", Ago(at, now), latest.Kind, latest.Message)
+	return []Row{{Sev: SevDim, Label: "last failure", Detail: detail}}
 }
 
 func doctorReport(probes []sourceProbe) formats.Report {

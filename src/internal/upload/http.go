@@ -89,19 +89,8 @@ func New() *Uploader {
 	}}
 }
 
-// Upload spends one validated ticket, re-deriving no URL and no header of its own.
+// Upload spends one ticket ValidateTicket accepted, re-deriving no URL and no header of its own.
 func (u *Uploader) Upload(ctx context.Context, ticket Ticket, body []byte) error {
-	if ticket.Method != "PUT" {
-		return fmt.Errorf("upload: ticket for object %q authorizes method %q", ticket.ObjectID, ticket.Method)
-	}
-	if ticket.ContentLength != int64(len(body)) {
-		return fmt.Errorf("upload: ticket for object %q authorizes %d bytes, body is %d",
-			ticket.ObjectID, ticket.ContentLength, len(body))
-	}
-	if _, err := parseTicketURL(ticket.URL); err != nil {
-		return err
-	}
-
 	// Whole-operation deadline, scaled by body size and capped.
 	d := operationOverhead + time.Duration(len(body)/minThroughput)*time.Second
 	ctx, cancel := context.WithTimeout(ctx, min(d, maxOperation))

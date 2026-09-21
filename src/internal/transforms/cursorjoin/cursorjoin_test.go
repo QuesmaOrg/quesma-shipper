@@ -101,7 +101,6 @@ func unit(t *testing.T, body string) transforms.RawUnit {
 func run(t *testing.T, dbPath string, units ...transforms.RawUnit) transforms.EnrichResult {
 	t.Helper()
 	return cursorjoin.New().Enrich(transforms.Input{
-		SourceID:   "cursor-transcripts",
 		Units:      units,
 		DBPath:     dbPath,
 		ScratchDir: filepath.Join(t.TempDir(), "scratch"),

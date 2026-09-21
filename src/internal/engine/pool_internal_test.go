@@ -138,7 +138,7 @@ func TestGeneratedFileChecksUploadStateBeforeLoading(t *testing.T) {
 			}}
 			o := Options{DryRun: true, Now: time.Now}
 			result, pending := o.prepareFile(context.Background(), fileJob{cand: cand, seen: true, fp: Fingerprint{SourceHash: hash, SourceSize: cand.Size, SourceMTime: cand.MTime}},
-				sources.Resolved{}, sources.Discovery{}, nil, nil, false)
+				sources.Resolved{}, sources.Discovery{}, false)
 			if pending != nil {
 				t.Fatal("unexpected upload")
 			}

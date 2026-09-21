@@ -17,7 +17,7 @@ func TestHandScannersEngage(t *testing.T) {
 			t.Fatalf("Load(%s): %v", pack, err)
 		}
 		for _, r := range rules {
-			if r.hand == nil {
+			if r.hand == nil && r.fused == fusedNone {
 				continue
 			}
 			if r.capture != 0 {

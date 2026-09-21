@@ -26,7 +26,10 @@ type AgentRow struct {
 	Last            time.Time
 }
 
-func Survey(eff *config.Effective, paths config.Paths, attr *sources.RepoFilter, names map[string]string) []AgentRow {
+// Survey groups every trajectory source's candidates by agent family and repository. The
+// attributor is the caller's: the tracking browser keeps one across refreshes for its cwd cache.
+func Survey(eff *config.Effective, paths config.Paths, attr *sources.RepoFilter) []AgentRow {
+	names := familyNames(eff.Catalog)
 	registry := sources.NewRegistry()
 	byFamily := map[string]*AgentRow{}
 	var order []string
@@ -45,7 +48,7 @@ func Survey(eff *config.Effective, paths config.Paths, attr *sources.RepoFilter,
 		if src.ArtifactClass != "trajectory" {
 			continue
 		}
-		family := cmp.Or(src.Family, src.ID)
+		family := familyOf(src)
 		row, seen := byFamily[family]
 		if !seen {
 			row = &AgentRow{Family: family, Display: cmp.Or(names[family], family)}
@@ -118,11 +121,11 @@ func maxTime(a, b time.Time) time.Time {
 	return a
 }
 
-func FamilyNames(compiled *sources.Compiled) map[string]string {
+// familyOf is the grouping key for an agent's sources; a source outside any family is its own.
+func familyOf(src config.ResolvedSource) string { return cmp.Or(src.Family, src.ID) }
+
+func familyNames(compiled *sources.Compiled) map[string]string {
 	names := map[string]string{}
-	if compiled == nil {
-		return names
-	}
 	for _, spec := range compiled.Specs {
 		if spec.DisplayName != "" {
 			names[spec.Family] = spec.DisplayName

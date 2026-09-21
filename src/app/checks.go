@@ -1,6 +1,9 @@
 package app
 
-import "strings"
+import (
+	"cmp"
+	"strings"
+)
 
 type Severity int
 
@@ -53,11 +56,7 @@ func (r *Report) Issues() (out []string, fails int) {
 				fails++
 			}
 			if row.Sev == SevFail || (row.Sev == SevWarn && !row.Rollup) {
-				b := row.Brief
-				if b == "" {
-					b = strings.TrimSpace(row.Label)
-				}
-				out = append(out, b)
+				out = append(out, cmp.Or(row.Brief, strings.TrimSpace(row.Label)))
 			}
 		}
 	}

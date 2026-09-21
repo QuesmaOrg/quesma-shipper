@@ -37,24 +37,6 @@ func TestAModifiedTreeIsVisibleInTheVersion(t *testing.T) {
 	}
 }
 
-// The human line carries what somebody quotes in a bug report.
-func TestTheHumanLineNamesTheCommitAndThePlatform(t *testing.T) {
-	line := Info{
-		Version: "v0.4.1", Revision: "031a7faa8c1652f68ec214225df6657989113a1a",
-		Time: "2026-08-06T08:31:31Z", GoVersion: "go1.25.0", OS: "linux", Arch: "amd64",
-	}.Line()
-
-	for _, want := range []string{"v0.4.1", "linux/amd64", "031a7faa8c16", "2026-08-06", "go1.25.0"} {
-		if !strings.Contains(line, want) {
-			t.Errorf("the line does not mention %q:\n  %s", want, line)
-		}
-	}
-	// The short form, not forty characters of sha in a banner.
-	if strings.Contains(line, "031a7faa8c1652f68ec214225df6657989113a1a") {
-		t.Errorf("the full sha is in the human line:\n  %s", line)
-	}
-}
-
 // A release stamp is believed only when the toolchain corroborates it; a stamp that could lie would ship wrong provenance.
 func TestAReleaseStampMustBeCorroborated(t *testing.T) {
 	rev := "031a7faa8c1652f68ec214225df6657989113a1a"

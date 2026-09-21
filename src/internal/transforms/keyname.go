@@ -1,6 +1,9 @@
 package transforms
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // A field name a program chose (`api_key`, `apiKey`, `x-api-key`) is compared as WORDS, split
 // on separators and camelCase humps. As a suffix of the configured environment names it would
@@ -25,11 +28,10 @@ var secretWords = map[string]bool{
 	// "session" is deliberately absent: alone it is an id, not a credential.
 }
 
-// secretTails are two-word endings: "key" alone is too common (object_key, cache_key), so it
-// counts only when the word before says which kind. "id" never qualifies, whatever precedes it.
-var secretTails = map[string][]string{
-	"key": {"api", "secret", "private", "access", "signing", "encryption", "auth"},
-}
+// keyQualifiers make a trailing "key" a credential: alone it is too common (object_key,
+// cache_key), so it counts only when the word before says which kind. "id" never qualifies,
+// whatever precedes it.
+var keyQualifiers = []string{"api", "secret", "private", "access", "signing", "encryption", "auth"}
 
 // matchesSecretKeyName reports whether a field name says its value is a credential.
 func matchesSecretKeyName(key string) bool {
@@ -45,15 +47,7 @@ func matchesSecretKeyName(key string) bool {
 	if secretWords[last] {
 		return true
 	}
-	if qualifiers, ok := secretTails[last]; ok && len(words) >= 2 {
-		prev := words[len(words)-2]
-		for _, q := range qualifiers {
-			if prev == q {
-				return true
-			}
-		}
-	}
-	return false
+	return last == "key" && len(words) >= 2 && slices.Contains(keyQualifiers, words[len(words)-2])
 }
 
 // splitKeyWords normalizes a field name into lowercase words: separators and camelCase humps

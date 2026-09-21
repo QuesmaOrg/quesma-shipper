@@ -98,9 +98,9 @@ type Scrubber struct {
 	// mistakes structure for secrets, so the engine consults exemptions BEFORE it.
 	entropy *entropyMatcher
 
-	// The one structural rewriter, nil when no username is configured. Not a detector,
-	// so it runs everywhere including on exempt fields.
-	pathUser *pathUserRewriter
+	// The username the path-user rewriter replaces, empty when none is configured. Not a
+	// detector, so it runs everywhere including on exempt fields.
+	pathUser string
 
 	keyNames *keyNameMatcher
 	exempt   *ExemptionSet
@@ -180,16 +180,12 @@ func New(cfg Config) (*Scrubber, error) {
 				if err != nil {
 					return nil, fmt.Errorf("scrub: pack %s rule %s: %w", name, r.RuleID(), err)
 				}
-				s.patterns = append(s.patterns, gatedPattern{m: ruleAdapter{r: r}, gate: gate})
+				s.patterns = append(s.patterns, gatedPattern{m: r, gate: gate})
 			}
 		}
 	}
 
-	names := cfg.SecretKeyNames
-	if names == nil {
-		names = DefaultSecretKeyNames()
-	}
-	s.keyNames = newKeyNameMatcher(names)
+	s.keyNames = newKeyNameMatcher(cfg.SecretKeyNames)
 	// nil stems yield AlwaysGate, so a non-ASCII configured name is still redacted, just
 	// not prefiltered on bytes that cannot represent it.
 	keyGate, err := prefilter.AddKeywords(s.keyNames.stems)
@@ -199,28 +195,8 @@ func New(cfg Config) (*Scrubber, error) {
 	s.patterns = append(s.patterns, gatedPattern{m: s.keyNames, gate: keyGate})
 	s.prefilter = prefilter.Build()
 
-	if cfg.Username != "" {
-		s.pathUser = &pathUserRewriter{username: cfg.Username}
-	}
+	s.pathUser = cfg.Username
 	return s, nil
-}
-
-// ruleAdapter bridges the packs package's Span to the engine's.
-type ruleAdapter struct{ r *packs.Rule }
-
-func (a ruleAdapter) MatchScannedIn(value string, scan *packs.ValueScan) []Span {
-	return adaptSpans(a.r.MatchScannedIn(value, scan))
-}
-
-func adaptSpans(found []packs.Span) []Span {
-	if len(found) == 0 {
-		return nil
-	}
-	out := make([]Span, 0, len(found))
-	for _, s := range found {
-		out = append(out, Span{Start: s.Start, End: s.End, RuleID: s.RuleID})
-	}
-	return out
 }
 
 func isASCII(s string) bool {
@@ -284,7 +260,7 @@ func (s *Scrubber) Scrub(payload []byte, hint Hint) (Result, error) {
 				var err error
 				out, err = walker.appendTo(out, body)
 				if err != nil {
-					return Result{}, &EngineError{Op: "apply JSON redaction spans", Err: err}
+					return Result{}, fmt.Errorf("scrub engine: apply JSON redaction spans: %w", err)
 				}
 			} else if out != nil {
 				out = append(out, body...)
@@ -397,7 +373,7 @@ func (s *Scrubber) planValueWith(
 		patternSpans = append(patternSpans, p.m.MatchScannedIn(value, scan)...)
 	}
 	if entropy != nil {
-		heuristicSpans = entropy.Match(value, field)
+		heuristicSpans = entropy.Match(value)
 	}
 
 	// One level of base64, never recursion: work stays bounded per byte. The whole
@@ -422,8 +398,8 @@ func (s *Scrubber) planValueWith(
 	}
 
 	// Runs last and unconditionally, including on values already redacted.
-	if s.pathUser != nil {
-		pathSpans, n := pathUserReplacementSpans(value, s.pathUser.username, plan.spans)
+	if s.pathUser != "" {
+		pathSpans, n := pathUserReplacementSpans(value, s.pathUser, plan.spans)
 		if n > 0 {
 			plan.spans = append(plan.spans, pathSpans...)
 			slices.SortFunc(plan.spans, func(a, b replacementSpan) int {
@@ -433,7 +409,7 @@ func (s *Scrubber) planValueWith(
 			if plan.hits == nil {
 				plan.hits = map[string]int{}
 			}
-			plan.hits[s.pathUser.RuleID()]++
+			plan.hits["path-user"]++
 		}
 	}
 	return plan

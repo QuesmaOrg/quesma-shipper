@@ -75,8 +75,6 @@ type Options struct {
 	// DeviceKey signs requests after enrollment, verified against the public key in the record the
 	// server reads fresh per request, so a client cannot present a scope it was not granted.
 	DeviceKey ed25519.PrivateKey
-
-	HTTPClient *http.Client
 }
 
 // New builds a client. An empty endpoint is an error rather than a no-op: that caller has a bug.
@@ -84,9 +82,9 @@ func New(o Options) (*Client, error) {
 	if o.Endpoint == "" {
 		return nil, errors.New("backend: no endpoint configured")
 	}
-	httpClient := o.HTTPClient
-	if httpClient == nil {
-		httpClient = &http.Client{
+	return &Client{
+		endpoint: strings.TrimSuffix(o.Endpoint, "/"),
+		http: &http.Client{
 			Timeout: defaultTimeout,
 
 			// A control-plane call is never a redirect: following one would strip the device
@@ -94,11 +92,7 @@ func New(o Options) (*Client, error) {
 			CheckRedirect: func(req *http.Request, _ []*http.Request) error {
 				return fmt.Errorf("backend: refusing redirect to %s", req.URL.Host)
 			},
-		}
-	}
-	return &Client{
-		endpoint:     strings.TrimSuffix(o.Endpoint, "/"),
-		http:         httpClient,
+		},
 		installID:    o.InstallID,
 		organization: o.Organization,
 		deviceKey:    o.DeviceKey,
@@ -174,10 +168,6 @@ type Fetched struct {
 // FetchConfig posts the config request and returns the served config. A document that does not
 // parse is refused here rather than downstream: a config that partly applied is worse than none.
 func (c *Client) FetchConfig(ctx context.Context, req ConfigRequest) (Fetched, error) {
-	if c.installID == "" || c.organization == "" {
-		return Fetched{}, ErrNotEnrolled
-	}
-
 	var out ConfigResponse
 	if err := c.post(ctx, "/v1/config", req, &out, true); err != nil {
 		return Fetched{}, err
@@ -229,6 +219,10 @@ func (c *Client) post(ctx context.Context, path string, body, out any, signed bo
 // exchange sends one JSON POST and returns its status and bounded body. preamble is the domain
 // prefix the signature covers ahead of the body; v1 signs the body alone and passes "".
 func (c *Client) exchange(ctx context.Context, path, preamble string, payload []byte, signed bool) (int, []byte, error) {
+	// The one not-enrolled guard: a signed call needs the whole record, checked before any byte is sent.
+	if signed && (c.installID == "" || c.organization == "" || len(c.deviceKey) == 0) {
+		return 0, nil, ErrNotEnrolled
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+path, bytes.NewReader(payload))
 	if err != nil {
 		return 0, nil, fmt.Errorf("backend: build request: %w", err)
@@ -245,9 +239,6 @@ func (c *Client) exchange(ctx context.Context, path, preamble string, payload []
 	}
 
 	if signed {
-		if len(c.deviceKey) == 0 || c.organization == "" {
-			return 0, nil, ErrNotEnrolled
-		}
 		// A detached signature over the exact bytes. Scoping uses the install id in the server's
 		// authenticated record, never this header, which makes a wider scope unrequestable.
 		sig := ed25519.Sign(c.deviceKey, append([]byte(preamble), payload...))

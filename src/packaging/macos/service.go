@@ -96,11 +96,7 @@ func guiDomain() string  { return fmt.Sprintf("gui/%d", os.Getuid()) }
 func guiService() string { return guiDomain() + "/" + bundleIdentifier }
 
 func installService(spec Spec) (Status, error) {
-	home, err := common.HomeFor(spec)
-	if err != nil {
-		return Status{}, err
-	}
-	path := launchdPath(home)
+	path := launchdPath(spec.Home)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return Status{}, fmt.Errorf("supervise: %w", err)
 	}

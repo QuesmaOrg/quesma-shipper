@@ -19,8 +19,6 @@ import (
 // field names live in config, and a miss means project = none, which is a legal value.
 type Sidecar struct{}
 
-func (*Sidecar) Name() string { return "sidecar" }
-
 // ProjectRecord is one directory-to-repository mapping.
 type ProjectRecord struct {
 	At   string `json:"at"`

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -311,6 +312,118 @@ func TestAnUpdateFailureIsRecordedButNotCounted(t *testing.T) {
 	}
 	if rec.ConsecutiveFailures != 0 {
 		t.Errorf("a failed self-update moved the collection failure count to %d", rec.ConsecutiveFailures)
+	}
+}
+
+// The crash used to reach only the heartbeat; the persisted event is what survives the process.
+func TestACrashIsPersistedLocally(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	stateDir, err := StateDirWithoutConfig()
+	if err != nil {
+		t.Skipf("no resolvable state directory here: %v", err)
+	}
+
+	RecordCrash(&formats.LastCrash{RunID: "dddddddddddddddd", Phase: "tick 3", Consecutive: 2})
+
+	rec := readFailureRecord(stateDir)
+	latest := rec.Latest()
+	if latest == nil || latest.Kind != formats.FailureCrash {
+		t.Fatalf("the crash was not persisted: %+v", rec)
+	}
+	if latest.RunID != "dddddddddddddddd" || !strings.Contains(latest.Message, `"tick 3"`) {
+		t.Errorf("the event does not attribute the dead run: %+v", latest)
+	}
+	// Crashes keep their own counter; the collection count must not move.
+	if rec.ConsecutiveFailures != 0 {
+		t.Errorf("a crash moved consecutive_failures to %d", rec.ConsecutiveFailures)
+	}
+
+	// An undelivered crash is re-detected on every restart; only a NEW dead run may append.
+	RecordCrash(&formats.LastCrash{RunID: "dddddddddddddddd", Phase: "tick 3", Consecutive: 3})
+	if rec := readFailureRecord(stateDir); len(rec.Recent) != 1 {
+		t.Fatalf("a restart duplicated the crash event: %+v", rec.Recent)
+	}
+	RecordCrash(&formats.LastCrash{RunID: "ffffffffffffffff", Phase: "init", Consecutive: 2})
+	if rec := readFailureRecord(stateDir); len(rec.Recent) != 2 {
+		t.Fatalf("a different dead run was not recorded: %+v", rec.Recent)
+	}
+}
+
+// One standing event however long the stall lasts: a stuck tick re-reported twenty times would
+// evict the rest of the log.
+func TestAStalledTickIsRecordedOnce(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "eeeeeeeeeeeeeeee"}
+	watchFires(r, 7, 2)
+
+	rec := readFailureRecord(dir)
+	if len(rec.Recent) != 1 || rec.Latest().Kind != formats.FailureStalled {
+		t.Fatalf("want exactly one stalled event, got %+v", rec.Recent)
+	}
+	if !strings.Contains(rec.Latest().Message, "tick 7") || rec.Latest().RunID != "eeeeeeeeeeeeeeee" {
+		t.Errorf("the event does not name the tick or its run: %+v", rec.Latest())
+	}
+	if rec.ConsecutiveFailures != 0 {
+		t.Errorf("a stall moved consecutive_failures to %d; the tick may yet complete", rec.ConsecutiveFailures)
+	}
+}
+
+// A stall that recovered leaves its event as the newest one through every clean tick after it; a
+// later stall must replace it, not be deduplicated away behind a stale timestamp.
+func TestALaterStallReplacesTheStandingEvent(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "ffffffffffffffff"}
+
+	watchFires(r, 5, 1)
+	for i := 0; i < 3; i++ {
+		r.JudgeTick(nil, formats.Report{Shipped: 1}, false, platform.Delta{})
+	}
+	watchFires(r, 900, 1)
+
+	rec := readFailureRecord(dir)
+	if len(rec.Recent) != 1 || !strings.Contains(rec.Latest().Message, "tick 900") {
+		t.Fatalf("want one stalled event naming tick 900, got %+v", rec.Recent)
+	}
+}
+
+// fires counts watchdog fires: without an upload port the warning line is the only thing a fire
+// writes, so waiting for a count replaces a wall-clock guess.
+type fires chan struct{}
+
+func (c fires) Write(p []byte) (int, error) { c <- struct{}{}; return len(p), nil }
+
+func watchFires(r *Runtime, n, want int) {
+	ctx, cancel := context.WithCancel(context.Background())
+	fired := make(fires, 16)
+	done := make(chan struct{})
+	go func() {
+		r.WatchStalledTick(ctx, n, time.Millisecond, fired)
+		close(done)
+	}()
+	for i := 0; i < want; i++ {
+		<-fired
+	}
+	cancel()
+	<-done
+}
+
+// The in-memory copy exists for the disk that cannot be written; once a write succeeds it must be
+// dropped, or the daemon would clobber events other processes append between its ticks.
+func TestJudgeMergesEventsFromOtherWriters(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runtime{eff: &config.Effective{StateDir: dir}}
+	r.JudgeTick(errors.New("boom"), formats.Report{}, false, platform.Delta{})
+
+	other := readFailureRecord(dir)
+	other.Append(formats.FailureEvent{At: "2026-01-01T00:00:00Z", Kind: formats.FailureUpdate, Message: "tuf: no such target"})
+	if err := writeFailureRecord(dir, other); err != nil {
+		t.Fatal(err)
+	}
+
+	r.JudgeTick(nil, formats.Report{Shipped: 1}, false, platform.Delta{})
+	rec := readFailureRecord(dir)
+	if len(rec.Recent) != 2 {
+		t.Fatalf("the other writer's event was clobbered: %+v", rec.Recent)
 	}
 }
 

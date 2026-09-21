@@ -28,10 +28,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 
 	unit, unitErr := identity.Load(paths.StateDir)
 	enr, enrErr := controlplane.LoadEnrollment(paths.StateDir)
-	if enrErr != nil {
-		enr = nil
-	}
-	if enr != nil {
+	if enrErr == nil {
 		rep.Organization, rep.Endpoint = enr.Organization, enr.Endpoint
 	}
 	updCh := make(chan UpdateStatus, 1)
@@ -46,11 +43,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 	}
 	doc, docErr := engine.Peek(paths.StateDir)
 	registry := sources.NewRegistry()
-	compiled, _ := sources.Load()
-	var trackFilter *sources.RepoFilter
-	if compiled != nil {
-		trackFilter = compiled.RepoFilter()
-	}
+	trackFilter := eff.Catalog.RepoFilter()
 	var probes []sourceProbe
 	for _, src := range eff.Sources {
 		pr := sourceProbe{src: src}
@@ -70,7 +63,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		probes = append(probes, pr)
 	}
 	now := time.Now()
-	agents, agentsCollecting, filesFound := agentRows(probes, FamilyNames(compiled), loadLastUpload(paths.StateDir), now, verbose)
+	agents, agentsCollecting, filesFound := agentRows(probes, familyNames(eff.Catalog), loadLastUpload(paths.StateDir), now, verbose)
 	rep.AgentsCollecting, rep.FilesFound = agentsCollecting, filesFound
 
 	var shipping []Row
@@ -85,7 +78,10 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		if verbose {
 			where = env.Destination() + ", "
 		}
-		if err := env.ProbeHeartbeat(pctx, doctorReport(probes)); err != nil {
+		// Doctor probes the write path with the one state object the protocol authorizes.
+		// mirror=false: doctor collects nothing, and mirroring its all-zero counters would erase
+		// the record of the last real flush, the very thing doctor reads.
+		if err := env.writeHeartbeat(pctx, doctorReport(probes), false); err != nil {
 			shipping = append(shipping, Row{Sev: SevFail, Label: "storage", Brief: "cannot send",
 				Detail: where + "upload check failed: " + err.Error(),
 				Fix:    "nothing can be sent until this works"})
@@ -100,6 +96,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		}
 	}
 	shipping = append(shipping, scheduleRows(paths.StateDir, now)...)
+	shipping = append(shipping, lastFailureRows(paths.StateDir, now, verbose)...)
 	var stateDetail []Row
 	for _, row := range stateRowsFrom(doc, docErr, installID) {
 		if row.Sev == SevWarn {

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"strings"
@@ -122,12 +123,9 @@ func logCmd() *cobra.Command {
 			defer w.Flush()
 			fmt.Fprintf(w, "WHEN\tDECISION\tSOURCE\tIN\tOUT\tDENSITY\tDETAIL\n")
 			for _, e := range entries {
-				detail := e.Reason
-				if detail == "" {
-					detail = e.File
-				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%.4f\t%s\n",
-					e.At.Local().Format("15:04:05"), e.Decision, e.SourceID, e.BytesIn, e.BytesOut, e.RedactionDensity, detail)
+					e.At.Local().Format("15:04:05"), e.Decision, e.SourceID, e.BytesIn, e.BytesOut, e.RedactionDensity,
+					cmp.Or(e.Reason, e.File))
 			}
 			return nil
 		},
@@ -207,11 +205,7 @@ func printEffective(out io.Writer, eff *config.Effective, paths config.Paths, wi
 		if s.Root != "" {
 			row("sources."+s.ID+".root", s.Root)
 		} else {
-			reason := s.RootUnresolvedReason
-			if reason == "" {
-				reason = "no candidate root resolved"
-			}
-			row("sources."+s.ID+".root", "(unresolved: "+reason+")")
+			row("sources."+s.ID+".root", "(unresolved: "+cmp.Or(s.RootUnresolvedReason, "no candidate root resolved")+")")
 		}
 		row("sources."+s.ID+".include", strings.Join(s.Include, ", "))
 		row("sources."+s.ID+".artifact_class", s.ArtifactClass)
@@ -227,15 +221,11 @@ func stateCmd() *cobra.Command {
 	var apply bool
 	reset := &cobra.Command{Use: "reset", Short: "Forget everything so the next run re-hashes every file and asks the archive what it already holds", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, paths, err := app.ResolveEffective()
+			stateDir, unit, err := installIdentity()
 			if err != nil {
 				return err
 			}
-			unit, err := identity.Load(paths.StateDir)
-			if err != nil {
-				return err
-			}
-			removed, err := engine.Reset(paths.StateDir, unit.InstallID.String(), !apply)
+			removed, err := engine.Reset(stateDir, unit.InstallID.String(), !apply)
 			if err != nil {
 				return err
 			}
@@ -244,15 +234,11 @@ func stateCmd() *cobra.Command {
 		}}
 	prune := &cobra.Command{Use: "prune", Short: "Forget files that no longer exist", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, paths, err := app.ResolveEffective()
+			stateDir, unit, err := installIdentity()
 			if err != nil {
 				return err
 			}
-			unit, err := identity.Load(paths.StateDir)
-			if err != nil {
-				return err
-			}
-			removed, kept, err := engine.Prune(paths.StateDir, unit.InstallID.String(), !apply)
+			removed, kept, err := engine.Prune(stateDir, unit.InstallID.String(), !apply)
 			if err != nil {
 				return err
 			}
@@ -292,4 +278,18 @@ func localDevCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// installIdentity is the prologue of a verb that edits the local record: the state directory in
+// force and the install the record belongs to.
+func installIdentity() (string, *identity.Unit, error) {
+	_, paths, err := app.ResolveEffective()
+	if err != nil {
+		return "", nil, err
+	}
+	unit, err := identity.Load(paths.StateDir)
+	if err != nil {
+		return "", nil, err
+	}
+	return paths.StateDir, unit, nil
 }

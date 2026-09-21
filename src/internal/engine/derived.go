@@ -23,14 +23,6 @@ import (
 // recomputed anyway: the DB side moves on its own, and a late tool result would never be collected.
 const recomputeWindow = 24 * time.Hour
 
-// withinRecomputeWindow reports whether an unchanged file should still be read for enrichment.
-func (o Options) withinRecomputeWindow(staging bool, cand sources.Candidate) bool {
-	if !staging {
-		return false
-	}
-	return o.Now().Sub(cand.MTime) < recomputeWindow
-}
-
 // enrichersFor returns every enabled enricher of a source, sorted by id because src.Enrichers is a
 // map: two flushes of the same config must run the same enrichers in the same order.
 func (o Options) enrichersFor(src sources.Resolved) []transforms.Enricher {
@@ -69,9 +61,9 @@ func (o Options) enrichSource(
 	out.EnricherID = e.ID()
 	out.EnricherVersion = e.Version()
 
-	dbPath := o.resolveDB(e)
+	// The first declared database candidate that exists; empty means absent, which is not an error.
+	dbPath := o.Env.FirstExistingFile(e.DBCandidates())
 	res := e.Enrich(transforms.Input{
-		SourceID:   src.ID,
 		Units:      staged,
 		DBPath:     dbPath,
 		ScratchDir: filepath.Join(o.Plan.StateDir, "scratch"),
@@ -117,12 +109,6 @@ func (o Options) enrichSource(
 	return nil
 }
 
-// resolveDB expands an enricher's declared database candidates and returns the first that
-// exists. Empty means absent, which is not an error.
-func (o Options) resolveDB(e transforms.Enricher) string {
-	return o.Env.FirstExistingFile(e.DBCandidates())
-}
-
 // shipDerivedGroups ships everything one enricher derived. Outcomes are index-addressed so the
 // report keeps enricher order; a non-nil halted means this enricher stopped uploading.
 func (o Options) shipDerivedGroups(
@@ -134,28 +120,19 @@ func (o Options) shipDerivedGroups(
 	objects []transforms.Derived,
 	out *SourceOutcome,
 ) (shipped int, halted error) {
-	type staged struct {
-		idx     int
-		fo      FileOutcome
-		pending *pendingPut
-	}
-
 	fos := make([]FileOutcome, len(objects))
-	group := &batcher[staged]{
+	group := &batcher{
 		maxObjects: maxBatchObjects,
-		send: func(items []staged) {
-			batch := make([]PreparedObject, len(items))
+		send: func(items []stagedUpload) {
+			outcomes := o.authorizeAndUpload(ctx, items)
 			for i, g := range items {
-				batch[i] = preparedFrom(i, g.pending.objectKey, g.pending.obj, g.pending.md)
-			}
-			outcomes := o.authorizeAndUpload(ctx, batch)
-			for i, g := range items {
-				fos[g.idx] = o.commitDerived(store, g.fo, g.pending, outcomes[i])
-				if fos[g.idx].Decision == auditlog.DecisionShipped {
+				idx := g.res.idx
+				fos[idx] = o.commitDerived(store, g.res.outcome, g.pending, outcomes[i])
+				if fos[idx].Decision == auditlog.DecisionShipped {
 					shipped++
 				}
 				// A refusal or an unavailable plane stops this enricher; a failed PUT does not.
-				if outcomes[i] != nil && errorKind(outcomes[i]) != "upload" && halted == nil {
+				if stopsRun(outcomes[i]) && halted == nil {
 					halted = outcomes[i]
 				}
 			}
@@ -175,7 +152,7 @@ func (o Options) shipDerivedGroups(
 			fos[i] = fo
 			continue
 		}
-		group.add(staged{idx: i, fo: fo, pending: pending}, int64(len(pending.obj)))
+		group.add(stagedUpload{res: fileResult{idx: i, outcome: fo}, pending: pending}, int64(len(pending.obj)))
 	}
 	group.flush()
 
@@ -215,6 +192,11 @@ func (o Options) prepareDerived(
 	d transforms.Derived,
 ) (fo FileOutcome, pending *pendingPut) {
 	fo = FileOutcome{SourceID: src.ID, NativePath: d.NativePath, BytesIn: int64(len(d.Payload)), Derived: true}
+	fail := func(reason string) (FileOutcome, *pendingPut) {
+		fo.Decision = auditlog.DecisionFailed
+		fo.Reason = reason
+		return fo, nil
+	}
 
 	key := Key{
 		SourceID:   src.ID,
@@ -231,9 +213,7 @@ func (o Options) prepareDerived(
 
 	res, err := scrubSource(src, d.Payload, true, o.scrub, o.scrubErr)
 	if err != nil {
-		fo.Decision = auditlog.DecisionFailed
-		fo.Reason = "scrub failed closed on derived payload: " + err.Error()
-		return fo, nil
+		return fail("scrub failed closed on derived payload: " + err.Error())
 	}
 
 	relPath := d.NativePath
@@ -242,19 +222,20 @@ func (o Options) prepareDerived(
 	}
 	objectKey, err := o.mirrorKey(src.ID, relPath)
 	if err != nil {
-		fo.Decision = auditlog.DecisionFailed
-		fo.Reason = err.Error()
-		return fo, nil
+		return fail(err.Error())
 	}
 	fo.ObjectKey = objectKey
 
+	sourceHash := transforms.Hash(d.Payload)
+	ref := &EnricherRef{ID: e.ID(), Version: e.Version()}
+
 	m := o.baseManifest(src, d.NativePath)
-	m.SourceHash = transforms.Hash(d.Payload)
+	m.SourceHash = sourceHash
 	m.ShapeSniff = string(sources.SniffOK)
 
 	// What makes this object distrustable: downstream cannot regenerate the DB-side fields.
 	m.Derived = true
-	m.Enricher = &transforms.EnricherRef{ID: e.ID(), Version: e.Version()}
+	m.Enricher = ref
 	m.DerivedFrom = d.DerivedFrom
 	m.EnrichStatus = string(d.Status)
 	m.EnrichMismatches = d.Mismatches
@@ -276,13 +257,10 @@ func (o Options) prepareDerived(
 			RuleHits: res.RuleHits,
 		}
 	}
-	m.ShippedHash = transforms.Hash(res.Out)
 
-	obj, err := transforms.Seal(m, res.Out, o.Recipients)
+	obj, sealed, err := transforms.Seal(m, res.Out, o.Recipients)
 	if err != nil {
-		fo.Decision = auditlog.DecisionFailed
-		fo.Reason = err.Error()
-		return fo, nil
+		return fail(err.Error())
 	}
 	fo.BytesOut = int64(len(obj))
 
@@ -297,11 +275,11 @@ func (o Options) prepareDerived(
 		objectKey: objectKey,
 		obj:       obj,
 		// ObjectMetadata carries derived=true in plaintext, so an erasure sweep needs only a HEAD.
-		md: m.ObjectMetadata(),
+		md: sealed.ObjectMetadata(),
 		next: Fingerprint{
-			SourceHash: transforms.Hash(d.Payload),
+			SourceHash: sourceHash,
 			OutputHash: d.OutputHash,
-			Enricher:   &EnricherRef{ID: e.ID(), Version: e.Version()},
+			Enricher:   ref,
 		},
 	}
 }

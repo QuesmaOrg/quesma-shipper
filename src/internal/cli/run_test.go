@@ -40,30 +40,23 @@ func TestRecycleRetriesAFailedSupervisionProbe(t *testing.T) {
 // rather than the full interval.
 func TestTruncatedRunEarnsTheCatchUpDelay(t *testing.T) {
 	// Shipped is part of the condition: a run that collected nothing has no backlog to chase.
-	if got := app.NextDelay(formats.Report{Truncated: true, Shipped: 64}, nil, false, config.DefaultTick); got != app.CatchUpDelay {
+	if got := app.NextDelay(formats.Report{Truncated: true, Shipped: 64}, nil, config.DefaultTick); got != app.CatchUpDelay {
 		t.Fatalf("truncated run: next delay = %v, want %v", got, app.CatchUpDelay)
 	}
 }
 
 func TestCompleteRunWaitsTheFullInterval(t *testing.T) {
-	if got := app.NextDelay(formats.Report{}, nil, false, config.DefaultTick); got != config.DefaultTick {
+	if got := app.NextDelay(formats.Report{}, nil, config.DefaultTick); got != config.DefaultTick {
 		t.Fatalf("complete run: next delay = %v, want %v", got, config.DefaultTick)
 	}
 }
 
 // An errored run keeps the full interval: re-ticking fast would make one failure a hot loop.
+// A panic is the same case: recoverFlush always surfaces it as an error.
 func TestErroredRunNeverEarnsTheCatchUpDelay(t *testing.T) {
 	rep := formats.Report{Truncated: true}
-	if got := app.NextDelay(rep, errors.New("sink unreachable"), false, config.DefaultTick); got != config.DefaultTick {
+	if got := app.NextDelay(rep, errors.New("sink unreachable"), config.DefaultTick); got != config.DefaultTick {
 		t.Fatalf("errored run: next delay = %v, want %v", got, config.DefaultTick)
-	}
-}
-
-// Whatever panicked is still on disk, so a fast re-tick would be a permanent crash loop.
-func TestPanickedRunNeverEarnsTheCatchUpDelay(t *testing.T) {
-	rep := formats.Report{Truncated: true}
-	if got := app.NextDelay(rep, nil, true, config.DefaultTick); got != config.DefaultTick {
-		t.Fatalf("panicked run: next delay = %v, want %v", got, config.DefaultTick)
 	}
 }
 
@@ -119,7 +112,7 @@ func TestACleanTickIsUntouched(t *testing.T) {
 // failures return no error.
 func TestARunThatShippedNothingWaitsTheFullInterval(t *testing.T) {
 	rep := formats.Report{Truncated: true, Failed: 64, Shipped: 0}
-	if got := app.NextDelay(rep, nil, false, config.DefaultTick); got != config.DefaultTick {
+	if got := app.NextDelay(rep, nil, config.DefaultTick); got != config.DefaultTick {
 		t.Fatalf("all-failures run: next delay = %v, want %v", got, config.DefaultTick)
 	}
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"time"
 
@@ -24,12 +25,9 @@ func uninstallCmd(b app.Build) *cobra.Command {
 				return err
 			}
 			printHeader(w, p, st, time.Now())
-			to := "your organisation"
-			if st.Organization != "" {
-				to = st.Organization
-			}
+			to := cmp.Or(st.Organization, "your organisation")
 			homebrew := packaging.HomebrewManaged()
-			program, target := "deletes the program", app.Title
+			program, target := "deletes the program", app.Name
 			if homebrew {
 				program, target = "keeps the Homebrew command installed", "the background service"
 			}
@@ -40,7 +38,7 @@ func uninstallCmd(b app.Build) *cobra.Command {
 				question = "Remove " + target + " and purge its local state?"
 			}
 			fmt.Fprintf(w, "\n%s collects your coding-agent sessions on this machine and sends them\n"+
-				"to %s. Removing it stops that and %s\n\n", app.Title, to, effect)
+				"to %s. Removing it stops that and %s\n\n", app.Name, to, effect)
 			if !yes {
 				agreed, err := confirm(cmd, question)
 				if err != nil {

@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -42,16 +41,9 @@ type UploadObject struct {
 	Metadata   UploadMetadata `json:"metadata"`
 }
 
-// metadataNames is the closed plaintext-metadata allowlist, and the UploadMetadata json tags below
-// spell exactly these names in order. source-hash and ticket-id are absent by design: the server
-// derives both, so a client cannot spell them itself.
-var metadataNames = []string{
-	"manifest-version", "source-id", "shipped-hash", "artifact-class",
-	"agent-version", "shape-sniff", "derived", "enrich-status", "kind",
-}
-
-// UploadMetadata carries the allowlisted names. A mirror object sets the first four; a heartbeat
-// sets Kind alone. The server refuses any other combination.
+// UploadMetadata carries the closed plaintext-metadata allowlist; its json tags spell exactly those
+// names in order. source-hash and ticket-id are absent by design: the server derives both, so a
+// client cannot spell them itself. A mirror object sets the first four; a heartbeat sets Kind alone.
 type UploadMetadata struct {
 	ManifestVersion string `json:"manifest-version,omitempty"`
 	SourceID        string `json:"source-id,omitempty"`
@@ -88,44 +80,9 @@ type Ticket struct {
 	ContentLengthSigned bool `json:"content_length_signed,omitempty"`
 }
 
-// TicketHeaders is decoded as a map because each store has its own namespace. UnmarshalJSON keeps
-// the combined name set closed before a ticket reaches local prepared-object validation.
+// TicketHeaders is a plain map because each store has its own namespace; the closed name set is
+// enforced per ticket by upload.ValidateTicket, not at decode.
 type TicketHeaders map[string]string
-
-func (h *TicketHeaders) UnmarshalJSON(raw []byte) error {
-	var decoded map[string]string
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return err
-	}
-	for name := range decoded {
-		if !allowedTicketHeaderName(name) {
-			return fmt.Errorf("required header %q is outside the closed provider set", name)
-		}
-	}
-	*h = decoded
-	return nil
-}
-
-func allowedTicketHeaderName(name string) bool {
-	switch name {
-	case "x-amz-tagging", "x-ms-tags", "x-ms-blob-type":
-		return true
-	}
-	for _, prefix := range []string{"x-amz-meta-", "x-goog-meta-"} {
-		if suffix, ok := strings.CutPrefix(name, prefix); ok {
-			return suffix == "source-hash" || suffix == "ticket-id" || allowedMetadataName(suffix)
-		}
-	}
-	if suffix, ok := strings.CutPrefix(name, "x-ms-meta-"); ok {
-		suffix = strings.ReplaceAll(suffix, "_", "-")
-		return suffix == "source-hash" || suffix == "ticket-id" || allowedMetadataName(suffix)
-	}
-	return false
-}
-
-func allowedMetadataName(name string) bool {
-	return slices.Contains(metadataNames, name)
-}
 
 // NewWriterID mints this process's writer identity. Audit only, nothing is fenced on it. Random
 // per process and never persisted, so two processes on one install never claim the same id.
@@ -136,9 +93,6 @@ func NewWriterID() string {
 // AuthorizeUploads exchanges prepared object descriptors for PUT tickets. Its own status mapping:
 // 401/403 stops the run, 429/5xx retries later, and conflating them kills an install on a 429.
 func (c *Client) AuthorizeUploads(ctx context.Context, req AuthorizeRequest) (resp AuthorizeResponse, err error) {
-	if c.installID == "" {
-		return AuthorizeResponse{}, ErrNotEnrolled
-	}
 	switch {
 	case req.WriterID == "":
 		return AuthorizeResponse{}, errors.New("backend: authorize request carries no writer_id")

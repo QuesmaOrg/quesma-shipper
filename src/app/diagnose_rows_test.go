@@ -13,6 +13,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
@@ -472,5 +473,33 @@ func TestFailureRowsSurviveALogWithNoCountedEvent(t *testing.T) {
 	}
 	if strings.Contains(rows[0].Fix, "update failed") {
 		t.Errorf("fix %q fell back to an uncounted event", rows[0].Fix)
+	}
+}
+
+// Recovered failures appear only in verbose output; ongoing failures already have a schedule row.
+func TestLastFailureRows(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	if rows := lastFailureRows(dir, now, true); rows != nil {
+		t.Fatalf("a clean install shows no failure row, got %+v", rows)
+	}
+
+	r := &Runtime{eff: &config.Effective{StateDir: dir}}
+	r.JudgeTick(errors.New("the sink refused"), formats.Report{}, false, platform.Delta{})
+
+	for _, verbose := range []bool{false, true} {
+		if rows := lastFailureRows(dir, now, verbose); rows != nil {
+			t.Fatalf("an ongoing streak already has a schedule row, got duplicate %+v", rows)
+		}
+	}
+
+	r.JudgeTick(nil, formats.Report{Shipped: 1}, false, platform.Delta{})
+	if rows := lastFailureRows(dir, now, false); rows != nil {
+		t.Fatalf("a recovered failure must not warn by default, got %+v", rows)
+	}
+	rows := lastFailureRows(dir, now, true)
+	if len(rows) != 1 || rows[0].Sev != SevDim || !strings.Contains(rows[0].Detail, "tick_failed") {
+		t.Fatalf("verbose must still show the recovered failure, got %+v", rows)
 	}
 }

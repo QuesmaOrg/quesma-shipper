@@ -64,11 +64,11 @@ func loginCmd() *cobra.Command {
 }
 
 func askToken(cmd *cobra.Command) string {
-	stdin, ok := cmd.InOrStdin().(*os.File)
-	out := cmd.OutOrStdout()
-	if !ok || !isTerminal(stdin) || !isTerminal(out) {
+	stdin, ok := tty(cmd)
+	if !ok {
 		return ""
 	}
+	out := cmd.OutOrStdout()
 	fmt.Fprint(out, "Paste the token from your admin: ")
 	raw, err := term.ReadPassword(int(stdin.Fd()))
 	fmt.Fprintln(out)

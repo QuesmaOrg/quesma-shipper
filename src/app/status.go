@@ -71,11 +71,7 @@ func CurrentStatus(build Build) (Status, error) {
 		}
 	}
 
-	compiled, _ := sources.Load()
-	if compiled == nil {
-		return st, nil
-	}
-	rows := Survey(eff, paths, compiled.RepoFilter(), FamilyNames(compiled))
+	rows := Survey(eff, paths, eff.Catalog.RepoFilter())
 	doc, docErr := engine.Peek(paths.StateDir)
 	registry := sources.NewRegistry()
 	for _, a := range rows {
@@ -92,7 +88,7 @@ func CurrentStatus(build Build) (Status, error) {
 				continue
 			}
 			d, err := prim.Discover(sources.Request{Source: src, All: eff.Sources, Deny: eff.Deny,
-				Ignore: compiled.RepoFilter(), StateDir: paths.StateDir})
+				Ignore: eff.Catalog.RepoFilter(), StateDir: paths.StateDir})
 			if err != nil {
 				continue
 			}

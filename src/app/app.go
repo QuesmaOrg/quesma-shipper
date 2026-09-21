@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -62,26 +63,36 @@ type Runtime struct {
 	// env expands an enricher's declared database candidates, with the same rules catalog roots use.
 	env sources.Env
 
-	// progress is the per-file streaming hook a verb may register before flushing; rendering is CLI-owned.
-	// OnProgress is a per-file callback for subsequent flushes. Nil (the default) is silent.
+	// OnProgress is the per-file hook a verb registers before flushing; rendering is CLI-owned.
+	// Nil (the default) is silent.
 	OnProgress formats.Progress
 
-	// onLocked is called once a flush holds the store lock. See OnLocked.
 	// OnLocked runs once a flush holds the store lock. The lock is non-blocking, so a verb resets a
 	// per-run artifact from here, not at startup, where it would reset another's.
 	OnLocked func()
-
-	// judged is the record this process last wrote, so a reader after a tick need not parse the file
-	// back. Nil until something has been judged.
-	judged *formats.FailureRecord
 
 	// runID and lastCrash come from the CLI's crash journal; audit entries and heartbeats carry them.
 	runID     string
 	lastCrash *formats.LastCrash
 
+	// rec caches the failure record while the state dir refuses writes (disk full), so the next
+	// heartbeat still carries the judgement; a successful write drops it.
+	recMu sync.Mutex
+	rec   *formats.FailureRecord
+
+	// lastRep is the last completed tick's report, reused by the stall heartbeat so a stalled
+	// install does not blank its own per-source health. Judge writes it, the next tick's watchdog
+	// reads it; the two never overlap (the watchdog is joined before judging).
+	lastRep formats.Report
+
 	// OnCrashShipped fires once, when a heartbeat CARRYING the crash report reached the sink; the
 	// heartbeat fails open, so nothing weaker proves delivery.
 	OnCrashShipped func()
+	crashOnce      sync.Once
+
+	// hbMu serializes heartbeat PUTs: the remote object is overwritten in place, and a stall
+	// heartbeat still in flight must land BEFORE the engine's own, not over it.
+	hbMu sync.Mutex
 }
 
 // The run id lands on every audit entry and heartbeat; the previous run's death rides one out.
@@ -255,14 +266,9 @@ func (r *Runtime) WriteHeartbeat(ctx context.Context, rep formats.Report) error 
 	return r.writeHeartbeat(ctx, rep, true)
 }
 
-// Doctor's write-path probe: same build, authorization and PUT, but it leaves the local mirror
-// alone. Doctor collects nothing, so mirroring its all-zero counters would erase the record of the
-// last real flush -- the very thing doctor reads.
-func (r *Runtime) ProbeHeartbeat(ctx context.Context, rep formats.Report) error {
-	return r.writeHeartbeat(ctx, rep, false)
-}
-
 func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror bool) error {
+	r.hbMu.Lock()
+	defer r.hbMu.Unlock()
 	hb := engine.Build(engine.Input{
 		OrganizationID: r.eff.OrganizationID,
 		InstallID:      r.unit.InstallID.String(),
@@ -272,14 +278,15 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 		RunID:          r.runID,
 		Report:         rep,
 		Now:            time.Now().UTC(),
-		// The crash comes from this process reading the journal; the failures come off disk,
-		// written by whichever earlier run could not upload them itself.
+		// The crash comes from this process reading the journal; the failures come from the
+		// record, which may include this very run's judgement.
 		FailureRecord: r.failureRecord(),
 	})
 	body, err := hb.Encode()
 	if err != nil {
 		return err
 	}
+	hash := transforms.Hash(body)
 
 	// Mirrored in the clear (counts and versions, never payload bytes) so `quesma-shipper doctor` needs
 	// no network call. Best-effort: a reporting nicety must never fail a flush.
@@ -293,7 +300,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 	if err != nil {
 		return err
 	}
-	sealed, err := transforms.Seal(transforms.Manifest{
+	sealed, _, err := transforms.Seal(transforms.Manifest{
 		ManifestVersion: transforms.ManifestVersion,
 		OrganizationID:  r.eff.OrganizationID,
 		InstallID:       r.unit.InstallID.String(),
@@ -301,7 +308,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 		NativePath:      engine.Name,
 		Gather:          "metadata_only",
 		ArtifactClass:   "context",
-		SourceHash:      transforms.Hash(body),
+		SourceHash:      hash,
 		SealedAt:        time.Now().UTC().Format(time.RFC3339),
 		ShapeSniff:      string(formats.SniffOK),
 		// The same config fields every mirror manifest carries, so no reader special-cases this one.
@@ -324,32 +331,22 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 		ObjectID:   "heartbeat",
 		Key:        key,
 		Body:       sealed,
-		SourceHash: transforms.Hash(body),
+		SourceHash: hash,
 		Metadata:   map[string]string{"kind": "heartbeat"},
 	}})
 	if len(outcomes) != 1 {
 		return fmt.Errorf("the upload port answered %d outcomes for one heartbeat", len(outcomes))
 	}
+	// Once: the stall watchdog's heartbeat can carry the crash before the engine's own does.
 	if outcomes[0] == nil && r.lastCrash != nil && r.OnCrashShipped != nil {
-		r.OnCrashShipped()
-		r.OnCrashShipped = nil
+		r.crashOnce.Do(r.OnCrashShipped)
 	}
 	return outcomes[0]
 }
 
-// ignoreFilter is the .notrajectories attributor: built from the catalog alone, because
-// which repositories are tracked is answered by marker files in the repositories, not by
-// any config layer.
-func ignoreFilter() *sources.RepoFilter {
-	compiled, err := sources.Load()
-	if err != nil {
-		return nil
-	}
-	return compiled.RepoFilter()
-}
-
 // planFor is the one place configuration becomes something the loop can read: the core gets
-// values, never the resolver, so adding a config key does not touch the engine.
+// values, never the resolver, so adding a config key does not touch the engine. The repo
+// attributor comes from the catalog alone: tracking is answered by marker files, not config.
 func planFor(eff *config.Effective) engine.Plan {
 	interval, _ := config.TickInterval(eff.Schedule)
 	return engine.Plan{
@@ -362,7 +359,7 @@ func planFor(eff *config.Effective) engine.Plan {
 		SecretKeyNames: eff.SecretKeyNames,
 		StructuralEx:   eff.StructuralEx,
 		Deny:           eff.Deny,
-		Ignore:         ignoreFilter(),
+		Ignore:         eff.Catalog.RepoFilter(),
 		ConfigVersion:  eff.ConfigVersion,
 		ConfigExpired:  eff.ConfigExpired,
 	}
@@ -396,9 +393,7 @@ func (r *Runtime) AuditLog() *auditlog.Log { return r.log }
 func (r *Runtime) Recipients() []string {
 	out := make([]string, 0, len(r.recipients))
 	for _, rec := range r.recipients {
-		if s, ok := rec.(fmt.Stringer); ok {
-			out = append(out, s.String())
-		}
+		out = append(out, rec.(*age.X25519Recipient).String())
 	}
 	return out
 }
@@ -414,12 +409,6 @@ func (r *Runtime) FilterSources(id string) {
 		}
 	}
 	r.eff = &clone
-}
-
-// NewBuild describes this binary. The version comes from what the toolchain stamped rather than
-// from a flag, so there is exactly one answer and no way for a caller to supply a different one.
-func NewBuild() Build {
-	return Build{Version: platform.Current().String(), Release: platform.Current().Release}
 }
 
 // clientBlock is the build identity stamped into every object. One place, because it is a wire

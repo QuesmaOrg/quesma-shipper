@@ -105,7 +105,7 @@ func tarBytesFor(t *testing.T, manifestJSON, payload []byte) []byte {
 		t.Fatal(err)
 	}
 	id := identity(t)
-	obj, err := transforms.Seal(m, payload, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(m, payload, []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -18,8 +18,6 @@ type Accounts struct {
 	keychain func(context.Context, string) ([]byte, error)
 }
 
-func (*Accounts) Name() string { return "account" }
-
 type accountObservation struct {
 	Source     string          `json:"source"`
 	ObservedAt time.Time       `json:"observed_at"`
