@@ -15,6 +15,25 @@ import (
 const installID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
 const sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 const otherSha = "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
+const otherInstall = "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
+
+// What a re-enrolled machine wakes up to: a document another install left behind.
+func seedForeignDoc(t *testing.T, dir string, entries int) {
+	t.Helper()
+	s, err := engine.Open(dir, otherInstall)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.EnsureSpec("claude-code-transcripts", strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < entries; i++ {
+		if err := commit(s, key(fmt.Sprintf("/x/%d.jsonl", i)), fingerprint()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 func key(path string) engine.Key {
 	return engine.Key{
@@ -622,6 +641,115 @@ func TestResetReplacesAnUnloadableDocument(t *testing.T) {
 	}
 	if _, err := engine.Peek(dir); err != nil {
 		t.Fatalf("the document was not replaced: %v", err)
+	}
+}
+
+// Re-enrolling replaces identity.json and leaves the old install's document behind. Its entries
+// name objects under that install's key root, so not one of them may survive into this install.
+func TestAnotherInstallsEntriesNeverSurvive(t *testing.T) {
+	dir := t.TempDir()
+	seedForeignDoc(t, dir, 3)
+
+	s, err := engine.Open(dir, installID)
+	if err != nil {
+		t.Fatalf("a foreign document must be discarded, not refused: %v", err)
+	}
+	if !s.Corrupt() {
+		t.Error("the discard was not reported to the run")
+	}
+	if s.Len() != 0 {
+		t.Fatalf("%d of another install's entries survived", s.Len())
+	}
+	if err := commit(s, key("/x/mine.jsonl"), fingerprint()); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	doc, err := engine.Peek(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.InstallID != installID {
+		t.Errorf("the replacement kept the foreign install id %q", doc.InstallID)
+	}
+	if doc.ForeignTo(installID) {
+		t.Error("the replacement still reads as foreign, so the next run discards it again")
+	}
+	if len(doc.Entries) != 1 {
+		t.Errorf("the replacement holds %d entries, want only this install's one", len(doc.Entries))
+	}
+}
+
+// Prune keeps entries, so it is the verb that could claim another install's uploads. It cannot:
+// the discard empties the store before pruning ever looks at it.
+func TestPruneCannotClaimAnotherInstallsUploads(t *testing.T) {
+	dir := t.TempDir()
+	seedForeignDoc(t, dir, 2)
+
+	removed, kept, err := engine.Prune(dir, installID, false)
+	if err != nil {
+		t.Fatalf("prune over a foreign document: %v", err)
+	}
+	if removed != 0 || kept != 0 {
+		t.Errorf("prune reported removed=%d kept=%d over a discarded store, want 0 and 0", removed, kept)
+	}
+	doc, err := engine.Peek(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Entries) != 0 || doc.InstallID != installID {
+		t.Errorf("prune left %d entries under install %q", len(doc.Entries), doc.InstallID)
+	}
+}
+
+// An entryless foreign document forgets nothing, so only the install id makes it a replacement.
+// Reset must still write it, or the stale id survives and every run re-discards the file.
+func TestResetReplacesAnEmptyForeignDocument(t *testing.T) {
+	dir := t.TempDir()
+	seedForeignDoc(t, dir, 0)
+
+	removed, err := engine.Reset(dir, installID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 0 {
+		t.Errorf("an entryless document forgot %d entries", removed)
+	}
+	doc, err := engine.Peek(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.InstallID != installID {
+		t.Errorf("reset left the foreign install id %q in place", doc.InstallID)
+	}
+}
+
+// A dry run reports; it never writes. The in-memory discard must not reach the file.
+func TestADryRunLeavesAnUnloadableDocumentOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, engine.FileName)
+	original := []byte("not a document\n")
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, run := range []struct {
+		name string
+		fn   func() error
+	}{
+		{"reset", func() error { _, err := engine.Reset(dir, installID, true); return err }},
+		{"prune", func() error { _, _, err := engine.Prune(dir, installID, true); return err }},
+	} {
+		if err := run.fn(); err != nil {
+			t.Fatalf("%s dry run: %v", run.name, err)
+		}
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != string(original) {
+			t.Errorf("%s dry run rewrote the document: %q", run.name, got)
+		}
 	}
 }
 
