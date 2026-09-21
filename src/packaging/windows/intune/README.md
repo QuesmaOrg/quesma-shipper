@@ -171,10 +171,27 @@ same display name at the same endpoint, these checks cannot distinguish them: ve
 the enrollment in the control plane. Custom installation directories are outside
 this recipe.
 
-The detection script requires enrollment and a registered task, but tolerates a
-disabled task: service health is checked separately during the pilot. It does not pin the
-installed binary's version, because existing self-updates remain enabled. These
-scripts bootstrap enrollment; they do not give Intune ownership of shipper upgrades.
+The installer reruns setup when the shipper executable is missing or Windows cannot
+launch it, the supervisor executable is missing, or the task is missing or disabled.
+For example, replacing a stopped shipper executable with a text file triggers repair.
+If the executable starts but `status --json` returns an error or invalid output, the
+script stops instead: configuration and enrollment errors are not binary damage.
+Corruption that still allows the executable to start is not automatically repaired.
+
+After setup, the script checks the preserved enrollment before deciding whether login
+is needed. Repairing an enrolled copy requires no fresh grant. A fresh installation
+without a grant can complete setup, but reports failure until enrollment succeeds.
+Local status does not verify that the control plane still accepts the credentials.
+
+Detection requires enrollment, the supervisor executable, and an enabled Windows task.
+A missing supervisor or disabled task therefore triggers reinstallation for a
+**Required Win32 app** on a later Intune evaluation; recovery is not immediate.
+The platform-script route does not periodically rerun after success, so repair needs
+an administrator to trigger another run. Neither detection nor an enabled task proves
+that collection is running; check service health and uploads separately during the pilot.
+
+Detection does not pin the installed binary's version, because existing self-updates
+remain enabled. These scripts do not give Intune ownership of shipper upgrades.
 
 ## Verify the pilot and remove it
 
@@ -191,6 +208,9 @@ back in to check task startup. Intune success means setup and login completed; i
 not prove that collection has found files or that an upload has reached the sink.
 
 Test a rerun after enrollment and a failed enrollment before expanding the group.
+Also stop the task and test a deleted executable, an executable replaced with a text
+file, a missing supervisor, and a disabled task. Verify repair retains enrollment and
+upload state, and that a status/configuration error does not trigger reinstallation.
 For failures, inspect Intune's script/app status and the user's shipper logs (by
 default `%USERPROFILE%\.local\state\trajectory-shipper\logs`). Wrong
 architecture, a blocked unsigned program, an expired grant, and missing network
@@ -207,6 +227,8 @@ The scripts require Windows PowerShell 5.1 or later. An actual Intune pilot is s
 required to validate tenant policies, standard-user execution, enrollment, and uploads.
 
 For maintainers, `tests/Test-Deployment.ps1` checks parsing, enrollment-target guards,
-and detection against a synthetic executable. It requires Go and PowerShell, runs in
-Windows CI under PowerShell 5.1, and does not install software or contact a control
-plane. It can also run locally with PowerShell 7 on macOS.
+and detection against a synthetic executable. It also invokes `tests/Test-Install.ps1`
+to exercise the real installation flow with synthetic setup and login, including
+launch failures versus status failures. It requires Go and PowerShell, runs in Windows
+CI under PowerShell 5.1, and does not install software or contact a control plane.
+It can also run locally with PowerShell 7 on macOS.
