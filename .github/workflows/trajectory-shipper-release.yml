@@ -446,17 +446,30 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: shipper-release-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate the Homebrew cask from the published binaries
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.value }}
+        run: python3 scripts/homebrew-cask.py "$RELEASE_VERSION" artifacts > quesma-shipper.rb
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.version.outputs.value }}
         run: |
           if gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "GitHub release $RELEASE_VERSION already exists"
+            gh release upload "$RELEASE_VERSION" quesma-shipper.rb --clobber --repo "$GITHUB_REPOSITORY"
             exit 0
           fi
 
-          gh release create "$RELEASE_VERSION" \
+          gh release create "$RELEASE_VERSION" quesma-shipper.rb \
             --repo "$GITHUB_REPOSITORY" \
             --title "Quesma Shipper $RELEASE_VERSION" \
             --notes-file - <<EOF

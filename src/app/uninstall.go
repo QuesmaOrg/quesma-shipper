@@ -42,6 +42,10 @@ func Uninstall(purge bool, report func(UninstallStep)) (bool, error) {
 			return false, err
 		}
 	}
+	if packaging.HomebrewManaged() {
+		report(UninstallStep{Skip: "program managed by Homebrew; remove with " + packaging.BrewUninstall})
+		return false, uninstallState(paths.StateDir, purge, report)
+	}
 	if packaging.ProgramRemovalDeferred() {
 		if err := uninstallState(paths.StateDir, purge, report); err != nil {
 			return false, err

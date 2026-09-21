@@ -117,11 +117,29 @@ Everything derived this way passes through the scrub stage like any other file.
 
 ### From a release
 
-Release builds use the signed TUF repository to update themselves after installation. The public
+Release builds, including Homebrew installations, use the signed TUF repository to update themselves. The public
 repository and stable download endpoints are described in
 [RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md).
 
 **macOS**
+
+With Homebrew already installed:
+
+```sh
+brew install --cask quesmaorg/tap/quesma-shipper
+```
+
+The cask installs the command on your Homebrew `PATH` and starts a per-user background service,
+which waits for enrollment. It supports macOS 13 or newer on Apple Silicon and Intel, without
+administrator rights. Run the login command below after installing.
+
+The shipper updates itself automatically; run `quesma-shipper update` to update immediately.
+Use `brew uninstall --cask quesmaorg/tap/quesma-shipper` to remove it. Uninstall keeps enrollment and
+upload history. Add `--zap` to delete local state too, using the shipper's configured state directory.
+Before switching between Homebrew and the `.pkg`, uninstall the previous installation
+without purging local state.
+
+Without Homebrew:
 
 Download and install the signed
 [`quesma-shipper-macos-universal.pkg`](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg).
@@ -311,6 +329,10 @@ TUF metadata, and publishes to `https://updates.quesma.dev`. It then creates a
 [GitHub release](https://github.com/QuesmaOrg/quesma-shipper/releases) linking the stable downloads.
 The first release through this workflow was published on 2026-09-04. A maintainer approves each
 publication.
+
+Each GitHub release also carries a `quesma-shipper.rb` cask pinned to the published macOS binaries.
+The [Homebrew tap](https://github.com/QuesmaOrg/homebrew-tap) imports it hourly or on a manual workflow
+run. See [Homebrew packaging](src/packaging/homebrew/README.md) for the first-release rollout and checks.
 
 ## Contributing
 
