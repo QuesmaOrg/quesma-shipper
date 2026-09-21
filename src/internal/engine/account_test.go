@@ -12,6 +12,7 @@ import (
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
+	"github.com/QuesmaOrg/quesma-shipper/internal/sources/codexfake"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
@@ -31,7 +32,11 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	spec, _ := catalog.Source("codex-account")
 	o := f.opts()
 	o.Plan.Interval = 5 * time.Minute
-	o.Env = sources.Env{Home: f.home, Lookup: func(string) (string, bool) { return "", false }}
+	// The usage read fails on purpose, so every bucket is a partial snapshot the engine must still ship.
+	o.Env = sources.Env{Home: f.home, Lookup: installFakeCodex(t, codexfake.Config{ExpectHome: home, Responses: map[string]json.RawMessage{
+		"account/read":            json.RawMessage(`{"result":{"account":{"type":"chatgpt","email":"dev@example.org","planType":"pro"},"requiresOpenaiAuth":true}}`),
+		"account/rateLimits/read": json.RawMessage(`{"result":{"rateLimits":{"primary":{"usedPercent":7}}}}`),
+	}})}
 	o.Plan.Sources = []sources.Resolved{{Source: spec, Root: home, Enabled: true, SpecFingerprint: sources.SpecFingerprint(spec)}}
 	now := o.Now()
 	o.Now = func() time.Time { return now }
@@ -41,9 +46,6 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(f.stateDir, "snapshots")); !os.IsNotExist(err) {
 		t.Fatal("account collection staged files")
-	}
-	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(`{"auth_mode":"fresh","tokens":{"id_token":"x.eyJlbWFpbCI6ImRldkBleGFtcGxlLm9yZyJ9.x"}}`), 0600); err != nil {
-		t.Fatal(err)
 	}
 	f.reopen()
 	f.port.FailAll = nil
@@ -68,16 +70,16 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 			t.Fatalf("not a collector: %+v", manifest)
 		}
 		lines := bytes.Split(payload, []byte("\n"))
-		if len(lines) != 3 || len(lines[2]) != 0 {
-			t.Fatalf("expected two newline-terminated records: %s", payload)
+		if len(lines) != 4 || len(lines[3]) != 0 {
+			t.Fatalf("expected three newline-terminated records: %s", payload)
 		}
-		for _, line := range lines[:2] {
+		for _, line := range lines[:3] {
 			if !json.Valid(line) || !bytes.Contains(line, []byte(`"bucket_start":`)) {
 				t.Fatalf("invalid account record: %s", line)
 			}
 		}
-		if !bytes.Contains(payload, []byte(`"auth_mode":"fresh"`)) || !bytes.Contains(payload, []byte("dev@example.org")) || manifest.Redaction != nil {
-			t.Fatalf("fresh account payload altered: %s", payload)
+		if !bytes.Contains(payload, []byte(`"planType":"pro"`)) || !bytes.Contains(payload, []byte("dev@example.org")) || !bytes.Contains(payload, []byte(`"error":"rpc_error"`)) || manifest.Redaction != nil {
+			t.Fatalf("account payload altered: %s", payload)
 		}
 	}
 	f.reopen()

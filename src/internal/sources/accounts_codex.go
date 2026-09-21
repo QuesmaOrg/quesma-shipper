@@ -1,60 +1,70 @@
 package sources
 
 import (
+	"bufio"
 	"context"
-	"encoding/base64"
 	"encoding/json"
-	"net/http"
-	"path/filepath"
-	"strings"
+	"errors"
 )
 
+// One observation per app-server RPC. A signed-out account skips the backend-backed reads, the
+// same way the Claude collector skips its endpoints without a token.
 func (p *Accounts) collectCodex(ctx context.Context, req Request) ([]accountObservation, bool) {
-	var out []accountObservation
 	home := req.Source.Root
-	path := filepath.Join(home, "auth.json")
 	if !accountPathExists(home) {
 		return nil, false
 	}
-	doc, err := accountJSON(path, accountResponseLimit)
-	var tokens struct {
-		Access    string `json:"access_token"`
-		ID        string `json:"id_token"`
-		AccountID string `json:"account_id"`
-	}
-	if tokenErr := json.Unmarshal(doc["tokens"], &tokens); tokenErr != nil {
-		tokens.Access = ""
-	}
-	metadata := map[string]json.RawMessage{}
-	if mode := doc["auth_mode"]; len(mode) > 0 {
-		metadata["auth_mode"] = mode
-	}
-	parts := strings.Split(tokens.ID, ".")
-	if len(parts) == 3 {
-		claims, decodeErr := base64.RawURLEncoding.DecodeString(parts[1])
-		if decodeErr == nil && json.Valid(claims) {
-			metadata["id_token_claims"] = claims
-		}
-	}
-	body, _ := json.Marshal(metadata)
-	out = append(out, localAccount(req, "codex.local.account", body, err))
-	obs := accountObservation{Source: "codex.wham.usage", ObservedAt: req.Now().UTC()}
-	if tokens.Access == "" {
-		obs.Error = "credentials_unavailable"
-	} else {
-		request, err := http.NewRequestWithContext(ctx, "GET", "https://chatgpt.com/backend-api/wham/usage", nil)
-		if err != nil {
-			obs.Error = "request_failed"
-		} else {
-			request.Header.Set("Authorization", "Bearer "+tokens.Access)
-			request.Header.Set("Accept", "application/json")
-			request.Header.Set("User-Agent", "quesma-shipper")
-			if tokens.AccountID != "" {
-				request.Header.Set("ChatGPT-Account-Id", tokens.AccountID)
+	now := req.Now().UTC()
+	account := accountObservation{Source: "codex.appserver.account", ObservedAt: now}
+	limits := accountObservation{Source: "codex.appserver.rateLimits", ObservedAt: now}
+	usage := accountObservation{Source: "codex.appserver.usage", ObservedAt: now}
+	all := func(code string) []accountObservation {
+		for _, obs := range []*accountObservation{&account, &limits, &usage} {
+			if obs.Error == "" && obs.Body == nil {
+				obs.Error = code
 			}
-			obs = p.fetch(obs, request)
 		}
+		return []accountObservation{account, limits, usage}
 	}
-	out = append(out, obs)
-	return out, true
+	binary, ok := codexBinary(req.Env)
+	if !ok {
+		return all("codex_unavailable"), true
+	}
+	// A spawn or handshake failure leaves every observation empty; each then reports request_failed.
+	_ = runCodexAppServer(ctx, binary, home, func(c *codexRPC) error {
+		raw, err := c.call("account/read", map[string]bool{"refreshToken": false})
+		account = codexResult(account, raw, err)
+		var signedIn struct {
+			Account json.RawMessage `json:"account"`
+		}
+		if account.Error == "" && (json.Unmarshal(raw, &signedIn) != nil || len(signedIn.Account) == 0 || string(signedIn.Account) == "null") {
+			limits.Error, usage.Error = "credentials_unavailable", "credentials_unavailable"
+			return nil
+		}
+		raw, err = c.call("account/rateLimits/read", nil)
+		limits = codexResult(limits, raw, err)
+		raw, err = c.call("account/usage/read", nil)
+		usage = codexResult(usage, raw, err)
+		return nil
+	})
+	return all("request_failed"), true
+}
+
+func codexResult(obs accountObservation, raw json.RawMessage, err error) accountObservation {
+	var rpc *codexRPCError
+	switch {
+	case errors.As(err, &rpc):
+		obs.Error = "rpc_error"
+	case errors.Is(err, bufio.ErrTooLong):
+		obs.Error = "response_too_large"
+	case err != nil:
+		obs.Error = "request_failed"
+	case len(raw) > accountResponseLimit:
+		obs.Error = "response_too_large"
+	case !json.Valid(raw):
+		obs.Error = "invalid_json"
+	default:
+		obs.Body = raw
+	}
+	return obs
 }

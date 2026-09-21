@@ -92,7 +92,9 @@ Two more records are produced by the shipper itself:
   before the value is written anywhere.
 - **Account and usage history.** Independent Claude Code, Codex, and Cursor collectors upload
   account metadata and provider usage JSON in UTC buckets matching the collection interval (default 15 minutes). Unknown fields are preserved;
-  these records skip scrubbing and ship encrypted.
+  these records skip scrubbing and ship encrypted. The Codex collector asks `codex app-server` over
+  its JSON-RPC instead of reading tokens out of `auth.json`, so it needs the `codex` binary on PATH
+  or in a standard install directory.
 
 All other files above pass through the scrub stage before encryption. The control plane receives no
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.

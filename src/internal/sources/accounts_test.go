@@ -3,7 +3,6 @@ package sources
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -40,75 +39,6 @@ func accountFile(t *testing.T, path, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestAccountSnapshotsPreserveProviderJSONInMemory(t *testing.T) {
-	req := accountFixture(t)
-	claims := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"dev@example.org","https://api.openai.com/auth":{"chatgpt_plan_type":"pro"}}`))
-	accountFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture-access","refresh_token":"fixture-refresh","account_id":"workspace-1","id_token":"x.`+claims+`.x"}}`)
-	calls := 0
-	p := Accounts{client: &http.Client{Transport: accountTransport(func(r *http.Request) (*http.Response, error) {
-		calls++
-		if r.Header.Get("Authorization") != "Bearer fixture-access" || r.Header.Get("ChatGPT-Account-Id") != "workspace-1" {
-			t.Error("wrong authentication")
-		}
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{ "unknown":{"input_tokens":9007199254740993,"utilization":123.456,"optional":null,"accessToken":"fixture-secret"}, "windows":[] }`)), Header: http.Header{}}, nil
-	})}}
-	first, err := p.Discover(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(first.Candidates) != 1 || calls != 0 {
-		t.Fatalf("first: %+v calls %d", first, calls)
-	}
-	c := first.Candidates[0]
-	if c.RelPath != "codex.account.20260916T141500Z.jsonl" {
-		t.Fatal(c.RelPath)
-	}
-	payload, err := c.Load(req.Context)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if calls != 1 {
-		t.Fatalf("load calls %d", calls)
-	}
-	raw := payload.Bytes
-	for _, field := range []string{`"input_tokens":9007199254740993`, `"utilization":123.456`, `"optional":null`, `"windows":[]`, `"chatgpt_plan_type":"pro"`} {
-		if !bytes.Contains(raw, []byte(field)) {
-			t.Fatalf("lost %s: %s", field, raw)
-		}
-	}
-	again, err := p.Discover(req)
-	if err != nil || len(again.Candidates) != 1 || calls != 1 || again.Candidates[0].Path != c.Path {
-		t.Fatalf("same bucket: %+v %v calls %d", again, err, calls)
-	}
-	req.Now = func() time.Time { return time.Date(2026, 9, 16, 14, 31, 0, 0, time.UTC) }
-	next, err := p.Discover(req)
-	if err != nil || len(next.Candidates) != 1 || calls != 1 || next.Candidates[0].Path == c.Path {
-		t.Fatalf("new bucket: %+v %v calls %d", next, err, calls)
-	}
-	if _, err := os.Stat(req.StateDir); !os.IsNotExist(err) {
-		t.Fatal("account collection wrote local state")
-	}
-}
-
-func TestAccountDiscoveryDoesNotFetchOrWrite(t *testing.T) {
-	req := accountFixture(t)
-	accountFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture"}}`)
-	p := Accounts{client: &http.Client{Transport: accountTransport(func(*http.Request) (*http.Response, error) {
-		t.Fatal("discovery fetched account data")
-		return nil, nil
-	})}}
-	for _, capture := range []bool{false, true} {
-		req.Capture = capture
-		d, err := p.Discover(req)
-		if err != nil || (len(d.Candidates) == 1) != capture {
-			t.Fatalf("capture=%v discovery: %+v %v", capture, d, err)
-		}
-	}
-	if _, err := os.Stat(req.StateDir); !os.IsNotExist(err) {
-		t.Fatal("discovery wrote state")
 	}
 }
 

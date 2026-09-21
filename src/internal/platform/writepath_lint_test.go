@@ -183,16 +183,26 @@ var bannedExec = map[string]map[string]bool{
 	"syscall": {"Exec": true, "ForkExec": true},
 }
 
+// execCapableFiles is the file-granular exec exception for the data path. Each entry replaces a
+// worse surface rather than adding one:
+//
+//	accounts_keychain_darwin.go  the system credential reader, which has its own Keychain permissions
+//	accounts_codex_appserver.go  `codex app-server`, so the shipper never decodes auth.json tokens
+var execCapableFiles = []string{
+	"internal/sources/accounts_keychain_darwin.go",
+	"internal/sources/accounts_codex_appserver.go",
+}
+
 // TestNoExecOutsidePackaging: os/exec reads as malware to an auditor, so the collector's data path
-// only permits packaging processes and the macOS Keychain reader.
+// only permits packaging processes and the files named above.
 func TestNoExecOutsidePackaging(t *testing.T) {
 	forEachModuleGoFile(t, func(rel string, file *ast.File, fset *token.FileSet) {
-		if rel == "packaging" || strings.HasPrefix(rel, "packaging/") || rel == "internal/sources/accounts_keychain_darwin.go" {
+		if rel == "packaging" || strings.HasPrefix(rel, "packaging/") || slices.Contains(execCapableFiles, rel) {
 			return
 		}
 		for _, imp := range file.Imports {
 			if imp.Path.Value == `"os/exec"` {
-				t.Errorf("%s:%d: imports os/exec: the data path must not spawn subprocesses (allowed only under packaging/ or in the macOS Keychain reader)",
+				t.Errorf("%s:%d: imports os/exec: the data path must not spawn subprocesses (allowed only under packaging/ or in execCapableFiles)",
 					rel, fset.Position(imp.Pos()).Line)
 			}
 		}
@@ -202,7 +212,7 @@ func TestNoExecOutsidePackaging(t *testing.T) {
 				return true
 			}
 			if pkg, ok := sel.X.(*ast.Ident); ok && bannedExec[pkg.Name][sel.Sel.Name] {
-				t.Errorf("%s:%d: calls %s.%s: process creation is allowed only under packaging/ or in the macOS Keychain reader",
+				t.Errorf("%s:%d: calls %s.%s: process creation is allowed only under packaging/ or in execCapableFiles",
 					rel, fset.Position(sel.Pos()).Line, pkg.Name, sel.Sel.Name)
 			}
 			return true
