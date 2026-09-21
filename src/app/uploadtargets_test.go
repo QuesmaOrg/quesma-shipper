@@ -90,7 +90,7 @@ func TestToUploadTicketFeedsValidation(t *testing.T) {
 	}
 
 	ticket := toUploadTicket(issued)
-	if err := upload.ValidateTicket(target, prepared, ticket); err != nil {
+	if err := upload.ValidateTicket(upload.UploadTargetList{target}, prepared, ticket); err != nil {
 		t.Fatalf("bridged ticket failed validation: %v", err)
 	}
 	if _, ok := ticket.RequiredHeaders["x-amz-meta-source-id"]; ok {
@@ -131,7 +131,7 @@ func TestToUploadTicketDroppedFieldIsRefused(t *testing.T) {
 		},
 		ContentLength: int64(len(prepared.Body)),
 	})
-	if err := upload.ValidateTicket(target, prepared, ticket); err == nil {
+	if err := upload.ValidateTicket(upload.UploadTargetList{target}, prepared, ticket); err == nil {
 		t.Fatal("a ticket missing the declared source-id header validated")
 	}
 }

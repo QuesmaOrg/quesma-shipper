@@ -145,7 +145,9 @@ func selfUpdateGate(build app.Build, getenv func(string) string, persistedHop st
 	return true, ""
 }
 
-func maybeSelfUpdate(ctx context.Context, build app.Build, errOut io.Writer) {
+// maybeSelfUpdate replaces a released binary at daemon start; autoupdate is the resolved
+// autoupdate.enabled, true when the config did not resolve.
+func maybeSelfUpdate(ctx context.Context, build app.Build, autoupdate bool, errOut io.Writer) {
 	stateDir, stateErr := app.StateDirWithoutConfig()
 	persistedHop := ""
 	if stateErr == nil {
@@ -161,7 +163,7 @@ func maybeSelfUpdate(ctx context.Context, build app.Build, errOut io.Writer) {
 		}
 		return
 	}
-	if eff, _, err := app.ResolveEffective(); err == nil && !eff.AutoupdateEnabled {
+	if !autoupdate {
 		fmt.Fprintf(errOut, "self-update: disabled by autoupdate.enabled\n")
 		return
 	}

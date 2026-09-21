@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
@@ -23,15 +24,15 @@ const (
 
 // batcher accumulates sealed objects and sends a group once one more would breach either bound.
 // maxObjects differs per path; the byte bound is the protocol's and is the same for both.
-type batcher[T any] struct {
+type batcher struct {
 	maxObjects int
-	send       func([]T)
+	send       func([]stagedUpload)
 
-	items []T
+	items []stagedUpload
 	bytes int64
 }
 
-func (b *batcher[T]) add(it T, size int64) {
+func (b *batcher) add(it stagedUpload, size int64) {
 	// Sent BEFORE the append: a group past the declared ciphertext limit is refused whole.
 	// No object-count check here: the post-append flush keeps the count strictly below the cap.
 	if len(b.items) > 0 && b.bytes+size > maxBatchBytes {
@@ -44,20 +45,20 @@ func (b *batcher[T]) add(it T, size int64) {
 	}
 }
 
-func (b *batcher[T]) flush() {
+func (b *batcher) flush() {
 	if items := b.take(); len(items) > 0 {
 		b.send(items)
 	}
 }
 
 // take empties the accumulator without sending, for a run that has stopped uploading.
-func (b *batcher[T]) take() []T {
+func (b *batcher) take() []stagedUpload {
 	items := b.items
 	b.items, b.bytes = nil, 0
 	return items
 }
 
-func (b *batcher[T]) len() int { return len(b.items) }
+func (b *batcher) len() int { return len(b.items) }
 
 // PreparedObject is one sealed object offered for authorization. Body is the exact ciphertext PUT,
 // so its length is the size the ticket is signed for.
@@ -106,11 +107,7 @@ type stagedUpload struct {
 // sendBatch authorizes one bounded group and turns each verdict into a file result, on a batch
 // goroutine: everything it touches arrived by value or by handover.
 func (o Options) sendBatch(ctx context.Context, items []stagedUpload) []fileResult {
-	batch := make([]PreparedObject, len(items))
-	for i, it := range items {
-		batch[i] = preparedFrom(i, it.pending.objectKey, it.pending.obj, it.pending.md)
-	}
-	outcomes := o.authorizeAndUpload(ctx, batch)
+	outcomes := o.authorizeAndUpload(ctx, items)
 	res := make([]fileResult, len(items))
 	for i, it := range items {
 		res[i] = o.applyUploadOutcome(it, outcomes[i])
@@ -137,11 +134,17 @@ func preparedFrom(idx int, key string, body []byte, md map[string]string) Prepar
 
 // authorizeAndUpload spends one group, with at most ONE reauthorization for expired tickets: a
 // second expiry means the clock or the lease is wrong, and retrying only stalls everything else.
-func (o Options) authorizeAndUpload(ctx context.Context, batch []PreparedObject) []error {
+func (o Options) authorizeAndUpload(ctx context.Context, items []stagedUpload) []error {
+	batch := make([]PreparedObject, len(items))
+	for i, it := range items {
+		batch[i] = preparedFrom(i, it.pending.objectKey, it.pending.obj, it.pending.md)
+	}
 	outcomes := o.Upload.AuthorizeAndUpload(ctx, batch)
 	if len(outcomes) != len(batch) {
-		return sameOutcome(len(batch), fmt.Errorf(
-			"engine: the upload port answered %d outcomes for %d objects", len(outcomes), len(batch)))
+		// One verdict for the whole group: a port-contract violation carries no per-object detail.
+		return slices.Repeat([]error{fmt.Errorf(
+			"engine: the upload port answered %d outcomes for %d objects", len(outcomes), len(batch))},
+			len(batch))
 	}
 
 	var expired []int
@@ -175,25 +178,10 @@ func (o Options) authorizeAndUpload(ctx context.Context, batch []PreparedObject)
 	return outcomes
 }
 
-// sameOutcome is one verdict for a whole group, for port-contract violations with no detail.
-func sameOutcome(n int, err error) []error {
-	outcomes := make([]error, n)
-	for i := range outcomes {
-		outcomes[i] = err
-	}
-	return outcomes
-}
-
-// errorKind names an upload failure for a span. Never conflate the two: a refusal kills the
-// install, while unavailability stops only this run's uploads.
-func errorKind(err error) string {
-	switch {
-	case errors.Is(err, formats.ErrCredentialsRefused):
-		return "credentials-refused"
-	case errors.Is(err, ErrUploadUnavailable):
-		return "authorize-unavailable"
-	}
-	return "upload"
+// stopsRun reports the two verdicts that end a run's uploads rather than one file. Never conflate
+// them: a refusal kills the install, while unavailability stops only this run's uploads.
+func stopsRun(err error) bool {
+	return errors.Is(err, formats.ErrCredentialsRefused) || errors.Is(err, ErrUploadUnavailable)
 }
 
 const alreadyPresentReason = "no bytes sent: the control plane answered that the archive already holds this object"

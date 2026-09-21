@@ -7,7 +7,6 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"slices"
 )
 
 //go:embed *.yaml
@@ -15,18 +14,10 @@ var FS embed.FS
 
 // Files returns the embedded catalog file names, sorted.
 func Files() ([]string, error) {
-	entries, err := fs.ReadDir(FS, ".")
+	names, err := fs.Glob(FS, "*.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("catalog: read embedded dir: %w", err)
 	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		names = append(names, e.Name())
-	}
-	slices.Sort(names)
 	return names, nil
 }
 

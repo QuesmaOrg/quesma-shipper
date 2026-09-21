@@ -42,6 +42,10 @@ type Effective struct {
 	MaxFilesPerRun int
 	Sources        []ResolvedSource
 
+	// Catalog is the compiled source catalog the sources above were resolved from; the repo
+	// attributor and family display names derive from it, so no verb parses it twice.
+	Catalog *sources.Compiled
+
 	// UploadTargets pins the origins a presigned upload ticket may name. Empty means unpinned; a bad entry is still refused.
 	UploadTargets []UploadTarget
 
@@ -99,6 +103,11 @@ func (e *RejectionError) Error() string {
 	return fmt.Sprintf("config rejected: %s (set by the %s layer): %s", e.Field, e.Layer, e.Reason)
 }
 
+// reject refuses field, blaming the layer that set it.
+func (e *Effective) reject(field, format string, args ...any) error {
+	return &RejectionError{e.Provenance[field].Layer, field, fmt.Sprintf(format, args...)}
+}
+
 // Resolve merges the layers, records provenance, and enforces every limit.
 func Resolve(in Input) (*Effective, error) {
 	if in.Catalog == nil {
@@ -113,6 +122,7 @@ func Resolve(in Input) (*Effective, error) {
 		DrainDeadline:  5 * time.Minute,
 		StateDir:       in.StateDir,
 		ConfigExpired:  in.ConfigExpired,
+		Catalog:        in.Catalog,
 		RulePacks:      []string{"gitleaks-core", "quesma-extra", "cloud-keys", "generic-entropy", "pii-core"},
 		// Without the compiled exemption baseline the entropy backstop shreds the join keys that make a trajectory a graph.
 		StructuralEx:            transforms.CompiledExemptions(),
@@ -365,8 +375,7 @@ func checkConfigVersion(eff *Effective) error {
 		return nil
 	}
 	if !slices.Contains(AcceptedConfigVersions, eff.ConfigVersion) {
-		return &RejectionError{eff.Provenance["config_version"].Layer, "config_version",
-			fmt.Sprintf("%d is not an accepted config_version %v", eff.ConfigVersion, AcceptedConfigVersions)}
+		return eff.reject("config_version", "%d is not an accepted config_version %v", eff.ConfigVersion, AcceptedConfigVersions)
 	}
 	return nil
 }
@@ -381,56 +390,52 @@ func isLoopback(host string) bool {
 
 // checkUploadTargets refuses an entry that could not pin a destination, so a typo fails at `config show`, not at the first upload.
 func checkUploadTargets(eff *Effective) error {
-	layer := eff.Provenance["upload_targets"].Layer
-	reject := func(format string, args ...any) error {
-		return &RejectionError{layer, "upload_targets", fmt.Sprintf(format, args...)}
-	}
 	seen := map[string]bool{}
 	for i, t := range eff.UploadTargets {
 		if t.Origin == "" {
-			return reject("entry %d names no origin", i)
+			return eff.reject("upload_targets", "entry %d names no origin", i)
 		}
 		u, err := url.Parse(t.Origin)
 		switch {
 		case err != nil, u.Host == "":
-			return reject("entry %d: %q is not a scheme://host[:port] origin", i, t.Origin)
+			return eff.reject("upload_targets", "entry %d: %q is not a scheme://host[:port] origin", i, t.Origin)
 		case u.Opaque != "", u.Path != "" && u.Path != "/", u.RawQuery != "", u.Fragment != "":
-			return reject("entry %d: %q carries more than an origin: the bucket belongs in path_prefix", i, t.Origin)
+			return eff.reject("upload_targets", "entry %d: %q carries more than an origin: the bucket belongs in path_prefix", i, t.Origin)
 		case u.User != nil:
-			return reject("entry %d: %q carries user information", i, t.Origin)
+			return eff.reject("upload_targets", "entry %d: %q carries user information", i, t.Origin)
 		case strings.Contains(u.Hostname(), "*"):
-			return reject("entry %d: %q is a wildcard host: a target is pinned or it is not a target", i, t.Origin)
+			return eff.reject("upload_targets", "entry %d: %q is a wildcard host: a target is pinned or it is not a target", i, t.Origin)
 		}
 		switch {
 		case u.Scheme == "https":
 		case u.Scheme == "http" && t.AllowLoopbackHTTP && isLoopback(u.Hostname()):
 		case u.Scheme == "http" && t.AllowLoopbackHTTP:
-			return reject("entry %d: %q is http but %q is not loopback", i, t.Origin, u.Hostname())
+			return eff.reject("upload_targets", "entry %d: %q is http but %q is not loopback", i, t.Origin, u.Hostname())
 		case u.Scheme == "http":
-			return reject("entry %d: %q is http without allow_loopback_http: a presigned URL is a bearer credential", i, t.Origin)
+			return eff.reject("upload_targets", "entry %d: %q is http without allow_loopback_http: a presigned URL is a bearer credential", i, t.Origin)
 		default:
-			return reject("entry %d: %q uses scheme %q, want https", i, t.Origin, u.Scheme)
+			return eff.reject("upload_targets", "entry %d: %q uses scheme %q, want https", i, t.Origin, u.Scheme)
 		}
 
 		switch t.Addressing {
 		case "virtual-hosted":
 			if t.PathPrefix != "" {
-				return reject("entry %d: virtual-hosted addressing declares path_prefix %q, but the "+
+				return eff.reject("upload_targets", "entry %d: virtual-hosted addressing declares path_prefix %q, but the "+
 					"bucket is already the host", i, t.PathPrefix)
 			}
 		case "path-style":
 			if !strings.HasPrefix(t.PathPrefix, "/") || t.PathPrefix == "/" || strings.HasSuffix(t.PathPrefix, "/") {
-				return reject("entry %d: path-style addressing needs a /bucket path_prefix, got %q", i, t.PathPrefix)
+				return eff.reject("upload_targets", "entry %d: path-style addressing needs a /bucket path_prefix, got %q", i, t.PathPrefix)
 			}
 		default:
-			return reject("entry %d: addressing %q is not one of %v", i, t.Addressing, UploadAddressings)
+			return eff.reject("upload_targets", "entry %d: addressing %q is not one of %v", i, t.Addressing, UploadAddressings)
 		}
 
 		// One origin, one entry, with the port explicit so example and example:443 compare equal.
 		port := cmp.Or(u.Port(), map[string]string{"http": "80", "https": "443"}[u.Scheme])
 		key := strings.ToLower(u.Scheme) + "://" + net.JoinHostPort(strings.ToLower(u.Hostname()), port)
 		if seen[key] {
-			return reject("entry %d repeats origin %q", i, t.Origin)
+			return eff.reject("upload_targets", "entry %d repeats origin %q", i, t.Origin)
 		}
 		seen[key] = true
 	}
@@ -442,8 +447,7 @@ func checkRulePacks(eff *Effective) error {
 	available := packs.Available()
 	for _, name := range eff.RulePacks {
 		if !slices.Contains(available, name) {
-			return &RejectionError{eff.Provenance["scrub.rule_packs"].Layer, "scrub.rule_packs",
-				fmt.Sprintf("%q is not a rule pack this build has %v", name, available)}
+			return eff.reject("scrub.rule_packs", "%q is not a rule pack this build has %v", name, available)
 		}
 	}
 	return nil
@@ -453,15 +457,12 @@ func checkRulePacks(eff *Effective) error {
 func checkEncryption(eff *Effective) error {
 	for _, r := range eff.AdditionalRecipients {
 		if _, err := age.ParseX25519Recipient(r); err != nil {
-			return &RejectionError{eff.Provenance["encryption.additional_recipients"].Layer,
-				"encryption.additional_recipients",
-				fmt.Sprintf("%q is not an age X25519 recipient: %v", r, err)}
+			return eff.reject("encryption.additional_recipients", "%q is not an age X25519 recipient: %v", r, err)
 		}
 	}
 	if !eff.IncludeInstallRecipient && len(eff.AdditionalRecipients) == 0 {
-		return &RejectionError{eff.Provenance["encryption.include_install_recipient"].Layer,
-			"encryption.include_install_recipient",
-			"withholding the install recipient with no additional_recipients would seal objects no key can open"}
+		return eff.reject("encryption.include_install_recipient",
+			"withholding the install recipient with no additional_recipients would seal objects no key can open")
 	}
 	return nil
 }
@@ -477,13 +478,12 @@ func resolveRoots(eff *Effective, in Input) error {
 		}
 
 		spec, _ := compiled.Source(src.ID)
+		rootsField := "sources." + src.ID + ".roots"
 
 		// The scope ceiling: a root must be one the compiled catalog declared for this source.
 		for _, candidate := range src.Roots {
 			if !slices.Contains(spec.Roots, candidate) {
-				return &RejectionError{eff.Provenance["sources."+src.ID+".roots"].Layer,
-					"sources." + src.ID + ".roots",
-					fmt.Sprintf("%q is outside the compiled scope ceiling %v: a new root requires a release", candidate, spec.Roots)}
+				return eff.reject(rootsField, "%q is outside the compiled scope ceiling %v: a new root requires a release", candidate, spec.Roots)
 			}
 		}
 
@@ -503,7 +503,8 @@ func resolveRoots(eff *Effective, in Input) error {
 // reasons no candidate qualified. A RejectionError separates a configuration fault -- a candidate
 // that cannot expand, or one the deny list forbids -- from the ordinary absent agent, which is an
 // empty root and a reason.
-func pickRoot(eff *Effective, src *ResolvedSource, env sources.Env) (string, []string, *RejectionError) {
+func pickRoot(eff *Effective, src *ResolvedSource, env sources.Env) (string, []string, error) {
+	rootsField := "sources." + src.ID + ".roots"
 	var reasons []string
 	for _, candidate := range src.Roots {
 		expanded, err := env.ExpandRoot(candidate)
@@ -513,14 +514,12 @@ func pickRoot(eff *Effective, src *ResolvedSource, env sources.Env) (string, []s
 				reasons = append(reasons, unset.Error())
 				continue
 			}
-			return "", reasons, &RejectionError{eff.Provenance["sources."+src.ID+".roots"].Layer,
-				"sources." + src.ID + ".roots", err.Error()}
+			return "", reasons, eff.reject(rootsField, "%v", err)
 		}
 
 		// Deny is checked before existence: a root pointed into ~/.ssh is a refusal whether or not it exists.
 		if err := eff.Deny.CheckRoot(expanded); err != nil {
-			return "", reasons, &RejectionError{eff.Provenance["sources."+src.ID+".roots"].Layer,
-				"sources." + src.ID + ".roots", err.Error()}
+			return "", reasons, eff.reject(rootsField, "%v", err)
 		}
 
 		// A missing root is the agent-absent case: expected silence, kept distinguishable from a root that matches nothing.
@@ -539,8 +538,7 @@ func pickRoot(eff *Effective, src *ResolvedSource, env sources.Env) (string, []s
 			continue
 		}
 		if err := eff.Deny.CheckIncludes(expanded, src.Include); err != nil {
-			return "", reasons, &RejectionError{eff.Provenance["sources."+src.ID+".include"].Layer,
-				"sources." + src.ID + ".include", err.Error()}
+			return "", reasons, eff.reject("sources."+src.ID+".include", "%v", err)
 		}
 
 		return expanded, reasons, nil

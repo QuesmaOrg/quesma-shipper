@@ -1,12 +1,10 @@
 package transforms
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
-
-	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 )
@@ -73,10 +71,9 @@ type Manifest struct {
 // RedactionSummary is rule-id and count granularity, never byte ranges: positions would
 // fingerprint where and how large each secret was.
 type RedactionSummary struct {
-	Density       float64        `json:"density"`
-	BytesRedacted int64          `json:"bytes_redacted,omitempty"`
-	RuleHits      map[string]int `json:"rule_hits,omitempty"`
-	ScanMode      string         `json:"scan_mode,omitempty"`
+	Density  float64        `json:"density"`
+	RuleHits map[string]int `json:"rule_hits,omitempty"`
+	ScanMode string         `json:"scan_mode,omitempty"`
 }
 
 // Encryption records the recipients an object was encrypted to: public key IDs only.
@@ -144,14 +141,14 @@ func DecodeManifest(raw []byte) (Manifest, error) {
 }
 
 func validateManifestBytes(raw []byte) error {
-	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-	if err != nil {
-		return fmt.Errorf("seal: manifest is not valid JSON: %w", err)
+	err := formats.ValidateRaw(formats.Manifest, raw)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, formats.ErrNotJSON):
+		return fmt.Errorf("seal: manifest is %w", err)
 	}
-	if err := formats.Validate(formats.Manifest, doc); err != nil {
-		return fmt.Errorf("seal: manifest does not satisfy its schema: %w", err)
-	}
-	return nil
+	return fmt.Errorf("seal: manifest does not satisfy its schema: %w", err)
 }
 
 // ObjectMetadata is the plaintext metadata attached to a PUT, duplicated out of the

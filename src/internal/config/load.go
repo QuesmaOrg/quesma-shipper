@@ -36,9 +36,6 @@ func DefaultPaths(home string, lookup func(string) (string, bool)) Paths {
 
 // LoadLayers reads the user's config file. Missing is not an error (clone-and-run); present but unparseable is.
 func LoadLayers(p Paths) ([]LayeredDocument, error) {
-	if p.User == "" {
-		return nil, nil
-	}
 	raw, _, err := platform.ReadWhole(p.User, maxConfigBytes)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -59,9 +56,6 @@ func LoadLayers(p Paths) ([]LayeredDocument, error) {
 
 // UserConfigFound reports whether the user's config file exists, for `config show` and the startup log line.
 func UserConfigFound(p Paths) (string, bool) {
-	if p.User == "" {
-		return "", false
-	}
 	if _, err := os.Stat(p.User); err != nil {
 		return "", false
 	}

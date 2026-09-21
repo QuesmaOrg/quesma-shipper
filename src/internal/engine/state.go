@@ -4,7 +4,7 @@
 package engine
 
 import (
-	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -17,10 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/santhosh-tekuri/jsonschema/v6"
-
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
+	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
 // StateSchema versions the document. A mismatch means downgrade or corruption: reject, never guess.
@@ -70,11 +69,9 @@ type Fingerprint struct {
 	Attempts int
 }
 
-// EnricherRef identifies the enricher that produced a derived entry; it is also the wire shape.
-type EnricherRef struct {
-	ID      string `json:"id"`
-	Version int    `json:"version"`
-}
+// EnricherRef identifies the enricher that produced a derived entry: the manifest's own shape,
+// which is also this document's wire shape.
+type EnricherRef = transforms.EnricherRef
 
 // Document is the whole on-disk state, as read by Peek.
 type Document struct {
@@ -178,9 +175,7 @@ func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err erro
 				continue
 			}
 			gone++
-			if !dryRun {
-				delete(s.entries, k)
-			}
+			delete(s.entries, k)
 		}
 		return gone
 	})
@@ -193,9 +188,7 @@ func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err erro
 func Reset(stateDir, installID string, dryRun bool) (removed int, err error) {
 	return editStore(stateDir, installID, dryRun, func(s *Store) int {
 		removed := len(s.entries)
-		if !dryRun {
-			s.entries = map[Key]Fingerprint{}
-		}
+		s.entries = map[Key]Fingerprint{}
 		return removed
 	})
 }
@@ -218,9 +211,6 @@ func (s *Store) Len() int { return len(s.entries) }
 // loop, and it happens last: a crash before the replace re-runs those files onto their existing
 // keys. Safe under retry-is-re-run. Never make this a database.
 func (s *Store) CommitAll(updates map[Key]Fingerprint) error {
-	if s.lock == nil {
-		return errors.New("state: store is closed")
-	}
 	for k, fp := range updates {
 		s.entries[k] = fp
 	}
@@ -237,9 +227,6 @@ func (s *Store) SpecFor(sourceID string) (string, bool) {
 // it differs. Per source and never the global config_version, which would invalidate every
 // fingerprint on every machine. Entries with no recorded generation adopt it without dropping.
 func (s *Store) EnsureSpec(sourceID, specFP string) (dropped int, err error) {
-	if s.lock == nil {
-		return 0, errors.New("state: store is closed")
-	}
 	stored, known := s.specs[sourceID]
 	if known && stored == specFP {
 		return 0, nil
@@ -316,19 +303,17 @@ func checksumOf(doc wireDoc) (string, error) {
 }
 
 type wireEntry struct {
-	SourceID   string `json:"source_id"`
-	NativePath string `json:"native_path"`
-	// SourceSpecFingerprint is read but never written; load seeds source_specs from older documents.
-	SourceSpecFingerprint string       `json:"source_spec_fingerprint,omitempty"`
-	SourceSize            int64        `json:"source_size,omitempty"`
-	SourceMTime           string       `json:"source_mtime,omitempty"`
-	Attempts              int          `json:"attempts,omitempty"`
-	SourceHash            string       `json:"source_hash,omitempty"`
-	Enricher              *EnricherRef `json:"enricher,omitempty"`
-	OutputHash            string       `json:"output_hash,omitempty"`
-	Parked                bool         `json:"parked,omitempty"`
-	LastError             string       `json:"last_error,omitempty"`
-	BackoffUntil          string       `json:"backoff_until,omitempty"`
+	SourceID     string       `json:"source_id"`
+	NativePath   string       `json:"native_path"`
+	SourceSize   int64        `json:"source_size,omitempty"`
+	SourceMTime  string       `json:"source_mtime,omitempty"`
+	Attempts     int          `json:"attempts,omitempty"`
+	SourceHash   string       `json:"source_hash,omitempty"`
+	Enricher     *EnricherRef `json:"enricher,omitempty"`
+	OutputHash   string       `json:"output_hash,omitempty"`
+	Parked       bool         `json:"parked,omitempty"`
+	LastError    string       `json:"last_error,omitempty"`
+	BackoffUntil string       `json:"backoff_until,omitempty"`
 }
 
 // encode serializes deterministically: entries sorted by key, so equal state gives equal bytes.
@@ -340,10 +325,7 @@ func encode(installID string, updatedAt time.Time, specs map[string]string, entr
 	}
 
 	keys := slices.SortedFunc(maps.Keys(entries), func(a, b Key) int {
-		if c := strings.Compare(a.SourceID, b.SourceID); c != 0 {
-			return c
-		}
-		return strings.Compare(a.NativePath, b.NativePath)
+		return cmp.Or(strings.Compare(a.SourceID, b.SourceID), strings.Compare(a.NativePath, b.NativePath))
 	})
 
 	for _, k := range keys {
@@ -469,35 +451,16 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 			NativePath: e.NativePath,
 		}] = fp
 	}
-
-	// Seed source_specs from an older document that kept the generation per entry. Only a source
-	// whose entries agree is seeded; on disagreement EnsureSpec adopts the current spec and keeps them.
-	if doc.SourceSpecs == nil {
-		disagree := map[string]bool{}
-		for _, e := range doc.Entries {
-			if e.SourceSpecFingerprint == "" {
-				continue
-			}
-			if prev, ok := out.SourceSpecs[e.SourceID]; ok && prev != e.SourceSpecFingerprint {
-				disagree[e.SourceID] = true
-				continue
-			}
-			out.SourceSpecs[e.SourceID] = e.SourceSpecFingerprint
-		}
-		for id := range disagree {
-			delete(out.SourceSpecs, id)
-		}
-	}
 	return out, nil
 }
 
 func validate(raw []byte) error {
-	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-	if err != nil {
-		return fmt.Errorf("state: document is not valid JSON: %w", err)
+	err := formats.ValidateRaw(formats.FingerprintState, raw)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, formats.ErrNotJSON):
+		return fmt.Errorf("state: document is %w", err)
 	}
-	if err := formats.Validate(formats.FingerprintState, doc); err != nil {
-		return fmt.Errorf("state: document does not satisfy its schema: %w", err)
-	}
-	return nil
+	return fmt.Errorf("state: document does not satisfy its schema: %w", err)
 }

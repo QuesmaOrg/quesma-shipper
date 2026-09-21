@@ -28,10 +28,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 
 	unit, unitErr := identity.Load(paths.StateDir)
 	enr, enrErr := controlplane.LoadEnrollment(paths.StateDir)
-	if enrErr != nil {
-		enr = nil
-	}
-	if enr != nil {
+	if enrErr == nil {
 		rep.Organization, rep.Endpoint = enr.Organization, enr.Endpoint
 	}
 	updCh := make(chan UpdateStatus, 1)
@@ -45,11 +42,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 	}
 	doc, docErr := engine.Peek(paths.StateDir)
 	registry := sources.NewRegistry()
-	compiled, _ := sources.Load()
-	var trackFilter *sources.RepoFilter
-	if compiled != nil {
-		trackFilter = compiled.RepoFilter()
-	}
+	trackFilter := eff.Catalog.RepoFilter()
 	var probes []sourceProbe
 	for _, src := range eff.Sources {
 		pr := sourceProbe{src: src}
@@ -69,7 +62,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		probes = append(probes, pr)
 	}
 	now := time.Now()
-	agents, agentsCollecting, filesFound := agentRows(probes, FamilyNames(compiled), loadLastUpload(paths.StateDir), now, verbose)
+	agents, agentsCollecting, filesFound := agentRows(probes, familyNames(eff.Catalog), loadLastUpload(paths.StateDir), now, verbose)
 	rep.AgentsCollecting, rep.FilesFound = agentsCollecting, filesFound
 
 	var shipping []Row

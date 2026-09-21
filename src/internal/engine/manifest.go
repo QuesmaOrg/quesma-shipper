@@ -9,8 +9,8 @@ import (
 )
 
 // baseManifest fills the fields every object of this run shares, raw and derived alike, so a
-// wire-contract field added once cannot silently miss one path. Encryption is recorded here
-// because Seal fills it only on its own copy, and these ids are what a keyset rotation reads.
+// wire-contract field added once cannot silently miss one path. The hashes, size and recipient
+// ids are Seal's to fill: it returns the manifest that actually landed.
 func (o Options) baseManifest(src sources.Resolved, nativePath string) transforms.Manifest {
 	return transforms.Manifest{
 		ManifestVersion: transforms.ManifestVersion,
@@ -26,7 +26,6 @@ func (o Options) baseManifest(src sources.Resolved, nativePath string) transform
 		// Stamped per object, so a reader can tell which objects were collected under a stale config.
 		ConfigExpired: o.Plan.ConfigExpired,
 		Client:        o.Client,
-		Encryption:    o.encryption(),
 		RunID:         o.RunID,
 	}
 }
@@ -61,15 +60,4 @@ func (o Options) manifestFor(
 		m.ShapeSniff = string(sources.SniffOK)
 	}
 	return m
-}
-
-// encryption records the public recipient ids an object is encrypted to, never key material.
-func (o Options) encryption() *transforms.Encryption {
-	enc := &transforms.Encryption{Scheme: "age"}
-	for _, r := range o.Recipients {
-		if s, ok := r.(interface{ String() string }); ok {
-			enc.RecipientKeyIDs = append(enc.RecipientKeyIDs, s.String())
-		}
-	}
-	return enc
 }

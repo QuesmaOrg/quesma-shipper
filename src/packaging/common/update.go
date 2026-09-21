@@ -3,6 +3,7 @@
 package common
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	selfapply "github.com/creativeprojects/go-selfupdate/update"
 	"github.com/theupdateframework/go-tuf/v2/metadata/config"
 	tufupdater "github.com/theupdateframework/go-tuf/v2/metadata/updater"
 )
@@ -57,6 +59,16 @@ func Check(ctx context.Context, o Options) (latest string, publishedAt time.Time
 		return "", time.Time{}, false, err
 	}
 	return release.Version, release.PublishedAt, newer(release.Version, o.Current), nil
+}
+
+// BinaryTarget names the plain-binary release target for this OS and architecture.
+func BinaryTarget(release Release) string {
+	return release.Targets[runtime.GOOS+"/"+runtime.GOARCH]
+}
+
+// ApplyBinary swaps the running executable in place: the update path everywhere but a macOS app bundle.
+func ApplyBinary(raw []byte) error {
+	return selfapply.Apply(bytes.NewReader(raw), selfapply.Options{})
 }
 
 // Update replaces this binary only when the signed release is newer than o.Current.

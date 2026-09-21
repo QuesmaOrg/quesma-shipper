@@ -52,11 +52,10 @@ type Runtime struct {
 	// env expands an enricher's declared database candidates, with the same rules catalog roots use.
 	env sources.Env
 
-	// progress is the per-file streaming hook a verb may register before flushing; rendering is CLI-owned.
-	// OnProgress is a per-file callback for subsequent flushes. Nil (the default) is silent.
+	// OnProgress is the per-file hook a verb registers before flushing; rendering is CLI-owned.
+	// Nil (the default) is silent.
 	OnProgress formats.Progress
 
-	// onLocked is called once a flush holds the store lock. See OnLocked.
 	// OnLocked runs once a flush holds the store lock. The lock is non-blocking, so a verb resets a
 	// per-run artifact from here, not at startup, where it would reset another's.
 	OnLocked func()
@@ -269,6 +268,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 	if err != nil {
 		return err
 	}
+	hash := transforms.Hash(body)
 
 	// Mirrored in the clear (counts and versions, never payload bytes) so `quesma-shipper doctor` needs
 	// no network call. Best-effort: a reporting nicety must never fail a flush.
@@ -282,7 +282,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 	if err != nil {
 		return err
 	}
-	sealed, err := transforms.Seal(transforms.Manifest{
+	sealed, _, err := transforms.Seal(transforms.Manifest{
 		ManifestVersion: transforms.ManifestVersion,
 		OrganizationID:  r.eff.OrganizationID,
 		InstallID:       r.unit.InstallID.String(),
@@ -290,7 +290,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 		NativePath:      engine.Name,
 		Gather:          "metadata_only",
 		ArtifactClass:   "context",
-		SourceHash:      transforms.Hash(body),
+		SourceHash:      hash,
 		SealedAt:        time.Now().UTC().Format(time.RFC3339),
 		ShapeSniff:      string(formats.SniffOK),
 		// The same config fields every mirror manifest carries, so no reader special-cases this one.
@@ -313,7 +313,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 		ObjectID:   "heartbeat",
 		Key:        key,
 		Body:       sealed,
-		SourceHash: transforms.Hash(body),
+		SourceHash: hash,
 		Metadata:   map[string]string{"kind": "heartbeat"},
 	}})
 	if len(outcomes) != 1 {
@@ -326,19 +326,9 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 	return outcomes[0]
 }
 
-// ignoreFilter is the .notrajectories attributor: built from the catalog alone, because
-// which repositories are tracked is answered by marker files in the repositories, not by
-// any config layer.
-func ignoreFilter() *sources.RepoFilter {
-	compiled, err := sources.Load()
-	if err != nil {
-		return nil
-	}
-	return compiled.RepoFilter()
-}
-
 // planFor is the one place configuration becomes something the loop can read: the core gets
-// values, never the resolver, so adding a config key does not touch the engine.
+// values, never the resolver, so adding a config key does not touch the engine. The repo
+// attributor comes from the catalog alone: tracking is answered by marker files, not config.
 func planFor(eff *config.Effective) engine.Plan {
 	return engine.Plan{
 		OrganizationID: eff.OrganizationID,
@@ -349,7 +339,7 @@ func planFor(eff *config.Effective) engine.Plan {
 		SecretKeyNames: eff.SecretKeyNames,
 		StructuralEx:   eff.StructuralEx,
 		Deny:           eff.Deny,
-		Ignore:         ignoreFilter(),
+		Ignore:         eff.Catalog.RepoFilter(),
 		ConfigVersion:  eff.ConfigVersion,
 		ConfigExpired:  eff.ConfigExpired,
 	}
@@ -383,9 +373,7 @@ func (r *Runtime) AuditLog() *auditlog.Log { return r.log }
 func (r *Runtime) Recipients() []string {
 	out := make([]string, 0, len(r.recipients))
 	for _, rec := range r.recipients {
-		if s, ok := rec.(fmt.Stringer); ok {
-			out = append(out, s.String())
-		}
+		out = append(out, rec.(*age.X25519Recipient).String())
 	}
 	return out
 }
@@ -401,12 +389,6 @@ func (r *Runtime) FilterSources(id string) {
 		}
 	}
 	r.eff = &clone
-}
-
-// NewBuild describes this binary. The version comes from what the toolchain stamped rather than
-// from a flag, so there is exactly one answer and no way for a caller to supply a different one.
-func NewBuild() Build {
-	return Build{Version: platform.Current().String(), Release: platform.Current().Release}
 }
 
 // clientBlock is the build identity stamped into every object. One place, because it is a wire

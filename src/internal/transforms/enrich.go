@@ -45,8 +45,6 @@ type RawUnit struct {
 
 // Input is what an enricher gets.
 type Input struct {
-	SourceID string
-
 	// Units are the staged raw units of this source in this flush.
 	Units []RawUnit
 

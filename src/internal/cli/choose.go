@@ -16,12 +16,30 @@ var (
 	errCancelled  = errors.New("cancelled")
 )
 
-func choose(cmd *cobra.Command, items []string) (int, error) {
+// tty is the interactive prologue: stdin as a file on a terminal, with stdout on one too.
+func tty(cmd *cobra.Command) (*os.File, bool) {
 	stdin, ok := cmd.InOrStdin().(*os.File)
-	out := cmd.OutOrStdout()
-	if !ok || !isTerminal(stdin) || !isTerminal(out) {
+	if !ok || !isTerminal(stdin) || !isTerminal(cmd.OutOrStdout()) {
+		return nil, false
+	}
+	return stdin, true
+}
+
+// readKey blocks on one keypress from a raw terminal; false once stdin is gone.
+func readKey(stdin *os.File, buf []byte) (key, bool) {
+	n, err := stdin.Read(buf)
+	if err != nil || n == 0 {
+		return keyNone, false
+	}
+	return decodeKey(buf[:n]), true
+}
+
+func choose(cmd *cobra.Command, items []string) (int, error) {
+	stdin, ok := tty(cmd)
+	if !ok {
 		return 0, errNoTerminal
 	}
+	out := cmd.OutOrStdout()
 	restore, err := term.MakeRaw(int(stdin.Fd()))
 	if err != nil {
 		return 0, errNoTerminal
@@ -50,11 +68,11 @@ func choose(cmd *cobra.Command, items []string) (int, error) {
 	draw()
 	buf := make([]byte, 8)
 	for {
-		n, err := stdin.Read(buf)
-		if err != nil || n == 0 {
+		k, ok := readKey(stdin, buf)
+		if !ok {
 			return 0, errNoTerminal
 		}
-		switch decodeKey(buf[:n]) {
+		switch k {
 		case keyUp:
 			sel = (sel + len(items) - 1) % len(items)
 		case keyDown:
@@ -83,8 +101,8 @@ func clearLines(out io.Writer, n int) {
 }
 
 func confirm(cmd *cobra.Command, question string) (agreed bool, err error) {
-	stdin, ok := cmd.InOrStdin().(*os.File)
-	if !ok || !isTerminal(stdin) || !isTerminal(cmd.OutOrStdout()) {
+	stdin, ok := tty(cmd)
+	if !ok {
 		return false, errNoTerminal
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s y/N ", question)

@@ -21,7 +21,7 @@ func piiScannerRules(t *testing.T) []*Rule {
 	}
 	var out []*Rule
 	for _, r := range rules {
-		if r.hand != nil {
+		if r.hand != nil || r.fused != fusedNone {
 			out = append(out, r)
 		}
 	}
@@ -30,6 +30,17 @@ func piiScannerRules(t *testing.T) []*Rule {
 		t.Fatalf("expected four pii-core rules to carry scanners, got %d", len(out))
 	}
 	return out
+}
+
+// scanCandidates is the rule's byte walk before guard and checksum: its slot in the shared
+// walk, or its own scanner.
+func scanCandidates(r *Rule, value string) []Span {
+	if r.fused != fusedNone {
+		var c ValueScan
+		c.Reset(value)
+		return c.candidates(r.fused)
+	}
+	return r.hand(value)
 }
 
 func compareScannerAndRegex(t *testing.T, r *Rule, value string) {
@@ -41,7 +52,7 @@ func compareScannerAndRegex(t *testing.T, r *Rule, value string) {
 		want = append(want, loc)
 	}
 	var got [][]int
-	for _, s := range r.hand(value) {
+	for _, s := range scanCandidates(r, value) {
 		got = append(got, []int{s.Start, s.End})
 	}
 	if !reflect.DeepEqual(want, got) {
