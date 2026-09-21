@@ -507,6 +507,8 @@ func controlPlaneRows(enr *controlplane.Enrollment, enrErr error,
 	return rows
 }
 
+const fixSeeRunLog = "`quesma-shipper log` shows what each run did"
+
 func scheduleRows(stateDir string, now time.Time) []Row {
 	var rows []Row
 	if p := platform.Read(stateDir); p.Paused {
@@ -515,12 +517,14 @@ func scheduleRows(stateDir string, now time.Time) []Row {
 			Fix:    "`quesma-shipper resume`"})
 	}
 
+	rows = append(rows, failureRows(stateDir, now)...)
+
 	st := packaging.ServiceState(stateDir)
 	switch {
 	case st.Loaded && st.LastRun.IsZero():
 		rows = append(rows, Row{Sev: SevWarn, Label: "background service", Brief: "background service never ran",
 			Detail: "loaded but it has never completed a run",
-			Fix:    "`quesma-shipper log` shows what each run did"})
+			Fix:    fixSeeRunLog})
 	case st.Loaded:
 		rows = append(rows, Row{Sev: SevOK, Label: "background service",
 			Detail: "running"})
@@ -534,6 +538,25 @@ func scheduleRows(stateDir string, now time.Time) []Row {
 			Fix:    "re-run the Quesma Shipper installer"})
 	}
 	return rows
+}
+
+// A loaded service whose every tick fails looks identical to a healthy one from the outside.
+func failureRows(stateDir string, now time.Time) []Row {
+	rec := readFailureRecord(stateDir)
+	if rec.ConsecutiveFailures == 0 {
+		return nil
+	}
+	detail := "the last " + CountNoun(rec.ConsecutiveFailures, "run") + " failed, so nothing has been sent since"
+	fix := fixSeeRunLog
+	// Counted, not merely newest: an uncounted event would blame the streak on the wrong thing.
+	if last := rec.LatestCounted(); last != nil {
+		if at, err := time.Parse(time.RFC3339, last.At); err == nil {
+			detail += ", most recently " + Ago(at, now)
+		}
+		fix = last.Message
+	}
+	return []Row{{Sev: SevWarn, Label: "recent runs", Brief: "recent runs are failing",
+		Detail: detail, Fix: fix}}
 }
 
 func doctorReport(probes []sourceProbe) formats.Report {

@@ -39,9 +39,10 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		updCh <- checkUpdate(ctx, build, eff.AutoupdateEnabled, os.Getenv, packaging.CheckUpdate)
 	}()
 
-	username := ""
+	username, installID := "", ""
 	if unitErr == nil {
 		username = engine.UsernameFromStateDir(paths.StateDir)
+		installID = unit.InstallID.String()
 	}
 	doc, docErr := engine.Peek(paths.StateDir)
 	registry := sources.NewRegistry()
@@ -100,7 +101,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 	}
 	shipping = append(shipping, scheduleRows(paths.StateDir, now)...)
 	var stateDetail []Row
-	for _, row := range stateRowsFrom(doc, docErr) {
+	for _, row := range stateRowsFrom(doc, docErr, installID) {
 		if row.Sev == SevWarn {
 			shipping = append(shipping, row)
 		} else {
@@ -118,7 +119,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		if unitErr != nil {
 			conf = append(conf, Row{Sev: SevFail, Label: "identity", Detail: fmt.Sprintf("missing: %v", unitErr), Fix: "`quesma-shipper login`"})
 		} else {
-			conf = append(conf, Row{Sev: SevDim, Label: "install_id", Detail: unit.InstallID.String()})
+			conf = append(conf, Row{Sev: SevDim, Label: "install_id", Detail: installID})
 		}
 		conf = append(conf,
 			Row{Sev: SevDim, Label: "state_dir", Detail: paths.StateDir},
@@ -147,12 +148,21 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 	return rep
 }
 
-func stateRowsFrom(doc engine.Document, err error) []Row {
+func stateRowsFrom(doc engine.Document, err error, installID string) []Row {
 	if err != nil {
 		return []Row{{Sev: SevWarn, Label: "local state", Brief: "local state unreadable",
 			Detail: fmt.Sprintf("unreadable: %v", err), Fix: "`quesma-shipper state` inspects and repairs it"}}
 	}
 	rows := []Row{{Sev: SevDim, Label: "tracked_files", Detail: fmt.Sprintf("%d", len(doc.Entries))}}
+	// Peek does not discard the way Open does, so doctor can explain the coming re-ship first.
+	if doc.ForeignTo(installID) {
+		rows = append(rows, Row{Sev: SevWarn, Label: "local state", Brief: "local state belongs to another install",
+			Detail: fmt.Sprintf("written by install %s, this install is %s: the next run discards it "+
+				"and starts from an empty store", doc.InstallID, installID),
+			// Not a re-ship onto existing keys: a new install id is a new key root, so nothing dedups.
+			Fix: "`quesma-shipper state reset --apply` does it now; either way this install " +
+				"uploads its whole history again under its own keys"})
+	}
 	parked := 0
 	var fixes []string
 	for k, fp := range doc.Entries {
