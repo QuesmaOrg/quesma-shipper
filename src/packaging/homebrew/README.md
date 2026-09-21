@@ -16,7 +16,9 @@ and launchd executable path. The Caskroom directory retains the initially instal
 `brew upgrade --cask --greedy quesmaorg/tap/quesma-shipper` explicitly upgrades through Brew.
 Brew upgrades stop the old service and register the new version; uninstall stops it and preserves all
 local state. `quesma-shipper uninstall` removes the service but keeps the Homebrew command installed;
-add `--purge` to delete local state too. Neither command invokes Brew or removes its managed payload.
+add `--purge` to delete local state too, and `--yes` to skip confirmation. Neither command invokes Brew
+or removes its managed payload. `brew uninstall --cask --zap quesmaorg/tap/quesma-shipper` invokes
+`uninstall --purge --yes` before removing the binary, using the shipper's configured state directory.
 The path check follows symlinks and supports nonstandard Homebrew prefixes, but expects Homebrew's
 normal `Caskroom/quesma-shipper/VERSION/quesma-shipper` layout.
 

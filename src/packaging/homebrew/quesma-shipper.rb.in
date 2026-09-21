@@ -29,7 +29,11 @@ cask "quesma-shipper" do
     sudo:       false,
   }
 
-  zap trash: "~/.local/state/trajectory-shipper"
+  zap script: {
+    executable: "#{staged_path}/quesma-shipper",
+    args:       ["uninstall", "--purge", "--yes"],
+    sudo:       false,
+  }
 
   caveats <<~EOS
     Connect this computer using the login command from your Quesma dashboard.

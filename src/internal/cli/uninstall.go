@@ -11,7 +11,7 @@ import (
 )
 
 func uninstallCmd(b app.Build) *cobra.Command {
-	var purge bool
+	var purge, yes bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
 		Short: "Remove the service and program, keeping local state",
@@ -41,13 +41,15 @@ func uninstallCmd(b app.Build) *cobra.Command {
 			}
 			fmt.Fprintf(w, "\n%s collects your coding-agent sessions on this machine and sends them\n"+
 				"to %s. Removing it stops that and %s\n\n", app.Title, to, effect)
-			agreed, err := confirm(cmd, question)
-			if err != nil {
-				return usage(fmt.Errorf("uninstall asks first, run it in a terminal"))
-			}
-			if !agreed {
-				fmt.Fprintln(w, "Not removed.")
-				return nil
+			if !yes {
+				agreed, err := confirm(cmd, question)
+				if err != nil {
+					return usage(fmt.Errorf("uninstall asks first, run it in a terminal or pass --yes"))
+				}
+				if !agreed {
+					fmt.Fprintln(w, "Not removed.")
+					return nil
+				}
 			}
 			fmt.Fprintln(w)
 			deferred, err := app.Uninstall(purge, func(s app.UninstallStep) {
@@ -80,5 +82,6 @@ func uninstallCmd(b app.Build) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&purge, "purge", false, "Also delete enrollment, pending data, logs and other local state")
+	cmd.Flags().BoolVar(&yes, "yes", false, "Skip uninstall confirmation")
 	return cmd
 }

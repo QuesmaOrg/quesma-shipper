@@ -80,12 +80,10 @@ func TestHomebrewSelfUpdatesButBrewUninstalls(t *testing.T) {
 			if _, err := os.Stat(marker); err != nil {
 				t.Fatal("state changed before confirmation:", err)
 			}
-			var skippedProgram bool
-			deferred, err := app.Uninstall(purge, func(step app.UninstallStep) {
-				skippedProgram = skippedProgram || strings.Contains(step.Skip, packaging.BrewUninstall)
-			})
-			if err != nil || deferred || !skippedProgram {
-				t.Fatalf("Uninstall(%v) = %v, %v; skipped program = %v", purge, deferred, err, skippedProgram)
+			cmd = Root(build, &out, &out)
+			cmd.SetArgs(append(args, "--yes"))
+			if err := cmd.Execute(); err != nil || !strings.Contains(out.String(), packaging.BrewUninstall) {
+				t.Fatalf("uninstall --yes: %v, %s", err, &out)
 			}
 			if _, err := os.Stat(marker); (!purge && err != nil) || (purge && !os.IsNotExist(err)) {
 				t.Fatalf("state after purge=%v: %v", purge, err)
