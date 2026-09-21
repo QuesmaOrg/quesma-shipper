@@ -479,7 +479,7 @@ jobs:
 
           | Platform | Installer |
           |---|---|
-          | macOS 13+ | [Download quesma-shipper-macos-universal.pkg](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg) (.pkg installer, Apple Silicon and Intel) |
+          | macOS 13+ | [Download quesma-shipper-macos-universal.pkg](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg) (.pkg installer, Apple Silicon and Intel), or with Homebrew \`brew install --cask quesmaorg/tap/quesma-shipper\` |
           | Windows 10 1809+ | [Download QuesmaShipperSetup-amd64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe) (.exe installer, x64) or [QuesmaShipperSetup-arm64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe) (.exe installer, Arm64) |
           | Linux | Run the installer script below (x64 or Arm64) |
 
@@ -487,6 +487,8 @@ jobs:
               sh install.sh
 
           The Linux script downloads a hash-pinned bootstrap binary and installs a systemd user service. Windows release signing is temporarily disabled, so Microsoft Defender SmartScreen may warn about the download.
+
+          The attached \`quesma-shipper.rb\` is the cask for this exact release. The [Homebrew tap](https://github.com/QuesmaOrg/homebrew-tap) imports it automatically, so \`brew\` users never need to download it by hand.
 
           Portable binaries without service integration: Linux [x64](https://updates.quesma.dev/download/quesma-shipper-linux-amd64) · Linux [Arm64](https://updates.quesma.dev/download/quesma-shipper-linux-arm64) · Windows [x64](https://updates.quesma.dev/download/quesma-shipper-windows-amd64.exe) · Windows [Arm64](https://updates.quesma.dev/download/quesma-shipper-windows-arm64.exe)
           EOF
