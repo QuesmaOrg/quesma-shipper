@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -129,18 +130,32 @@ func TestCheckUpdate(t *testing.T) {
 	}
 }
 
-// Everything status shares with doctor stays out of the exit code.
+// Everything status shares with doctor stays out of the exit code. Seeded so the rows that only
+// appear on a broken install are in the set: an empty dir would leave the warning paths untested.
 func TestAdvisoryRowsNeverFail(t *testing.T) {
 	dir := t.TempDir()
+	const mine, theirs = "c033b5b2-c3ac-4f39-911f-7ea632b7727c", "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
+	seedFailures(t, dir, 19, event(time.Now(), formats.FailureTick, "the run shipped nothing"))
+
 	var rows []Row
 	rows = append(rows, scheduleRows(dir, time.Now())...)
 	doc, docErr := engine.Peek(dir)
 	rows = append(rows, stateRowsFrom(doc, docErr, "")...)
+	rows = append(rows, stateRowsFrom(engine.Document{InstallID: theirs}, nil, mine)...)
+	rows = append(rows, stateRowsFrom(engine.Document{}, errors.New("unreadable"), mine)...)
 	rows = append(rows, enrollmentRows(dir, nil, os.ErrNotExist, &config.Effective{}, controlplane.Remote{})...)
 	rows = append(rows, enrollmentRows(dir, nil, errors.New("corrupt"), &config.Effective{}, controlplane.Remote{})...)
+	var labels []string
 	for _, row := range rows {
 		if row.Sev == SevFail {
 			t.Errorf("advisory row %q is SevFail", row.Label)
+		}
+		labels = append(labels, row.Label)
+	}
+	// The seeding is the point: a refactor that stops producing these must not quietly pass.
+	for _, want := range []string{"recent runs", "local state"} {
+		if !slices.Contains(labels, want) {
+			t.Errorf("the %q row never appeared, so its severity went unchecked: %v", want, labels)
 		}
 	}
 }
