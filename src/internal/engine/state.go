@@ -84,6 +84,12 @@ type Document struct {
 	Entries     map[Key]Fingerprint
 }
 
+// ForeignTo reports whether another install wrote this document. An unstamped one belongs to
+// whoever opens it, so an empty id on either side is never foreign.
+func (d Document) ForeignTo(installID string) bool {
+	return d.InstallID != "" && installID != "" && d.InstallID != installID
+}
+
 // Store is an open, locked fingerprint store.
 type Store struct {
 	dir       string
@@ -126,7 +132,7 @@ func open(stateDir, installID string, maxBytes int64) (*Store, error) {
 	// Any document that cannot be loaded is discarded, never fatal: the archive answers for what it
 	// already holds, so an empty store costs a re-hash, not a re-upload.
 	doc, err := load(stateDir, maxBytes)
-	if err == nil && doc.InstallID != "" && installID != "" && doc.InstallID != installID {
+	if err == nil && doc.ForeignTo(installID) {
 		err = fmt.Errorf("state: %s belongs to install %s, this install is %s",
 			filepath.Join(stateDir, FileName), doc.InstallID, installID)
 	}

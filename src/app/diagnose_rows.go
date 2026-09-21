@@ -553,8 +553,7 @@ func failureRows(stateDir string, now time.Time) []Row {
 		if at, err := time.Parse(time.RFC3339, last.At); err == nil {
 			detail += ", most recently " + Ago(at, now)
 		}
-		// The reason only: the row that owns the remedy prints the paragraph after it.
-		fix, _, _ = strings.Cut(last.Message, "\n\n")
+		fix = last.Message
 	}
 	return []Row{{Sev: SevWarn, Label: "recent runs", Brief: "recent runs are failing",
 		Detail: detail, Fix: fix}}

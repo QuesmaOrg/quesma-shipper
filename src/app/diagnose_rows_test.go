@@ -333,6 +333,7 @@ func TestAccountInspectionIsNeutral(t *testing.T) {
 	}
 }
 
+// The run recovers on its own, so the row explains the coming re-ship rather than ordering a reset.
 func TestStateRowsNameAnInstallMismatch(t *testing.T) {
 	const mine, theirs = "c033b5b2-c3ac-4f39-911f-7ea632b7727c", "85a7e04c-32a4-4bf5-9c80-49c4f9d087bb"
 	doc := engine.Document{InstallID: theirs, Entries: map[engine.Key]engine.Fingerprint{}}
@@ -350,8 +351,14 @@ func TestStateRowsNameAnInstallMismatch(t *testing.T) {
 	if !strings.Contains(found.Detail, theirs) || !strings.Contains(found.Detail, mine) {
 		t.Errorf("detail %q must name both installs", found.Detail)
 	}
+	if !strings.Contains(found.Detail, "discards it") {
+		t.Errorf("detail %q must say the next run recovers by itself", found.Detail)
+	}
+	if strings.Contains(found.Detail, "refused") {
+		t.Errorf("detail %q still claims runs are blocked", found.Detail)
+	}
 	if !strings.Contains(found.Fix, "state reset") {
-		t.Errorf("fix %q must name the command that repairs it", found.Fix)
+		t.Errorf("fix %q must name the command that does it sooner", found.Fix)
 	}
 
 	for _, row := range stateRowsFrom(engine.Document{InstallID: mine}, nil, mine) {
@@ -450,25 +457,5 @@ func TestFailureRowsSurviveALogWithNoCountedEvent(t *testing.T) {
 	}
 	if strings.Contains(rows[0].Fix, "update failed") {
 		t.Errorf("fix %q fell back to an uncounted event", rows[0].Fix)
-	}
-}
-
-// The row that owns the remedy prints it, so doctor never states one fix twice.
-func TestFailureRowsShowTheReasonNotTheRemedy(t *testing.T) {
-	dir := t.TempDir()
-	now := time.Now()
-	seedFailures(t, dir, 4, event(now, formats.FailureTick,
-		"state: document belongs to a different install: it was written by 85a7e04c and this install is c033b5b2\n\n"+
-			engine.InstallMismatchRemedy))
-
-	rows := failureRows(dir, now)
-	if len(rows) != 1 {
-		t.Fatalf("got %d rows, want 1", len(rows))
-	}
-	if strings.Contains(rows[0].Fix, "state reset") {
-		t.Errorf("fix %q repeats the remedy the state row already prints", rows[0].Fix)
-	}
-	if !strings.Contains(rows[0].Fix, "written by 85a7e04c") {
-		t.Errorf("fix %q dropped the reason", rows[0].Fix)
 	}
 }

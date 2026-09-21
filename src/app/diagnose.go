@@ -154,12 +154,14 @@ func stateRowsFrom(doc engine.Document, err error, installID string) []Row {
 			Detail: fmt.Sprintf("unreadable: %v", err), Fix: "`quesma-shipper state` inspects and repairs it"}}
 	}
 	rows := []Row{{Sev: SevDim, Label: "tracked_files", Detail: fmt.Sprintf("%d", len(doc.Entries))}}
-	// Peek does not apply Open's guard, so doctor names this before any run hits it.
+	// Peek does not discard the way Open does, so doctor can explain the coming re-ship first.
 	if doc.ForeignTo(installID) {
 		rows = append(rows, Row{Sev: SevWarn, Label: "local state", Brief: "local state belongs to another install",
-			Detail: fmt.Sprintf("written by install %s, this install is %s: every run is refused",
-				doc.InstallID, installID),
-			Fix: engine.InstallMismatchRemedy})
+			Detail: fmt.Sprintf("written by install %s, this install is %s: the next run discards it "+
+				"and starts from an empty store", doc.InstallID, installID),
+			// Not a re-ship onto existing keys: a new install id is a new key root, so nothing dedups.
+			Fix: "`quesma-shipper state reset --apply` does it now; either way this install " +
+				"uploads its whole history again under its own keys"})
 	}
 	parked := 0
 	var fixes []string
