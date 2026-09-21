@@ -15,7 +15,8 @@ and launchd executable path. The Caskroom directory retains the initially instal
 `quesma-shipper --version` reports the running version. Normal `brew upgrade` skips auto-updating casks;
 `brew upgrade --cask --greedy quesmaorg/tap/quesma-shipper` explicitly upgrades through Brew.
 Brew upgrades stop the old service and register the new version; uninstall stops it and preserves all
-local state. The shipper never removes its own Brew-managed payload.
+local state. `quesma-shipper uninstall` removes the service but keeps the Homebrew command installed;
+add `--purge` to delete local state too. Neither command invokes Brew or removes its managed payload.
 The path check follows symlinks and supports nonstandard Homebrew prefixes, but expects Homebrew's
 normal `Caskroom/quesma-shipper/VERSION/quesma-shipper` layout.
 
@@ -34,8 +35,8 @@ and lack the Brew uninstall protection. No new signing credentials or cross-repo
 ## Validation
 
 The Darwin tests cover package ownership and run the CLI from a simulated Caskroom through a symlink,
-checking that automatic and manual updates reach TUF while uninstall still defers to Brew. A separate
-subprocess test replaces a staged binary through the real raw updater, re-executes it, and verifies
+checking that automatic and manual updates reach TUF while uninstall preserves the Brew payload and
+honors `--purge`. A separate subprocess test replaces a staged binary through the real raw updater, re-executes it, and verifies
 that its command symlink and service entry still address the replacement.
 `scripts/test-homebrew.sh` installs, upgrades, and removes a local cask on a disposable macOS CI runner,
 checks launchd and state preservation, and removes quarantine from the staged unsigned CI binary

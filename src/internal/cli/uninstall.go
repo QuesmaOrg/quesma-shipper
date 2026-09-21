@@ -17,9 +17,6 @@ func uninstallCmd(b app.Build) *cobra.Command {
 		Short: "Remove the service and program, keeping local state",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if packaging.HomebrewManaged() {
-				return fmt.Errorf("Homebrew manages this installation; run `%s`; local state is kept", packaging.BrewUninstall)
-			}
 			w := cmd.OutOrStdout()
 			p := paletteFor(w)
 			st, err := app.CurrentStatus(b)
@@ -31,11 +28,16 @@ func uninstallCmd(b app.Build) *cobra.Command {
 			if st.Organization != "" {
 				to = st.Organization
 			}
-			effect := "deletes the program. Local state is kept\nso a later reinstall can resume this machine."
-			question := "Remove " + app.Title + "?"
+			homebrew := packaging.HomebrewManaged()
+			program, target := "deletes the program", app.Title
+			if homebrew {
+				program, target = "keeps the Homebrew command installed", "the background service"
+			}
+			effect := program + ". Local state is kept\nso a later reinstall can resume this machine."
+			question := "Remove " + target + "?"
 			if purge {
-				effect = "deletes the program and its local state.\nWhat was already sent stays with your organisation."
-				question = "Remove " + app.Title + " and purge its local state?"
+				effect = program + " and deletes local state.\nWhat was already sent stays with your organisation."
+				question = "Remove " + target + " and purge its local state?"
 			}
 			fmt.Fprintf(w, "\n%s collects your coding-agent sessions on this machine and sends them\n"+
 				"to %s. Removing it stops that and %s\n\n", app.Title, to, effect)
@@ -69,6 +71,8 @@ func uninstallCmd(b app.Build) *cobra.Command {
 			}
 			if deferred {
 				banner(w, p, p.red, "removal finishing", "the Windows uninstaller is running in the background")
+			} else if homebrew {
+				banner(w, p, p.red, "uninstall finished", "Homebrew command remains installed; remove with "+packaging.BrewUninstall)
 			} else {
 				banner(w, p, p.red, "removed", "")
 			}

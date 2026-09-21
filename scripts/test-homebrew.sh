@@ -50,6 +50,23 @@ check_service() {
   grep -q "/$1/quesma-shipper" "$plist"
 }
 
+uninstall_shipper() {
+  /usr/bin/expect -f - "$@" <<'TCL'
+set timeout 30
+spawn quesma-shipper uninstall {*}$argv
+expect {
+  "y/N " { send "y\r" }
+  timeout { exit 1 }
+  eof { exit 1 }
+}
+expect {
+  eof {}
+  timeout { exit 1 }
+}
+exit [lindex [wait] 3]
+TCL
+}
+
 write_cask 1.0.0
 brew install --cask --yes quesma-test/shipper/quesma-shipper
 quesma-shipper --version
@@ -57,8 +74,21 @@ check_service 1.0.0
 state="$HOME/.local/state/trajectory-shipper"
 mkdir -p "$state"
 printf 'preserve\n' > "$state/brew-smoke-marker"
-if quesma-shipper uninstall > "$work/uninstall.txt" 2>&1; then exit 1; fi
-grep -q 'brew uninstall' "$work/uninstall.txt"
+uninstall_shipper > "$work/uninstall.txt"
+grep -q 'Homebrew command remains installed' "$work/uninstall.txt"
+[[ ! -e "$plist" ]]
+if launchctl print "gui/$(id -u)/com.quesma.shipper" >/dev/null 2>&1; then exit 1; fi
+grep -qx preserve "$state/brew-smoke-marker"
+quesma-shipper --version
+quesma-shipper postinstall
+check_service 1.0.0
+uninstall_shipper --purge > "$work/uninstall.txt"
+grep -q 'Homebrew command remains installed' "$work/uninstall.txt"
+[[ ! -e "$plist" && ! -e "$state" ]]
+quesma-shipper --version
+quesma-shipper postinstall
+check_service 1.0.0
+printf 'preserve\n' > "$state/brew-smoke-marker"
 
 write_cask 1.0.1
 brew upgrade --cask --greedy --yes quesma-test/shipper/quesma-shipper
