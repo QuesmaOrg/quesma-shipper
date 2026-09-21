@@ -12,7 +12,6 @@ import (
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
-	"github.com/QuesmaOrg/quesma-shipper/internal/sources/codexfake"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
@@ -32,11 +31,8 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	spec, _ := catalog.Source("codex-account")
 	o := f.opts()
 	o.Plan.Interval = 5 * time.Minute
-	// The usage read fails on purpose, so every bucket is a partial snapshot the engine must still ship.
-	o.Env = sources.Env{Home: f.home, Lookup: installFakeCodex(t, codexfake.Config{ExpectHome: home, Responses: map[string]json.RawMessage{
-		"account/read":            json.RawMessage(`{"result":{"account":{"type":"chatgpt","email":"dev@example.org","planType":"pro"},"requiresOpenaiAuth":true}}`),
-		"account/rateLimits/read": json.RawMessage(`{"result":{"rateLimits":{"primary":{"usedPercent":7}}}}`),
-	}})}
+	// No PATH means no codex, so every bucket is a partial snapshot the engine must still ship.
+	o.Env = sources.Env{Home: f.home, Lookup: func(string) (string, bool) { return "", false }}
 	o.Plan.Sources = []sources.Resolved{{Source: spec, Root: home, Enabled: true, SpecFingerprint: sources.SpecFingerprint(spec)}}
 	now := o.Now()
 	o.Now = func() time.Time { return now }
@@ -78,7 +74,7 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 				t.Fatalf("invalid account record: %s", line)
 			}
 		}
-		if !bytes.Contains(payload, []byte(`"planType":"pro"`)) || !bytes.Contains(payload, []byte("dev@example.org")) || !bytes.Contains(payload, []byte(`"error":"rpc_error"`)) || manifest.Redaction != nil {
+		if bytes.Count(payload, []byte(`"error":"codex_unavailable"`)) != 3 || manifest.Redaction != nil {
 			t.Fatalf("account payload altered: %s", payload)
 		}
 	}

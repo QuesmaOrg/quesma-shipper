@@ -13,6 +13,14 @@ type Env struct {
 	Lookup func(string) (string, bool)
 }
 
+// lookup treats a half-built Env, one with no Lookup, as an empty environment.
+func (e Env) lookup(name string) (string, bool) {
+	if e.Lookup == nil {
+		return "", false
+	}
+	return e.Lookup(name)
+}
+
 // OSEnv returns the real process environment.
 func OSEnv() (Env, error) {
 	home, err := os.UserHomeDir()

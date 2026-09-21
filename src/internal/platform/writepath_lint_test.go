@@ -184,10 +184,7 @@ var bannedExec = map[string]map[string]bool{
 }
 
 // execCapableFiles is the file-granular exec exception for the data path. Each entry replaces a
-// worse surface rather than adding one:
-//
-//	accounts_keychain_darwin.go  the system credential reader, which has its own Keychain permissions
-//	accounts_codex_appserver.go  `codex app-server`, so the shipper never decodes auth.json tokens
+// worse surface: the Keychain reader spares us the token file, the codex client spares us the token.
 var execCapableFiles = []string{
 	"internal/sources/accounts_keychain_darwin.go",
 	"internal/sources/accounts_codex_appserver.go",

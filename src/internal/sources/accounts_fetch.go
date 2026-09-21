@@ -59,14 +59,19 @@ func (p *Accounts) fetch(obs accountObservation, request *http.Request) accountO
 		obs.Error = "response_unreadable"
 		return obs
 	}
-	if len(raw) > accountResponseLimit {
+	return withBody(obs, raw)
+}
+
+// withBody is the one place a provider response becomes an observation body, so every collector
+// shares the size and validity vocabulary.
+func withBody(obs accountObservation, raw []byte) accountObservation {
+	switch {
+	case len(raw) > accountResponseLimit:
 		obs.Error = "response_too_large"
-		return obs
-	}
-	if !json.Valid(raw) {
+	case !json.Valid(raw):
 		obs.Error = "invalid_json"
-		return obs
+	default:
+		obs.Body = raw
 	}
-	obs.Body = raw
 	return obs
 }

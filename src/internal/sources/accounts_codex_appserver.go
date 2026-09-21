@@ -2,8 +2,7 @@ package sources
 
 // The Codex account is read over `codex app-server`'s JSON-RPC instead of parsing auth.json, so no
 // token is decoded or sent by this process. This is the one data-path file that spawns a
-// subprocess; TestNoExecOutsidePackaging names it, and the Codex CLI's own desktop app speaks
-// the same protocol.
+// subprocess; TestNoExecOutsidePackaging names it.
 
 import (
 	"bufio"
@@ -19,21 +18,19 @@ import (
 	"time"
 )
 
-// codexInstallDirs are searched after PATH: a LaunchAgent or systemd unit rarely inherits a login
-// shell's PATH. A var so tests can point it away from a real install.
+// A LaunchAgent or systemd unit rarely inherits a login shell's PATH, so these follow it.
 var codexInstallDirs = map[string][]string{
 	"darwin": {"/opt/homebrew/bin", "/usr/local/bin"},
 	"linux":  {"/usr/local/bin", "/usr/bin"},
 }[runtime.GOOS]
 
-// No PATH at all means no search, so a test environment never reaches a real codex.
+// Every service manager sets PATH; an environment without one is a test, and gets no search.
 func codexBinary(env Env) (string, bool) {
-	path, ok := env.Lookup("PATH")
+	path, ok := env.lookup("PATH")
 	if !ok {
 		return "", false
 	}
-	dirs := append(filepath.SplitList(path), codexInstallDirs...)
-	for _, dir := range dirs {
+	for _, dir := range append(filepath.SplitList(path), codexInstallDirs...) {
 		if dir == "" {
 			continue
 		}
@@ -62,11 +59,10 @@ type codexRPC struct {
 	stdin   io.WriteCloser
 	scanner *bufio.Scanner
 	next    int
-	broken  error
 }
 
-// runCodexAppServer drives one app-server session: spawn, initialize, the calls fn makes, then EOF on
-// stdin ends the child. The timeout bounds everything so a wedged app-server cannot stall a flush.
+// runCodexAppServer spawns the child, runs the handshake, then fn's calls. EOF on stdin asks the
+// child to exit; the grace timer cancels the context if it does not, and WaitDelay bounds the wait.
 func runCodexAppServer(ctx context.Context, binary, codexHome string, fn func(*codexRPC) error) error {
 	ctx, cancel := context.WithTimeout(ctx, codexAppServerTimeout)
 	defer cancel()
@@ -84,17 +80,14 @@ func runCodexAppServer(ctx context.Context, binary, codexHome string, fn func(*c
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	defer func() {
+		_ = stdin.Close()
+		exit := time.AfterFunc(codexExitGrace, cancel)
+		_ = cmd.Wait()
+		exit.Stop()
+	}()
 	c := &codexRPC{stdin: stdin, scanner: bufio.NewScanner(stdout)}
 	c.scanner.Buffer(make([]byte, 0, 64<<10), accountResponseLimit+64<<10)
-	err = c.session(fn)
-	_ = stdin.Close()
-	exit := time.AfterFunc(codexExitGrace, cancel)
-	_ = cmd.Wait()
-	exit.Stop()
-	return err
-}
-
-func (c *codexRPC) session(fn func(*codexRPC) error) error {
 	if _, err := c.call("initialize", map[string]any{
 		"clientInfo":   map[string]string{"name": "quesma-shipper", "version": "1"},
 		"capabilities": nil,
@@ -116,16 +109,12 @@ func (c *codexRPC) write(v any) error {
 	return err
 }
 
-// call returns the raw result of the response whose id matches. Notifications and server-initiated
-// requests, which carry a method, are skipped. A transport failure breaks the session for good.
+// call returns the result of the response whose id matches; notifications and server-initiated
+// requests, which carry a method, are skipped.
 func (c *codexRPC) call(method string, params any) (json.RawMessage, error) {
-	if c.broken != nil {
-		return nil, c.broken
-	}
 	c.next++
 	id := c.next
 	if err := c.write(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}); err != nil {
-		c.broken = err
 		return nil, err
 	}
 	for c.scanner.Scan() {
@@ -136,8 +125,7 @@ func (c *codexRPC) call(method string, params any) (json.RawMessage, error) {
 			Error  *codexRPCError  `json:"error"`
 		}
 		if err := json.Unmarshal(c.scanner.Bytes(), &resp); err != nil {
-			c.broken = fmt.Errorf("%s: %w", method, err)
-			return nil, c.broken
+			return nil, fmt.Errorf("%s: %w", method, err)
 		}
 		if resp.Method != "" || resp.ID == nil || *resp.ID != id {
 			continue
@@ -148,9 +136,7 @@ func (c *codexRPC) call(method string, params any) (json.RawMessage, error) {
 		return resp.Result, nil
 	}
 	if err := c.scanner.Err(); err != nil {
-		c.broken = err
-	} else {
-		c.broken = errors.New(method + ": app-server exited before responding")
+		return nil, err
 	}
-	return nil, c.broken
+	return nil, errors.New(method + ": app-server exited before responding")
 }

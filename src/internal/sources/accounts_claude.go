@@ -17,13 +17,10 @@ import (
 func (p *Accounts) collectClaude(ctx context.Context, req Request) ([]accountObservation, bool) {
 	var out []accountObservation
 	env := req.Env
-	if env.Lookup == nil {
-		env.Lookup = func(string) (string, bool) { return "", false }
-	}
 	home := req.Source.Root
 	config := filepath.Join(env.Home, ".claude.json")
 	service := "Claude Code-credentials"
-	override, _ := env.Lookup("CLAUDE_CONFIG_DIR")
+	override, _ := env.lookup("CLAUDE_CONFIG_DIR")
 	if home != filepath.Join(env.Home, ".claude") || override != "" && filepath.Clean(override) == home {
 		config = filepath.Join(home, ".claude.json")
 		keychainHome := home
