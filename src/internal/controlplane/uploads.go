@@ -5,7 +5,6 @@ package controlplane
 // fingerprint document stays the only upload-progress authority, and no ticket URL is ever logged.
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -172,15 +171,11 @@ func (c *Client) AuthorizeUploads(ctx context.Context, req AuthorizeRequest) (re
 		return AuthorizeResponse{}, fmt.Errorf("backend: %s returned HTTP %d: %s", uploadAuthorizePath, status, reason())
 	}
 
-	// Strict decoding, scoped to this response only: a ticket half-understood is worse than none.
-	// The shared v1 decode stays tolerant on purpose.
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err = dec.Decode(&resp); err != nil {
+	// Unknown response fields are ignored, so the server may grow the response before the fleet
+	// moves. Every field the client acts on is validated against the prepared object before a byte
+	// leaves, so an unread field cannot widen what is sent.
+	if err = json.Unmarshal(raw, &resp); err != nil {
 		return AuthorizeResponse{}, fmt.Errorf("backend: decode %s response: %w", uploadAuthorizePath, err)
-	}
-	if dec.More() {
-		return AuthorizeResponse{}, fmt.Errorf("backend: %s response carries content after the JSON document", uploadAuthorizePath)
 	}
 
 	if len(resp.Tickets) != len(req.Objects) {

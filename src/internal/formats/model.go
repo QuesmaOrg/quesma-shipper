@@ -269,10 +269,9 @@ type Report struct {
 	Paused      bool
 	PauseReason string
 
-	// StoreCorrupt says this run opened a fingerprint document that failed its own checksum and
-	// started from empty instead. Collection was unaffected; everything re-ships once. Carried on
-	// the report because detecting it silently would leave the one true silent-loss hole reported
-	// to nobody.
+	// StoreCorrupt says this run's fingerprint document could not be loaded and was discarded: the
+	// run started from empty and its first flush replaced the file. Carried on the report because
+	// detecting it silently would leave the one true silent-loss hole reported to nobody.
 	StoreCorrupt bool
 
 	// SlowestScrubNanos is the worst single redaction this run served, with the payload behind it.

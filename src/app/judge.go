@@ -63,7 +63,7 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 	// is the one condition that can otherwise lose a file for good.
 	if rep.StoreCorrupt {
 		rec.Append(newEvent(r.eff.StateDir, r.runID, formats.FailureStoreCorrupt,
-			"the fingerprint store failed its checksum and was discarded; everything re-ships once"))
+			"the fingerprint store could not be loaded and was discarded; the next sync replaces it"))
 	}
 
 	if err == nil {
