@@ -21,7 +21,7 @@ builds keep themselves current from the signed update channel.
 
 | Platform | Download |
 |---|---|
-| macOS 13+ | `brew install --cask quesmaorg/tap/quesma-shipper`, or the signed [.pkg installer](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg) |
+| macOS 13+ | `brew install --cask quesmaorg/tap/quesma-shipper`, or the [.pkg installer](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg) |
 | Windows 10 1809+ | [QuesmaShipperSetup-amd64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe) for x64, [QuesmaShipperSetup-arm64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe) for Arm |
 | Linux | `curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/src/packaging/linux/install.sh && sh install.sh` |
 
