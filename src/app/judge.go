@@ -71,8 +71,13 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 		// the baseline that makes the next one's readable.
 		rec.ConsecutiveFailures = 0
 	} else {
-		rec.Append(newEvent(r.eff.StateDir, r.runID, kind, err.Error()))
-		rec.ConsecutiveFailures++
+		// Counted through the event, not at this call site: the streak and LatestCounted must read
+		// the same rule, or the doctor row names a failure the count does not include.
+		ev := newEvent(r.eff.StateDir, r.runID, kind, err.Error())
+		rec.Append(ev)
+		if ev.Counted() {
+			rec.ConsecutiveFailures++
+		}
 	}
 
 	if werr := writeFailureRecord(r.eff.StateDir, rec); werr != nil {
@@ -106,7 +111,7 @@ func (r *Runtime) runFacts(rep formats.Report, mem platform.Delta) *formats.RunF
 // one-shot verb crashing is not one of those. The stack stays on stderr, being the one diagnostic
 // that can carry payload-derived strings.
 func RecordPanic(verb string, cause any) {
-	recordWithoutRuntime("", formats.FailurePanic, fmt.Sprintf("panic in %s: %v", verb, cause), false)
+	recordWithoutRuntime("", formats.FailurePanic, fmt.Sprintf("panic in %s: %v", verb, cause))
 }
 
 // RecordStartupFailure persists a collecting run that could not start. JudgeTick cannot
@@ -117,7 +122,7 @@ func RecordStartupFailure(verb, runID string, cause error) {
 		return
 	}
 	recordWithoutRuntime(runID, formats.FailureInit,
-		fmt.Sprintf("%s could not start: %v", verb, cause), true)
+		fmt.Sprintf("%s could not start: %v", verb, cause))
 }
 
 // RecordUpdateFailure persists a self-update that did not happen. Uncounted: collection is not
@@ -125,13 +130,13 @@ func RecordStartupFailure(verb, runID string, cause error) {
 // remediation channel -- an install that cannot replace itself cannot be fixed remotely, and this
 // reached stderr only, which on a supervised daemon is a log file nothing ships.
 func RecordUpdateFailure(message string) {
-	recordWithoutRuntime("", formats.FailureUpdate, message, false)
+	recordWithoutRuntime("", formats.FailureUpdate, message)
 }
 
 // recordWithoutRuntime serves the paths with no resolved configuration. The state directory
 // resolves the way the kill switch resolves it, so a config too broken to load cannot also hide
 // the record of what broke.
-func recordWithoutRuntime(runID, kind, message string, counted bool) {
+func recordWithoutRuntime(runID, kind, message string) {
 	dir, _, err := pauseStateDir()
 	if err != nil || dir == "" {
 		return
@@ -141,8 +146,9 @@ func recordWithoutRuntime(runID, kind, message string, counted bool) {
 		return
 	}
 	rec := readFailureRecord(dir)
-	rec.Append(newEvent(dir, runID, kind, message))
-	if counted {
+	ev := newEvent(dir, runID, kind, message)
+	rec.Append(ev)
+	if ev.Counted() {
 		rec.ConsecutiveFailures++
 	}
 	// Silent: the caller is already on its way out with something to print.

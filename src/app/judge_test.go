@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
@@ -13,7 +14,9 @@ import (
 )
 
 func TestJudgeTick(t *testing.T) {
-	r := &Runtime{eff: &config.Effective{StateDir: t.TempDir()}}
+	// With a run id, as the run loop always has one: a panicked tick counts only because it carries
+	// one, and a fixture without it would assert the one-shot verb's rule against the tick's path.
+	r := &Runtime{eff: &config.Effective{StateDir: t.TempDir()}, runID: "0123456789abcdef"}
 
 	r.JudgeTick(errors.New("flush failed"), formats.Report{}, false, platform.Delta{})
 	rec := readFailureRecord(r.eff.StateDir)
@@ -208,6 +211,38 @@ func TestStoreCorruptionIsRecordedButNotCounted(t *testing.T) {
 	}
 	if rec.ConsecutiveFailures != 0 {
 		t.Errorf("a discarded store moved the failed-run count to %d", rec.ConsecutiveFailures)
+	}
+}
+
+// The re-enrollment case end to end: the discard that recovers the install must clear the streak
+// those refusals built up, without the discard itself becoming the streak's newest reason.
+func TestARecoveringRunClearsTheStreakItInherited(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 3; i++ {
+		r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "aaaaaaaaaaaaaaaa"}
+		r.JudgeTick(errors.New("state: document belongs to another install"), formats.Report{}, false, platform.Delta{})
+	}
+	if rec := readFailureRecord(dir); rec.ConsecutiveFailures != 3 {
+		t.Fatalf("the refusals did not build a streak: %d", rec.ConsecutiveFailures)
+	}
+
+	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "bbbbbbbbbbbbbbbb"}
+	if err := r.JudgeTick(nil, formats.Report{StoreCorrupt: true, Shipped: 7}, false, platform.Delta{}); err != nil {
+		t.Fatalf("the recovering run failed: %v", err)
+	}
+
+	rec := readFailureRecord(dir)
+	if rec.ConsecutiveFailures != 0 {
+		t.Errorf("the recovery left %d failures on the streak", rec.ConsecutiveFailures)
+	}
+	if rec.Latest() == nil || rec.Latest().Kind != formats.FailureStoreCorrupt {
+		t.Fatalf("the discard was not recorded: %+v", rec.Recent)
+	}
+	if last := rec.LatestCounted(); last == nil || last.Kind != formats.FailureTick {
+		t.Errorf("LatestCounted picked the uncounted discard: %+v", last)
+	}
+	if rows := failureRows(dir, time.Now()); rows != nil {
+		t.Errorf("doctor still reports failing runs after the recovery: %+v", rows)
 	}
 }
 
