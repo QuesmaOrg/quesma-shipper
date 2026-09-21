@@ -479,7 +479,7 @@ jobs:
 
           | Platform | Installer |
           |---|---|
-          | macOS 13+ | \`brew install --cask quesmaorg/tap/quesma-shipper\`, or [Download quesma-shipper-macos-universal.pkg](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg) (.pkg installer, Apple Silicon and Intel) |
+          | macOS 13+ | [Download quesma-shipper-macos-universal.pkg](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg) (.pkg installer, Apple Silicon and Intel), or with Homebrew \`brew install --cask quesmaorg/tap/quesma-shipper\` |
           | Windows 10 1809+ | [Download QuesmaShipperSetup-amd64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe) (.exe installer, x64) or [QuesmaShipperSetup-arm64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe) (.exe installer, Arm64) |
           | Linux | Run the installer script below (x64 or Arm64) |
 
