@@ -97,4 +97,8 @@ brew uninstall --cask quesma-test/shipper/quesma-shipper
 [[ ! -e "$plist" ]]
 if launchctl print "gui/$(id -u)/com.quesma.shipper" >/dev/null 2>&1; then exit 1; fi
 grep -qx preserve "$state/brew-smoke-marker"
-rm "$state/brew-smoke-marker"
+brew install --cask --yes quesma-test/shipper/quesma-shipper
+check_service 1.0.1
+brew uninstall --cask --zap quesma-test/shipper/quesma-shipper
+[[ ! -e "$plist" && ! -e "$state" ]]
+if launchctl print "gui/$(id -u)/com.quesma.shipper" >/dev/null 2>&1; then exit 1; fi

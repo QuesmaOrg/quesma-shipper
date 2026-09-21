@@ -135,8 +135,8 @@ administrator rights. Run the login command below after installing.
 
 The shipper updates itself automatically; run `quesma-shipper update` to update immediately.
 Use `brew uninstall --cask quesmaorg/tap/quesma-shipper` to remove it. Uninstall keeps enrollment and
-upload history. To also delete local state, run `quesma-shipper uninstall --purge` before the Brew
-uninstall command; the shipper removes its service and state but leaves the Homebrew command installed.
+upload history. Add `--zap` to move the default state directory to Trash. For a custom state directory,
+run `quesma-shipper uninstall --purge` before the Brew uninstall command.
 Before switching between Homebrew and the `.pkg`, uninstall the previous installation
 without purging local state.
 
