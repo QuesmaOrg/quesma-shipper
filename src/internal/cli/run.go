@@ -15,6 +15,7 @@ import (
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
+	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
@@ -82,7 +83,8 @@ func reportOutcome(ctx context.Context, env *app.Runtime) {
 // telemetryDeadline is short on purpose: a report about collection must never be what delays it.
 const telemetryDeadline = 5 * time.Second
 
-func flushBeforeExit(cmd *cobra.Command, out io.Writer, env *app.Runtime) error {
+func flushBeforeExit(cmd *cobra.Command, env *app.Runtime) error {
+	out := cmd.OutOrStdout()
 	fmt.Fprintln(out, "\nsignal received, shipping one final slice before exit")
 	ctx, cancel := context.WithTimeout(context.Background(), env.Effective().DrainDeadline)
 	defer cancel()
@@ -129,13 +131,13 @@ func runCmd(build app.Build) *cobra.Command {
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
-			// Resolved once, outside the loop: a config that will not parse also reads as "not
-			// logged in" and cannot repair itself between polls, so waiting on it waits forever.
-			// A resolve error skips the wait entirely and lets app.New report the real reason.
-			_, _, resolveErr := app.ResolveEffective()
+			// Resolved once, offline: a config that will not parse also reads as "not logged in"
+			// and cannot repair itself between polls, so waiting on it waits forever. A resolve
+			// error skips the wait and the gates below, and lets app.New report the real reason.
+			eff, paths, resolveErr := app.ResolveEffective()
 			waiting := false
 			for resolveErr == nil {
-				if _, ok := app.LoggedIn(); ok {
+				if _, err := controlplane.LoadEnrollment(paths.StateDir); err == nil {
 					break
 				}
 				if !waiting {
@@ -147,15 +149,23 @@ func runCmd(build app.Build) *cobra.Command {
 					return nil
 				case <-time.After(enrollmentPollInterval):
 				}
+				// Login can land in a state_dir edited during the wait: each poll reads the
+				// current one, and the gates below see the config as of enrollment.
+				eff, paths, resolveErr = app.ResolveEffective()
 			}
 			if !once {
-				maybeSelfUpdate(ctx, build, cmd.ErrOrStderr())
+				maybeSelfUpdate(ctx, build, resolveErr != nil || eff.AutoupdateEnabled, cmd.ErrOrStderr())
 			}
 
 			// After the self-update, whose re-exec never returns and would read as a death. NOT
 			// deferred: a panic has to unwind past the Exit call, and that missing entry is the
-			// crash record.
-			fl, runID, lastCrash := startCrashJournal(cmd.ErrOrStderr())
+			// crash record. A config too broken to resolve still gets a journal, in the default
+			// state directory, the way pause does.
+			stateDir, dirErr := paths.StateDir, error(nil)
+			if resolveErr != nil {
+				stateDir, dirErr = app.StateDirWithoutConfig()
+			}
+			fl, runID, lastCrash := startCrashJournal(cmd.ErrOrStderr(), stateDir, dirErr)
 			err := runLoop(cmd, ctx, build, once, drain, quiet, fl, runID, lastCrash)
 			fl.Exit()
 			return err
@@ -182,7 +192,8 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 	env.OnCrashShipped = fl.Reported
 
 	out := cmd.OutOrStdout()
-	errOut := cmd.ErrOrStderr()
+	stderr := cmd.ErrOrStderr()
+	errOut := stderr
 	var stream *progressStream
 	if once {
 		stream = newProgressStream(errOut, quiet)
@@ -195,7 +206,9 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 	}
 	reportRemote(errOut, env)
 
-	tick := config.DefaultTick
+	// Resolved for --once too: the interval doubles as the stall watchdog's threshold.
+	tick, tickWarn := config.TickInterval(env.Effective().Schedule)
+	printWarning(errOut, tickWarn)
 	if !once {
 		limit, fromEnv := platform.SetSoftLimit(platform.DefaultSoftLimit)
 		source := "default"
@@ -203,9 +216,6 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 			source = "GOMEMLIMIT"
 		}
 		fmt.Fprintf(out, "memory soft limit %d MB (%s)\n", limit>>20, source)
-		var tickWarn string
-		tick, tickWarn = config.TickInterval(env.Effective().Schedule)
-		printWarning(errOut, tickWarn)
 		fmt.Fprintf(out, "collecting to %s every %s; Ctrl-C to stop\n", env.Destination(), tick)
 	}
 	started := time.Now()
@@ -230,7 +240,18 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 		if drain {
 			rep, complete, err = env.Drain(ctx)
 		} else {
+			// Not armed for a drain, whose legitimate bound is drain_deadline, not the tick interval.
+			// Warns on the raw stderr: the progress bar's writer is not safe for a second goroutine.
+			wctx, stopWatch := context.WithCancel(context.Background())
+			watchdogDone := make(chan struct{})
+			go func() {
+				env.WatchStalledTick(wctx, n, tick, stderr)
+				close(watchdogDone)
+			}()
 			rep, err, panicked = flushRecovered(ctx, env, errOut)
+			// Joined, not just signalled: the judge is about to write the report the watchdog reads.
+			stopWatch()
+			<-watchdogDone
 		}
 		mem := platform.Delta{Before: before, After: platform.ReadMemStats()}
 		if stream != nil {
@@ -240,10 +261,10 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 			if once {
 				return err
 			}
-			return flushBeforeExit(cmd, out, env)
+			return flushBeforeExit(cmd, env)
 		}
-		// Persisted before anything else reports: this tick's own heartbeat ships through the
-		// upload path that may have just failed, so the record has to outlive the run.
+		// Judged before anything else reports: the record has to outlive the run, and a locally
+		// caused failure ships its own failure heartbeat from here.
 		tickErr := env.JudgeTick(err, rep, panicked, mem)
 		if err == nil && !quiet {
 			printRunSummary(out, rep, once && !drain)
@@ -292,8 +313,8 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 
 		select {
 		case <-ctx.Done():
-			return flushBeforeExit(cmd, out, env)
-		case <-time.After(app.NextDelay(rep, err, panicked, tick)):
+			return flushBeforeExit(cmd, env)
+		case <-time.After(app.NextDelay(rep, err, tick)):
 		}
 	}
 }

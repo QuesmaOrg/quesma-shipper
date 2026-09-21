@@ -13,10 +13,11 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/crashjournal"
 )
 
-func startCrashJournal(errOut io.Writer) (*crashjournal.Log, string, *formats.LastCrash) {
+// startCrashJournal opens the journal in dir; dirErr says the caller could not find one, which
+// leaves this run unjournaled rather than unstarted.
+func startCrashJournal(errOut io.Writer, dir string, dirErr error) (*crashjournal.Log, string, *formats.LastCrash) {
 	runID := newRunID()
-	dir, err := app.StateDirWithoutConfig()
-	if err != nil {
+	if dirErr != nil {
 		return nil, runID, nil
 	}
 
@@ -31,10 +32,11 @@ func startCrashJournal(errOut io.Writer) (*crashjournal.Log, string, *formats.La
 	fl.Start()
 
 	var crash *formats.LastCrash
-	if prev != nil && !prev.Clean {
+	if prev != nil {
 		crash = &formats.LastCrash{RunID: prev.RunID, Phase: prev.Phase, Consecutive: prev.Crashes}
 		fmt.Fprintf(errOut, "previous run %s never exited: last step %q; %d consecutive unclean run(s)\n",
 			prev.RunID, prev.Phase, prev.Crashes)
+		app.RecordCrash(crash)
 	}
 	return fl, runID, crash
 }

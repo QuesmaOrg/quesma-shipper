@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"maps"
@@ -24,7 +25,7 @@ func printPreview(out io.Writer, rep formats.Report, env *app.Runtime) {
 	for _, s := range rep.Sources {
 		fmt.Fprintf(w, "%s\t%s\t%s\n", s.SourceID, s.Health, s.Reason)
 		if s.Root != "" {
-			fmt.Fprintf(w, "  root\t%s\tagent %s\n", s.Root, orDash(s.AgentVersion))
+			fmt.Fprintf(w, "  root\t%s\tagent %s\n", s.Root, cmp.Or(s.AgentVersion, "-"))
 		}
 		for _, f := range s.Files {
 			fmt.Fprintf(w, "  %s\t%d B in\t%d B sealed\tdensity %.4f\t%s\n",
@@ -155,12 +156,6 @@ func ruleSummary(hits map[string]int) string {
 	return out
 }
 
-func orDash(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
-}
 func completeness(shipped, remaining int) float64 {
 	wanted := shipped + remaining
 	if wanted <= 0 {

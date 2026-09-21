@@ -196,6 +196,14 @@ const (
 	// separate kind because the consequence differs: a tick re-ships next tick, and on a host about
 	// to disappear this one does not.
 	FailureShutdown = "shutdown_failed"
+
+	// Recorded by the run AFTER a death, read back out of the crash journal: the dead run could
+	// say nothing itself. Uncounted; crashes keep their own counter in last_crash.
+	FailureCrash = "crashed"
+
+	// A tick that outlived its own interval, recorded before its outcome is known: a run stuck
+	// forever never reaches the judge. Uncounted, and the tick may yet complete.
+	FailureStalled = "tick_stalled"
 )
 
 // The message is username-placeholdered like every outbound diagnostic; a stack stays local.

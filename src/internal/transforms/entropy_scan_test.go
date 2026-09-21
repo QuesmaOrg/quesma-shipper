@@ -71,7 +71,7 @@ func TestEntropyGridScanFindsTheSameRunsAsTheByteWalk(t *testing.T) {
 				b.WriteString(frag[rng.Intn(len(frag))])
 			}
 			v := b.String()
-			got, want := m.Match(v, FieldPath("")), refMatch(m, v)
+			got, want := m.Match(v), refMatch(m, v)
 			if len(got) != len(want) {
 				t.Fatalf("MinLength %d, %q: got %v spans, want %v", cfg.MinLength, v, got, want)
 			}

@@ -2,12 +2,14 @@ package app
 
 // The write path, assembled: the authorization client, the upload-target allowlist and the
 // presigned uploader behind the engine's one upload port. The engine gets prepared objects and
-// verdicts; every wire type, every ticket and every URL stops here.
+// verdicts; every wire type, every ticket and every URL stops here, because app is the only
+// package allowed to import both controlplane and upload.
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"runtime"
@@ -140,11 +142,7 @@ func (p *vendPort) send(ctx context.Context, obj engine.PreparedObject, issued c
 		Metadata:   obj.Metadata,
 	}
 	ticket := toUploadTicket(issued)
-	target, err := p.targets.Match(ticket.URL)
-	if err != nil {
-		return err
-	}
-	if err := upload.ValidateTicket(target, prepared, ticket); err != nil {
+	if err := upload.ValidateTicket(p.targets, prepared, ticket); err != nil {
 		return err
 	}
 	// Nothing the store said crosses back: the local fingerprint document is the sole progress authority.
@@ -285,4 +283,38 @@ func DestinationHosts(destination, endpoint string) string {
 		return origins
 	}
 	return strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
+}
+
+// uploadTargets turns the machine owner's allowlist into the matcher the uploader consults. One
+// bad entry refuses the whole list, or the operator's file would disagree with the live origins.
+func uploadTargets(eff *config.Effective) (upload.UploadTargetList, error) {
+	list := make(upload.UploadTargetList, 0, len(eff.UploadTargets))
+	for i, t := range eff.UploadTargets {
+		target, err := upload.NewUploadTarget(upload.TargetSpec{
+			Origin:            t.Origin,
+			Addressing:        upload.Addressing(t.Addressing),
+			PathPrefix:        t.PathPrefix,
+			AllowLoopbackHTTP: t.AllowLoopbackHTTP,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("upload_targets entry %d: %w", i, err)
+		}
+		list = append(list, target)
+	}
+	return list, nil
+}
+
+// toUploadTicket copies one issued ticket into the uploader's shape; ValidateTicket refuses header
+// names outside the provider set before any byte leaves.
+func toUploadTicket(t controlplane.Ticket) upload.Ticket {
+	return upload.Ticket{
+		TicketID:            t.TicketID,
+		ObjectID:            t.ObjectID,
+		Method:              t.Method,
+		URL:                 t.URL,
+		ExpiresAt:           t.ExpiresAt,
+		RequiredHeaders:     maps.Clone(t.RequiredHeaders),
+		ContentLength:       t.ContentLength,
+		ContentLengthSigned: t.ContentLengthSigned,
+	}
 }

@@ -1054,8 +1054,8 @@ func planOf(eff *config.Effective) engine.Plan {
 	}
 }
 
-// Object metadata must carry the integrity hash, not an empty string: Seal takes the manifest by
-// VALUE, so the ShippedHash it computes never reaches the engine that writes the metadata.
+// Object metadata must carry the integrity hash, not an empty string: only the manifest Seal
+// returns has the ShippedHash it computed, so the engine must build metadata from that copy.
 func TestObjectMetadataCarriesTheIntegrityHash(t *testing.T) {
 	f := newFixture(t)
 	f.writeTranscript("p/s1.jsonl", line1)

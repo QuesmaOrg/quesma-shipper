@@ -73,12 +73,8 @@ type sourcePass struct {
 	out   *SourceOutcome
 
 	// budget is the run-wide max_files_per_run remainder: reserved at admission, refunded in fold.
-	budget *int
-
-	// scrubber is shared by every goroutine in the pass and is immutable after transforms.New.
-	scrubber *transforms.Scrubber
-	scrubErr error
-	staging  bool
+	budget  *int
+	staging bool
 
 	// Index-addressed, so the report and enricher input keep candidate order however work finishes.
 	slots  []FileOutcome
@@ -91,7 +87,7 @@ type sourcePass struct {
 	fatalReason   string
 
 	// staged is the authorization accumulator; it belongs to the loop goroutine alone.
-	staged *batcher[stagedUpload]
+	staged *batcher
 
 	// uploadHalted is fatal's non-permanent twin: this run sends and commits nothing more.
 	uploadHalted bool
@@ -138,7 +134,7 @@ func (p *sourcePass) run(ctx context.Context) error {
 	uploadSlots := make(chan struct{}, uploadLimit)
 
 	// Half the upload budget bounds a group below uploadLimit, so seal and PUT overlap.
-	p.staged = &batcher[stagedUpload]{
+	p.staged = &batcher{
 		maxObjects: max(1, min(maxBatchObjects, uploadLimit/2)),
 		send: func(items []stagedUpload) {
 			// One authorization, then one PUT per member. The group holds ONE upload slot for its
@@ -154,6 +150,12 @@ func (p *sourcePass) run(ctx context.Context) error {
 
 	next, inFlight, computing := 0, 0, 0
 	var stopped error
+	// settle releases a decided file's slot and gate share, then folds it; every exit ends here.
+	settle := func(r fileResult) {
+		inFlight--
+		p.inFlightBytes -= r.bytes
+		p.fold(r)
+	}
 	for {
 		for inFlight < limit && p.canAdmit(ctx, next, inFlight, &stopped) {
 			job := fileJob{idx: next, cand: p.disc.Candidates[next]}
@@ -164,7 +166,7 @@ func (p *sourcePass) run(ctx context.Context) error {
 			p.inFlightBytes += job.cand.Size
 			go func() {
 				computeSlots <- struct{}{}
-				r, pending := p.o.prepareFile(ctx, job, p.src, p.disc, p.scrubber, p.scrubErr, p.staging)
+				r, pending := p.o.prepareFile(ctx, job, p.src, p.disc, p.staging)
 				<-computeSlots
 				// A sealed object goes back to the loop thread to join an authorization group.
 				r.pending = pending
@@ -185,27 +187,19 @@ func (p *sourcePass) run(ctx context.Context) error {
 		case r := <-results:
 			computing--
 			if r.pending != nil {
-				for _, d := range p.stageUpload(r) {
-					inFlight--
-					p.inFlightBytes -= d.bytes
-					p.fold(d)
+				if d, final := p.stageUpload(r); final {
+					settle(d)
 				}
 				continue
 			}
-			inFlight--
-			p.inFlightBytes -= r.bytes
-			p.fold(r)
+			settle(r)
 		case done := <-batches:
 			for _, r := range done {
-				inFlight--
-				p.inFlightBytes -= r.bytes
-				p.fold(r)
+				settle(r)
 			}
 			// Sending the objects already accumulated would repeat one verdict per sealed sibling.
 			for _, d := range p.drainStaged() {
-				inFlight--
-				p.inFlightBytes -= d.bytes
-				p.fold(d)
+				settle(d)
 			}
 		}
 	}
@@ -386,17 +380,17 @@ func (p *sourcePass) applyIntent(r *fileResult) {
 }
 
 // stageUpload puts one sealed object into the authorization accumulator, which sends the group when
-// the next object would take it past either bound. It returns results that are already final.
-func (p *sourcePass) stageUpload(r fileResult) []fileResult {
+// the next object would take it past either bound. A true final means the result was decided here.
+func (p *sourcePass) stageUpload(r fileResult) (res fileResult, final bool) {
 	pending := r.pending
 	r.pending = nil
 	it := stagedUpload{res: r, pending: pending}
 
 	if p.fatal || p.uploadHalted {
-		return []fileResult{p.abandon(it)}
+		return p.abandon(it), true
 	}
 	p.staged.add(it, int64(len(pending.obj)))
-	return nil
+	return fileResult{}, false
 }
 
 // drainStaged empties the accumulator once the run has stopped uploading.

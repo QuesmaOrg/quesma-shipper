@@ -74,9 +74,13 @@ type Ticket struct {
 	ContentLengthSigned bool
 }
 
-// ValidateTicket refuses everything that is not exactly this prepared object at this target.
-// Errors name what disagreed and never the URL, its path, or its query.
-func ValidateTicket(target UploadTarget, prepared PreparedUpload, ticket Ticket) error {
+// ValidateTicket refuses everything that is not exactly this prepared object at a configured
+// target. Errors name what disagreed and never the URL, its path, or its query.
+func ValidateTicket(targets UploadTargetList, prepared PreparedUpload, ticket Ticket) error {
+	target, u, err := targets.match(ticket.URL)
+	if err != nil {
+		return err
+	}
 	if prepared.ObjectID == "" {
 		return errors.New("upload: prepared object carries no object id")
 	}
@@ -92,14 +96,6 @@ func ValidateTicket(target UploadTarget, prepared PreparedUpload, ticket Ticket)
 	}
 	if !ticket.ContentLengthSigned {
 		return fmt.Errorf("upload: ticket for object %q does not sign its content length", prepared.ObjectID)
-	}
-
-	u, err := parseTicketURL(ticket.URL)
-	if err != nil {
-		return err
-	}
-	if !target.matchesOrigin(u) {
-		return fmt.Errorf("%w: %s is not %s", ErrNoTarget, originOf(u), target.Origin())
 	}
 	if err := validatePath(target, prepared, u.EscapedPath()); err != nil {
 		return err

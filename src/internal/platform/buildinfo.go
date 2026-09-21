@@ -5,7 +5,6 @@ package platform
 // only when the recorded revision corroborates it (see applyStamp).
 
 import (
-	"fmt"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -114,18 +113,6 @@ func (i Info) String() string {
 		v += "+dirty"
 	}
 	return v
-}
-
-// Line is the human form, for `version` and for the root help.
-func (i Info) Line() string {
-	out := fmt.Sprintf("quesma-shipper %s %s/%s", i, i.OS, i.Arch)
-	if i.Revision != "" {
-		out += " commit=" + ShortRev(i.Revision)
-	}
-	if i.Time != "" {
-		out += " committed=" + i.Time
-	}
-	return out + " " + i.GoVersion
 }
 
 // ShortRev is the 12-char commit spelling used everywhere a sha is shown.

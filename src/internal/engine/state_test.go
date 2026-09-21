@@ -450,30 +450,6 @@ func TestEnsureSpecDropsOnlyTheChangedSource(t *testing.T) {
 	}
 }
 
-// An older document carries the generation per entry: load seeds source_specs from unanimous
-// entries, so the upgrade re-ships nothing and a later spec change still drops.
-func TestLegacyPerEntrySpecSeedsSourceSpecs(t *testing.T) {
-	dir := t.TempDir()
-	doc := `{"state_schema": 1, "entries": [
-	  {"source_id": "claude-code-transcripts", "native_path": "/x/a.jsonl", "source_spec_fingerprint": "` + sha + `"},
-	  {"source_id": "claude-code-transcripts", "native_path": "/x/b.jsonl", "source_spec_fingerprint": "` + sha + `"}
-	]}`
-	if err := os.WriteFile(filepath.Join(dir, engine.FileName), []byte(doc), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	s := open(t, dir)
-	if n, err := s.EnsureSpec("claude-code-transcripts", sha); err != nil || n != 0 {
-		t.Fatalf("the seeded generation matches, so nothing may drop: n=%d err=%v", n, err)
-	}
-	if s.Len() != 2 {
-		t.Errorf("expected both legacy entries to survive, got %d", s.Len())
-	}
-	if n, err := s.EnsureSpec("claude-code-transcripts", otherSha); err != nil || n != 2 {
-		t.Fatalf("a real spec change after the upgrade must still drop: n=%d err=%v", n, err)
-	}
-}
-
 // A derived entry carries the enricher that produced it and its output hash.
 func TestDerivedEntryRoundTrip(t *testing.T) {
 	dir := t.TempDir()

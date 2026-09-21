@@ -290,21 +290,19 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 
 		// Staged raw units live in memory for this source's pass only: there is no spool.
 		pass := &sourcePass{
-			o:        o,
-			store:    store,
-			src:      src,
-			disc:     disc,
-			rep:      &rep,
-			out:      &out,
-			budget:   &budget,
-			scrubber: o.scrub,
-			scrubErr: o.scrubErr,
-			staging:  len(enrichers) > 0,
+			o:       o,
+			store:   store,
+			src:     src,
+			disc:    disc,
+			rep:     &rep,
+			out:     &out,
+			budget:  &budget,
+			staging: len(enrichers) > 0,
 		}
 		if err := pass.run(ctx); err != nil {
 			// A refusal and an unavailable control plane both carry a source outcome worth
 			// reporting; a cancelled context, the only other way this returns, does not.
-			if errorKind(err) != "upload" {
+			if stopsRun(err) {
 				rep.Sources = append(rep.Sources, out)
 			}
 			return rep, err
@@ -422,10 +420,6 @@ func orgOf(p Plan) string {
 		return "default"
 	}
 	return p.OrganizationID
-}
-
-func isJSONL(src sources.Resolved) bool {
-	return src.Sniff != nil && src.Sniff.Kind == "jsonl"
 }
 
 // backoffFor computes the next attempt delay: a minute, doubling, capped at an hour, with up to

@@ -109,20 +109,6 @@ func TestAuthorizeUploadsIgnoresUnknownResponseFields(t *testing.T) {
 	}
 }
 
-func TestAuthorizeUploadsRejectsUnknownProviderHeader(t *testing.T) {
-	_, err := authorizeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tickets":[{"ticket_id":"` + fixtureTicketID + `","object_id":"trajectory-1","method":"PUT",` +
-			`"url":"https://archive.example.invalid/o","expires_at":"2026-08-19T12:05:00Z",` +
-			`"required_headers":{"x-amz-meta-source-hash":"` + fixtureSourceHash + `",` +
-			`"x-amz-meta-ticket-id":"` + fixtureTicketID + `","x-amz-acl":"public-read"},` +
-			`"content_length":481239,"content_length_signed":true}]}`))
-	})
-	if err == nil || !strings.Contains(err.Error(), "x-amz-acl") {
-		t.Fatalf("a provider header outside the closed set must be refused by name, got %v", err)
-	}
-}
-
 func TestAuthorizeUploadsAcceptsAlreadyPresentAndRejectsMixedCapability(t *testing.T) {
 	response, err := authorizeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

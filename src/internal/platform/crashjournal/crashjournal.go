@@ -12,6 +12,7 @@ package crashjournal
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -41,9 +42,10 @@ type entry struct {
 // Log appends one run's entries. All methods are best-effort and nil-safe: the journal observes
 // the run and must never stop it.
 type Log struct {
-	mu    sync.Mutex
-	path  string
-	runID string
+	mu     sync.Mutex
+	path   string
+	runID  string
+	warned bool
 }
 
 // Open rotates a large journal aside and returns the appender. Rotation happens only here,
@@ -95,15 +97,28 @@ func (l *Log) append(e entry, syncNow bool) {
 	defer l.mu.Unlock()
 	f, err := os.OpenFile(l.path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
+		l.warnLocked(err)
 		return
 	}
 	defer f.Close()
 	if _, err := f.Write(body); err != nil {
+		l.warnLocked(err)
 		return
 	}
 	if syncNow {
-		_ = f.Sync()
+		if err := f.Sync(); err != nil {
+			l.warnLocked(err)
+		}
 	}
+}
+
+// A journal that cannot write is a crash nobody will ever detect; say so once rather than never.
+func (l *Log) warnLocked(err error) {
+	if l.warned {
+		return
+	}
+	l.warned = true
+	fmt.Fprintf(os.Stderr, "warning: crash journal write failed: %v\n", err)
 }
 
 // Summary reconstructs one past run from its entries.
@@ -118,7 +133,8 @@ type Summary struct {
 	Crashes int
 }
 
-// LastRun reports the run before this process, or nil when the journal is absent or empty.
+// LastRun reports the undelivered crash before this process, or nil when there is none: a clean
+// previous run, an absent or empty journal, or a crash a heartbeat already reported.
 // Call it before Open: Open may rotate the very file this reads.
 func LastRun(stateDir string) *Summary {
 	raw, err := readCapped(filepath.Join(stateDir, fileName))
@@ -159,7 +175,6 @@ func LastRun(stateDir string) *Summary {
 	// A crash must survive restarts that could not deliver the report: only a run that wrote
 	// "reported" proved a heartbeat carrying it reached the sink, so the walk stops there and
 	// nowhere else. A run with no exit whose process is still alive is concurrent, not dead.
-	last := order[len(order)-1]
 	var crash *Summary
 	for i := len(order) - 1; i >= 0; i-- {
 		s := order[i]
@@ -174,13 +189,7 @@ func LastRun(stateDir string) *Summary {
 		}
 		crash.Crashes++
 	}
-	if crash != nil {
-		return crash
-	}
-	if !last.Clean {
-		return nil
-	}
-	return last
+	return crash
 }
 
 // readCapped reads at most the trailing maxReadBytes, dropping a leading partial line.

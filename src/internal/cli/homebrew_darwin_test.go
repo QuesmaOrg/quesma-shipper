@@ -35,13 +35,13 @@ func TestHomebrewSelfUpdatesButBrewUninstalls(t *testing.T) {
 		defer func() { http.DefaultTransport = previous }()
 		t.Setenv(app.NoSelfUpdateEnv, "1")
 		t.Setenv(app.ReexecGuardEnv, "")
-		maybeSelfUpdate(context.Background(), build, &out)
+		maybeSelfUpdate(context.Background(), build, true, &out)
 		if transport.calls != 0 {
 			t.Fatal("self-update ignored the explicit disable switch")
 		}
 		t.Setenv(app.NoSelfUpdateEnv, "")
 		out.Reset()
-		maybeSelfUpdate(context.Background(), build, &out)
+		maybeSelfUpdate(context.Background(), build, true, &out)
 		if transport.calls == 0 || !strings.Contains(out.String(), "test update endpoint unavailable") {
 			t.Fatalf("automatic update did not reach TUF: %s", &out)
 		}

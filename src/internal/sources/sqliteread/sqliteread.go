@@ -235,9 +235,6 @@ func readColdCopy(o Options) (result Result, err error) {
 	return finish(db, o, ReadColdCopy)
 }
 
-// ErrSidecarBasename means a copy would have renamed a WAL sidecar.
-var ErrSidecarBasename = errors.New("sqliteread: a copied database and its -wal/-shm sidecars must keep matching basenames")
-
 // CopyCold copies a database and its sidecars into dir, keeping basenames. Returns the copied database's path.
 func CopyCold(src, dir string) (string, error) {
 	base := filepath.Base(src)
@@ -252,12 +249,7 @@ func CopyCold(src, dir string) (string, error) {
 			// Absent is fine: a checkpointed database has no -wal.
 			continue
 		}
-		want := dst + suffix
-		if filepath.Base(want) != base+suffix {
-			// Unreachable by construction: the invariant is asserted where a future refactor would break it.
-			return "", fmt.Errorf("%w: %s would become %s", ErrSidecarBasename, sidecar, want)
-		}
-		if err := copyFile(sidecar, want); err != nil {
+		if err := copyFile(sidecar, dst+suffix); err != nil {
 			return "", err
 		}
 	}

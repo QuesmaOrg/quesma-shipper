@@ -27,11 +27,6 @@ var decoderOptions = []jsontext.Options{
 	jsontext.AllowInvalidUTF8(true),
 }
 
-type sourceEdit struct {
-	start, end  int
-	replacement string
-}
-
 // jsonWalker validates, decodes, and records source edits in one token pass. The
 // bytes.Buffer lets jsontext borrow directly from the original line rather than copy
 // it into the decoder's streaming buffer.
@@ -43,7 +38,7 @@ type jsonWalker struct {
 	dec *jsontext.Decoder
 	src bytes.Buffer
 
-	edits []sourceEdit
+	edits []replacementSpan
 
 	redacted int
 	hits     map[string]int
@@ -175,8 +170,8 @@ func (w *jsonWalker) addPlan(raw []byte, rawStart int, decoded string, plan valu
 	if len(plan.spans) == 0 {
 		return
 	}
-	w.edits = append(w.edits, sourceEdit{
-		start: rawStart, end: rawStart + len(raw), replacement: plan.apply(decoded),
+	w.edits = append(w.edits, replacementSpan{
+		Start: rawStart, End: rawStart + len(raw), Replacement: plan.apply(decoded),
 	})
 	w.redacted += plan.redacted
 	for id, count := range plan.hits {
@@ -187,16 +182,16 @@ func (w *jsonWalker) addPlan(raw []byte, rawStart int, decoded string, plan valu
 func (w *jsonWalker) appendTo(out, line []byte) ([]byte, error) {
 	cursor := 0
 	for _, edit := range w.edits {
-		if edit.start < cursor || edit.end < edit.start || edit.end > len(line) {
+		if edit.Start < cursor || edit.End < edit.Start || edit.End > len(line) {
 			return nil, errInvalidEdit
 		}
-		out = append(out, line[cursor:edit.start]...)
+		out = append(out, line[cursor:edit.Start]...)
 		var err error
-		out, err = jsontext.AppendQuote(out, edit.replacement)
+		out, err = jsontext.AppendQuote(out, edit.Replacement)
 		if err != nil {
 			return nil, err
 		}
-		cursor = edit.end
+		cursor = edit.End
 	}
 	return append(out, line[cursor:]...), nil
 }

@@ -86,15 +86,7 @@ func alignAndRender(content []byte, events []*bubble) (alignment, error) {
 	repeats := 0
 	ambiguous := 0
 
-	// used marks consumed bubbles individually, because a match may land behind the cursor:
-	// within one turn the store's header order and the transcript's block order can disagree.
-	// consumedEv and consumedN record the evidence each consumption was made on, which is what
-	// repeat detection compares a later claimant against. declined bars bubbles an ambiguous
-	// verdict refused to decide about from every later fallback.
-	used := make([]bool, len(events))
-	consumedEv := make([]evidence, len(events))
-	consumedN := make([]int, len(events))
-	declined := make([]bool, len(events))
+	state := make([]bubbleState, len(events))
 
 	// Decode failures are positioned, not just counted: only the final line's can be the
 	// expected torn tail, and a mid-file one loses its blocks' enrichment with mismatches at zero.
@@ -136,7 +128,7 @@ func alignAndRender(content []byte, events []*bubble) (alignment, error) {
 			if blk.Type == "text" && isRedactedReasoning(string(blk.Text)) {
 				continue
 			}
-			idx, outcome, ev, n := matchBlock(blk, string(l.Role), events, cursor, used, consumedEv, consumedN, declined)
+			idx, outcome, ev, n := matchBlock(blk, string(l.Role), events, cursor, state)
 			seq++
 			switch outcome {
 			case matchNone:
@@ -149,12 +141,12 @@ func alignAndRender(content []byte, events []*bubble) (alignment, error) {
 				continue
 			case matchAmbiguous:
 				ambiguous++
-				declined[idx] = true
+				state[idx].declined = true
 				continue
 			}
 			lastMatchedSeq = seq
-			used[idx] = true
-			consumedEv[idx], consumedN[idx] = ev, n
+			state[idx].used = true
+			state[idx].ev, state[idx].n = ev, n
 			if idx+1 > cursor {
 				cursor = idx + 1
 			}
@@ -187,6 +179,17 @@ func alignAndRender(content []byte, events []*bubble) (alignment, error) {
 		}
 	}
 	return a, nil
+}
+
+// bubbleState is what the pass has concluded about one bubble. used is per bubble because a
+// match may land behind the cursor: within one turn the store's header order and the transcript's
+// block order can disagree. ev and n record the evidence the consumption was made on, which is
+// what repeat detection compares a later claimant against. declined bars a bubble an ambiguous
+// verdict refused to decide about from every later fallback.
+type bubbleState struct {
+	used, declined bool
+	ev             evidence
+	n              int
 }
 
 // alignment is one conversation's alignment outcome: the rendered lines, the events nothing
@@ -234,7 +237,7 @@ const (
 // matchBlock finds the bubble for one content block: forward from the cursor first, then a
 // bounded look-behind over bubbles the forward scans skipped. It also returns the evidence the
 // match was made on, which the caller records per bubble for repeat detection.
-func matchBlock(blk block, role string, events []*bubble, cursor int, used []bool, consumedEv []evidence, consumedN []int, declined []bool) (int, matchOutcome, evidence, int) {
+func matchBlock(blk block, role string, events []*bubble, cursor int, state []bubbleState) (int, matchOutcome, evidence, int) {
 	wantType := 2
 	if role == "user" {
 		wantType = 1
@@ -294,7 +297,7 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, used []boo
 	for i := cursor; i < len(events) && i < cursor+lookAhead; i++ {
 		// Nothing at or past the cursor is consumed — consuming a bubble always
 		// advances the cursor past it — so this scan needs no used check.
-		if declined[i] {
+		if state[i].declined {
 			continue
 		}
 		ev, n := weigh(events[i])
@@ -331,14 +334,14 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, used []boo
 	repeatEv, repeatN := evidenceNegative, 0
 	bhdPartial, bhdNeutral, bhdWeak := -1, -1, -1
 	for i := cursor - 1; i >= 0; i-- {
-		if used[i] {
+		if state[i].used {
 			// A consumed bubble still testifies, but only to a block relating to it
 			// exactly as its consumer did: a claimant agreeing better is the bubble's
 			// real owner arriving after a positional fallback took it, and one agreeing
 			// worse is a different call sharing values with it. Unbounded, unlike the
 			// windows — nothing is consumed here.
-			if blk.Type == "tool_use" && consumedEv[i] >= evidencePartial {
-				if ev, n := weigh(events[i]); ev == consumedEv[i] && n == consumedN[i] {
+			if blk.Type == "tool_use" && state[i].ev >= evidencePartial {
+				if ev, n := weigh(events[i]); ev == state[i].ev && n == state[i].n {
 					repeat = true
 					if ev > repeatEv || (ev == repeatEv && n > repeatN) {
 						repeatEv, repeatN = ev, n
@@ -347,7 +350,7 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, used []boo
 			}
 			continue
 		}
-		if i < cursor-lookBehind || declined[i] {
+		if i < cursor-lookBehind || state[i].declined {
 			continue
 		}
 		ev, n := weigh(events[i])
@@ -417,7 +420,7 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, used []boo
 		// only the path, so a turn of edits to one file is all mutual repeats otherwise. And a
 		// candidate recording nothing at all may be the second run itself, undecidably.
 		for i := range events {
-			if used[i] || declined[i] {
+			if state[i].used || state[i].declined {
 				continue
 			}
 			if ev, _ := weigh(events[i]); ev == evidencePositive {

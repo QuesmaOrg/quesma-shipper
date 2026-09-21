@@ -32,8 +32,6 @@ func (o Options) prepareFile(
 	job fileJob,
 	src sources.Resolved,
 	disc sources.Discovery,
-	scrubber *transforms.Scrubber,
-	scrubErr error,
 	staging bool,
 ) (res fileResult, pending *pendingPut) {
 	cand := job.cand
@@ -59,9 +57,10 @@ func (o Options) prepareFile(
 	}
 
 	// Cheap pre-filter on size and mtime only: mtime alone re-ships byte-identical files, so the
-	// content hash below stays the authority. A non-empty SourceHash marks a committed ship.
+	// content hash below stays the authority. A non-empty SourceHash marks a committed ship. A
+	// staged file changed within the recompute window is still read, for its enricher.
 	if seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
-		!o.withinRecomputeWindow(staging, cand) {
+		!(staging && o.Now().Sub(cand.MTime) < recomputeWindow) {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "size and mtime unchanged"
 		return res, nil
@@ -113,7 +112,8 @@ func (o Options) prepareFile(
 		out.Reason = "file shrank: truncation or rewrite"
 	}
 
-	scrubbed, err := scrubSource(src, raw, isJSONL(src), scrubber, scrubErr)
+	jsonl := src.Sniff != nil && src.Sniff.Kind == "jsonl"
+	scrubbed, err := scrubSource(src, raw, jsonl, o.scrub, o.scrubErr)
 	if err != nil {
 		// Fail closed: a scrub-ENGINE error means this file does not upload.
 		failAndBackOff(o, &res, key, fp, "scrub failed closed: "+err.Error())
@@ -132,9 +132,7 @@ func (o Options) prepareFile(
 	out.ObjectKey = objectKey
 
 	manifest := o.manifestFor(src, cand, disc, sourceHash, mtime, scrubbed)
-	// Set BEFORE sealing: Seal takes the manifest by value, and this hash travels in metadata.
-	manifest.ShippedHash = transforms.Hash(scrubbed.Out)
-	obj, err := transforms.Seal(manifest, scrubbed.Out, o.Recipients)
+	obj, sealed, err := transforms.Seal(manifest, scrubbed.Out, o.Recipients)
 	if err != nil {
 		out.Decision = auditlog.DecisionFailed
 		out.Reason = err.Error()
@@ -155,7 +153,7 @@ func (o Options) prepareFile(
 		key:       key,
 		objectKey: objectKey,
 		obj:       obj,
-		md:        manifest.ObjectMetadata(),
+		md:        sealed.ObjectMetadata(),
 		next: Fingerprint{
 			SourceSize:  cand.Size,
 			SourceMTime: cand.MTime,

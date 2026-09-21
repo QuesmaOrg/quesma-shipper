@@ -196,7 +196,6 @@
           "minimum": 0,
           "maximum": 1
         },
-        "bytes_redacted": { "type": "integer", "minimum": 0 },
         "rule_hits": {
           "type": "object",
           "propertyNames": { "$ref": "#/$defs/rule_id" },
