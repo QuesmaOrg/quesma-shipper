@@ -8,7 +8,7 @@ require (
 	github.com/QuesmaOrg/shipper-protocol v0.1.0
 	github.com/Shopify/toxiproxy/v2 v2.12.0
 	github.com/aws/aws-sdk-go-v2 v1.47.0
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.4
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.5
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.1
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/creativeprojects/go-selfupdate v1.6.0
@@ -23,7 +23,7 @@ require (
 	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.46.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.58.0
+	modernc.org/sqlite v1.59.0
 )
 
 require (
@@ -95,7 +95,7 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260825221802-da73d73af1c5 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-	modernc.org/libc v1.75.6 // indirect
+	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
