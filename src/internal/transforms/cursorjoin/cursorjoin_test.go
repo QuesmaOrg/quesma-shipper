@@ -84,9 +84,11 @@ func lsBubble(fields string) storeRow { return bubbleRow("b3", `{"type":2,`+fiel
 func conversation(bubbles ...storeRow) []storeRow {
 	headers := make([]string, len(bubbles))
 	for i, b := range bubbles {
-		headers[i] = fmt.Sprintf(`{"bubbleId":%q}`, b.key[strings.LastIndex(b.key, ":")+1:])
+		var body struct{ Type int }
+		_ = json.Unmarshal([]byte(b.value), &body)
+		headers[i] = fmt.Sprintf(`{"bubbleId":%q,"type":%d}`, b.key[strings.LastIndex(b.key, ":")+1:], body.Type)
 	}
-	composer := fmt.Sprintf(`{"composerId":%q,"fullConversationHeadersOnly":[%s]}`, conv, strings.Join(headers, ","))
+	composer := fmt.Sprintf(`{"composerId":%q,"createdAt":1753700000000,"fullConversationHeadersOnly":[%s]}`, conv, strings.Join(headers, ","))
 	return append([]storeRow{{"composerData:" + conv, composer}}, bubbles...)
 }
 
@@ -101,14 +103,20 @@ func prose(id string, typ int, text string) storeRow {
 	return bubbleRow(id, string(body))
 }
 
-// tool is a tool bubble in Cursor's standard envelope; status defaults to completed.
-type tool struct{ id, name, rawArgs, params, status, result string }
+// tool is a tool bubble in Cursor's standard envelope; status defaults to completed, and kind is the
+// numeric tool enum current stores write.
+type tool struct {
+	id, name, rawArgs, params, status, result string
+	kind                                      int
+}
 
 func (tl tool) row() storeRow {
-	body, _ := json.Marshal(map[string]any{"type": 2, "capabilityType": 15, "toolFormerData": map[string]string{
-		"toolCallId": "call_" + tl.id, "name": tl.name, "status": cmp.Or(tl.status, "completed"),
-		"rawArgs": tl.rawArgs, "params": tl.params, "result": tl.result,
-	}})
+	data := map[string]any{"toolCallId": "call_" + tl.id, "name": tl.name, "status": cmp.Or(tl.status, "completed"),
+		"rawArgs": tl.rawArgs, "params": tl.params, "result": tl.result}
+	if tl.kind != 0 {
+		data["tool"] = tl.kind
+	}
+	body, _ := json.Marshal(map[string]any{"type": 2, "capabilityType": 15, "toolFormerData": data})
 	return bubbleRow(tl.id, string(body))
 }
 
@@ -382,6 +390,12 @@ func TestStoreAndTranscriptGenerations(t *testing.T) {
 		),
 		want:    map[int][]string{1: {"a1", "tool1"}},
 		present: []string{"composer-2.5"},
+		check: func(t *testing.T, _ transforms.Derived, lines []map[string]any) {
+			e := matchedBubbles(t, lines[1], "a1", "tool1")[1]
+			assert.Contains(t, e["result"], "main.go")
+			assert.Equal(t, "run_terminal_command_v2", e["tool_name"])
+			assert.Equal(t, "tool_33e5b6ee", e["tool_call_id"])
+		},
 		// [REDACTED] reasoning leaves nothing to attach the thinking bubble to.
 		absent: []string{"the user wants a listing"},
 	}, {
@@ -398,12 +412,15 @@ func TestStoreAndTranscriptGenerations(t *testing.T) {
 		bubbles: []storeRow{
 			user("b1", "start the dev server"),
 			bubbleRow("think1", `{"type":2,"text":"","capabilityType":30,"thinking":{"text":"I need to check if a dev server is already running, then start it."}}`),
-			tool{id: "tool1", name: "run_terminal_command_v2", rawArgs: "{}", result: `{"output":"VITE ready on :5173"}`}.row(),
+			tool{id: "tool1", name: "run_terminal_command_v2", rawArgs: "{}", result: `{"output":"VITE ready on :5173"}`, kind: 15}.row(),
 			said("a1", "The server is up on port 5173."),
 		},
 		want:    map[int][]string{1: {"think1", "tool1"}, 2: {"a1"}},
 		present: []string{"VITE ready"},
 		infos:   []string{"extend past the store"},
+		check: func(t *testing.T, _ transforms.Derived, lines []map[string]any) {
+			assert.Equal(t, "call_tool1", matchedBubbles(t, lines[1], "think1", "tool1")[1]["tool_call_id"])
+		},
 	}, {
 		// The assistant line's role and the terminator's status arrive as numbers.
 		name: "a type-drifted transcript line still decodes",
@@ -418,7 +435,8 @@ func TestStoreAndTranscriptGenerations(t *testing.T) {
 		name: "a flex field with an unexpected shape",
 		rows: lsRows(`"capabilityType":true,"toolFormerData":{"toolCallId":"call_abc123","name":"run_terminal_cmd",
 			"tool":{"kind":15},"status":"completed","rawArgs":"{\"command\":\"ls -la /work/api\"}","result":"ok"}`),
-		want: map[int][]string{1: {"b2", "b3"}},
+		want:    map[int][]string{1: {"b2", "b3"}},
+		present: []string{"call_abc123"},
 	}, {
 		// Server-hydrated thinking is a string holding the object, locally streamed thinking the object.
 		name:       "server-hydrated reasoning is decoded, not dropped",
@@ -426,7 +444,7 @@ func TestStoreAndTranscriptGenerations(t *testing.T) {
 		transcript: turn(text("Checking where the loader's bounds are set."), text("The bound is the row cap.")),
 		bubbles: []storeRow{
 			bubbleRow("b2", `{"type":2,"capabilityType":30,"thinking":"{\"text\":\"Checking where the loader's bounds are set.\",\"isLastThinkingChunk\":true}"}`),
-			bubbleRow("b3", `{"type":2,"capabilityType":30,"thinking":{"text":"The bound is the row cap.","signature":"sig-abc"}}`),
+			bubbleRow("b3", `{"type":2,"capabilityType":30,"thinking":{"text":"The bound is the row cap.","signature":"sig-abc"},"thinkingStyle":1}`),
 		},
 		want: map[int][]string{1: {"b2", "b3"}},
 	}, {
@@ -454,7 +472,8 @@ func TestMatchWindows(t *testing.T) {
 			transcript: turn(use("Grep", input)),
 			bubbles: append(append([]storeRow{toolRow("near", "ripgrep_raw_search", `{}`, "the right result")}, far...),
 				toolRow("far", "ripgrep_raw_search", distantArgs, "the WRONG result")),
-			want: map[int][]string{1: {"near"}},
+			want:   map[int][]string{1: {"near"}},
+			absent: []string{"the WRONG result"},
 		}
 	}
 	const read = `{"path":"/work/api/internal/config/resolve.go"}`
@@ -465,11 +484,14 @@ func TestMatchWindows(t *testing.T) {
 			query:      "check types",
 			transcript: turn(text("Spawning a typecheck subagent."), use("Task", `{"description":"Typecheck the repo","prompt":"Run npx tsc --noEmit in the repo and report errors."}`)),
 			bubbles: []storeRow{
-				tool{id: "task1", name: "task_v2", result: "no type errors",
+				tool{id: "task1", name: "task_v2", result: "no type errors", kind: 38,
 					params: `{"description":"Typecheck the repo","prompt":"Run npx tsc --noEmit in the repo and report errors."}`}.row(),
 				said("a1", "Spawning a typecheck subagent."),
 			},
 			want: map[int][]string{1: {"a1", "task1"}},
+			check: func(t *testing.T, _ transforms.Derived, lines []map[string]any) {
+				assert.Equal(t, "call_task1", matchedBubbles(t, lines[1], "a1", "task1")[1]["tool_call_id"])
+			},
 		},
 		beyondWindow("substring coincidence stays out of reach", `{"pattern":"deny","glob":"**/*","output_mode":"files_with_matches"}`,
 			`{"pattern":"signed","glob":"**/*.{md,json,yaml,go}"}`),
@@ -483,6 +505,9 @@ func TestMatchWindows(t *testing.T) {
 				toolRow("read", "read_file_v2", read, "package config"),
 			},
 			want: map[int][]string{1: {"read", "shell"}},
+			check: func(t *testing.T, _ transforms.Derived, lines []map[string]any) {
+				assert.Equal(t, " M internal/config/resolve.go", matchedBubbles(t, lines[1], "read", "shell")[1]["result"])
+			},
 		},
 		beyondWindow("identical arguments stay out of reach", `{"pattern":"deny_additions","path":"/work/api/internal/config"}`,
 			`{"pattern":"deny_additions","path":"/work/api/internal/config"}`),
@@ -688,6 +713,9 @@ func TestRepeatedCalls(t *testing.T) {
 		},
 		want:   map[int][]string{2: {}, 3: {"t3"}},
 		absent: []string{"PASS all tests passed"},
+		check: func(t *testing.T, _ transforms.Derived, lines []map[string]any) {
+			assert.Equal(t, " M internal/config/resolve.go", matchedBubbles(t, lines[3], "t3")[0]["result"])
+		},
 	}, {
 		// Repeat detection is not bounded by the look-behind window: 64 consumed calls sit in between.
 		name:       "a store-deduped re-run far back is still a repeat",
@@ -738,6 +766,11 @@ func TestArgumentEvidence(t *testing.T) {
 				params: `{"prompt":"Run npx tsc --noEmit in the repo and report every error.","subagentType":"SUBAGENT_EXECUTION_ENVIRONMENT_UNSPECIFIED"}`}.row(),
 		},
 		want: map[int][]string{1: {"task"}},
+		check: func(t *testing.T, _ transforms.Derived, lines []map[string]any) {
+			e := matchedBubbles(t, lines[1], "task")[0]
+			assert.Equal(t, "completed", e["status"])
+			assert.Equal(t, "no type errors", e["result"])
+		},
 	}, {
 		// A value shorter than minArgLen cannot confirm identity but can deny it.
 		name:  "a short distinguishing argument separates two calls",
