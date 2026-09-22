@@ -5,7 +5,6 @@
 package cursorjoin
 
 import (
-	"bytes"
 	"cmp"
 	"encoding/json"
 	"slices"
@@ -67,33 +66,16 @@ type thinkingData struct {
 }
 
 func (t *thinkingData) UnmarshalJSON(b []byte) error {
-	b = bytes.TrimSpace(b)
-	if len(b) == 0 || string(b) == "null" {
-		return nil
-	}
 	// A named type, so decoding the object form does not re-enter this method.
-	type plain struct {
-		Text string `json:"text"`
+	type plain thinkingData
+	var s string
+	if json.Unmarshal(b, &s) != nil {
+		return json.Unmarshal(b, (*plain)(t))
 	}
-	if b[0] == '"' {
-		var inner string
-		if err := json.Unmarshal(b, &inner); err != nil {
-			return err
-		}
-		// A string with no text under the known name is taken as the reasoning itself.
-		var p plain
-		if err := json.Unmarshal([]byte(inner), &p); err != nil || p.Text == "" {
-			t.Text = inner
-			return nil
-		}
-		t.Text = p.Text
-		return nil
+	// A string with no text under the known name is taken as the reasoning itself.
+	if json.Unmarshal([]byte(s), (*plain)(t)) != nil || t.Text == "" {
+		t.Text = s
 	}
-	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
-		return err
-	}
-	t.Text = p.Text
 	return nil
 }
 
@@ -113,21 +95,10 @@ func (b *bubble) reasoningText() string {
 type flexString string
 
 func (f *flexString) UnmarshalJSON(b []byte) error {
-	b = bytes.TrimSpace(b)
-	if len(b) == 0 || string(b) == "null" {
-		*f = ""
-		return nil
+	// A non-string keeps its raw JSON text rather than costing the record it sits in.
+	if json.Unmarshal(b, (*string)(f)) != nil {
+		*f = flexString(b)
 	}
-	if b[0] == '"' {
-		var s string
-		if err := json.Unmarshal(b, &s); err != nil {
-			return err
-		}
-		*f = flexString(s)
-		return nil
-	}
-	// Any other shape keeps its raw JSON text rather than costing the record it sits in.
-	*f = flexString(b)
 	return nil
 }
 
