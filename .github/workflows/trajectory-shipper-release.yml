@@ -287,7 +287,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v6
         id: tuftool-cache
         with:
           path: ~/.cache/quesma-ci/tuftool/0.17.0
@@ -311,7 +311,7 @@ jobs:
           sha256sum --check --strict tuftool.sha256
           [[ "$(./tuftool --version)" == "tuftool 0.17.0" ]]
 
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@v6
         if: steps.tuftool-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/quesma-ci/tuftool/0.17.0
