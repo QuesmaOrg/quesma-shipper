@@ -119,7 +119,12 @@ func toolRow(id, name, rawArgs, result string) storeRow {
 // matchedBubbles asserts the bubble each block of line joined to, "" for a block with none.
 func matchedBubbles(t *testing.T, line map[string]any, ids ...string) []map[string]any {
 	t.Helper()
-	items, _ := line["_enrich"].([]any)
+	if len(ids) == 0 {
+		require.NotContains(t, line, "_enrich", "a line with no joined block carries no enrichment field")
+		return nil
+	}
+	items, ok := line["_enrich"].([]any)
+	require.Truef(t, ok, "_enrich = %v", line["_enrich"])
 	require.Len(t, items, len(ids))
 	out := make([]map[string]any, len(items))
 	for i, item := range items {
@@ -153,6 +158,7 @@ type joinCase struct {
 	absent     []string         // must appear nowhere in the derived object
 	infos      []string         // must appear in the object's infos
 	mismatch   bool             // no object, one mismatch alarm
+	check      func(t *testing.T, d transforms.Derived, lines []map[string]any)
 }
 
 func runJoinCases(t *testing.T, cases []joinCase) {
@@ -176,6 +182,7 @@ func runJoinCases(t *testing.T, cases []joinCase) {
 			require.NotContains(t, strings.Join(res.Notes, " "), "did not decode")
 			d := successfulObject(t, res)
 			lines := decode(t, d.Payload)
+			require.Len(t, lines, strings.Count(strings.TrimRight(body, "\n"), "\n")+1, "every native line survives")
 			for i, ids := range tc.want {
 				matchedBubbles(t, lines[i], ids...)
 			}
@@ -187,6 +194,9 @@ func runJoinCases(t *testing.T, cases []joinCase) {
 			}
 			for _, s := range tc.infos {
 				assert.Contains(t, strings.Join(res.Infos, " "), s)
+			}
+			if tc.check != nil {
+				tc.check(t, d, lines)
 			}
 		})
 	}
@@ -587,6 +597,9 @@ func TestToolArgumentShapes(t *testing.T) {
 		bubbles: []storeRow{tool{id: "edit", name: "edit_file_v2", status: "error",
 			params: `{"noCodeblock":true,"cloudAgentEdit":false}`, result: "the model produced an invalid edit"}.row()},
 		want: map[int][]string{1: {"edit"}},
+		check: func(t *testing.T, _ transforms.Derived, lines []map[string]any) {
+			assert.Equal(t, "error", matchedBubbles(t, lines[1], "edit")[0]["status"])
+		},
 	}, {
 		// A fragment of the terminal parse tree equal to the read's only value must not steal the bubble.
 		name:  "the terminal parse tree cannot speak for another tool",
@@ -599,6 +612,9 @@ func TestToolArgumentShapes(t *testing.T) {
 			toolRow("read", "read_file_v2", `{"path":"render.yaml"}`, "services:\n  - type: web"),
 		},
 		want: map[int][]string{1: {"read"}, 2: {"shell"}},
+		check: func(t *testing.T, d transforms.Derived, _ []map[string]any) {
+			assert.Zero(t, d.Repeats, "the shell call lost its own bubble")
+		},
 	}, {
 		// One shared value among several is corroboration, not identity.
 		name:       "a lone shared value among several is not identity",
