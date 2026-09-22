@@ -21,7 +21,7 @@ func NewServiceSpec(stateDir string, stopTimeout, tick time.Duration) (ServiceSp
 	return common.ServiceSpecFor(exe, stateDir, stopTimeout, tick)
 }
 
-func InstallService(spec ServiceSpec) (ServiceStatus, error) { return windowspkg.InstallService(spec) }
+func InstallService(spec ServiceSpec) error { return windowspkg.InstallService(spec) }
 func UninstallService() (ServiceKind, error) {
 	return serviceWindowsTask, windowspkg.UninstallService()
 }
