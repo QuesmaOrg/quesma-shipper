@@ -29,21 +29,12 @@ const (
 // ZstdLevel is pinned at 3: changing it changes every object's bytes.
 const ZstdLevel = 3
 
-// SuggestedPrefixBytes is where a ranged head-fetch should start. It must cover the age
-// header, the first zstd block and the first tar entry; age's STREAM chunks decrypt only
-// whole, so anything under one 64 KiB chunk plus the header yields nothing at all.
-const SuggestedPrefixBytes = 256 * 1024
-
 // maxManifestBytes bounds the manifest read out of an object: a huge one is hostile
 // input, not data this code wrote.
 const maxManifestBytes = 4 << 20
 
 // maxDecompressedBytes bounds zstd expansion so a crafted object cannot exhaust memory.
 const maxDecompressedBytes = 8 << 30
-
-// ErrPrefixTooShort means the fetched prefix did not contain the whole manifest; the
-// caller should double its range rather than treat the object as corrupt.
-var ErrPrefixTooShort = errors.New("seal: object prefix too short to contain the manifest")
 
 // Seal builds one mirror object and returns the manifest as sealed: ShippedHash, PayloadSize
 // and, unless the caller set it, Encryption are filled here, so what a caller needs for object
@@ -200,24 +191,6 @@ func Open(object []byte, identities ...age.Identity) (Manifest, []byte, error) {
 			got, m.ShippedHash)
 	}
 	return m, payload, nil
-}
-
-// ReadManifestPrefix decodes the manifest from a ranged-GET prefix. Reading a prefix
-// ALWAYS ends in a truncation error from age or zstd, which must be swallowed once the
-// first tar entry is whole; a failure before that is ErrPrefixTooShort instead.
-func ReadManifestPrefix(prefix []byte, identities ...age.Identity) (Manifest, error) {
-	tr, closeFn, err := tarReader(bytes.NewReader(prefix), identities...)
-	if err != nil {
-		// A prefix too short to hold even the age header fails here.
-		return Manifest{}, fmt.Errorf("%w: %v", ErrPrefixTooShort, err)
-	}
-	defer closeFn()
-
-	m, err := readManifestEntry(tr)
-	if err != nil {
-		return Manifest{}, fmt.Errorf("%w: %v", ErrPrefixTooShort, err)
-	}
-	return m, nil
 }
 
 // readManifestEntry validates that the first tar entry is the manifest; if it is not, the

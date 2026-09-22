@@ -5,9 +5,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"io"
-	"math/rand"
 	"strings"
 	"testing"
 	"time"
@@ -128,98 +126,6 @@ func TestManifestIsTheFirstTarEntry(t *testing.T) {
 	}
 }
 
-// A ranged GET of the head of a multi-MB object parses the full manifest. The prefix is a real
-// byte slice, not an io.LimitReader over the whole object, which would hide the failure being
-// tested: the lower layers error on a truncated final chunk and the manifest read must survive.
-func TestReadManifestPrefixOnMultiMegabyteObject(t *testing.T) {
-	id := identity(t)
-
-	// Incompressible on purpose: a repeating payload would compress below the prefix size and
-	// quietly turn this into a test of nothing.
-	payload := make([]byte, 6<<20)
-	rng := rand.New(rand.NewSource(1))
-	if _, err := rng.Read(payload); err != nil {
-		t.Fatal(err)
-	}
-	obj, _, err := transforms.Seal(manifest(), payload, []age.Recipient{id.Recipient()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(obj) < 1<<20 {
-		t.Fatalf("object compressed to %d bytes; the test needs one larger than the prefix", len(obj))
-	}
-
-	prefix := obj[:transforms.SuggestedPrefixBytes]
-	m, err := transforms.ReadManifestPrefix(prefix, id)
-	if err != nil {
-		t.Fatalf("a %d-byte prefix of a %d-byte object must yield the manifest: %v",
-			len(prefix), len(obj), err)
-	}
-	if m.NativePath != manifest().NativePath {
-		t.Errorf("native_path from prefix: %q", m.NativePath)
-	}
-	if m.SourceHash != manifest().SourceHash {
-		t.Errorf("source_hash from prefix: %q", m.SourceHash)
-	}
-	if m.PayloadSize != int64(len(payload)) {
-		t.Errorf("payload_size from prefix: %d, want %d", m.PayloadSize, len(payload))
-	}
-}
-
-// A prefix too short to hold the manifest must say so distinguishably, so the caller doubles
-// its range instead of concluding the object is corrupt.
-func TestReadManifestPrefixReportsTooShort(t *testing.T) {
-	id := identity(t)
-	big := make([]byte, 1<<20)
-	rand.New(rand.NewSource(2)).Read(big)
-	obj, _, err := transforms.Seal(manifest(), big, []age.Recipient{id.Recipient()})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, n := range []int{1, 16, 128, 1024} {
-		if n >= len(obj) {
-			continue
-		}
-		_, err := transforms.ReadManifestPrefix(obj[:n], id)
-		if !errors.Is(err, transforms.ErrPrefixTooShort) {
-			t.Errorf("a %d-byte prefix should report ErrPrefixTooShort, got %v", n, err)
-		}
-	}
-}
-
-// The doubling loop a sink implements works from any starting point.
-func TestPrefixDoublingConverges(t *testing.T) {
-	id := identity(t)
-	big := make([]byte, 2<<20)
-	rand.New(rand.NewSource(3)).Read(big)
-	obj, _, err := transforms.Seal(manifest(), big, []age.Recipient{id.Recipient()})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	budget := 512
-	attempts := 0
-	for {
-		attempts++
-		if attempts > 20 {
-			t.Fatal("doubling did not converge")
-		}
-		n := min(budget, len(obj))
-		m, err := transforms.ReadManifestPrefix(obj[:n], id)
-		if err == nil {
-			if m.SourceID != "claude-code-transcripts" {
-				t.Errorf("wrong manifest: %+v", m)
-			}
-			return
-		}
-		if !errors.Is(err, transforms.ErrPrefixTooShort) {
-			t.Fatalf("unexpected error at %d bytes: %v", n, err)
-		}
-		budget *= 2
-	}
-}
-
 // Uploaded bytes are ciphertext, unparseable without the matching identity.
 func TestObjectIsOpaqueWithoutTheIdentity(t *testing.T) {
 	id := identity(t)
@@ -245,9 +151,6 @@ func TestObjectIsOpaqueWithoutTheIdentity(t *testing.T) {
 	}
 	if _, _, err := transforms.Open(obj, stranger); err == nil {
 		t.Fatal("an object must not open with an unrelated identity")
-	}
-	if _, err := transforms.ReadManifestPrefix(obj, stranger); err == nil {
-		t.Fatal("a manifest must not be readable with an unrelated identity")
 	}
 	if _, _, err := transforms.Open(obj); err == nil {
 		t.Fatal("opening with no identity must fail")
