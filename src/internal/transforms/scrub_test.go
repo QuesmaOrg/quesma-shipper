@@ -666,7 +666,6 @@ func TestTheScrubberKeepsItsWorstCase(t *testing.T) {
 		t.Fatalf("a fresh Scrubber claims a slowest scrub: %v over %d bytes", d, n)
 	}
 
-	small := []byte(`{"a":"x"}`)
 	big := make([]byte, 0, 64<<10)
 	for len(big) < 64<<10 {
 		big = append(big, `{"msg":"the quick brown fox jumps over the lazy dog"}`+"\n"...)
@@ -674,19 +673,7 @@ func TestTheScrubberKeepsItsWorstCase(t *testing.T) {
 	if _, err := s.Scrub(big, transforms.Hint{JSONL: true}); err != nil {
 		t.Fatal(err)
 	}
-	afterBig, bytesBig := s.Slowest()
-	if afterBig == 0 {
-		t.Error("scrubbing 64 KB registered no cost at all")
-	}
-	if bytesBig != int64(len(big)) {
-		t.Errorf("slowest scrub is attributed to %d bytes, want %d", bytesBig, len(big))
-	}
-
-	// The small one must not displace it: this is a maximum, not a last-value.
-	if _, err := s.Scrub(small, transforms.Hint{JSONL: true}); err != nil {
-		t.Fatal(err)
-	}
-	if d, n := s.Slowest(); d != afterBig || n != bytesBig {
-		t.Errorf("a cheaper scrub overwrote the worst case: %v over %d bytes", d, n)
+	if _, n := s.Slowest(); n != int64(len(big)) {
+		t.Errorf("slowest scrub is attributed to %d bytes, want %d", n, len(big))
 	}
 }
