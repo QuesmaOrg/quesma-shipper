@@ -95,60 +95,54 @@ const launchctl = "/bin/launchctl"
 func guiDomain() string  { return fmt.Sprintf("gui/%d", os.Getuid()) }
 func guiService() string { return guiDomain() + "/" + bundleIdentifier }
 
-func installService(spec Spec) (Status, error) {
+func installService(spec Spec) error {
 	path := launchdPath(spec.Home)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return Status{}, fmt.Errorf("supervise: %w", err)
+		return fmt.Errorf("supervise: %w", err)
 	}
 	if spec.LogDir != "" {
 		if err := os.MkdirAll(spec.LogDir, 0o700); err != nil {
-			return Status{}, fmt.Errorf("supervise: %w", err)
+			return fmt.Errorf("supervise: %w", err)
 		}
 	}
 	// Atomic: launchd reads the plist on its own schedule and a torn one fails to load.
 	if err := platform.WriteAtomic(path, []byte(renderPlist(spec)), common.EntryMode); err != nil {
-		return Status{}, fmt.Errorf("supervise: write %s: %w", path, err)
+		return fmt.Errorf("supervise: write %s: %w", path, err)
 	}
 
 	// bootout first, ignoring failure: otherwise re-installing keeps running the old plist.
 	_ = exec.Command(launchctl, "bootout", guiService()).Run()
 
 	// The label lingers after bootout; bootstrapping in that window fails with "5: Input/output error".
-	st := Status{Kind: common.KindLaunchd, Installed: true, Path: path}
 	if err := waitForLabelGone(common.ExitTimeout(spec)); err != nil {
-		st.Detail = "plist written but the previous agent did not exit: " + err.Error()
-		return st, fmt.Errorf("supervise: %w", err)
+		return fmt.Errorf("supervise: %w", err)
 	}
 
 	out, err := exec.Command(launchctl, "bootstrap", guiDomain(), path).CombinedOutput()
 	if err != nil {
-		st.Detail = fmt.Sprintf("plist written but launchctl bootstrap failed: %v: %s",
-			err, strings.TrimSpace(string(out)))
-		return st, fmt.Errorf("supervise: launchctl bootstrap: %w: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("supervise: launchctl bootstrap: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	st.Loaded = true
-	st.Detail = "loaded; runs at load and is restarted if it exits"
-	return st, nil
+	return nil
 }
 
-func PostInstall() (Status, error) {
+func PostInstall() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return Status{}, err
+		return err
 	}
 	exe, err := common.CurrentExecutable()
 	if err != nil {
-		return Status{}, err
+		return err
 	}
 	expected := installedExecutable(home)
 	if resolved, err := filepath.EvalSymlinks(expected); err == nil {
 		expected = resolved
 	}
 	if exe != expected && common.HomebrewCaskRoot(exe) == "" {
-		return Status{}, fmt.Errorf("postinstall must run from %s, not %s", expected, exe)
+		return fmt.Errorf("postinstall must run from %s, not %s", expected, exe)
 	}
 	if err := checkInstallOwner(exe, launchdPath(home)); err != nil {
-		return Status{}, err
+		return err
 	}
 	return supervise(exe, home)
 }
@@ -169,14 +163,14 @@ func checkInstallOwner(exe, plist string) error {
 
 // supervise registers exe as the LaunchAgent with the default state directory: packaging cannot
 // import the config layer, and the Installer environment carries no override.
-func supervise(exe, home string) (Status, error) {
+func supervise(exe, home string) error {
 	stateDir := filepath.Join(home, ".local", "state", "trajectory-shipper")
 	spec, err := common.ServiceSpecFor(exe, stateDir, 0, 0)
 	if err != nil {
-		return Status{}, err
+		return err
 	}
 	if err := common.ValidateInstall(spec); err != nil {
-		return Status{}, err
+		return err
 	}
 	return installService(spec)
 }

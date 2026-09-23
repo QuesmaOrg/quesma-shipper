@@ -31,12 +31,12 @@ func detectService() ServiceKind {
 	return ServiceCron
 }
 
-func InstallService(spec ServiceSpec) (ServiceStatus, error) {
+func InstallService(spec ServiceSpec) error {
 	if err := common.ValidateInstall(spec); err != nil {
-		return ServiceStatus{}, err
+		return err
 	}
 	if detectService() == ServiceCron {
-		return ServiceStatus{Kind: ServiceCron}, ErrCronManual
+		return ErrCronManual
 	}
 	return linuxpkg.InstallService(spec)
 }

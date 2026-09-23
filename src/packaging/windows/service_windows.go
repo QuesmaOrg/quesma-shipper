@@ -18,55 +18,49 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
-func InstallService(spec Spec) (Status, error) {
+func InstallService(spec Spec) error {
 	if err := common.ValidateInstall(spec); err != nil {
-		return Status{}, err
+		return err
 	}
 	if _, err := os.Stat(taskRunner(spec.Executable)); err != nil {
-		return Status{}, fmt.Errorf("supervise: task runner beside installed program: %w", err)
+		return fmt.Errorf("supervise: task runner beside installed program: %w", err)
 	}
 	current, err := currentUser()
 	if err != nil {
-		return Status{}, err
+		return err
 	}
 	if err := verifyInstallDir(filepath.Dir(spec.Executable), current.Uid); err != nil {
-		return Status{}, err
+		return err
 	}
 	// Retired before the new task is registered: the two would otherwise both be live, and the
 	// second shipper would spend its life failing to take the state lock.
 	if err := retireLegacyTask(current.Uid); err != nil {
-		return Status{}, err
+		return err
 	}
 	name := taskName(current.Uid)
 
 	f, err := os.CreateTemp("", "quesma-shipper-task-*.xml")
 	if err != nil {
-		return Status{}, fmt.Errorf("supervise: create task definition: %w", err)
+		return fmt.Errorf("supervise: create task definition: %w", err)
 	}
 	path := f.Name()
 	defer os.Remove(path)
 	if _, err := f.Write(taskXMLForSchtasks(renderTask(spec, current.Uid, current.Username))); err != nil {
 		f.Close()
-		return Status{}, fmt.Errorf("supervise: write task definition: %w", err)
+		return fmt.Errorf("supervise: write task definition: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		return Status{}, fmt.Errorf("supervise: close task definition: %w", err)
+		return fmt.Errorf("supervise: close task definition: %w", err)
 	}
 
-	st := Status{Kind: common.KindWindowsTask, Installed: true, Path: name, Program: spec.Executable}
 	// /F is an overwrite of this user's own task now that the name carries their SID.
 	if out, err := schtasks("/Create", "/TN", name, "/XML", path, "/F"); err != nil {
-		st.Installed = false
-		st.Detail = "task registration failed: " + commandError(err, out)
-		return st, fmt.Errorf("supervise: register scheduled task: %s", commandError(err, out))
+		return fmt.Errorf("supervise: register scheduled task: %s", commandError(err, out))
 	}
 	if out, err := schtasks("/Run", "/TN", name); err != nil {
-		st.Detail = "registered but the first start failed: " + commandError(err, out)
-		return st, fmt.Errorf("supervise: start scheduled task: %s", commandError(err, out))
+		return fmt.Errorf("supervise: start scheduled task: %s", commandError(err, out))
 	}
-	st.Loaded = true
-	st.Detail = "registered, started, and enabled at user logon"
-	return st, nil
+	return nil
 }
 
 func UninstallService() error {
