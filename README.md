@@ -85,11 +85,8 @@ The shipper collects more than chat transcripts. Per agent, from the agent's own
 | Codex | Sessions, archived and compressed sessions, the session index | None |
 | Cursor | Agent transcripts, enriched with conversation text, tool calls, and model names read from Cursor's database | Spilled tool output, terminal captures, agent scratchpad notes |
 
-Two more records are produced by the shipper itself:
+One more record is produced by the shipper itself:
 
-- **Project map.** For each project directory an agent used: the directory name, the working
-  directory, and the git remote as host and path. Credentials embedded in a remote URL are removed
-  before the value is written anywhere.
 - **Account and usage history.** Independent Claude Code, Codex, and Cursor collectors upload
   account metadata and provider usage JSON in UTC buckets matching the collection interval (default 15 minutes). Unknown fields are preserved;
   these records skip scrubbing and ship encrypted.

@@ -42,11 +42,8 @@ type Source struct {
 	Enrichers     map[string]bool `yaml:"enrichers"`
 	Scrub         *bool           `yaml:"scrub"`
 
-	// Emit, CWDProbe and GitRead belong to the sidecar primitive. Remote normalisation is not
-	// configurable: NormaliseRemote strips userinfo unconditionally.
-	Emit     string    `yaml:"emit"`
-	CWDProbe *CWDProbe `yaml:"cwd_probe"`
-	GitRead  *GitRead  `yaml:"git_read"`
+	// Emit names what a source writes itself rather than finds; the account collectors set it.
+	Emit string `yaml:"emit"`
 
 	// Family is copied down from the containing spec so a Source travels alone.
 	Family string `yaml:"-"`
@@ -62,20 +59,6 @@ type Sniff struct {
 // IsEnabledByDefault reports the spec's own default; only the compiled tier decides what exists at all.
 func (s Source) IsEnabledByDefault() bool {
 	return s.Enabled == nil || *s.Enabled
-}
-
-// CWDProbe is the bounded head-of-file probe. Field names live here, not in code, so a rename is a data fix.
-type CWDProbe struct {
-	From      []string `yaml:"from"`
-	Fields    []string `yaml:"fields"`
-	ScanBytes int64    `yaml:"scan_bytes"`
-}
-
-// GitRead is the equally bounded .git handling.
-type GitRead struct {
-	WalkUp           bool     `yaml:"walk_up"`
-	FollowGitdirFile bool     `yaml:"follow_gitdir_file"`
-	Take             []string `yaml:"take"`
 }
 
 // Compiled is the whole parsed catalog.

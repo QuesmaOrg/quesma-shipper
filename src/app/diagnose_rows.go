@@ -118,8 +118,6 @@ func loadLastUpload(stateDir string) lastUpload {
 	return up
 }
 
-const sidecarFamily = "project-map"
-
 func agentRows(probes []sourceProbe, names map[string]string, up lastUpload, now time.Time, verbose bool) (rows []Row, agents, files int) {
 	var order []string
 	byFam := map[string][]sourceProbe{}
@@ -131,12 +129,9 @@ func agentRows(probes []sourceProbe, names map[string]string, up lastUpload, now
 		byFam[f] = append(byFam[f], pr)
 	}
 	for _, f := range order {
-		if f == sidecarFamily && !verbose {
-			continue
-		}
 		famRows, collecting, famFiles := familyRows(cmp.Or(names[f], f), byFam[f], familyUploadFor(byFam[f], up), now, verbose)
 		rows = append(rows, famRows...)
-		if collecting && f != sidecarFamily {
+		if collecting {
 			agents++
 		}
 		files += famFiles

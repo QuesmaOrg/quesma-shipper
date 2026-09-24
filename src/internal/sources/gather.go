@@ -154,7 +154,6 @@ func NewRegistry() *Registry {
 		// compressed_file: already-compressed files by whole-file hash, advertised separately.
 		"file_glob":       globPrimitive{},
 		"compressed_file": globPrimitive{},
-		"sidecar":         &Sidecar{},
 		"account":         &Accounts{},
 	}}
 }
