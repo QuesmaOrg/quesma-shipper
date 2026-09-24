@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -386,6 +387,31 @@ func TestExcludeGlobsAreHonoured(t *testing.T) {
 	}
 }
 
+// Attachments spilled into tool-results are bytes no text pattern reads, so the catalog keeps them out; text results still ship.
+func TestTranscriptToolResultAttachmentsAreExcluded(t *testing.T) {
+	c, err := sources.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := c.Source("claude-code-transcripts")
+	if !ok {
+		t.Fatal("claude-code-transcripts is not in the catalog")
+	}
+	root := t.TempDir()
+	dir := filepath.Join(root, "projects", "-work-api", "0199cccc-dddd-7eee-8fff-000011112222", "tool-results")
+	for _, name := range []string{"toolu_01.txt", "a.jpg", "b.jpeg", "c.png", "d.gif", "e.webp", "f.pdf", "g.bin", filepath.Join("nested", "h.png"), "Screenshot.PNG", "Scan.PDF"} {
+		write(t, filepath.Join(dir, name), `{"a":1}`+"\n")
+	}
+	d := discover(t, config.ResolvedSource{Source: s, Root: root, Enabled: true}, nil)
+	var got []string
+	for _, cand := range d.Candidates {
+		got = append(got, filepath.Base(cand.RelPath))
+	}
+	if !slices.Equal(got, []string{"toolu_01.txt"}) {
+		t.Errorf("collected %v, want only the text tool result", got)
+	}
+}
+
 // A permission denial deep in a store must not abort the walk: everything readable still ships, and the problem is reported.
 func TestUnreadableSubtreeDoesNotAbortTheWalk(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -411,37 +437,15 @@ func TestUnreadableSubtreeDoesNotAbortTheWalk(t *testing.T) {
 
 func TestRegistryHasNoReservedPrimitives(t *testing.T) {
 	reg := sources.NewRegistry()
-	for _, reserved := range []string{"acp", "cloud_pull", "sqlite_rows"} {
+	for _, reserved := range []string{"acp", "cloud_pull", "sqlite_rows", "compressed_file"} {
 		if _, err := reg.For(reserved); err == nil {
 			t.Errorf("%q must not be a compiled primitive", reserved)
 		}
 	}
-	for _, expected := range []string{"file_glob", "compressed_file"} {
+	for _, expected := range []string{"file_glob"} {
 		if _, err := reg.For(expected); err != nil {
 			t.Errorf("%q should be compiled in: %v", expected, err)
 		}
-	}
-}
-
-func TestCompressedFileMagicSniff(t *testing.T) {
-	root := t.TempDir()
-	// zstd magic, then arbitrary bytes.
-	write(t, filepath.Join(root, "sessions", "r.jsonl.zst"), "\x28\xb5\x2f\xfd\x00\x01\x02")
-
-	src := source(root, []string{"sessions/**/*.jsonl.zst"})
-	src.Gather = "compressed_file"
-	src.Sniff = &sources.Sniff{Kind: "magic", MagicHex: "28b52ffd"}
-
-	d := discover(t, src, nil)
-	if d.Sniff != sources.SniffOK {
-		t.Errorf("valid zstd magic should sniff ok, got %q", d.Sniff)
-	}
-
-	// Wrong magic: the file is not what the catalog says it is.
-	write(t, filepath.Join(root, "sessions", "r.jsonl.zst"), "not zstd at all")
-	d = discover(t, src, nil)
-	if d.Sniff != sources.SniffUnexpectedShape {
-		t.Errorf("wrong magic should be unexpected_shape, got %q", d.Sniff)
 	}
 }
 

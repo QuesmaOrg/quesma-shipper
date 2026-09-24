@@ -28,6 +28,18 @@ func Sentinel(ruleID string) string {
 // must keep skipping candidates carrying it, or a re-scrub eats the previous pass's ledger.
 const sentinelPrefix = "__REDACTED"
 
+// isSentinel reports whether s is exactly one sentinel.
+func isSentinel(s string) bool {
+	id, ok := strings.CutPrefix(s, sentinelPrefix+":")
+	if !ok {
+		return false
+	}
+	if id, ok = strings.CutSuffix(id, "__"); !ok || id == "" {
+		return false
+	}
+	return !strings.ContainsFunc(id, func(r rune) bool { return !(r == '-' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9') })
+}
+
 // ExemptionSet holds the structural exemptions in force: identifier fields whose redaction
 // would destroy the causal graph, and declared opaque binary payloads. Heuristics only, and
 // paths match exactly rather than by key name, since additions here weaken scrubbing.

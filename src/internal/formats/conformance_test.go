@@ -119,7 +119,7 @@ func generateMirrorKeyVectors(t *testing.T) []byte {
 		{"claude code transcript under a pseudonymized slug", "key_a", "projects/-Users-__USER__-work-api/3f2504e0.jsonl"},
 		{"claude code subagent transcript", "key_a", "projects/-Users-__USER__-work-api/3f2504e0/subagents/agent-9f2c.jsonl"},
 		{"codex rollout", "key_a", "sessions/2026/07/30/rollout-2026-07-30T10-00-00-0199.jsonl"},
-		{"codex cold rollout is a different file from its plaintext form", "key_a", "sessions/2026/07/30/rollout-2026-07-30T10-00-00-0199.jsonl.zst"},
+		{"codex session is one object across its live, archived and cold forms", "key_a", "codex-session/0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"},
 		{"cursor transcript", "key_a", "c8cbeb0b/c8cbeb0b.jsonl"},
 		{"enricher output is its own object", "key_a", "c8cbeb0b/c8cbeb0b.jsonl.enriched.jsonl"},
 		{"percent-encoded segment", "key_a", "images/Screenshot%202026-07-27%20at%2014.32.36.png"},

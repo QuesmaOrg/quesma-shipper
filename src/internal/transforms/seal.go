@@ -45,14 +45,33 @@ const maxDecompressedBytes = 8 << 30
 // caller should double its range rather than treat the object as corrupt.
 var ErrPrefixTooShort = errors.New("seal: object prefix too short to contain the manifest")
 
+// Scrubbed is a payload Seal accepts: only Scrubber.Scrub and Unscrubbed make one, so shipping
+// bytes that skipped the scrubber takes a named, greppable decision.
+type Scrubbed struct {
+	b []byte
+	// via is "scrubber" or the Unscrubbed reason; empty marks the zero value, which Seal refuses.
+	via string
+}
+
+// Unscrubbed declares raw as shippable without scrubbing; reason says why, e.g. a
+// shipper-authored heartbeat or a source configured scrub: false.
+func Unscrubbed(raw []byte, reason string) Scrubbed { return Scrubbed{b: raw, via: reason} }
+
+// Bytes is the payload. The slice may alias the input, so it must not be modified.
+func (s Scrubbed) Bytes() []byte { return s.b }
+
 // Seal builds one mirror object and returns the manifest as sealed: ShippedHash, PayloadSize
 // and, unless the caller set it, Encryption are filled here, so what a caller needs for object
 // metadata is the returned copy and never its own.
-func Seal(m Manifest, payload []byte, recipients []age.Recipient) ([]byte, Manifest, error) {
+func Seal(m Manifest, scrubbed Scrubbed, recipients []age.Recipient) ([]byte, Manifest, error) {
 	if len(recipients) == 0 {
 		// An object with no recipient is either unreadable or unencrypted.
 		return nil, Manifest{}, errors.New("seal: no age recipients: encryption is not optional")
 	}
+	if scrubbed.via == "" {
+		return nil, Manifest{}, errors.New("seal: payload neither scrubbed nor declared Unscrubbed with a reason")
+	}
+	payload := scrubbed.b
 
 	m.ShippedHash = Hash(payload)
 	m.PayloadSize = int64(len(payload))

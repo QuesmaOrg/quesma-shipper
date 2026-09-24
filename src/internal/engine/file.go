@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"hash/fnv"
+	"path/filepath"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
@@ -35,7 +37,7 @@ func (o Options) prepareFile(
 	staging bool,
 ) (res fileResult, pending *pendingPut) {
 	cand := job.cand
-	res = fileResult{idx: job.idx, bytes: cand.Size}
+	res = fileResult{idx: job.idx}
 	out := &res.outcome
 	*out = FileOutcome{
 		SourceID:   src.ID,
@@ -43,10 +45,7 @@ func (o Options) prepareFile(
 		RelPath:    cand.RelPath,
 	}
 
-	key := Key{
-		SourceID:   src.ID,
-		NativePath: cand.Path,
-	}
+	key := KeyOf(src.ID, cand)
 	fp, seen := job.fp, job.seen
 
 	// A parked entry waits out its backoff. Never an unconditional retry.
@@ -63,6 +62,12 @@ func (o Options) prepareFile(
 		!(staging && o.Now().Sub(cand.MTime) < recomputeWindow) {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "size and mtime unchanged"
+		// A rename keeps size and mtime: record the new path so Prune tests the file that exists.
+		if !o.DryRun && observedPath(key, fp) != cand.Path {
+			moved := fp
+			moved.NativePath = cand.Path
+			res.intent = intent{kind: intentRefresh, key: key, fp: moved}
+		}
 		return res, nil
 	}
 
@@ -92,6 +97,7 @@ func (o Options) prepareFile(
 		out.Reason = "content hash unchanged"
 		if !o.DryRun {
 			refreshed := fp
+			refreshed.NativePath = cand.Path
 			refreshed.SourceSize = cand.Size
 			refreshed.SourceMTime = cand.MTime
 			// Whatever parked this entry is over: the read just succeeded and its hash matches a
@@ -108,7 +114,8 @@ func (o Options) prepareFile(
 	}
 
 	// Drift signal only: the whole file ships regardless, but truncation stops looking like growth.
-	if seen && cand.Size < fp.SourceSize {
+	// Sizes compare only within one form: a session that grew and was then compressed did not shrink.
+	if seen && cand.Size < fp.SourceSize && filepath.Ext(cand.Path) == filepath.Ext(observedPath(key, fp)) {
 		out.Reason = "file shrank: truncation or rewrite"
 	}
 
@@ -123,7 +130,7 @@ func (o Options) prepareFile(
 	out.RuleHits = scrubbed.RuleHits
 	raw = nil
 
-	objectKey, err := o.mirrorKey(src.ID, cand.RelPath)
+	objectKey, err := o.mirrorKey(src.ID, cmp.Or(cand.Identity, cand.RelPath))
 	if err != nil {
 		out.Decision = auditlog.DecisionFailed
 		out.Reason = err.Error()
@@ -155,6 +162,7 @@ func (o Options) prepareFile(
 		obj:       obj,
 		md:        sealed.ObjectMetadata(),
 		next: Fingerprint{
+			NativePath:  cand.Path,
 			SourceSize:  cand.Size,
 			SourceMTime: cand.MTime,
 			SourceHash:  sourceHash,
@@ -166,7 +174,7 @@ func (o Options) prepareFile(
 func keySpread(k Key) uint64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(k.SourceID))
-	_, _ = h.Write([]byte(k.NativePath))
+	_, _ = h.Write([]byte(k.ID))
 	return h.Sum64()
 }
 
@@ -180,6 +188,7 @@ func failAndBackOff(o Options, res *fileResult, key Key, fp Fingerprint, reason 
 	}
 	attempts := fp.Attempts + 1
 	next := fp
+	next.NativePath = res.outcome.NativePath
 	next.Attempts = attempts
 	next.Parked = true
 	next.LastError = reason
@@ -190,7 +199,7 @@ func failAndBackOff(o Options, res *fileResult, key Key, fp Fingerprint, reason 
 
 func scrubSource(src sources.Resolved, raw []byte, jsonl bool, scrubber *transforms.Scrubber, scrubErr error) (transforms.Result, error) {
 	if src.Scrub != nil && !*src.Scrub {
-		return transforms.Result{Out: raw, BytesTotal: len(raw)}, nil
+		return transforms.Result{Out: transforms.Unscrubbed(raw, "source scrub: false"), BytesTotal: len(raw)}, nil
 	}
 	if scrubErr != nil {
 		return transforms.Result{}, scrubErr

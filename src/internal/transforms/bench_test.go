@@ -43,7 +43,7 @@ func BenchmarkScrubSynthetic(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				if len(res.Out) == 0 {
+				if len(res.Out.Bytes()) == 0 {
 					b.Fatal("empty output")
 				}
 			}

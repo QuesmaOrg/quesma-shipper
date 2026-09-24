@@ -1236,7 +1236,7 @@ func TestAParkedFileStopsBeingParkedOnceItReadsCleanAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fp, ok := doc.Entries[engine.Key{SourceID: "claude-code-transcripts", NativePath: bad}]
+	fp, ok := doc.Entries[engine.Key{SourceID: "claude-code-transcripts", ID: bad}]
 	if !ok {
 		t.Fatalf("no entry for %s in %+v", bad, doc.Entries)
 	}

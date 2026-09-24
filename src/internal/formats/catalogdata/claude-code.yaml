@@ -41,6 +41,9 @@ sources:
       - "projects/**/*.jsonl"
       - "projects/**/*.meta.json"
       - "projects/**/tool-results/**"
+    # Attachments spilled beside text results: the scrubber cannot see into them.
+    exclude:
+      - "projects/**/tool-results/**/*.{jpg,jpeg,png,gif,webp,pdf,bin,JPG,JPEG,PNG,GIF,WEBP,PDF,BIN}"
     sniff:
       kind: jsonl
       max_scan_bytes: 65536

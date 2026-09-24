@@ -198,10 +198,7 @@ func (o Options) prepareDerived(
 		return fo, nil
 	}
 
-	key := Key{
-		SourceID:   src.ID,
-		NativePath: d.NativePath,
-	}
+	key := Key{SourceID: src.ID, ID: d.NativePath}
 	fp, seen := store.Get(key)
 
 	// Determinism supplies the change signal: an unchanged output hash means nothing to upload.

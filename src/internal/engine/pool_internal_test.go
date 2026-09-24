@@ -3,9 +3,13 @@ package engine
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
@@ -124,6 +128,32 @@ func TestAdmissionGates(t *testing.T) {
 		p.inFlightBytes = p.disc.Candidates[0].Size
 		if p.canAdmit(ctx, 1, 1, &stopped) {
 			t.Error("two files admitted together past the overridden cap")
+		}
+
+		// A few hundred compressed bytes that decode to the whole gate hold the gate, not their stat size.
+		enc, err := zstd.NewWriter(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		frame := enc.EncodeAll(make([]byte, small), nil)
+		// A small first frame declares only itself; the frame after it decodes too.
+		twoFrames := append(enc.EncodeAll(make([]byte, 4000), nil), frame...)
+		enc.Close()
+		for name, body := range map[string][]byte{"one frame": frame, "two frames": twoFrames} {
+			zst := filepath.Join(t.TempDir(), "rollout.jsonl.zst")
+			if err := os.WriteFile(zst, body, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			p = admissionPass(10, int64(len(body)), 1)
+			p.disc.Candidates[0].Path = zst
+			p.src.MaxFileBytes = 64 << 20
+			if !p.canAdmit(ctx, 0, 0, &stopped) {
+				t.Fatalf("%s: the .zst refused on an empty gate", name)
+			}
+			p.inFlightBytes += p.charge(0)
+			if p.canAdmit(ctx, 1, 1, &stopped) {
+				t.Errorf("%s: a %d-byte .zst decoding past the %d-byte gate let another file in beside it", name, len(body), small)
+			}
 		}
 	})
 }
