@@ -94,11 +94,10 @@ const (
 	codexGuardOutputLineWords  = 4
 )
 
-// PROVISIONAL, by the convention above, and measured on a laptop only (Apple M1 Max, three runs):
-// the runner sample has to extend both before they are trusted.
+// PROVISIONAL, by the convention above, from one runner sample (three cold repetitions).
 const (
-	codexGuardCPUBudget       = 0.86      // seconds: 1.3x the 0.659 s laptop ceiling
-	codexGuardBudget    int64 = 226 << 20 // bytes: 1.3x the 182 MB laptop worst
+	codexGuardCPUBudget       = 1.15      // seconds: 1.3x the 0.882 s runner ceiling
+	codexGuardBudget    int64 = 203 << 20 // bytes: 1.3x the 163 MB runner worst
 )
 
 func smokeCodexScrubGuard(t *testing.T) {
