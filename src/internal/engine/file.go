@@ -56,7 +56,7 @@ func (o Options) prepareFile(
 
 	// Cheap pre-filter on size and mtime only: mtime alone re-ships byte-identical files, so the
 	// content hash below stays the authority.
-	if o.unchangedByStat(key, fp, seen, cand, staging) {
+	if !cand.AlwaysLoad && o.unchangedByStat(key, fp, seen, cand, staging) {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "size and mtime unchanged"
 		return res, nil

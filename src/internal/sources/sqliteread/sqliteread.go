@@ -1,6 +1,6 @@
-// Package sqliteread reads live agent SQLite databases as ENRICHER INPUT ONLY; no rows ever ship. Three read methods,
-// tried in order and recorded in the manifest: read-only in-place open, VACUUM INTO scratch snapshot, cold raw
-// copy of db plus -wal/-shm. It never opens the original read-write and never byte-copies a live database.
+// Package sqliteread reads live agent SQLite stores without modifying them.
+// Cursor reads feed enrichment; session readers export only explicitly selected transcript columns.
+// Whole databases, credentials and configuration never ship.
 package sqliteread
 
 import (

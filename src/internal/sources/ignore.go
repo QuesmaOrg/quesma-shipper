@@ -90,6 +90,9 @@ func (f *RepoFilter) CWD(src Resolved, c Candidate) string {
 	if f.probe == nil || !slices.Contains(f.probe.From, src.ID) {
 		return ""
 	}
+	if c.CWD != "" {
+		return cleanCWD(c.CWD)
+	}
 	key := c.Path
 	if dir := projectDirOf(c.RelPath); dir != "" {
 		key = src.Root + "\x00" + dir

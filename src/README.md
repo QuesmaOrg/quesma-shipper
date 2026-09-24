@@ -84,6 +84,16 @@ The shipper collects more than chat transcripts. Per agent, from the agent's own
 | Codex | Sessions, one object each whether live, archived or zstd-compressed (decompressed and scrubbed like the rest), the session index | None |
 | Cursor | Agent transcripts, enriched with conversation text, tool calls, and model names read from Cursor's database | Spilled tool output, terminal captures, agent scratchpad notes |
 | GitHub Copilot | Copilot CLI session event logs; Copilot Chat transcripts and VS Code's chat session store, which holds tool results and token counts, including chats opened with no folder and sessions moved between workspaces | CLI session plans, checkpoints, research reports, session files and rewind snapshots; personal `copilot-instructions.md` and `instructions/*.instructions.md`; VS Code chat editing checkpoints and file baselines |
+| Pi | Native JSONL session trees, messages, usage, branches and tool results | None |
+| OpenCode | Per-session JSONL snapshots of session, message and part records from `opencode.db` | None |
+| Hermes | Per-session JSONL snapshots of messages and model usage from `state.db`, including named profiles | None |
+
+Pi uses `$PI_CODING_AGENT_SESSION_DIR`, `$PI_CODING_AGENT_DIR/sessions`, or
+`~/.pi/agent/sessions`. OpenCode uses `$XDG_DATA_HOME/opencode` or
+`~/.local/share/opencode`. Hermes uses `$HERMES_HOME` or `~/.hermes`, including
+`profiles/*/state.db`. As with other sources, the first existing root wins; set the corresponding
+environment variable in the shipper process for nonstandard locations. See [agent session formats](../AGENT_SESSIONS.md)
+for the snapshot contract and validation coverage.
 
 A repository marked as not tracked is matched through the folder the session ran in. For Copilot Chat this is the folder VS Code opened; in a multi-root workspace a mark on any of its folders applies. Chats from a remote VS Code window (SSH, WSL, dev container) name a folder on another machine, so they ship without a repository and a mark there does not apply.
 

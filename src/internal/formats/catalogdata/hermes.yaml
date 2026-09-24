@@ -1,0 +1,15 @@
+spec_version: 1
+family: hermes
+display_name: Hermes
+sources:
+  - id: hermes-sessions
+    description: Read-only session messages and per-model usage snapshots, including named profiles.
+    gather: sidecar
+    emit: session_jsonl
+    artifact_class: trajectory
+    roots:
+      - $HERMES_HOME
+      - ~/.hermes
+    max_file_bytes: 67108864
+    sniff:
+      kind: jsonl
