@@ -120,7 +120,7 @@ func (w *jsonWalker) walkObject(depth int, path string) error {
 		}
 
 		field := joinFieldPath(path, key)
-		plan := w.s.planValue(key, "", FieldPath(field), w.family, w.scan)
+		plan := w.s.planValue(key, false, FieldPath(field), w.family, w.scan)
 		w.addPlan(raw, rawStart, key, plan)
 		if len(plan.spans) > 0 {
 			field = joinFieldPath(path, plan.apply(key))
@@ -153,29 +153,32 @@ func (w *jsonWalker) walkString(depth int, key, path string) error {
 	if err != nil {
 		return err
 	}
+	secretKey := w.s.keyNamesSecret(key, text)
 	// A document the inner walk completes on is scanned leaf by leaf, so the whole-value scan
 	// would read every byte twice; a secret-named key or a key-plus-value rule hit still takes it.
-	if looksLikeDocument(text) && !w.s.keyNamesSecret(key, text) && !w.s.spansKeyAndValue(text) {
+	if !secretKey && looksLikeDocument(text) && !w.s.spansKeyAndValue(text) {
 		embedded, walked, err := w.walkEmbedded(depth, path, text)
 		if err != nil {
 			return err
 		}
 		if walked {
 			if embedded != text {
-				w.edits = append(w.edits, replacementSpan{Start: rawStart, End: rawStart + len(raw), Replacement: embedded})
+				w.replace(raw, rawStart, embedded)
 			}
 			return nil
 		}
 	}
-	plan := w.s.planValue(text, key, FieldPath(path), w.family, w.scan)
+	plan := w.s.planValue(text, secretKey, FieldPath(path), w.family, w.scan)
 	if len(plan.spans) == 0 {
 		return nil
 	}
-	embedded, _, err := w.walkEmbedded(depth, path, plan.apply(text))
-	if err != nil {
-		return err
+	out := plan.apply(text)
+	if looksLikeDocument(out) {
+		if out, _, err = w.walkEmbedded(depth, path, out); err != nil {
+			return err
+		}
 	}
-	w.edits = append(w.edits, replacementSpan{Start: rawStart, End: rawStart + len(raw), Replacement: embedded})
+	w.replace(raw, rawStart, out)
 	w.addLedger(plan)
 	return nil
 }
@@ -187,7 +190,7 @@ func (w *jsonWalker) walkNumber(key, path string) error {
 		return err
 	}
 	text := string(raw)
-	plan := w.s.planValue(text, key, FieldPath(path), w.family, w.scan)
+	plan := w.s.planValue(text, w.s.keyNamesSecret(key, text), FieldPath(path), w.family, w.scan)
 	w.addPlan(raw, int(w.dec.InputOffset())-len(raw), text, plan)
 	return nil
 }
@@ -198,11 +201,8 @@ const embeddedSuffix = "#json"
 
 // walkEmbedded walks a string value that is a JSON object or array (tool arguments and outputs
 // stored as encoded JSON) so its keys get key-name redaction and its leaves the full ladder. A
-// value that is not JSON comes back unchanged with walked false.
+// value that does not parse comes back unchanged with walked false.
 func (w *jsonWalker) walkEmbedded(depth int, path, text string) (out string, walked bool, err error) {
-	if !looksLikeDocument(text) {
-		return text, false, nil
-	}
 	if w.inner == nil {
 		w.inner = &jsonWalker{embedded: true}
 	}
@@ -264,10 +264,13 @@ func (w *jsonWalker) addPlan(raw []byte, rawStart int, decoded string, plan valu
 	if len(plan.spans) == 0 {
 		return
 	}
-	w.edits = append(w.edits, replacementSpan{
-		Start: rawStart, End: rawStart + len(raw), Replacement: plan.apply(decoded),
-	})
+	w.replace(raw, rawStart, plan.apply(decoded))
 	w.addLedger(plan)
+}
+
+// replace swaps the whole JSON value raw, found at rawStart, for the string s.
+func (w *jsonWalker) replace(raw []byte, rawStart int, s string) {
+	w.edits = append(w.edits, replacementSpan{Start: rawStart, End: rawStart + len(raw), Replacement: s})
 }
 
 func (w *jsonWalker) addLedger(plan valuePlan) {

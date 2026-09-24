@@ -37,7 +37,12 @@ func isSentinel(s string) bool {
 	if id, ok = strings.CutSuffix(id, "__"); !ok || id == "" {
 		return false
 	}
-	return !strings.ContainsFunc(id, func(r rune) bool { return !(r == '-' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9') })
+	for i := range len(id) {
+		if c := id[i]; c != '-' && !isLower(c) && !isDigit(c) {
+			return false
+		}
+	}
+	return true
 }
 
 // ExemptionSet holds the structural exemptions in force: identifier fields whose redaction

@@ -44,7 +44,7 @@ func admissionPass(budget int, sizes ...int64) *sourcePass {
 		cands[i] = sources.Candidate{Size: sz}
 	}
 	b := budget
-	return &sourcePass{budget: &b, disc: sources.Discovery{Candidates: cands}}
+	return &sourcePass{budget: &b, disc: sources.Discovery{Candidates: cands}, store: newCommitBuffer(&Store{}, 0)}
 }
 
 // Each gate alone: the admission predicate is the whole budget-and-safety policy of the pass.
@@ -156,6 +156,39 @@ func TestAdmissionGates(t *testing.T) {
 			}
 		}
 	})
+}
+
+// A .zst the pre-filter will skip is charged its stat size without being opened.
+func TestUnchangedZstdIsChargedWithoutOpening(t *testing.T) {
+	now := time.Now()
+	cand := sources.Candidate{Path: filepath.Join(t.TempDir(), "gone.jsonl.zst"), Size: 100, MTime: now.Add(-48 * time.Hour)}
+	shipped := Fingerprint{SourceSize: cand.Size, SourceMTime: cand.MTime, SourceHash: "shipped"}
+	for _, tc := range []struct {
+		name    string
+		fp      *Fingerprint
+		mtime   time.Time
+		staging bool
+		want    int64
+	}{
+		{"unchanged", &shipped, cand.MTime, false, cand.Size},
+		{"never shipped", nil, cand.MTime, false, 1 << 20},
+		{"mtime moved", &shipped, cand.MTime.Add(time.Second), false, 1 << 20},
+		{"staged inside the recompute window", &Fingerprint{SourceSize: cand.Size, SourceMTime: now, SourceHash: "shipped"}, now, true, 1 << 20},
+	} {
+		p := admissionPass(1, cand.Size)
+		p.disc.Candidates[0] = cand
+		p.disc.Candidates[0].MTime = tc.mtime
+		p.src.MaxFileBytes = 1 << 20
+		p.o.Now = func() time.Time { return now }
+		p.staging = tc.staging
+		if tc.fp != nil {
+			_ = p.store.Commit(KeyOf(p.src.ID, p.disc.Candidates[0]), *tc.fp)
+		}
+		// The path does not exist, so opening it would charge the whole cap.
+		if got := p.charge(0); got != tc.want {
+			t.Errorf("%s: charged %d, want %d", tc.name, got, tc.want)
+		}
+	}
 }
 
 func TestGeneratedFileChecksUploadStateBeforeLoading(t *testing.T) {

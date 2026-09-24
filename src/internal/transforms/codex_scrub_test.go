@@ -29,14 +29,6 @@ func codexToolOutput(t *testing.T, stdout string) string {
 	return codexJSON(t, map[string]any{"output": stdout, "metadata": map[string]any{"exit_code": 0, "duration_seconds": 0.1}})
 }
 
-func codexRandFrom(r *rand.Rand, alphabet string, n int) string {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = alphabet[r.Intn(len(alphabet))]
-	}
-	return string(b)
-}
-
 func assertScrubbed(t *testing.T, family, line string, secrets ...string) {
 	t.Helper()
 	res := scrubJSONL(t, newScrubber(t), family, line)
@@ -69,12 +61,11 @@ func assertArgumentsScrubbed(t *testing.T, line string, secrets ...string) strin
 	return args
 }
 
-// Gap B: a `\n` or `\t` escape left in a decoded value puts a word byte right before the token,
-// so every `\b`-anchored rule misses it. Short and hex-alphabet tokens have no entropy backstop.
+// A `\n` or `\t` escape left in a decoded value glues a word byte onto the token, hiding it from `\b`-anchored rules.
 func TestCodexEscapedWhitespaceBeforeTokenIsScrubbed(t *testing.T) {
 	r := rand.New(rand.NewSource(42))
 	tokens := map[string]string{
-		"aws-access-key-id":  "AKIA" + codexRandFrom(r, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", 16),
+		"aws-access-key-id":  "AKIA" + randFrom(r, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", 16),
 		"digitalocean-token": "dop_v1_" + randHex(r, 64),
 		"databricks":         "dapi" + randHex(r, 32),
 		"shopify-token":      "shpat_" + randHex(r, 32),
@@ -104,8 +95,7 @@ func TestCodexEscapedWhitespaceBeforeTokenIsScrubbed(t *testing.T) {
 	}
 }
 
-// Gap C: key-name redaction fires on real JSON keys only, so the same arguments leak when Codex
-// stores them as a JSON-encoded string and are caught when Claude Code stores them as an object.
+// Key-name redaction reaches arguments Codex stores as a JSON-encoded string, as it does Claude Code's objects.
 func TestCodexKeyNamesInsideJSONStringsAreScrubbed(t *testing.T) {
 	for _, secret := range []string{"correct-horse-battery-staple-42", "Xq9vT2mLp4Rz8Kw1", "hunter2hunter2"} {
 		args := map[string]any{"host": "db.internal", "user": "admin", "password": secret, "api_key": secret, "client_secret": secret}
@@ -118,8 +108,7 @@ func TestCodexKeyNamesInsideJSONStringsAreScrubbed(t *testing.T) {
 	}
 }
 
-// Gap C through tool output: the agent ran `cat config.json`, and the output is a JSON document
-// one or more string-encodings deep.
+// Key names reach into `cat config.json` output, a JSON document one or more string-encodings deep.
 func TestCodexCatConfigJSONIsScrubbed(t *testing.T) {
 	const password = "correct-horse-battery-staple-42"
 	const clientSecret = "Xq9vT2mLp4Rz8Kw1"

@@ -74,7 +74,7 @@ func fileLoader(path string, maxBytes int64) func(context.Context) (Payload, err
 			return Payload{}, err
 		}
 		read := platform.ReadWhole
-		if isZstd(path) {
+		if IsZstd(path) {
 			read = readZstd
 		}
 		raw, info, err := read(path, maxBytes)
@@ -90,24 +90,19 @@ const zstdMaxWindow = 1 << 27
 
 var zstdMagic = []byte{0x28, 0xb5, 0x2f, 0xfd}
 
-func isZstd(path string) bool { return strings.HasSuffix(path, ".zst") }
+// IsZstd says a path is loaded by decoding it, so its stat size is not what it holds.
+func IsZstd(path string) bool { return strings.HasSuffix(path, ".zst") }
 
 // newZstdReader refuses a .zst path that is not a zstd stream, so it can never ship as opaque bytes.
 // It also returns the first frame's declared content size, 0 when absent: a pre-size hint only.
 func newZstdReader(f io.Reader, path string) (*zstd.Decoder, int64, error) {
-	head := make([]byte, zstd.HeaderMaxSize)
-	n, err := io.ReadFull(f, head)
-	head = head[:n]
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) || !bytes.HasPrefix(head, zstdMagic) {
+	br := bufio.NewReader(f)
+	head, err := br.Peek(zstd.HeaderMaxSize)
+	if err != nil && !errors.Is(err, io.EOF) || !bytes.HasPrefix(head, zstdMagic) {
 		return nil, 0, fmt.Errorf("%s: .zst file does not start with zstd magic", path)
 	}
-	var contentSize int64
-	var h zstd.Header
-	if h.Decode(head) == nil && h.HasFCS && h.FrameContentSize <= math.MaxInt64 {
-		contentSize = int64(h.FrameContentSize)
-	}
-	dec, err := zstd.NewReader(io.MultiReader(bytes.NewReader(head), f),
-		zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxWindow(zstdMaxWindow))
+	contentSize, _, _ := declaredSize(head)
+	dec, err := zstd.NewReader(br, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxWindow(zstdMaxWindow))
 	if err != nil {
 		return nil, 0, fmt.Errorf("%s: zstd reader: %w", path, err)
 	}
@@ -149,7 +144,7 @@ func readZstd(path string, maxBytes int64) ([]byte, os.FileInfo, error) {
 // LoadBytes is what loading c holds, for the in-flight memory gate: a .zst holds its decoded size, so it is
 // charged its declared content size when the file is one such frame, else maxBytes, capped at maxBytes.
 func LoadBytes(c Candidate, maxBytes int64) int64 {
-	if !isZstd(c.Path) || maxBytes <= 0 {
+	if !IsZstd(c.Path) || maxBytes <= 0 {
 		return c.Size
 	}
 	f, info, err := platform.Open(c.Path)
@@ -158,7 +153,7 @@ func LoadBytes(c Candidate, maxBytes int64) int64 {
 		return maxBytes
 	}
 	defer f.Close()
-	if size, ok := singleFrameSize(bufio.NewReader(f), info.Size()); ok && size < maxBytes {
+	if size, ok := singleFrameSize(f, info.Size()); ok && size < maxBytes {
 		return size
 	}
 	return maxBytes
@@ -166,37 +161,41 @@ func LoadBytes(c Candidate, maxBytes int64) int64 {
 
 // singleFrameSize is the declared content size of a .zst that is exactly one frame. The decoder
 // reads every concatenated frame, so bytes past the first make its declaration a lower bound.
-func singleFrameSize(r *bufio.Reader, fileSize int64) (int64, bool) {
-	head, _ := r.Peek(zstd.HeaderMaxSize)
-	var h zstd.Header
-	if h.Decode(head) != nil || !h.HasFCS || h.FrameContentSize > math.MaxInt64 {
-		return 0, false
-	}
-	if _, err := r.Discard(h.HeaderSize); err != nil {
+func singleFrameSize(r io.ReaderAt, fileSize int64) (int64, bool) {
+	var head [zstd.HeaderMaxSize]byte
+	n, _ := r.ReadAt(head[:], 0)
+	size, h, ok := declaredSize(head[:n])
+	if !ok {
 		return 0, false
 	}
 	end := int64(h.HeaderSize)
 	for last := false; !last; {
 		var bh [3]byte
-		if _, err := io.ReadFull(r, bh[:]); err != nil {
+		if _, err := r.ReadAt(bh[:], end); err != nil {
 			return 0, false
 		}
 		v := uint32(bh[0]) | uint32(bh[1])<<8 | uint32(bh[2])<<16
 		last = v&1 == 1
-		n := int(v >> 3)
+		n := int64(v >> 3)
 		if (v>>1)&3 == 1 {
 			// An RLE block stores its one repeated byte; the size field is the decoded length.
 			n = 1
 		}
-		if _, err := r.Discard(n); err != nil {
-			return 0, false
-		}
-		end += 3 + int64(n)
+		end += 3 + n
 	}
 	if h.HasCheckSum {
 		end += 4
 	}
-	return int64(h.FrameContentSize), end == fileSize
+	return size, end == fileSize
+}
+
+// declaredSize is the frame header's content size; ok is false when the header is bad or has none.
+func declaredSize(head []byte) (int64, zstd.Header, bool) {
+	var h zstd.Header
+	if h.Decode(head) != nil || !h.HasFCS || h.FrameContentSize > math.MaxInt64 {
+		return 0, h, false
+	}
+	return int64(h.FrameContentSize), h, true
 }
 
 // Discovery is what one source's discovery pass found, plus why.
@@ -385,7 +384,7 @@ func collapseIdentities(matched []Candidate, identity *regexpIdentity) []Candida
 }
 
 func preferForm(a, b Candidate) int {
-	if za, zb := isZstd(a.RelPath), isZstd(b.RelPath); za != zb {
+	if za, zb := IsZstd(a.RelPath), IsZstd(b.RelPath); za != zb {
 		if za {
 			return 1
 		}
@@ -645,17 +644,18 @@ func readHead(path string, budget int64) ([]byte, bool, error) {
 	if info.Size() == 0 {
 		return nil, false, nil
 	}
-	if isZstd(path) {
+	if IsZstd(path) {
 		dec, _, err := newZstdReader(f, path)
 		if err != nil {
 			return nil, false, err
 		}
 		defer dec.Close()
-		head, err := io.ReadAll(io.LimitReader(dec, budget+1))
-		if err != nil {
+		head := make([]byte, budget+1)
+		n, err := io.ReadFull(dec, head)
+		if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
 			return nil, false, fmt.Errorf("%s: zstd decode: %w", path, err)
 		}
-		return head[:min(int64(len(head)), budget)], int64(len(head)) > budget, nil
+		return head[:min(int64(n), budget)], int64(n) > budget, nil
 	}
 	buf := make([]byte, min(budget, info.Size()))
 	n, err := f.Read(buf)

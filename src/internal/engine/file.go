@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"hash/fnv"
-	"path/filepath"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
@@ -56,10 +55,8 @@ func (o Options) prepareFile(
 	}
 
 	// Cheap pre-filter on size and mtime only: mtime alone re-ships byte-identical files, so the
-	// content hash below stays the authority. A non-empty SourceHash marks a committed ship. A
-	// staged file changed within the recompute window is still read, for its enricher.
-	if seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
-		!(staging && o.Now().Sub(cand.MTime) < recomputeWindow) {
+	// content hash below stays the authority.
+	if o.unchangedByStat(fp, seen, cand, staging) {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "size and mtime unchanged"
 		// A rename keeps size and mtime: record the new path so Prune tests the file that exists.
@@ -114,8 +111,8 @@ func (o Options) prepareFile(
 	}
 
 	// Drift signal only: the whole file ships regardless, but truncation stops looking like growth.
-	// Sizes compare only within one form: a session that grew and was then compressed did not shrink.
-	if seen && cand.Size < fp.SourceSize && filepath.Ext(cand.Path) == filepath.Ext(observedPath(key, fp)) {
+	// Sizes compare only within one path: a session that grew and was then compressed did not shrink.
+	if seen && cand.Size < fp.SourceSize && cand.Path == observedPath(key, fp) {
 		out.Reason = "file shrank: truncation or rewrite"
 	}
 
@@ -168,6 +165,13 @@ func (o Options) prepareFile(
 			SourceHash:  sourceHash,
 		},
 	}
+}
+
+// unchangedByStat says the file will not be opened: a non-empty SourceHash marks a committed ship,
+// and a staged file changed within the recompute window is still read, for its enricher.
+func (o Options) unchangedByStat(fp Fingerprint, seen bool, cand sources.Candidate, staging bool) bool {
+	return seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
+		!(staging && o.Now().Sub(cand.MTime) < recomputeWindow)
 }
 
 // keySpread is a cheap stable hash of a state key, used only to separate backoff wakeups.

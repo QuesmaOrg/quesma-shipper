@@ -152,6 +152,7 @@ func (p *sourcePass) run(ctx context.Context) error {
 	settle := func(r fileResult) {
 		inFlight--
 		p.inFlightBytes -= p.charge(r.idx)
+		delete(p.charges, r.idx)
 		p.fold(r)
 	}
 	for {
@@ -278,15 +279,23 @@ func (p *sourcePass) canAdmit(ctx context.Context, next, inFlight int, stopped *
 	return true
 }
 
-// charge is candidate i's share of the in-flight gate, read once: a .zst decodes to far more than it stats.
+// charge is candidate i's share of the in-flight gate, read once: a .zst decodes to far more than it
+// stats, unless its fingerprint says it will not be opened at all.
 func (p *sourcePass) charge(i int) int64 {
+	cand := p.disc.Candidates[i]
+	if !sources.IsZstd(cand.Path) {
+		return cand.Size
+	}
 	if c, ok := p.charges[i]; ok {
 		return c
 	}
 	if p.charges == nil {
 		p.charges = map[int]int64{}
 	}
-	c := sources.LoadBytes(p.disc.Candidates[i], p.src.MaxFileBytes)
+	c := cand.Size
+	if fp, seen := p.store.Get(KeyOf(p.src.ID, cand)); !p.o.unchangedByStat(fp, seen, cand, p.staging) {
+		c = sources.LoadBytes(cand, p.src.MaxFileBytes)
+	}
 	p.charges[i] = c
 	return c
 }

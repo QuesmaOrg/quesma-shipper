@@ -211,12 +211,7 @@ func engineFixedTime() time.Time { return time.Date(2026, 7, 30, 10, 0, 0, 0, ti
 func (f *fixture) writeTranscript(rel, body string) string {
 	f.t.Helper()
 	path := filepath.Join(f.home, ".claude", "projects", rel)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		f.t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		f.t.Fatal(err)
-	}
+	writeFile(f.t, path, []byte(body))
 	return path
 }
 

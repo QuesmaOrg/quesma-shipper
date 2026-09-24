@@ -6,6 +6,7 @@ package engine_test
 
 import (
 	"database/sql"
+	"encoding/json/jsontext"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -124,8 +125,11 @@ var canaryFixtures = map[string]func(t *testing.T, home string){
 }
 
 func jsonString(s string) string {
-	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\t", `\t`)
-	return `"` + r.Replace(s) + `"`
+	b, err := jsontext.AppendQuote(nil, s)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
 }
 
 // jsonObject turns NAME=value lines into a JSON object, the shape of a settings env block.

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -66,6 +67,11 @@ type Sniff struct {
 type Identity struct {
 	Match string `yaml:"match"`
 	Key   string `yaml:"key"`
+
+	// Compiled once: every copy of a Source shares this Identity by pointer.
+	once     sync.Once
+	compiled *regexpIdentity
+	err      error
 }
 
 type regexpIdentity struct {
@@ -77,11 +83,15 @@ func (id *Identity) compile() (*regexpIdentity, error) {
 	if id == nil {
 		return nil, nil
 	}
-	re, err := regexp.Compile(id.Match)
-	if err != nil {
-		return nil, fmt.Errorf("identity.match %q: %w", id.Match, err)
-	}
-	return &regexpIdentity{re: re, key: id.Key}, nil
+	id.once.Do(func() {
+		re, err := regexp.Compile(id.Match)
+		if err != nil {
+			id.err = fmt.Errorf("identity.match %q: %w", id.Match, err)
+			return
+		}
+		id.compiled = &regexpIdentity{re: re, key: id.Key}
+	})
+	return id.compiled, id.err
 }
 
 func (r *regexpIdentity) of(rel string) string {

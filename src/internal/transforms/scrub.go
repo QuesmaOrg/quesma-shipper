@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -358,7 +359,7 @@ func isBzip2(p []byte) bool {
 // path there is no exemption to consult, and the entropy backstop would shred any hex
 // digest or base64 blob in a terminal capture.
 func (s *Scrubber) scrubRawText(text string, res *Result, scan *packs.ValueScan) string {
-	plan := s.planValueWith(text, nil, "", "", scan)
+	plan := s.planValueWith(text, nil, false, "", scan)
 	res.record(plan.redacted, plan.hits)
 	return plan.apply(text)
 }
@@ -392,26 +393,24 @@ func (p valuePlan) apply(value string) string {
 
 // planValue applies the full ladder to one decoded JSON string without building the
 // rewritten value; the walker maps the decoded spans back to the original token.
-func (s *Scrubber) planValue(value, key string, field FieldPath, family string, scan *packs.ValueScan) valuePlan {
+func (s *Scrubber) planValue(value string, secretKey bool, field FieldPath, family string, scan *packs.ValueScan) valuePlan {
 	entropy := s.entropy
 	if s.exempt.Exempt(family, field) {
 		// Detector-scoped: the field stands down the heuristics and nothing else.
 		entropy = nil
 	}
-	return s.planValueWith(value, entropy, key, field, scan)
+	return s.planValueWith(value, entropy, secretKey, field, scan)
 }
 
 func (s *Scrubber) planValueWith(
 	value string,
 	entropy *entropyMatcher,
-	key string,
+	secretKey bool,
 	field FieldPath,
 	scan *packs.ValueScan,
 ) valuePlan {
-	// A key that names a secret takes the whole value, whatever shape the value has.
-	// An already-redacted value stays as it is, so a document the whole-value scan rewrote before
-	// its keys were walked keeps the rule that scan attributed.
-	if s.keyNamesSecret(key, value) {
+	// A key that names a secret takes the whole value, whatever its shape.
+	if secretKey {
 		return valuePlan{
 			spans:    []replacementSpan{{Start: 0, End: len(value), Replacement: Sentinel("key-name")}},
 			redacted: len(value),
@@ -419,27 +418,16 @@ func (s *Scrubber) planValueWith(
 		}
 	}
 
-	// A gate that did not fire means the matcher behind it cannot match.
-	seen := s.prefilter.Scan(value)
-	// The shared pass for rules with no keyword to gate on; lazy until one asks.
-	scan.Reset(value)
-
-	var patternSpans, heuristicSpans []Span
-	for _, p := range s.patterns {
-		if !seen.Has(p.gate) {
-			continue
-		}
-		patternSpans = append(patternSpans, p.m.MatchScannedIn(value, scan)...)
-	}
+	patternSpans := s.appendPatternSpans(nil, value, scan)
+	var heuristicSpans []Span
 	if entropy != nil {
 		heuristicSpans = entropy.Match(value)
 	}
 	if strings.IndexByte(value, '\\') >= 0 {
-		shadow, escapes := escapeShadow(value)
-		patternSpans = s.unionEscapeShadow(value, string(shadow), escapes, patternSpans, scan)
-		// A run can start at the `n` of `\n`; the lone `\` left behind would break encoded JSON.
-		for i := range heuristicSpans {
-			heuristicSpans[i].Start, heuristicSpans[i].End = escapes.snap(heuristicSpans[i].Start, heuristicSpans[i].End)
+		if shadow, escapes := escapeShadow(value); !escapes.empty() {
+			patternSpans = s.unionEscapeShadow(value, string(shadow), escapes, patternSpans, scan)
+			// A run can start at the `n` of `\n`; the lone `\` left behind would break encoded JSON.
+			escapes.snapAll(heuristicSpans)
 		}
 	}
 
@@ -482,6 +470,20 @@ func (s *Scrubber) planValueWith(
 	return plan
 }
 
+// appendPatternSpans appends what every pattern rule whose gate fires finds in value.
+func (s *Scrubber) appendPatternSpans(dst []Span, value string, scan *packs.ValueScan) []Span {
+	// A gate that did not fire means the matcher behind it cannot match.
+	seen := s.prefilter.Scan(value)
+	// The shared pass for rules with no keyword to gate on; lazy until one asks.
+	scan.Reset(value)
+	for _, p := range s.patterns {
+		if seen.Has(p.gate) {
+			dst = append(dst, p.m.MatchScannedIn(value, scan)...)
+		}
+	}
+	return dst
+}
+
 // spansKeyAndValue reports whether a keyValueRules rule matches the text of a document.
 func (s *Scrubber) spansKeyAndValue(doc string) bool {
 	if len(s.keyValue) == 0 {
@@ -496,36 +498,22 @@ func (s *Scrubber) spansKeyAndValue(doc string) bool {
 	return false
 }
 
+// keyNamesSecret skips a value already redacted, so the rule an earlier whole-value scan attributed stands.
 func (s *Scrubber) keyNamesSecret(key, value string) bool {
 	return key != "" && s.keyNames.MatchesKeyName(key) && value != "" && !isSentinel(value)
 }
 
-// unionEscapeShadow reruns the pattern rules over a same-length copy of the value in which each
-// JSON escape left in it (a string encoded twice) is non-word bytes, so the `n` of an escaped
-// newline no longer glues onto the token after it. Offsets map 1:1; every span is snapped
-// outward to whole escapes and a shadow span is merged into any original span it overlaps.
+// unionEscapeShadow merges the pattern hits on the escape shadow into spans, all snapped to whole escapes.
 func (s *Scrubber) unionEscapeShadow(value, shadow string, escapes escapeIndex, spans []Span, scan *packs.ValueScan) []Span {
-	if escapes.empty() {
-		return spans
-	}
-	// An original match can split an escape too: key-name captures the lone `\` of `=\"value\"`.
-	// One made of nothing but backslashes is residue, and the shadow finds the real value.
+	// A match of nothing but backslashes split an escape (key-name on `=\"value\"`); the shadow finds the value.
 	spans = slices.DeleteFunc(spans, func(sp Span) bool {
 		return strings.Trim(value[sp.Start:sp.End], `\`) == ""
 	})
-	for i := range spans {
-		spans[i].Start, spans[i].End = escapes.snap(spans[i].Start, spans[i].End)
-	}
-	seen := s.prefilter.Scan(shadow)
-	scan.Reset(shadow)
-	for _, p := range s.patterns {
-		if !seen.Has(p.gate) {
-			continue
-		}
-		for _, sp := range p.m.MatchScannedIn(shadow, scan) {
-			sp.Start, sp.End = escapes.snap(sp.Start, sp.End)
-			spans = unionSpan(spans, sp)
-		}
+	escapes.snapAll(spans)
+	found := s.appendPatternSpans(nil, shadow, scan)
+	escapes.snapAll(found)
+	for _, sp := range found {
+		spans = unionSpan(spans, sp)
 	}
 	return spans
 }
@@ -550,9 +538,7 @@ func unionSpan(spans []Span, sp Span) []Span {
 	}
 }
 
-// escapeIndex holds one bit per byte boundary of a value, set where a cut would split an escape
-// or separate two touching ones. Bits rather than spans keep an escape-dense value (a minified
-// file encoded twice) at a fraction of its own size.
+// escapeIndex has a bit per byte boundary where a cut would split an escape or separate two touching ones.
 type escapeIndex struct{ splits []uint64 }
 
 func newBitset(n int) []uint64      { return make([]uint64, n/64+1) }
@@ -573,50 +559,39 @@ func (x escapeIndex) snap(start, end int) (int, int) {
 	return start, end
 }
 
-// escapeShadow maps `\n \t \r \" \/ \uXXXX` to spaces followed by the escaped byte when that is
-// ASCII whitespace or punctuation, so `\"TOKEN\"=` still reads as a quoted name. `\\` keeps its
-// backslash and the pass repeats, which unwinds raw JSON text holding encoded JSON (`\\n`) one
-// level per pass; runs of backslashes halve each pass, so passes are logarithmic. Touching
-// escapes are one unit: splitting `\\` from the `\"` after it would break the inner level even
-// where the outer one stays valid.
+func (x escapeIndex) snapAll(spans []Span) {
+	for i := range spans {
+		spans[i].Start, spans[i].End = x.snap(spans[i].Start, spans[i].End)
+	}
+}
+
+// escapeShadow blanks each JSON escape of a twice-encoded string to its byte, so `\"TOKEN\"=` reads as
+// a quoted name; `\\` keeps its backslash for the next pass, one encoding level per pass.
 func escapeShadow(value string) ([]byte, escapeIndex) {
+	first := strings.IndexByte(value, '\\')
+	for first >= 0 {
+		if n, _ := escapeAt(value, first); n > 0 {
+			break
+		}
+		next := strings.IndexByte(value[first+1:], '\\')
+		if next < 0 {
+			return nil, escapeIndex{}
+		}
+		first += 1 + next
+	}
+	if first < 0 {
+		return nil, escapeIndex{}
+	}
 	shadow := []byte(value)
-	var splits, starts, ends []uint64
-	for again := true; again; {
+	splits, starts, ends := newBitset(len(shadow)), newBitset(len(shadow)), newBitset(len(shadow))
+	for again, from := true, first; again; from = 0 {
 		again = false
-		for i := 0; i+1 < len(shadow); i++ {
-			if shadow[i] != '\\' {
+		for i := from; i+1 < len(shadow); i++ {
+			n, last := escapeAt(shadow, i)
+			if n == 0 {
 				continue
 			}
-			var n int
-			var last byte
-			switch c := shadow[i+1]; c {
-			case 'n':
-				n, last = 2, '\n'
-			case 't':
-				n, last = 2, '\t'
-			case 'r':
-				n, last = 2, '\r'
-			case '"', '/':
-				n, last = 2, c
-			case '\\':
-				n, last, again = 2, '\\', true
-			case 'u':
-				r, ok := hex4(shadow, i+2)
-				if !ok {
-					continue
-				}
-				// Never a backslash, which would let a chain of escaped U+005C cost a pass per escape.
-				n, last = 6, ' '
-				if r < utf8.RuneSelf && !isAlnumByte(byte(r)) && r != '_' && r != '\\' && r > ' ' {
-					last = byte(r)
-				}
-			default:
-				continue
-			}
-			if splits == nil {
-				splits, starts, ends = newBitset(len(shadow)), newBitset(len(shadow)), newBitset(len(shadow))
-			}
+			again = again || last == '\\'
 			for j := i; j < i+n-1; j++ {
 				shadow[j] = ' '
 				setBit(splits, j+1)
@@ -627,33 +602,50 @@ func escapeShadow(value string) ([]byte, escapeIndex) {
 			i += n - 1
 		}
 	}
-	if splits == nil {
-		return nil, escapeIndex{}
-	}
+	// Touching escapes are one unit: splitting `\\` from the `\"` after it breaks the inner level.
 	for w := range splits {
 		splits[w] |= starts[w] & ends[w]
 	}
 	return shadow, escapeIndex{splits: splits}
 }
 
-func hex4(s []byte, at int) (rune, bool) {
+// escapeAt is the length of the escape at s[i] and the byte its shadow keeps; 0 when there is none.
+func escapeAt[T string | []byte](s T, i int) (int, byte) {
+	if s[i] != '\\' || i+1 >= len(s) {
+		return 0, 0
+	}
+	switch c := s[i+1]; c {
+	case 'n':
+		return 2, '\n'
+	case 't':
+		return 2, '\t'
+	case 'r':
+		return 2, '\r'
+	case '"', '/', '\\':
+		return 2, c
+	case 'u':
+		r, ok := hex4(s, i+2)
+		if !ok {
+			return 0, 0
+		}
+		// Never a backslash, which would let a chain of escaped U+005C cost a pass per escape.
+		if r < utf8.RuneSelf && !isAlnumByte(byte(r)) && r != '_' && r != '\\' && r > ' ' {
+			return 6, byte(r)
+		}
+		return 6, ' '
+	}
+	return 0, 0
+}
+
+func hex4[T string | []byte](s T, at int) (rune, bool) {
+	var b [2]byte
 	if at+4 > len(s) {
 		return 0, false
 	}
-	var r rune
-	for _, c := range s[at : at+4] {
-		switch {
-		case c >= '0' && c <= '9':
-			r = r<<4 | rune(c-'0')
-		case c >= 'a' && c <= 'f':
-			r = r<<4 | rune(c-'a'+10)
-		case c >= 'A' && c <= 'F':
-			r = r<<4 | rune(c-'A'+10)
-		default:
-			return 0, false
-		}
+	if _, err := hex.Decode(b[:], []byte(s[at:at+4])); err != nil {
+		return 0, false
 	}
-	return r, true
+	return rune(b[0])<<8 | rune(b[1]), true
 }
 
 // pathUserReplacementSpans finds username occurrences in the detector-rewritten value
