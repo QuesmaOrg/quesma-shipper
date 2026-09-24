@@ -155,7 +155,12 @@
             "properties": { "gather": { "const": "sidecar" } },
             "required": ["gather"]
           },
-          "then": { "required": ["emit", "cwd_probe"] }
+          "then": {
+            "required": ["emit"],
+            "if": { "properties": { "emit": { "const": "session_jsonl" } } },
+            "then": { "required": ["roots"] },
+            "else": { "required": ["cwd_probe"] }
+          }
         }
       ]
     },

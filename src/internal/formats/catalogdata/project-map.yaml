@@ -27,7 +27,7 @@ sources:
     artifact_class: context
     emit: git_project_map
     cwd_probe:
-      from: [claude-code-transcripts, codex-rollouts]
+      from: [claude-code-transcripts, codex-rollouts, pi-sessions, opencode-sessions, hermes-sessions]
       fields: ["cwd", "payload.cwd"]
       scan_bytes: 65536
     git_read:

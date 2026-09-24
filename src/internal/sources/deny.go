@@ -50,6 +50,14 @@ var CompiledDeny = []string{
 	"~/.codex/auth.json",
 	"~/.config/opencode/auth.json",
 	"~/.local/share/opencode/auth.json",
+	"**/auth.json",
+	"**/credentials.json",
+	"**/.credentials.json",
+	"~/.pi/agent/models.json",
+	"$PI_CODING_AGENT_DIR/models.json",
+	"~/.hermes/config.yaml",
+	"$HERMES_HOME/config.yaml",
+	"~/.hermes/profiles/*/config.yaml",
 }
 
 type List struct {

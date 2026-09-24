@@ -41,6 +41,11 @@ const (
 
 // Candidate is one discovered file or generated payload.
 type Candidate struct {
+	// CWD is available without opening a virtual database-backed transcript.
+	CWD string
+	// AlwaysLoad skips stat-only change detection for mutable database snapshots.
+	AlwaysLoad bool
+
 	// Path is absolute for files, or a stable name for generated content.
 	Path string
 

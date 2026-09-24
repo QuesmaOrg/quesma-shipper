@@ -1,0 +1,17 @@
+spec_version: 1
+family: pi
+display_name: Pi
+sources:
+  - id: pi-sessions
+    description: Pi session trees, including branches and tool results. Credentials and settings are excluded.
+    gather: file_glob
+    artifact_class: trajectory
+    roots:
+      - $PI_CODING_AGENT_SESSION_DIR
+      - $PI_CODING_AGENT_DIR/sessions
+      - ~/.pi/agent/sessions
+    include: ["**/*.jsonl"]
+    max_file_bytes: 67108864
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 65536

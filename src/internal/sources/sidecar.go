@@ -44,6 +44,9 @@ type ProjectRecord struct {
 
 func (p *Sidecar) Discover(req Request) (Discovery, error) {
 	src := req.Source
+	if src.Emit == "session_jsonl" {
+		return (sessionPrimitive{}).Discover(req)
+	}
 	d := Discovery{Health: AgentAbsent, Sniff: SniffOK}
 
 	probe := src.CWDProbe
@@ -59,7 +62,18 @@ func (p *Sidecar) Discover(req Request) (Discovery, error) {
 			continue
 		}
 		// The map exists to name repositories; not the ones nobody wants named.
-		found, _, _, _ := walkGlobs(other, req.Deny, req.Ignore)
+		var found []Candidate
+		if other.Gather == "sidecar" && other.Emit == "session_jsonl" {
+			inputReq := req
+			inputReq.Source = other
+			discovery, err := (sessionPrimitive{}).Discover(inputReq)
+			if err != nil {
+				return d, err
+			}
+			found = discovery.Candidates
+		} else {
+			found, _, _, _ = walkGlobs(other, req.Deny, req.Ignore)
+		}
 		if len(found) > 0 {
 			inputs[other.ID] = found
 		}
@@ -81,6 +95,13 @@ func (p *Sidecar) Discover(req Request) (Discovery, error) {
 	for sourceID, candidates := range inputs {
 		for _, c := range candidates {
 			projectDir := projectDirOf(c.RelPath)
+			cwd, ok := c.CWD, c.CWD != ""
+			if !ok {
+				cwd, ok = probeCWD(c.Path, probe)
+			}
+			if projectDir == "" && (sourceID == "pi-sessions" || sourceID == "opencode-sessions" || sourceID == "hermes-sessions") {
+				projectDir = cwd
+			}
 			if projectDir == "" || seen[projectDir] {
 				continue
 			}
@@ -94,7 +115,6 @@ func (p *Sidecar) Discover(req Request) (Discovery, error) {
 				SourceID:   sourceID,
 			}
 
-			cwd, ok := probeCWD(c.Path, probe)
 			if !ok {
 				rec.GaveUp = "no cwd field found in the head of the file"
 				records = append(records, rec)

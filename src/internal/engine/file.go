@@ -59,7 +59,7 @@ func (o Options) prepareFile(
 	// Cheap pre-filter on size and mtime only: mtime alone re-ships byte-identical files, so the
 	// content hash below stays the authority. A non-empty SourceHash marks a committed ship. A
 	// staged file changed within the recompute window is still read, for its enricher.
-	if seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
+	if !cand.AlwaysLoad && seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
 		!(staging && o.Now().Sub(cand.MTime) < recomputeWindow) {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "size and mtime unchanged"
