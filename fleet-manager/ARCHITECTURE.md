@@ -1,8 +1,9 @@
 # Architecture
 
-The repository's [CONSTITUTION.md](../CONSTITUTION.md) governs what this service assumes. This document governs how its code is arranged, and it is short for a
-reason: fleet-manager is one `package main` under `src/`, with no internal packages and no import
-graph to police. There is nothing here resembling the shipper's layering table.
+The repository's [CONSTITUTION.md](../CONSTITUTION.md) governs what this service assumes. This
+document governs how its code is arranged, and it is short for a reason: fleet-manager is one
+`package main` under `src/`, with no internal packages and no import graph to police. There is
+nothing here resembling the shipper's layering table.
 
 What it has instead is a small set of invariants that outrank any local design choice, each with a
 test that holds it.

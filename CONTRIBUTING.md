@@ -60,8 +60,8 @@ Golden tests pin output byte for byte. They are `src/e2e/golden_test.go`, the co
 under `src/conformance/`, and the wire fixtures that the contract tests import from the
 [shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) module. Fleet Manager's contract
 is pinned the same way, by `fleet-manager/src/protocol_test.go` and the same wire fixtures, and
-what its deployment templates may grant by `fleet-manager/src/terraform_test.go`. A golden diff is a claim
-that the output must change. Read the diff. Explain it in the pull request. Do not run with
+what its deployment templates may grant by `fleet-manager/src/terraform_test.go`. A golden diff is
+a claim that the output must change. Read the diff. Explain it in the pull request. Do not run with
 `-update` until a maintainer agrees.
 
 File formats, the wire protocol, configuration keys, and the object-key grammar are compatibility

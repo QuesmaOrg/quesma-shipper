@@ -6,8 +6,9 @@ the constitution of the whole system, client and control plane.
 
 ## Workflow and style
 
-The repository's [AGENTS.md](../AGENTS.md) covers both, for the client and for this service: draft PRs, comment density, when to simplify. Follow it rather than a
-copy that would drift from it. What follows is only what differs here.
+The repository's [AGENTS.md](../AGENTS.md) covers both, for the client and for this service: draft
+PRs, comment density, when to simplify. Follow it rather than a copy that would drift from it.
+What follows is only what differs here.
 
 ## Before opening a PR
 
