@@ -149,7 +149,7 @@ func (d *List) CheckRoot(root string) error {
 func (d *List) CheckIncludes(root string, includes []string) error {
 	fsys := os.DirFS(root)
 	for _, glob := range includes {
-		pattern := strings.TrimPrefix(filepath.ToSlash(glob), "/")
+		pattern := normalizeGlob(glob)
 		matches, err := doublestar.Glob(fsys, pattern)
 		if err != nil {
 			// A malformed glob is a config error in its own right.
