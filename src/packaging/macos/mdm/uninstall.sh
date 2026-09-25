@@ -34,6 +34,7 @@ printf '%s\n' "$users" | while read -r name uid; do
 	[ "$uid" -ge 500 ] || continue
 	target="gui/$uid/$label"
 	if /bin/launchctl print "$target" >/dev/null 2>&1; then
+		[ -e "$plist" ] || { printf 'Agent %s is loaded without its LaunchAgent; files left in place.\n' "$target" >&2; exit 1; }
 		home=$(/usr/bin/dscl /Search -read "/Users/$name" NFSHomeDirectory)
 		home=${home#NFSHomeDirectory: }
 		if [ -e "$home/Library/LaunchAgents/$label.plist" ] || [ -L "$home/Library/LaunchAgents/$label.plist" ]; then
@@ -41,7 +42,7 @@ printf '%s\n' "$users" | while read -r name uid; do
 			exit 1
 		fi
 		/bin/launchctl bootout "$target"
-		remaining=360
+		remaining=$(/usr/bin/plutil -extract ExitTimeOut raw -o - "$plist")
 		while /bin/launchctl print "$target" >/dev/null 2>&1; do
 			[ "$remaining" -gt 0 ] || { printf 'Agent %s is still loaded; files left in place.\n' "$target" >&2; exit 1; }
 			sleep 1
