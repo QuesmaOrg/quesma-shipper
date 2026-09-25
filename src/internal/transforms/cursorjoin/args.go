@@ -35,18 +35,76 @@ const (
 	evidencePositive
 )
 
-// argsEvidence weighs a transcript tool_use against a store tool call's recorded arguments.
-// Alongside the grade it returns the strength — how many values agreed — because two bubbles can
-// both grade positive and the one agreeing on more of the call is the call.
-func argsEvidence(input json.RawMessage, t *toolFormerData) (evidence, int) {
-	if len(input) == 0 {
-		return evidenceNeutral, 0
+// blockArgs is a transcript tool_use's input taken apart once per block, since every candidate
+// bubble in both scan directions is weighed against it.
+type blockArgs struct {
+	empty  bool
+	object bool // false leaves only containment of raw
+	raw    string
+	vals   []argValue
+}
+
+func newBlockArgs(input json.RawMessage) *blockArgs {
+	a := &blockArgs{empty: len(input) == 0, raw: string(input)}
+	if a.empty {
+		return a
 	}
+	var m map[string]any
+	if err := json.Unmarshal(input, &m); err == nil {
+		a.object = true
+		a.vals = collectArgValues(m, genericArgKeys, nil)
+	}
+	return a
+}
+
+// storedArgs is a tool call's recorded arguments taken apart once per conversation: the
+// look-behind and the repeat check weigh the same bubble against every later block.
+type storedArgs struct {
+	empty  bool
+	parsed bool
+	strong bool
+	set    map[string]bool
+	// The strong values with attribution stripped, and the whole unparsed text likewise.
+	strippedStrong map[string]bool
+	stripped       string
+}
+
+func newStoredArgs(t *toolFormerData) *storedArgs {
 	stored := strings.TrimSpace(t.RawArgs)
 	if stored == "" || stored == "{}" || stored == "null" {
 		stored = strings.TrimSpace(t.Params)
 	}
 	if stored == "" || stored == "{}" || stored == "null" {
+		return &storedArgs{empty: true}
+	}
+	s := &storedArgs{}
+	var vals []argValue
+	vals, s.parsed = argValues(stored)
+	s.set = make(map[string]bool, len(vals))
+	s.strippedStrong = map[string]bool{}
+	for _, sv := range vals {
+		s.set[sv.v] = true
+		if !sv.weak {
+			s.strong = true
+			s.strippedStrong[stripCursorAttribution(sv.v)] = true
+		}
+	}
+	// Attribution stripped up front: the transcript holds the model's intent, the store what
+	// actually ran, and an executed form scoring as contradiction bars the call's own bubble.
+	if !s.parsed {
+		s.stripped = stripCursorAttribution(stored)
+	}
+	return s
+}
+
+// argsEvidence weighs a transcript tool_use against a store tool call's recorded arguments.
+// Alongside the grade it returns the strength — how many values agreed — because two bubbles can
+// both grade positive and the one agreeing on more of the call is the call.
+func argsEvidence(in *blockArgs, s *storedArgs) (evidence, int) {
+	if in.empty {
+		return evidenceNeutral, 0
+	}
+	if s.empty {
 		// Current stores write rawArgs "{}" with empty params for most terminal commands.
 		return evidenceNeutral, 0
 	}
@@ -56,54 +114,35 @@ func argsEvidence(input json.RawMessage, t *toolFormerData) (evidence, int) {
 	// (glob_pattern/globPattern), so the keys cannot be paired up, and substring evidence
 	// matches unrelated calls — a glob of `**/*` sits inside `**/*.{md,go}`, a directory inside
 	// every path under it.
-	storedVals, parsed := argValues(stored)
-	if parsed && !slices.ContainsFunc(storedVals, func(sv argValue) bool { return !sv.weak }) {
+	parsed := s.parsed
+	if parsed && !s.strong {
 		// Nothing that could confirm a call, as errored calls are recorded. Position may
 		// still speak for the bubble.
 		return evidenceNeutral, 0
 	}
-	var m map[string]any
-	if err := json.Unmarshal(input, &m); err != nil {
+	if !in.object {
 		// The input is not an object; containment is all that is left.
-		if !parsed && strings.Contains(stripCursorAttribution(stored), string(input)) {
+		if !parsed && strings.Contains(s.stripped, in.raw) {
 			return evidencePositive, 1
 		}
 		return evidenceNegative, 0
 	}
 
-	storedSet := make(map[string]bool, len(storedVals))
-	for _, sv := range storedVals {
-		storedSet[sv.v] = true
-	}
-	// Attribution stripped up front: the transcript holds the model's intent, the store what
-	// actually ran, and an executed form scoring as contradiction bars the call's own bubble.
-	strippedStored := ""
-	if !parsed {
-		strippedStored = stripCursorAttribution(stored)
-	}
-
 	strongComparable, strongMatched := 0, 0
 	long := false
 	weakUnaccounted := false
-	for _, av := range collectArgValues(m, genericArgKeys, nil) {
+	for _, av := range in.vals {
 		if av.weak {
 			// Too short to confirm anything, but still separates two calls when it
 			// DISAGREES. Only against a parsed record: an unparsed one cannot be
 			// searched for a three-character token safely.
-			if parsed && !storedSet[av.v] {
+			if parsed && !s.set[av.v] {
 				weakUnaccounted = true
 			}
 			continue
 		}
 		strongComparable++
-		if storedSet[av.v] {
-			strongMatched++
-			long = long || len(av.v) >= longArgLen
-			continue
-		}
-		if slices.ContainsFunc(storedVals, func(sv argValue) bool {
-			return !sv.weak && stripCursorAttribution(sv.v) == av.v
-		}) {
+		if s.set[av.v] || s.strippedStrong[av.v] {
 			strongMatched++
 			long = long || len(av.v) >= longArgLen
 			continue
@@ -112,12 +151,12 @@ func argsEvidence(input json.RawMessage, t *toolFormerData) (evidence, int) {
 			// Older generations wrote a bare string, leaving only containment, gated to a
 			// length that cannot collide — and against the escaped form too, since a value
 			// with quotes or newlines appears escaped inside a string field holding JSON.
-			if strings.Contains(strippedStored, av.v) {
+			if strings.Contains(s.stripped, av.v) {
 				strongMatched++
 				long = true
 				continue
 			}
-			if e := jsonEscaped(av.v); e != av.v && strings.Contains(strippedStored, e) {
+			if e := jsonEscaped(av.v); e != av.v && strings.Contains(s.stripped, e) {
 				strongMatched++
 				long = true
 				continue
