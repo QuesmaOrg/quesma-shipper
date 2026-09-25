@@ -40,6 +40,11 @@ type jsonWalker struct {
 
 	edits []replacementSpan
 
+	// path is the dotted field path of the value being walked, built only when some field
+	// is exempt for this family.
+	path      []byte
+	trackPath bool
+
 	redacted int
 	hits     map[string]int
 }
@@ -49,6 +54,8 @@ func (w *jsonWalker) reset(s *Scrubber, family string, scan *packs.ValueScan, li
 	w.family = family
 	w.scan = scan
 	w.edits = w.edits[:0]
+	w.path = w.path[:0]
+	w.trackPath = !s.exempt.None(family)
 	w.redacted = 0
 	if w.hits == nil {
 		w.hits = map[string]int{}
@@ -65,7 +72,7 @@ func (w *jsonWalker) reset(s *Scrubber, family string, scan *packs.ValueScan, li
 }
 
 func (w *jsonWalker) walkLine() error {
-	if err := w.walk(0, "", ""); err != nil {
+	if err := w.walk(0, ""); err != nil {
 		return err
 	}
 	if _, err := w.dec.ReadToken(); errors.Is(err, io.EOF) {
@@ -76,27 +83,28 @@ func (w *jsonWalker) walkLine() error {
 	return errTrailingContent
 }
 
-func (w *jsonWalker) walk(depth int, key, path string) error {
+func (w *jsonWalker) walk(depth int, key string) error {
 	if depth > maxDepth {
 		return errTooDeep
 	}
 	switch w.dec.PeekKind() {
 	case '{':
-		return w.walkObject(depth, path)
+		return w.walkObject(depth)
 	case '[':
-		return w.walkArray(depth, path)
+		return w.walkArray(depth)
 	case '"':
-		return w.walkString(key, path)
+		return w.walkString(key)
 	default:
 		_, err := w.dec.ReadValue()
 		return err
 	}
 }
 
-func (w *jsonWalker) walkObject(depth int, path string) error {
+func (w *jsonWalker) walkObject(depth int) error {
 	if _, err := w.dec.ReadToken(); err != nil {
 		return err
 	}
+	parent := len(w.path)
 
 	for w.dec.PeekKind() != '}' {
 		raw, rawStart, key, err := w.readString()
@@ -104,43 +112,64 @@ func (w *jsonWalker) walkObject(depth int, path string) error {
 			return err
 		}
 
-		field := joinFieldPath(path, key)
-		plan := w.s.planValue(key, "", FieldPath(field), w.family, w.scan)
+		w.setField(parent, key)
+		plan := w.s.planValue(key, "", w.exempt(), w.scan)
 		w.addPlan(raw, rawStart, key, plan)
-		if len(plan.spans) > 0 {
-			field = joinFieldPath(path, plan.apply(key))
+		if len(plan.spans) > 0 && w.trackPath {
+			w.setField(parent, plan.apply(key))
 		}
-		if err := w.walk(depth+1, key, field); err != nil {
+		if err := w.walk(depth+1, key); err != nil {
 			return err
 		}
 	}
+	w.path = w.path[:parent]
 	_, err := w.dec.ReadToken()
 	return err
 }
 
-func (w *jsonWalker) walkArray(depth int, path string) error {
+func (w *jsonWalker) walkArray(depth int) error {
 	if _, err := w.dec.ReadToken(); err != nil {
 		return err
 	}
-	path += "[]"
+	parent := len(w.path)
+	if w.trackPath {
+		w.path = append(w.path, "[]"...)
+	}
 
 	for w.dec.PeekKind() != ']' {
-		if err := w.walk(depth+1, "", path); err != nil {
+		if err := w.walk(depth+1, ""); err != nil {
 			return err
 		}
 	}
+	w.path = w.path[:parent]
 	_, err := w.dec.ReadToken()
 	return err
 }
 
-func (w *jsonWalker) walkString(key, path string) error {
+func (w *jsonWalker) walkString(key string) error {
 	raw, rawStart, text, err := w.readString()
 	if err != nil {
 		return err
 	}
-	w.addPlan(raw, rawStart, text,
-		w.s.planValue(text, key, FieldPath(path), w.family, w.scan))
+	w.addPlan(raw, rawStart, text, w.s.planValue(text, key, w.exempt(), w.scan))
 	return nil
+}
+
+// setField replaces everything after the first parent bytes of path with child. An empty
+// parent adds no dot, even under an empty key: {"":{"b":…}} walks b as "b".
+func (w *jsonWalker) setField(parent int, child string) {
+	if !w.trackPath {
+		return
+	}
+	w.path = w.path[:parent]
+	if parent > 0 {
+		w.path = append(w.path, '.')
+	}
+	w.path = append(w.path, child...)
+}
+
+func (w *jsonWalker) exempt() bool {
+	return w.trackPath && w.s.exempt.Exempt(w.family, w.path)
 }
 
 func (w *jsonWalker) readString() (raw []byte, rawStart int, text string, err error) {
@@ -157,13 +186,6 @@ func (w *jsonWalker) readString() (raw []byte, rawStart int, text string, err er
 	}
 	decoded, _ := jsontext.AppendUnquote(nil, raw)
 	return raw, int(w.dec.InputOffset()) - len(raw), string(decoded), nil
-}
-
-func joinFieldPath(parent, child string) string {
-	if parent == "" {
-		return child
-	}
-	return parent + "." + child
 }
 
 func (w *jsonWalker) addPlan(raw []byte, rawStart int, decoded string, plan valuePlan) {

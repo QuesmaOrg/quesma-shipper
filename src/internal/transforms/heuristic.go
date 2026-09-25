@@ -386,12 +386,36 @@ func (m *keyNameMatcher) MatchesKeyName(key string) bool {
 	if matchesSecretKeyName(key) {
 		return true
 	}
-	// Configured environment names apply as written to field names too.
-	upper := strings.ToUpper(key)
+	// Configured environment names apply as written to field names too. Unicode case mapping
+	// can change byte length (ß, ﬀ), so only a non-ASCII key is uppercased whole.
+	folded := key
+	if !isASCII(key) {
+		folded = strings.ToUpper(key)
+	}
 	for _, n := range m.names {
-		if n.suffix && strings.HasSuffix(upper, n.upper) || !n.suffix && upper == n.upper {
+		if n.suffix && len(folded) >= len(n.upper) &&
+			equalUpperASCII(folded[len(folded)-len(n.upper):], n.upper) ||
+			!n.suffix && equalUpperASCII(folded, n.upper) {
 			return true
 		}
 	}
 	return false
+}
+
+// equalUpperASCII reports whether s equals upper once its ASCII lowercase letters are
+// uppercased, the same fold strings.ToUpper applies to ASCII.
+func equalUpperASCII(s, upper string) bool {
+	if len(s) != len(upper) {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if isLower(c) {
+			c -= 'a' - 'A'
+		}
+		if c != upper[i] {
+			return false
+		}
+	}
+	return true
 }

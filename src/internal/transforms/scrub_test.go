@@ -319,6 +319,46 @@ func TestDeclaredOpaqueBinaryPayloadSurvivesTheEntropyBackstop(t *testing.T) {
 	}
 }
 
+// Exemption paths keep their join rules at the corners: an empty parent adds no dot, arrays
+// nest without one, and a member key the ladder rewrote is matched by its rewritten spelling.
+func TestExemptPathsJoinAtTheCorners(t *testing.T) {
+	blob := pseudoRandomHex(t, 200)
+	for _, tc := range []struct {
+		spec     map[string][]string
+		family   string
+		record   string
+		survives bool
+	}{
+		{map[string][]string{"x": {"b"}}, "x", `{"":{"b":V}}`, true},
+		{map[string][]string{"x": {".b"}}, "x", `{"":{"b":V}}`, false},
+		{map[string][]string{"x": {""}}, "x", `{"":V}`, true},
+		{map[string][]string{"x": {"a."}}, "x", `{"a":{"":V}}`, true},
+		{map[string][]string{"x": {"[][]"}}, "x", `[[V]]`, true},
+		{map[string][]string{"x": {"[].k"}}, "x", `[1,{"k":V}]`, true},
+		{map[string][]string{"x": {"a[][].k"}}, "x", `{"a":[[{"k":V}]]}`, true},
+		{map[string][]string{"x": {"a.k"}}, "x", `{"a":{"z":1},"a":{"k":V}}`, true},
+		{map[string][]string{"x": {"k"}}, "x", `{"a":{"z":{}},"b":[[]],"k":V}`, true},
+		{map[string][]string{"x": {"__USER__.k"}}, "x", `{"jane":{"k":V}}`, true},
+		{map[string][]string{"x": {"jane.k"}}, "x", `{"jane":{"k":V}}`, false},
+		{map[string][]string{"*": {"a.k"}}, "x", `{"a":{"k":V}}`, true},
+		{map[string][]string{"y": {"a.k"}}, "x", `{"a":{"k":V}}`, false},
+		{map[string][]string{}, "x", `{"a":{"k":V}}`, false},
+	} {
+		cfg := transforms.DefaultConfig()
+		cfg.Exemptions = tc.spec
+		cfg.Username = "jane"
+		s, err := transforms.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		line := strings.Replace(tc.record, "V", `"`+blob+`"`, 1)
+		res := scrubJSONL(t, s, tc.family, line+"\n")
+		if got := strings.Contains(string(res.Out), blob); got != tc.survives {
+			t.Errorf("%v on %s: survived = %v, want %v:\n%s", tc.spec, tc.record, got, tc.survives, res.Out)
+		}
+	}
+}
+
 // The backstop is blind to a long blob with repeating structure, however long it runs:
 // it detects random-looking secrets, not binary, which is why the pattern packs stay broad.
 func TestEntropyBackstopIsBlindToRepeatingStructure(t *testing.T) {
