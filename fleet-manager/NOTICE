@@ -1,0 +1,68 @@
+Quesma Fleet Manager
+Copyright 2026 Quesma Inc.
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+Quesma, Quesma Fleet Manager, and the Quesma logo are trademarks of Quesma Inc.
+The license does not grant trademark rights. See the trademark policy:
+https://github.com/QuesmaOrg/quesma-shipper/blob/main/TRADEMARKS.md
+
+This product bundles third-party software. Every dependency's license text is kept in
+third_party/licenses/, and third_party/licenses.csv lists each package and its license.
+
+The administration UI embeds two typefaces, each licensed under the SIL Open Font License 1.1.
+Their license texts travel beside them:
+
+  Fragment Mono        src/admin-ui/fonts/fragment-mono-OFL.txt
+  Schibsted Grotesk    src/admin-ui/fonts/schibsted-grotesk-OFL.txt
+
+src/admin-ui/quesma-logo.png and src/admin-ui/favicon.svg are the Quesma logo, a Quesma trademark,
+and are not licensed under Apache-2.0.
+
+The following NOTICE files are reproduced as required by their Apache-2.0 licenses.
+
+------------------------------------------------------------------------
+github.com/aws/aws-sdk-go-v2
+------------------------------------------------------------------------
+AWS SDK for Go
+Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+Copyright 2014-2015 Stripe, Inc.
+
+------------------------------------------------------------------------
+github.com/aws/smithy-go
+------------------------------------------------------------------------
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+------------------------------------------------------------------------
+google.golang.org/grpc
+------------------------------------------------------------------------
+Copyright 2014 gRPC authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+------------------------------------------------------------------------
+gopkg.in/yaml.v3
+------------------------------------------------------------------------
+Copyright 2011-2016 Canonical Ltd.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.

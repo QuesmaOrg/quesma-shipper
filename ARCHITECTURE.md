@@ -2,7 +2,8 @@
 
 This document describes the module's shape and the reasoning behind it. It is intent,
 written for humans; the placement rules below are conventions to follow in review, not
-checks a tool runs.
+checks a tool runs. It covers the shipper; the control plane beside it has its own, in
+[fleet-manager/ARCHITECTURE.md](fleet-manager/ARCHITECTURE.md).
 
 ## Shape
 
@@ -43,6 +44,8 @@ quesma-shipper/
       formats/            the shared vocabulary: local-contract schemas, the model types,
                           the object-key naming grammar (+ its conformance vectors)
         catalogdata/      the embedded source-catalog YAML
+  fleet-manager/          the control plane: a separate Go module, one package under src/,
+                          with its own Makefile, ARCHITECTURE.md and release line
 ```
 
 Paths in this document are relative to the repository root. The Go module begins at `src/`,

@@ -1,0 +1,1349 @@
+/* Fleet Manager administration UI.
+
+   The visual language is the one quesma.com uses: paper surfaces, ink rules,
+   square corners, Schibsted Grotesk throughout, and vermilion reserved
+   for the accent that carries weight. Token names and values are copied from
+   the website's design-system/theme.css so the two stay recognisably the same
+   product; keep them in sync when that file changes.
+
+   Everything here is self-hosted. The admin UI ships inside the binary and
+   loads no third-party asset, which is what lets its Content-Security-Policy
+   stay at default-src 'none'. */
+
+@font-face {
+  font-family: 'Schibsted Grotesk';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('fonts/schibsted-grotesk-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Schibsted Grotesk';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('fonts/schibsted-grotesk-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  color-scheme: light;
+
+  --font-sans: 'Schibsted Grotesk', sans-serif;
+
+  /* Quesma palette. */
+  --paper: #f2eee5;
+  --paper-bright: #fbf9f4;
+  --paper-deep: #e5ded1;
+  --ink: #171411;
+  --graphite: #514c45;
+  --hairline: #c7c7bc;
+  --rule: color-mix(in srgb, #747b6b 34%, #f2eee5);
+  --vermilion: #b9523c;
+  --vermilion-deep: #7d3529;
+  --sulphur: #d3b64f;
+  --sulphur-soft: #e8dca7;
+  --sage: #747b6b;
+  --saving: #2b6d43;
+
+  /* Roles, so a rule reads as its purpose rather than as a colour. */
+  --surface: var(--paper-bright);
+  --surface-sunken: var(--paper-deep);
+  --edge: var(--ink);
+  --edge-faint: var(--rule);
+  --accent: var(--vermilion);
+  --highlight: color-mix(in srgb, var(--sulphur) 16%, transparent);
+
+  font: 400 1rem/1.5 var(--font-sans);
+  font-synthesis: none;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100svh;
+  flex-direction: column;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--vermilion) 18%, transparent);
+}
+
+:focus-visible {
+  outline: 3px solid var(--vermilion);
+  outline-offset: 2px;
+}
+
+/* Typography roles */
+
+h1,
+h2,
+h3,
+legend {
+  font-weight: 560;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: clamp(2.1rem, 3.4vw, 3rem);
+  line-height: 1;
+  margin: 0 0 1rem;
+}
+
+h2 {
+  font-size: clamp(1.4rem, 2vw, 1.85rem);
+  line-height: 1.05;
+  margin: 0;
+}
+
+p {
+  color: var(--graphite);
+  margin: 0 0 1rem;
+  max-width: 68ch;
+}
+
+p:last-child {
+  margin-bottom: 0;
+}
+
+.eyebrow {
+  color: var(--graphite);
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  margin: 0 0 0.85rem;
+  text-transform: uppercase;
+}
+
+.muted {
+  color: var(--graphite);
+}
+
+code {
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 0.86em;
+  word-break: break-word;
+}
+
+/* Shell: an ink masthead and footer bracket the paper working area, the same
+   framing the website uses. */
+
+.masthead {
+  position: sticky;
+  z-index: 40;
+  top: 0;
+  border-bottom: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper-bright);
+}
+
+.masthead__inner {
+  display: flex;
+  flex-wrap: wrap;
+  min-height: 4.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  padding-block: 0.5rem;
+}
+
+.shell-container {
+  width: 100%;
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 3vw, 2rem);
+}
+
+.brand {
+  display: block;
+  width: auto;
+  height: 1.9rem;
+  flex: none;
+}
+
+#home {
+  display: inline-flex;
+  flex: none;
+}
+
+.masthead__brand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.masthead__label {
+  border-left: 1px solid color-mix(in srgb, var(--paper-bright) 46%, transparent);
+  padding: 0 0 0 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.organization-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  min-width: 0;
+}
+
+.organization-controls button {
+  white-space: nowrap;
+}
+
+.select {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.select::after {
+  position: absolute;
+  top: 50%;
+  right: 0.9rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid var(--sulphur);
+  border-bottom: 1.5px solid var(--sulphur);
+  content: '';
+  margin-top: -0.3rem;
+  pointer-events: none;
+  transform: rotate(45deg);
+}
+
+#org-select {
+  max-width: 17rem;
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--paper-bright) 46%, transparent);
+  border-radius: 0;
+  background: transparent;
+  color: var(--paper-bright);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 620;
+  min-height: 2.5rem;
+  padding: 0.35rem 2.25rem 0.35rem 0.85rem;
+  text-overflow: ellipsis;
+}
+
+#org-select:hover {
+  border-color: var(--sulphur);
+}
+
+#org-select option {
+  background: var(--paper-bright);
+  color: var(--ink);
+}
+
+/* Keep native selection and keyboard behavior, with a picker styled by the page. */
+@supports (appearance: base-select) {
+  #org-select,
+  #org-select::picker(select) {
+    appearance: base-select;
+  }
+
+  #org-select::picker-icon {
+    display: none;
+  }
+
+  #org-select::picker(select) {
+    border: 1px solid var(--ink);
+    border-radius: 0;
+    background: var(--paper-bright);
+    color: var(--ink);
+    box-shadow: 0.3rem 0.3rem 0 var(--vermilion);
+    font: 400 1rem/1.5 var(--font-sans);
+    margin-block: 0.4rem;
+    padding: 0.3rem;
+    min-width: anchor-size(width);
+    max-height: min(22rem, 60vh);
+  }
+
+  #org-select option {
+    min-height: 2.75rem;
+    gap: 0.65rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+  }
+
+  #org-select option:checked {
+    background: var(--paper-deep);
+  }
+
+  #org-select option:hover,
+  #org-select option:focus-visible {
+    background: var(--sulphur-soft);
+    outline-offset: -3px;
+  }
+
+  #org-select option::checkmark {
+    display: none;
+  }
+}
+
+main {
+  width: 100%;
+  max-width: 80rem;
+  flex: 1;
+  margin: 0 auto;
+  padding: clamp(1.75rem, 4vw, 3rem) clamp(1rem, 3vw, 2rem) clamp(3rem, 6vw, 5rem);
+}
+
+/* Surfaces */
+
+.card {
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  padding: clamp(1.25rem, 2.6vw, 2rem);
+}
+
+.section-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.25rem;
+  margin-bottom: 1.75rem;
+}
+
+.section-title p {
+  margin: 0.5rem 0 0;
+  max-width: none;
+}
+
+.section-title > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.section-title > button,
+.section-title .config-head {
+  flex: none;
+}
+
+.config-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+#config-time {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-align: right;
+}
+
+/* Sign-in: one panel centered in the space below the masthead. */
+
+main:has(.entry:not(.hidden)) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-block: 2rem;
+}
+
+.entry {
+  width: 100%;
+  max-width: 34rem;
+}
+
+.entry__panel {
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  box-shadow: 0.7rem 0.7rem 0 var(--vermilion);
+  color: var(--paper-bright);
+  margin: 0;
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+}
+
+.entry__panel h1 {
+  font-size: clamp(1.8rem, 3vw, 2.25rem);
+  line-height: 1.1;
+  margin: 0;
+}
+
+.entry__panel p {
+  color: color-mix(in srgb, var(--paper-bright) 72%, transparent);
+  margin: 0;
+}
+
+.entry__panel label {
+  color: var(--paper-bright);
+}
+
+.entry__panel input {
+  border-color: var(--paper-bright);
+}
+
+.entry__panel button {
+  border-color: var(--paper-bright);
+  background: transparent;
+  color: var(--paper-bright);
+}
+
+.entry__panel button:hover {
+  background: var(--paper-bright);
+  color: var(--ink);
+}
+
+.narrow {
+  max-width: 46rem;
+  margin-inline: auto;
+}
+
+/* Ledger tabs. They sit on the edge of the panel they open, so the active tab
+   reads as the front of the file rather than as a highlighted pill. */
+
+nav {
+  display: flex;
+  overflow-x: auto;
+  gap: 0;
+  margin-bottom: -1px;
+  scrollbar-width: thin;
+}
+
+nav button {
+  flex: none;
+  border: 1px solid var(--ink);
+  border-bottom-color: var(--ink);
+  background: transparent;
+  color: var(--graphite);
+  font-size: 0.85rem;
+  font-weight: 680;
+  letter-spacing: normal;
+  margin-right: -1px;
+  min-height: 2.75rem;
+  padding: 0.6rem 1.15rem;
+}
+
+nav button:hover {
+  background: var(--sulphur-soft);
+  color: var(--ink);
+}
+
+nav button.active {
+  border-bottom-color: var(--surface);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: inset 0 3px 0 var(--vermilion);
+}
+
+/* Forms */
+
+form {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.config-form {
+  --recipient-inset: 1.25rem;
+  --recipient-action-width: 5.5rem;
+  --recipient-action-gap: 0.5rem;
+  max-width: 52rem;
+}
+
+.config-form > label:has(> input:is([name="slug"], [name="display_name"])) {
+  padding-right: calc(var(--recipient-inset) + var(--recipient-action-width) + var(--recipient-action-gap));
+}
+
+label {
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+label span {
+  color: var(--graphite);
+  font-weight: 400;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  border: 1px solid var(--ink);
+  background: var(--paper-bright);
+  color: var(--ink);
+  font: inherit;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.75rem;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--graphite) 62%, transparent);
+}
+
+input:read-only,
+textarea:read-only {
+  border-color: var(--hairline);
+  background: var(--paper-deep);
+  color: var(--graphite);
+  cursor: default;
+}
+
+textarea {
+  min-height: 8rem;
+  resize: vertical;
+}
+
+.code,
+pre {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-weight: 500;
+}
+
+.check input {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+  min-height: 0;
+  accent-color: var(--vermilion);
+  margin: 0;
+}
+
+.etl-fieldset {
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.etl-fieldset legend {
+  padding: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: normal;
+}
+
+.etl-fieldset .check {
+  align-items: flex-start;
+  max-width: calc(68ch + 1.75rem);
+  margin-top: 0.45rem;
+  font-size: 0.85rem;
+}
+
+.etl-fieldset .check input {
+  margin-top: 0.1rem;
+}
+
+.field-note {
+  color: var(--graphite);
+  font-size: 0.85rem;
+  margin: -0.85rem 0 0 1.75rem;
+  max-width: 68ch;
+}
+
+.recipient-fieldset {
+  position: relative;
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0 0 0 var(--recipient-inset);
+}
+
+.recipient-fieldset::before {
+  position: absolute;
+  inset: -1.575rem auto 0 0;
+  width: 2px;
+  background: var(--sulphur);
+  content: '';
+}
+
+.recipient-fieldset legend {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  padding: 0;
+}
+
+.recipient-fieldset > p {
+  margin: 0.4rem 0 0.75rem;
+}
+
+.recipient-help {
+  font-size: 0.85rem;
+}
+
+.keygen-commands {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.keygen-commands pre {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  margin: 0;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.keygen-commands code {
+  font-size: inherit;
+}
+
+.keygen-commands .copy-icon {
+  flex: none;
+  width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0.6rem;
+}
+
+.copy-icon svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+}
+
+.recipient-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.recipient-row {
+  display: grid;
+  align-items: center;
+  gap: var(--recipient-action-gap);
+  grid-template-columns: minmax(0, 1fr) var(--recipient-action-width);
+}
+
+.recipient-row input {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+}
+
+/* Quesma's own recipient is shown, not authored: it stays visually quiet even
+   while the rest of the form is unlocked. */
+.quesma-recipient-row input {
+  border-color: var(--hairline);
+  background: var(--paper-deep);
+  color: var(--graphite);
+}
+
+.add-recipient {
+  justify-self: start;
+  margin-top: 0.75rem;
+}
+
+.edit-warning {
+  border: 1px solid var(--vermilion);
+  background: color-mix(in srgb, var(--vermilion) 10%, var(--paper-bright));
+  color: var(--vermilion-deep);
+  font-size: 0.875rem;
+  margin: 0;
+  max-width: none;
+  padding: 0.85rem 1rem;
+}
+
+.config-form.locked .edit-warning {
+  display: none;
+}
+
+/* Buttons. Ink is the commitment, outline is the alternative, and vermilion is
+   only ever the destructive one. */
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper-bright);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 680;
+  min-height: 2.75rem;
+  padding: 0.6rem 1.15rem;
+  text-align: center;
+  transition:
+    background-color 160ms ease-out,
+    color 160ms ease-out,
+    border-color 160ms ease-out;
+}
+
+button:hover {
+  border-color: var(--vermilion);
+  background: var(--vermilion);
+  color: var(--paper-bright);
+}
+
+button:disabled {
+  border-color: var(--hairline);
+  background: var(--paper-deep);
+  color: color-mix(in srgb, var(--graphite) 60%, transparent);
+  cursor: not-allowed;
+}
+
+.quiet {
+  background: transparent;
+  color: var(--ink);
+}
+
+.quiet:hover {
+  border-color: var(--ink);
+  background: var(--sulphur);
+  color: var(--ink);
+}
+
+.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: color-mix(in srgb, var(--paper-bright) 82%, transparent);
+  font-weight: 620;
+  padding-inline: 0.5rem;
+}
+
+.ghost:hover {
+  border-color: transparent;
+  background: transparent;
+  color: var(--sulphur);
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+
+.masthead .quiet {
+  border-color: color-mix(in srgb, var(--paper-bright) 46%, transparent);
+  color: var(--paper-bright);
+  min-height: 2.5rem;
+}
+
+.masthead .quiet:hover {
+  border-color: var(--sulphur);
+  background: var(--sulphur);
+  color: var(--ink);
+}
+
+#logout {
+  border-color: var(--vermilion);
+  background: var(--vermilion);
+  color: var(--paper-bright);
+}
+
+#logout:hover {
+  border-color: var(--vermilion-deep);
+  background: var(--vermilion-deep);
+}
+
+.danger {
+  border-color: transparent;
+  background: transparent;
+  color: var(--vermilion-deep);
+  min-height: 2.25rem;
+  padding: 0.3rem 0.6rem;
+}
+
+.danger:hover {
+  border-color: var(--vermilion);
+  background: var(--vermilion);
+  color: var(--paper-bright);
+}
+
+.danger:disabled {
+  border-color: transparent;
+  background: transparent;
+  color: color-mix(in srgb, var(--graphite) 55%, transparent);
+}
+
+.danger-solid {
+  border-color: var(--vermilion);
+  background: var(--vermilion);
+  color: var(--paper-bright);
+}
+
+.danger-solid:hover {
+  border-color: var(--vermilion-deep);
+  background: var(--vermilion-deep);
+}
+
+td .quiet,
+td .danger-solid {
+  min-height: 2.25rem;
+  padding: 0.3rem 0.7rem;
+  vertical-align: middle;
+}
+
+td > button + button {
+  margin-left: 0.5rem;
+}
+
+.close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  border-color: transparent;
+  background: transparent;
+  color: var(--graphite);
+  font-size: 1.4rem;
+  line-height: 1;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.close:hover {
+  border-color: transparent;
+  background: transparent;
+  color: var(--vermilion);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+}
+
+/* Tables. The fleet is the evidence, so the rows are ruled like a ledger and
+   nothing decorates them. */
+
+.table-wrap {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  /* The two solid panes ride with the content and hide the shadow beneath them
+     when there is nothing left to scroll to on that side. */
+  background:
+    linear-gradient(to right, var(--surface) 60%, transparent) left center,
+    linear-gradient(to left, var(--surface) 60%, transparent) right center,
+    radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--ink) 20%, transparent), transparent) left center,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--ink) 20%, transparent), transparent) right center;
+  background-attachment: local, local, scroll, scroll;
+  background-repeat: no-repeat;
+  background-size:
+    2.5rem 100%,
+    2.5rem 100%,
+    0.6rem 100%,
+    0.6rem 100%;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--edge-faint);
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child {
+  padding-left: 0;
+}
+
+th {
+  border-bottom: 1px solid var(--ink);
+  color: var(--graphite);
+  font-size: 0.72rem;
+  font-weight: 620;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  vertical-align: bottom;
+}
+
+td {
+  font-size: 0.9rem;
+}
+
+.table-wrap tbody > tr {
+  height: 3.5rem;
+}
+
+tbody tr:hover {
+  background: var(--highlight);
+}
+
+.table-empty {
+  max-width: none;
+  margin: 0;
+  padding: 2rem 1rem;
+  border-bottom: 1px solid var(--edge-faint);
+  color: var(--graphite);
+  text-align: center;
+}
+
+/* Status. Colour supports the label; it never replaces it. */
+
+.pill {
+  display: inline-block;
+  min-width: 6.25rem;
+  border: 1px solid var(--sage);
+  background: color-mix(in srgb, var(--sage) 12%, transparent);
+  color: var(--graphite);
+  font-size: 0.7rem;
+  font-weight: 620;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.5rem;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.pill--active {
+  border-color: var(--saving);
+  background: color-mix(in srgb, var(--saving) 10%, transparent);
+  color: var(--saving);
+}
+
+.pill--pending,
+.pill--reserved {
+  border-color: color-mix(in srgb, var(--sulphur) 80%, var(--ink));
+  background: color-mix(in srgb, var(--sulphur) 22%, transparent);
+  color: var(--vermilion-deep);
+}
+
+.pill--revoked,
+.pill.revoked {
+  border-color: var(--vermilion);
+  background: color-mix(in srgb, var(--vermilion) 12%, transparent);
+  color: var(--vermilion-deep);
+}
+
+/* Hints */
+
+.hint {
+  position: relative;
+  top: -0.075em;
+  display: inline-block;
+  margin-left: 0.35rem;
+  vertical-align: middle;
+}
+
+.hint-mark {
+  display: inline-flex;
+  width: 1.05rem;
+  height: 1.05rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--graphite);
+  cursor: help;
+  font-size: 0.68rem;
+  font-weight: 620;
+  letter-spacing: normal;
+  line-height: 1;
+  min-height: 0;
+  padding: 0;
+}
+
+.hint-mark:hover {
+  border-color: var(--ink);
+  background: var(--sulphur);
+  color: var(--ink);
+}
+
+.hint-body {
+  position: fixed;
+  z-index: 30;
+  inset: auto;
+  width: min(22rem, 70vw);
+  margin: 0;
+  border: 1px solid var(--ink);
+  background: var(--paper-bright);
+  box-shadow: 0.35rem 0.35rem 0 var(--vermilion);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: 1.5;
+  padding: 0.9rem 1rem;
+  text-transform: none;
+  white-space: normal;
+}
+
+.hint-body dl {
+  display: grid;
+  gap: 0.4rem 0.9rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  margin: 0;
+}
+
+.hint-body dt {
+  font-weight: 680;
+}
+
+.hint-body dd {
+  color: var(--graphite);
+  margin: 0;
+}
+
+/* Enrollment instructions */
+
+.enrollment-help {
+  display: grid;
+  gap: 0.6rem;
+  border: 1px solid var(--edge-faint);
+  background: var(--paper);
+  font-size: 0.875rem;
+  margin-top: 1.75rem;
+  padding: 1.1rem 1.25rem;
+}
+
+.enrollment-help p {
+  margin: 0;
+}
+
+.enrollment-help p:first-child {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+pre {
+  border: 1px solid var(--hairline);
+  background: var(--paper-bright);
+  margin: 0;
+  overflow-x: auto;
+  padding: 0.85rem 1rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Dialogs */
+
+dialog {
+  width: min(38rem, calc(100% - 2rem));
+  border: 1px solid var(--ink);
+  background: var(--paper-bright);
+  box-shadow: 0.75rem 0.75rem 0 var(--vermilion);
+  color: var(--ink);
+  padding: clamp(1.5rem, 3vw, 2rem);
+}
+
+dialog::backdrop {
+  background: color-mix(in srgb, var(--ink) 62%, transparent);
+}
+
+dialog h2 {
+  margin-bottom: 0.75rem;
+  padding-right: 2rem;
+}
+
+dialog form {
+  margin: 0;
+}
+
+dialog label {
+  margin-top: 0.5rem;
+}
+
+#secret-dialog pre,
+#enroll-command,
+#secret {
+  border-color: var(--ink);
+  background: var(--paper);
+}
+
+/* The expiry editor uses the same controls as the rest of the form. */
+.expiry-picker {
+  border: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.expiry-picker legend {
+  padding: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: normal;
+}
+
+.expiry-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8rem;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.expiry-fields label {
+  display: block;
+  margin: 0;
+}
+
+.expiry-fields label span {
+  font-size: 0.75rem;
+}
+
+.expiry-fields input {
+  display: block;
+  min-width: 0;
+  font-size: 1rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.expiry-date-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.75rem;
+  gap: 0.5rem;
+}
+
+.expiry-date-control,
+.expiry-fields label > input {
+  margin-top: 0.45rem;
+}
+
+.calendar-toggle {
+  padding: 0.6rem;
+}
+
+.calendar-toggle svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.expiry-zone {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+}
+
+.expiry-calendar {
+  position: fixed;
+  inset: auto;
+  width: 24rem;
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100svh - 1rem);
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  box-shadow: 0.35rem 0.35rem 0 var(--vermilion);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.calendar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.calendar-heading button {
+  width: 2.75rem;
+  padding: 0.25rem;
+  font-size: 1.5rem;
+}
+
+.calendar-grid {
+  table-layout: fixed;
+}
+
+.calendar-grid th,
+.calendar-grid td {
+  border: 0;
+  padding: 0.1rem;
+  text-align: center;
+  white-space: normal;
+}
+
+.calendar-grid th {
+  padding-block: 0.4rem;
+  font-size: 0.8rem;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.calendar-grid tbody tr:hover {
+  background: transparent;
+}
+
+.calendar-grid button {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.2rem;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.calendar-grid .calendar-adjacent {
+  color: var(--graphite);
+  opacity: 0.65;
+}
+
+.calendar-grid button[aria-current="date"] {
+  border-color: var(--vermilion);
+}
+
+.calendar-grid td[aria-selected="true"] button {
+  background: var(--vermilion);
+  color: var(--paper-bright);
+  opacity: 1;
+}
+
+.calendar-grid button:hover {
+  background: var(--sulphur-soft);
+  color: var(--ink);
+}
+
+.calendar-grid button:focus-visible {
+  outline-offset: -3px;
+}
+
+.calendar-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 480px) {
+  .expiry-fields {
+    grid-template-columns: 1fr;
+  }
+
+  #expires-time {
+    max-width: 9rem;
+  }
+
+  .expiry-calendar {
+    padding: 0.4rem;
+  }
+}
+
+/* Toast */
+
+#toast {
+  position: fixed;
+  z-index: 60;
+  right: clamp(1rem, 3vw, 2rem);
+  bottom: clamp(1rem, 3vw, 2rem);
+  max-width: 24rem;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  box-shadow: 0.35rem 0.35rem 0 var(--sulphur);
+  color: var(--paper-bright);
+  font-size: 0.9rem;
+  opacity: 0;
+  padding: 0.85rem 1.1rem;
+  pointer-events: none;
+  transform: translateY(0.5rem);
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms ease-out;
+}
+
+#toast.show {
+  opacity: 1;
+  transform: none;
+}
+
+/* Utilities */
+
+.hidden {
+  display: none !important;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  border: 0 !important;
+  clip: rect(0, 0, 0, 0) !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  white-space: nowrap !important;
+}
+
+/* Responsive */
+
+@media (max-width: 900px) {
+  .entry__panel {
+    box-shadow: 0.45rem 0.45rem 0 var(--vermilion);
+  }
+}
+
+@media (max-width: 720px) {
+  .masthead__inner {
+    min-height: 3.5rem;
+    gap: 0.5rem 0.75rem;
+  }
+
+  .brand {
+    height: 1.5rem;
+  }
+
+  #org-select {
+    max-width: 9.5rem;
+  }
+
+  .section-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .config-head {
+    flex-wrap: wrap;
+  }
+
+  #config-time {
+    text-align: left;
+  }
+
+  .actions {
+    justify-content: stretch;
+  }
+
+  .actions button {
+    flex: 1 1 10rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

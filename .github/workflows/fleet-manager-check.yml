@@ -1,0 +1,56 @@
+# The commit gate for fleet-manager/, the control plane. Its own workflow rather than a job in
+# trajectory-shipper.yml: the two components share a repository and nothing else -- separate Go
+# modules, Makefiles and release lines -- so a failure here names the component it belongs to.
+name: fleet-manager-check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "fleet-manager/**"
+      - ".github/workflows/fleet-manager-check.yml"
+  # Required checks must be reported for every PR. Filtering the entire workflow
+  # leaves unmatched PRs permanently waiting for statuses that can never arrive.
+  pull_request: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: fleet-manager
+
+jobs:
+  # Not `check`: required statuses match by job name alone, and that one is the shipper's gate.
+  fleet-manager-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: fleet-manager/go.mod
+          cache-dependency-path: fleet-manager/go.sum
+      - run: make check
+
+  # Separate from the gate on purpose: it needs the network, and a newly published advisory would
+  # otherwise fail every unrelated commit. GOWORK=off inside the target grades the standard library
+  # by this module's own `go` directive, which is what someone building it alone actually gets.
+  govulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: fleet-manager/go.mod
+          cache-dependency-path: fleet-manager/go.sum
+      - run: make vulncheck
