@@ -18,6 +18,15 @@ const (
 	serviceUnsupported = common.KindUnsupported
 )
 
+// RemovalChannel is how uninstall takes the program itself away on this install.
+type RemovalChannel int
+
+const (
+	RemovalDirect   RemovalChannel = iota
+	RemovalHomebrew                // brew owns the payload; uninstall leaves the program to it
+	RemovalDeferred                // an uninstaller finishes after this process exits
+)
+
 func ServiceState(stateDir string) ServiceStatus {
 	return ServiceStateContext(context.Background(), stateDir)
 }

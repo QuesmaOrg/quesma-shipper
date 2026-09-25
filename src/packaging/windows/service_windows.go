@@ -235,8 +235,6 @@ func SameProgram(a, b string) bool {
 	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
 }
 
-func ProgramRemovalDeferred() bool { return true }
-
 func schtasksContext(ctx context.Context, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, "schtasks.exe", args...).CombinedOutput()
 }

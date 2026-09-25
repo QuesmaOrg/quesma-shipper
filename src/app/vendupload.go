@@ -266,18 +266,15 @@ func DescribeDestination(eff *config.Effective) string {
 		// Worded to hold on a local-dev install too, where no tickets exist and nothing uploads.
 		return "presigned upload (no pinned origins; set upload_targets to pin)"
 	}
+	return "presigned upload -> " + strings.Join(uploadOrigins(eff), ", ")
+}
+
+func uploadOrigins(eff *config.Effective) []string {
 	origins := make([]string, 0, len(eff.UploadTargets))
 	for _, t := range eff.UploadTargets {
 		origins = append(origins, t.Origin)
 	}
-	return "presigned upload -> " + strings.Join(origins, ", ")
-}
-
-func DestinationHosts(destination, endpoint string) string {
-	if _, origins, ok := strings.Cut(destination, "-> "); ok {
-		return origins
-	}
-	return strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
+	return origins
 }
 
 // uploadTargets turns the machine owner's allowlist into the matcher the uploader consults. One

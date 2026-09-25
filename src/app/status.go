@@ -34,6 +34,7 @@ type Status struct {
 	Off          []string       `json:"off,omitempty"`
 	Destination  string         `json:"destination"`
 	StateDir     string         `json:"state_dir"`
+	Origins      []string       `json:"-"` // Destination's pinned origins, for the human header only
 }
 
 func CurrentStatus(build Build) (Status, error) {
@@ -43,7 +44,7 @@ func CurrentStatus(build Build) (Status, error) {
 		return st, err
 	}
 	st.StateDir = paths.StateDir
-	st.Destination = DescribeDestination(eff)
+	st.Destination, st.Origins = DescribeDestination(eff), uploadOrigins(eff)
 	if _, err := identity.Load(paths.StateDir); err == nil {
 		st.LoggedIn = true
 	}

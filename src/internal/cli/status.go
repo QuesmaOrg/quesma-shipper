@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -77,7 +78,11 @@ func printHeader(out io.Writer, p palette, st app.Status, now time.Time) {
 	}
 	banner(out, p, colour, state, why)
 	if st.Organization != "" {
-		fmt.Fprintf(out, "Sending to %s at %s\n", styled(p.cyan, st.Organization, p.reset), styled(p.cyan, app.DestinationHosts(st.Destination, st.Endpoint), p.reset))
+		hosts := strings.Join(st.Origins, ", ")
+		if len(st.Origins) == 0 {
+			hosts = strings.TrimPrefix(strings.TrimPrefix(st.Endpoint, "https://"), "http://")
+		}
+		fmt.Fprintf(out, "Sending to %s at %s\n", styled(p.cyan, st.Organization, p.reset), styled(p.cyan, hosts, p.reset))
 	}
 }
 

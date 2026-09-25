@@ -24,7 +24,7 @@ func (transport *homebrewUpdateTransport) RoundTrip(*http.Request) (*http.Respon
 
 func TestHomebrewSelfUpdatesButBrewUninstalls(t *testing.T) {
 	if os.Getenv("QUESMA_TEST_BREW_CHILD") == "1" {
-		if !packaging.HomebrewManaged() {
+		if packaging.RemovalPlan() != packaging.RemovalHomebrew {
 			t.Fatal("did not recognize the cask executable")
 		}
 		build := app.Build{Version: "1.0.0", Release: true}
