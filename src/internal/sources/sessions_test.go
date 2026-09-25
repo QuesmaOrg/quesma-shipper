@@ -3,6 +3,7 @@ package sources
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func TestSessionDatabaseDiscoveryScope(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "profiles", "link")); err != nil {
 		t.Fatal(err)
 	}
-	src := Resolved{Source: Source{Family: "hermes"}, Root: root}
+	src := Resolved{Source: Source{Family: "hermes", Include: []string{"state.db", "profiles/*/state.db"}}, Root: root}
 	got, bad, err := sessionDatabases(src, nil)
 	if err != nil || bad.count != 0 || len(got) != 2 {
 		t.Fatalf("discovery: %v %+v %v", got, bad, err)
@@ -64,5 +65,40 @@ func TestAgentSessionRepositoryMarkers(t *testing.T) {
 		if !filter.Match(src, cand) {
 			t.Errorf("%s ignored repository was collected", id)
 		}
+	}
+}
+
+func TestSessionDatabasePatternsAndDeniedRoots(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "custom.db"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	src := Resolved{Source: Source{Include: []string{"custom.db", "*.db"}}, Root: root}
+	got, bad, err := sessionDatabases(src, nil)
+	if err != nil || bad.count != 0 || len(got) != 1 || got[0].RelPath != "custom.db" {
+		t.Fatalf("YAML patterns/dedup: %v %+v %v", got, bad, err)
+	}
+	deny := &List{patterns: []string{normalize(root) + "/**"}}
+	got, bad, err = sessionDatabases(src, deny)
+	if err != nil || len(got) != 0 || bad.count != 1 || !strings.Contains(bad.reason(), "deny list refuses") {
+		t.Fatalf("denied root lost diagnostic: %v %+v %v", got, bad, err)
+	}
+}
+
+func TestSessionDatabaseLiteralSymlinkPrefix(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(outside, "work"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "work", "state.db"), []byte("outside"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "profiles")); err != nil {
+		t.Fatal(err)
+	}
+	src := Resolved{Source: Source{Include: []string{"profiles/*/state.db"}}, Root: root}
+	got, bad, err := sessionDatabases(src, nil)
+	if err != nil || bad.count != 0 || len(got) != 0 {
+		t.Fatalf("literal-prefix symlink escaped scope: %v %+v %v", got, bad, err)
 	}
 }

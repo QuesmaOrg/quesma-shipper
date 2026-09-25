@@ -5,11 +5,12 @@ sources:
   - id: opencode-sessions
     description: Read-only per-session JSONL snapshots of OpenCode's SQLite messages and parts.
     gather: sidecar
-    emit: session_jsonl
+    emit: opencode_sessions
     artifact_class: trajectory
     roots:
       - $XDG_DATA_HOME/opencode
       - ~/.local/share/opencode
+    include: ["opencode.db"]
     max_file_bytes: 67108864
     sniff:
       kind: jsonl

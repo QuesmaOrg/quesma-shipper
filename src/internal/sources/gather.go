@@ -284,6 +284,7 @@ func NewRegistry() *Registry {
 		// file_glob: append-only JSONL stores (a .zst file is decoded on load), copied config files, spill directories.
 		"file_glob": globPrimitive{},
 		"account":   &Accounts{},
+		"sidecar":   sessionDispatch{},
 	}}
 }
 
