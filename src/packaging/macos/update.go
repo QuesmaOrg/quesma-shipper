@@ -14,6 +14,9 @@ func UpdateTarget(release common.Release) string {
 }
 
 func ApplyTarget(raw []byte, version string) error {
+	if SystemManaged() {
+		return errSystemManaged
+	}
 	app, ok := currentAppBundle()
 	if !ok {
 		return common.ApplyBinary(raw)

@@ -126,6 +126,9 @@ func runCmd(build app.Build) *cobra.Command {
 			"waiting the full interval, so a backlog converges at upload speed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := packaging.ValidateRun(); err != nil {
+				return err
+			}
 			if !once && (drain || quiet) {
 				return fmt.Errorf("--drain and --quiet require --once")
 			}
@@ -135,10 +138,35 @@ func runCmd(build app.Build) *cobra.Command {
 			// and cannot repair itself between polls, so waiting on it waits forever. A resolve
 			// error skips the wait and the gates below, and lets app.New report the real reason.
 			eff, paths, resolveErr := app.ResolveEffective()
+			logStateDir := paths.StateDir
+			if logStateDir == "" {
+				logStateDir, _ = app.StateDirWithoutConfig()
+			}
+			if log, err := packaging.ManagedRunLog(logStateDir); err != nil {
+				return err
+			} else if log != nil {
+				defer log.Close()
+				cmd.SetOut(log)
+				cmd.SetErr(log)
+			}
 			waiting := false
+			var lastManagedAttempt time.Time
 			for resolveErr == nil {
 				if _, err := controlplane.LoadEnrollment(paths.StateDir); err == nil {
 					break
+				}
+				if time.Since(lastManagedAttempt) >= time.Minute {
+					lastManagedAttempt = time.Now()
+					attemptCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+					enrolled, err := app.ManagedLogin(attemptCtx)
+					cancel()
+					if enrolled {
+						eff, paths, resolveErr = app.ResolveEffective()
+						break
+					}
+					if err != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "managed enrollment: %v; retrying in one minute\n", err)
+					}
 				}
 				if !waiting {
 					fmt.Fprintln(cmd.ErrOrStderr(), "waiting for enrollment; run `quesma-shipper login` to continue")

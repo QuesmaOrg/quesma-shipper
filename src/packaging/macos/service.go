@@ -134,6 +134,12 @@ func PostInstall() error {
 	if err != nil {
 		return err
 	}
+	if systemExecutable(exe) {
+		return postInstallSystem()
+	}
+	if err := checkNoSystemInstallation(); err != nil {
+		return err
+	}
 	expected := installedExecutable(home)
 	if resolved, err := filepath.EvalSymlinks(expected); err == nil {
 		expected = resolved
@@ -143,6 +149,11 @@ func PostInstall() error {
 	}
 	if err := checkInstallOwner(exe, launchdPath(home)); err != nil {
 		return err
+	}
+	if common.HomebrewCaskRoot(exe) == "" {
+		if err := installCLILink(filepath.Join(home, ".local", "bin", executableName), exe); err != nil {
+			return err
+		}
 	}
 	return supervise(exe, home)
 }
@@ -176,20 +187,27 @@ func supervise(exe, home string) error {
 }
 
 func waitForLabelGone(within time.Duration) error {
+	return waitForServiceGone(guiService(), within)
+}
+
+func waitForServiceGone(target string, within time.Duration) error {
 	start := time.Now()
 	for wait := 100 * time.Millisecond; ; wait = min(2*wait, 2*time.Second) {
-		if exec.Command(launchctl, "print", guiService()).Run() != nil {
+		if exec.Command(launchctl, "print", target).Run() != nil {
 			return nil
 		}
 		if time.Since(start) >= within {
 			return fmt.Errorf("%s still loaded after %s; `launchctl bootout %s` then re-run the installer",
-				guiService(), within, guiService())
+				target, within, target)
 		}
 		time.Sleep(wait)
 	}
 }
 
 func UninstallService() error {
+	if err := ValidateUserUninstall(); err != nil {
+		return err
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -240,6 +258,9 @@ func ServiceState(ctx context.Context) Status {
 		return st
 	}
 	st.Path = launchdPath(home)
+	if SystemManaged() {
+		st.Path = systemAgentPath
+	}
 	if _, err := os.Stat(st.Path); err == nil {
 		st.Installed = true
 	}

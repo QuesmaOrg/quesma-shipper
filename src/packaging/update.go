@@ -3,6 +3,7 @@ package packaging
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
@@ -20,6 +21,9 @@ func CheckUpdate(ctx context.Context, o UpdateOptions) (string, time.Time, bool,
 }
 
 func Update(ctx context.Context, o UpdateOptions) (UpdateResult, error) {
+	if SystemManaged() {
+		return UpdateResult{}, fmt.Errorf("this macOS installation is managed by an administrator; update it by deploying the Quesma Shipper package")
+	}
 	return common.Update(ctx, o, updateTarget, applyTarget)
 }
 

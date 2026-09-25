@@ -2,6 +2,11 @@
 # Installer adapter; lifecycle logic lives in the installed Quesma Shipper binary.
 set -eu
 
-USER_HOME=${HOME:-}
-case $USER_HOME in /*) ;; *) printf 'Quesma Shipper postinstall: Installer supplied no absolute HOME\n' >&2; exit 1 ;; esac
-exec "$USER_HOME/Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper" postinstall
+if [ "$(id -u)" = 0 ]; then
+	[ "${3:-/}" = / ] || { printf 'Quesma Shipper supports only the running system volume\n' >&2; exit 1; }
+	exec '/Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper' postinstall
+fi
+
+INSTALL_HOME=${HOME:-}
+case $INSTALL_HOME in /*) ;; *) printf 'Quesma Shipper postinstall: Installer supplied no absolute HOME\n' >&2; exit 1 ;; esac
+exec "$INSTALL_HOME/Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper" postinstall

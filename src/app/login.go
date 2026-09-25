@@ -11,6 +11,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/identity"
+	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
 
 type LoginResult struct {
@@ -21,18 +22,58 @@ type LoginResult struct {
 var ErrAlreadyLoggedIn = errors.New("already logged in")
 
 func Login(ctx context.Context, server, token string) (LoginResult, error) {
+	return login(ctx, server, token, false)
+}
+
+// ManagedLogin only enrolls an unconfigured user; profile rotation never replaces device identity.
+func ManagedLogin(ctx context.Context) (bool, error) {
+	if _, ok := LoggedIn(); ok {
+		return true, nil
+	}
+	server, grant, err := packaging.ManagedEnrollment()
+	if err != nil || server == "" {
+		return false, err
+	}
+	_, err = login(ctx, server, grant, true)
+	if errors.Is(err, ErrAlreadyLoggedIn) {
+		return true, nil
+	}
+	if err != nil {
+		// Enrollment errors can include an HTTP response body; never put profile credentials in logs.
+		if errors.Is(err, formats.ErrCredentialsRefused) {
+			return false, fmt.Errorf("managed enrollment grant was refused; ask an administrator to replace an expired or revoked grant")
+		}
+		return false, fmt.Errorf("managed enrollment did not complete; check server reachability and the Server/Grant profile")
+	}
+	return true, nil
+}
+
+func login(ctx context.Context, server, token string, managed bool) (LoginResult, error) {
+	if err := packaging.ValidateRun(); err != nil {
+		return LoginResult{}, err
+	}
 	_, paths, err := ResolveEffective()
 	if err != nil {
 		return LoginResult{}, err
 	}
+	unlock, err := controlplane.LockEnrollment(paths.StateDir)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	defer unlock()
 	if existing, err := controlplane.LoadEnrollment(paths.StateDir); err == nil {
 		return LoginResult{Organization: existing.Organization}, ErrAlreadyLoggedIn
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return LoginResult{}, err
 	}
 	unit, err := loadOrMintIdentity(paths.StateDir)
 	if err != nil {
 		return LoginResult{}, err
 	}
 	pub, priv, err := controlplane.NewDeviceKey()
+	if managed {
+		pub, priv, err = controlplane.ManagedEnrollmentKey(paths.StateDir, unit.InstallID.String())
+	}
 	if err != nil {
 		return LoginResult{}, err
 	}
@@ -48,9 +89,13 @@ func Login(ctx context.Context, server, token string) (LoginResult, error) {
 		Hostname:        hostname,
 		Platform:        runtime.GOOS + "/" + runtime.GOARCH,
 	}
-	req.Invite = token
+	if managed {
+		req.Grant = token
+	} else {
+		req.Invite = token
+	}
 	resp, err := c.Enroll(ctx, req)
-	if errors.Is(err, formats.ErrCredentialsRefused) {
+	if !managed && errors.Is(err, formats.ErrCredentialsRefused) {
 		req.Invite, req.Grant = "", token
 		resp, err = c.Enroll(ctx, req)
 	}

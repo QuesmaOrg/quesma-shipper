@@ -114,7 +114,7 @@ Everything derived this way passes through the scrub stage like any other file.
 
 ### From a release
 
-Release builds, including Homebrew installations, use the signed TUF repository to update themselves. The public
+Personal release builds, including Homebrew installations, use the signed TUF repository to update themselves. System-wide macOS installations are updated by an administrator or MDM. The public
 repository and stable download endpoints are described in
 [RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md).
 
@@ -140,8 +140,14 @@ Without Homebrew:
 
 Download and install the signed
 [`quesma-shipper-macos-universal.pkg`](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg).
-It installs `Quesma Shipper.app` for the current user and registers a launchd agent. It does not
-need administrator rights.
+Choose **Install for me only** to install in `~/Applications` without administrator rights,
+or **Install for all users of this computer** to install in `/Applications` with administrator
+authorization. Both run a per-user LaunchAgent with separate enrollment and collection state.
+The system installation is updated and removed by an administrator.
+
+For Jamf, Kandji and other MDM deployment, use the same package and a `com.quesma.shipper`
+managed-preferences profile containing `Server` and `Grant`. See the
+[macOS MDM deployment guide and profile template](src/packaging/macos/mdm/README.md).
 
 **Linux**
 
