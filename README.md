@@ -45,7 +45,7 @@ Three ways in. Each one below is a complete sequence -- follow one, in order.
 | Nothing yet, and want to run it for real | [Run it in your own cloud](#run-it-in-your-own-cloud): Fleet Manager on AWS or Google Cloud, shippers on developer machines |
 
 The last two run the control plane yourself, so both start from a clone of this repository and the
-three decisions in [Before you run the control plane](#before-you-run-the-control-plane).
+two decisions in [Before you run the control plane](#before-you-run-the-control-plane).
 
 To look at the pipeline without any control plane, install the shipper and run `quesma-shipper
 local-dev`, then `quesma-shipper preview`: collection and scrubbing work, and upload is disabled.
@@ -126,8 +126,8 @@ ships on start and then every 15 minutes.
 
 For the two paths below. Joining a fleet somebody else runs, you can skip this.
 
-Three settings shape an organisation. Two of them only act on files uploaded after they are set, so
-decide them before the first shipper enrolls.
+Two settings shape an organisation. Both act only on files uploaded after they are set, so decide
+them before the first shipper enrolls.
 
 **1. The age recipients, and who holds them.** An organisation needs **at least two distinct public
 recipients**, held by separate people: two custodians is the smallest arrangement that survives one
@@ -157,12 +157,6 @@ registered when they are uploaded; changing the recipients later does not re-enc
 - Turn it off per organisation (the checkbox when you create it), or for every organisation that
   never chose with `default_allow_quesma_etl = false` in the Terraform. Do it before the first
   upload if nothing should ever be sealed to Quesma.
-
-**3. Where operational telemetry goes.** Shippers report their own failures to Fleet Manager, which
-forwards them only if a collector is named. None is by default. Name one for every organisation with
-`default_telemetry_collector_url` in the Terraform, or per organisation through the admin API
-(`telemetry_collector_url`). This one can be changed at any time and applies immediately. See
-[fleet-manager/TELEMETRY.md](fleet-manager/TELEMETRY.md).
 
 ## On one machine
 
@@ -333,10 +327,9 @@ terraform apply \
   -var="image_uri=$REGISTRY/fleet-manager@sha256:…"     # the digest from step 1
 ```
 
-Add `-var='default_allow_quesma_etl=false'` or `-var='default_telemetry_collector_url=…'` here if
-decisions 2 or 3 call for them. This creates a private, versioned bucket; a runtime role that is
-almost write-only below `install=`; a lifecycle rule for superseded check-in records; a 30-day log
-group; and a public HTTPS service. Then:
+Add `-var='default_allow_quesma_etl=false'` here if decision 2 calls for it. This creates a
+private, versioned bucket; a runtime role that is almost write-only below `install=`; a lifecycle
+rule for superseded check-in records; a 30-day log group; and a public HTTPS service. Then:
 
 ```sh
 export FLEET_MANAGER_URL="$(terraform output -raw service_url)"

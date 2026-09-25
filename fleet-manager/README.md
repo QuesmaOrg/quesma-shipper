@@ -206,7 +206,6 @@ accepted tradeoff of using each organization's `config.json` as the only organiz
 
 `POST /v1/telemetry` forwards authenticated shipper telemetry to the organization's
 `telemetry_collector_url`, signed with a deployment key that fleet-manager provisions on startup.
-See [TELEMETRY.md](TELEMETRY.md).
 
 ## Contributing
 

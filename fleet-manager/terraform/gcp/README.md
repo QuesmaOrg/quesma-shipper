@@ -13,13 +13,12 @@ You need:
 - permission to enable APIs and create Cloud Run, Cloud Storage, service account,
   IAM role, and IAM policy resources in that project;
 - [Terraform](https://developer.hashicorp.com/terraform/install) 1.5 or later,
-  the [`gcloud` CLI](https://cloud.google.com/sdk/docs/install), `age-keygen`, and `curl`;
+  the [`gcloud` CLI](https://cloud.google.com/sdk/docs/install),
+  [`age`](https://age-encryption.org/) (for `age-keygen`), and `curl`; and
 - an organization policy that permits
   [public invocation](https://cloud.google.com/run/docs/authenticating/public) of
   the Cloud Run service; shippers authenticate at the application layer after
-  enrollment; and
-- two public `age` recipients held by separate custodians. Never place either
-  private identity in this repository, Terraform variables, or Terraform state.
+  enrollment.
 
 ## 1. Authenticate and select the deployment
 
@@ -81,6 +80,8 @@ age-keygen -o acme-security.agekey
 age-keygen -y acme-security.agekey
 ```
 
+Never place a private identity in this repository, Terraform variables, or Terraform state.
+
 Retrieve the sensitive administrator credential explicitly, open the administration
 URL, and paste the credential into the login form:
 
@@ -93,30 +94,28 @@ Create an organization with an immutable lowercase slug, a display name, and at 
 independently held public recipients. The optional authored YAML field controls that
 organization's collection settings. Use the selector to create or switch organizations.
 
-## 4. Enroll the first shipper
+## 4. Install and enroll the first shipper
 
 Create one invite per machine in the administration UI. The invite can be used
 once, and its secret is shown only when created. Send it and `FLEET_MANAGER_URL` to the
-machine operator through an approved secret-sharing channel. On the target Linux
-or macOS machine, run:
+machine operator through an approved secret-sharing channel.
+
+On the target machine, install the shipper for its platform as in
+[Install](../../../README.md#1-install), then enroll it. This is the command the administration UI
+shows next to a new invite:
 
 ```sh
 export SHIPPER_AUTH_KEY='fmi2.acme.invite-from-the-fleet-operator'
 export FLEET_MANAGER_URL='https://fleet-manager-service-url'
 
-curl --fail --silent --show-error --location \
-  https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/src/packaging/linux/install.sh \
-  | sh -s -- --server "$FLEET_MANAGER_URL"
+quesma-shipper login --server "$FLEET_MANAGER_URL" "$SHIPPER_AUTH_KEY"
 unset SHIPPER_AUTH_KEY
 
-"$HOME/.local/bin/quesma-shipper" doctor
+quesma-shipper doctor
 ```
 
-The installer verifies the bootstrap checksum, enrolls the machine, and starts the
-per-user background service. It must not be run as root. Release builds of the shipper
-keep themselves current from Quesma's signed update channel, a
-[TUF](https://theupdateframework.io/) repository; see the
-[shipper README](../../../README.md).
+Release builds of the shipper keep themselves current from Quesma's signed update channel, a
+[TUF](https://theupdateframework.io/) repository; see the [shipper README](../../../README.md).
 
 Confirm the enrollment on the UI's Installs page. The new install must appear
 with status `active`. Repeat this section with a new
@@ -140,12 +139,3 @@ access-control requirements. Do not run
 `terraform destroy` after enrollment without a reviewed data-retention plan; the
 bucket contains fleet state and encrypted trajectory data, and a non-empty bucket
 prevents normal destruction.
-
-## Telemetry public key
-
-Register the deployment's telemetry signing key with the collector (see
-[TELEMETRY.md](../../TELEMETRY.md)):
-
-```sh
-terraform output -raw fleet_manager_public_key
-```
