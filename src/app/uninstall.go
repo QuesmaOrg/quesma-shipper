@@ -15,6 +15,9 @@ type UninstallStep struct {
 }
 
 func Uninstall(purge bool, report func(UninstallStep)) (bool, error) {
+	if err := packaging.ValidateUserUninstall(); err != nil {
+		return false, err
+	}
 	_, paths, err := ResolveEffective()
 	if err != nil {
 		return false, err

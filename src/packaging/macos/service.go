@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -49,9 +50,22 @@ func renderPlist(spec Spec) string {
 		fmt.Fprintf(&envXML, "\t\t<key>XDG_STATE_HOME</key>\n\t\t<string>%s</string>\n",
 			escapeXML(filepath.Dir(spec.StateDir)))
 	}
+	keys := make([]string, 0, len(spec.Environment))
+	for key := range spec.Environment {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		fmt.Fprintf(&envXML, "\t\t<key>%s</key>\n\t\t<string>%s</string>\n", escapeXML(key), escapeXML(spec.Environment[key]))
+	}
 
-	stdout := filepath.Join(spec.LogDir, "agent.out.log")
-	stderr := filepath.Join(spec.LogDir, "agent.err.log")
+	var sessionXML, logXML string
+	if spec.SessionType != "" {
+		sessionXML = fmt.Sprintf("\t<key>LimitLoadToSessionType</key>\n\t<string>%s</string>\n", escapeXML(spec.SessionType))
+	}
+	if spec.LogDir != "" {
+		logXML = fmt.Sprintf("\t<key>StandardOutPath</key>\n\t<string>%s</string>\n\t<key>StandardErrorPath</key>\n\t<string>%s</string>\n", escapeXML(filepath.Join(spec.LogDir, "agent.out.log")), escapeXML(filepath.Join(spec.LogDir, "agent.err.log")))
+	}
 	// ExitTimeOut must be stated: launchd's unstated 20 seconds truncates the client's drain.
 	stop := int(common.ExitTimeout(spec).Seconds())
 
@@ -75,19 +89,16 @@ func renderPlist(spec Spec) string {
 	<true/>
 	<key>KeepAlive</key>
 	<true/>
-	<key>ProcessType</key>
+%s	<key>ProcessType</key>
 	<string>Background</string>
 	<key>ExitTimeOut</key>
 	<integer>%d</integer>
 	<key>ThrottleInterval</key>
 	<integer>60</integer>
-	<key>StandardOutPath</key>
-	<string>%s</string>
-	<key>StandardErrorPath</key>
-	<string>%s</string>
+%s
 </dict>
 </plist>
-`, bundleIdentifier, bundleIdentifier, argXML.String(), envXML.String(), stop, escapeXML(stdout), escapeXML(stderr))
+`, bundleIdentifier, bundleIdentifier, argXML.String(), envXML.String(), sessionXML, stop, logXML)
 }
 
 const launchctl = "/bin/launchctl"
@@ -134,6 +145,12 @@ func PostInstall() error {
 	if err != nil {
 		return err
 	}
+	if systemExecutable(exe) {
+		return postInstallSystem()
+	}
+	if err := checkNoSystemInstallation(); err != nil {
+		return err
+	}
 	expected := installedExecutable(home)
 	if resolved, err := filepath.EvalSymlinks(expected); err == nil {
 		expected = resolved
@@ -143,6 +160,11 @@ func PostInstall() error {
 	}
 	if err := checkInstallOwner(exe, launchdPath(home)); err != nil {
 		return err
+	}
+	if common.HomebrewCaskRoot(exe) == "" {
+		if err := installCLILink(filepath.Join(home, ".local", "bin", executableName), exe); err != nil {
+			return err
+		}
 	}
 	return supervise(exe, home)
 }
@@ -176,20 +198,27 @@ func supervise(exe, home string) error {
 }
 
 func waitForLabelGone(within time.Duration) error {
+	return waitForServiceGone(guiService(), within)
+}
+
+func waitForServiceGone(target string, within time.Duration) error {
 	start := time.Now()
 	for wait := 100 * time.Millisecond; ; wait = min(2*wait, 2*time.Second) {
-		if exec.Command(launchctl, "print", guiService()).Run() != nil {
+		if exec.Command(launchctl, "print", target).Run() != nil {
 			return nil
 		}
 		if time.Since(start) >= within {
 			return fmt.Errorf("%s still loaded after %s; `launchctl bootout %s` then re-run the installer",
-				guiService(), within, guiService())
+				target, within, target)
 		}
 		time.Sleep(wait)
 	}
 }
 
 func UninstallService() error {
+	if SystemManaged() {
+		return errSystemManaged
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -240,6 +269,9 @@ func ServiceState(ctx context.Context) Status {
 		return st
 	}
 	st.Path = launchdPath(home)
+	if SystemManaged() {
+		st.Path = systemAgentPath
+	}
 	if _, err := os.Stat(st.Path); err == nil {
 		st.Installed = true
 	}

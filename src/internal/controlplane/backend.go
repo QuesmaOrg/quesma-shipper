@@ -146,8 +146,17 @@ type ConfigResponse struct {
 
 // Enroll registers this install.
 func (c *Client) Enroll(ctx context.Context, req EnrollRequest) (*EnrollResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("backend: encode request: %w", err)
+	}
+	return c.EnrollJSON(ctx, body)
+}
+
+// EnrollJSON sends a previously saved request without changing its digest.
+func (c *Client) EnrollJSON(ctx context.Context, body []byte) (*EnrollResponse, error) {
 	var out EnrollResponse
-	if err := c.post(ctx, "/v1/enroll", req, &out, false); err != nil {
+	if err := c.postJSON(ctx, "/v1/enroll", body, &out, false); err != nil {
 		return nil, err
 	}
 	if out.Organization == "" {
@@ -191,7 +200,10 @@ func (c *Client) post(ctx context.Context, path string, body, out any, signed bo
 	if err != nil {
 		return fmt.Errorf("backend: encode request: %w", err)
 	}
+	return c.postJSON(ctx, path, payload, out, signed)
+}
 
+func (c *Client) postJSON(ctx context.Context, path string, payload []byte, out any, signed bool) error {
 	status, raw, err := c.exchange(ctx, path, "", payload, signed)
 	if err != nil {
 		return err
@@ -206,14 +218,23 @@ func (c *Client) post(ctx context.Context, path string, body, out any, signed bo
 		return fmt.Errorf("backend: %s refused this install's credentials (HTTP %d): %w",
 			path, status, formats.ErrCredentialsRefused)
 	default:
-		return fmt.Errorf("backend: %s returned HTTP %d: %s", path, status,
-			truncate(strings.TrimSpace(string(raw)), 200))
+		return fmt.Errorf("backend: %s: %w", path, &HTTPStatusError{Status: status,
+			Body: truncate(strings.TrimSpace(string(raw)), 200)})
 	}
 
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("backend: decode %s response: %w", path, err)
 	}
 	return nil
+}
+
+type HTTPStatusError struct {
+	Status int
+	Body   string
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("returned HTTP %d: %s", e.Status, e.Body)
 }
 
 // exchange sends one JSON POST and returns its status and bounded body. preamble is the domain

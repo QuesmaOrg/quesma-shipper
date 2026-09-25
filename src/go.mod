@@ -12,6 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.1
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/creativeprojects/go-selfupdate v1.6.0
+	github.com/ebitengine/purego v0.10.1
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.20.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -53,7 +54,6 @@ require (
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

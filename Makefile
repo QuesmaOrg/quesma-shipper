@@ -46,7 +46,7 @@ dist: ## Cross-compile the shipper for every supported platform into bin/dist
 	@echo "built $(DIST)/ ($(VERSION))"
 
 .PHONY: macos-pkg
-macos-pkg: ## Build the universal rootless macOS app and pkg (macOS only)
+macos-pkg: ## Build the universal personal/system macOS app and pkg (macOS only)
 	@test -n "$(RELEASE_VERSION)" || { echo "RELEASE_VERSION is required"; exit 1; }
 	src/packaging/macos/pkg/build-pkg.sh "$(RELEASE_VERSION)" "$(DIST)"
 

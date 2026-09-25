@@ -20,6 +20,9 @@ func CheckUpdate(ctx context.Context, o UpdateOptions) (string, time.Time, bool,
 }
 
 func Update(ctx context.Context, o UpdateOptions) (UpdateResult, error) {
+	if SystemManaged() {
+		return UpdateResult{}, common.ErrSystemManaged
+	}
 	return common.Update(ctx, o, updateTarget, applyTarget)
 }
 

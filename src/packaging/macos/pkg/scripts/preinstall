@@ -1,0 +1,46 @@
+#!/bin/sh
+# Refuse competing installation methods before Installer replaces any files.
+set -eu
+
+die() { printf 'Quesma Shipper: %s; uninstall the previous installation without purging local state before changing installation methods\n' "$*" >&2; exit 1; }
+
+check_link() {
+	if [ -e "$1" ] || [ -L "$1" ]; then
+		[ -L "$1" ] || die "another installation owns $1"
+		target=$(readlink "$1")
+		if [ "$target" != "$2" ]; then
+			# Older personal packages used a relative link into ~/Applications.
+			[ "${3:-}" = user ] && [ "$target" = '../../Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper' ] || die "another installation owns $1"
+		fi
+	fi
+}
+
+check_home() {
+	case $1 in /*) ;; *) die 'cannot determine user home' ;; esac
+	for path in "$1/Applications/Quesma Shipper.app" "$1/Library/LaunchAgents/com.quesma.shipper.plist"; do
+		[ ! -e "$path" ] && [ ! -L "$path" ] || die "a per-user installation exists at $path"
+	done
+}
+
+if [ "$(id -u)" = 0 ]; then
+	[ "${3:-/}" = / ] || die 'only the running system volume is supported'
+	check_link /usr/local/bin/quesma-shipper '/Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper'
+	users=$(/bin/sh "$(dirname "$0")/local-users.sh")
+	printf '%s\n' "$users" | while IFS="$(printf '\t')" read -r uid home; do
+		[ -n "$uid" ] || continue
+		check_home "$home"
+	done
+else
+	for path in '/Applications/Quesma Shipper.app' /Library/LaunchAgents/com.quesma.shipper.plist; do
+		[ ! -e "$path" ] && [ ! -L "$path" ] || die "a system installation exists at $path"
+	done
+	INSTALL_HOME=${HOME:-}
+	case $INSTALL_HOME in /*) ;; *) die 'Installer supplied no absolute HOME' ;; esac
+	executable="$INSTALL_HOME/Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper"
+	check_link "$INSTALL_HOME/.local/bin/quesma-shipper" "$executable" user
+	plist="$INSTALL_HOME/Library/LaunchAgents/com.quesma.shipper.plist"
+	if [ -e "$plist" ] || [ -L "$plist" ]; then
+		previous=$(/usr/bin/plutil -extract ProgramArguments.0 raw -o - "$plist") || die "cannot read $plist"
+		[ "$previous" = "$executable" ] || die "another installation owns $plist"
+	fi
+fi
