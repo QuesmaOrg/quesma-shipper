@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/sources/sqliteread"
 )
 
 // BenchmarkAlign loads the candidate weighing: argument-less terminal bubbles send every Shell
@@ -25,6 +27,52 @@ func BenchmarkAlign(b *testing.B) {
 			}
 		})
 	}
+}
+
+// BenchmarkIndexRows is a machine with a long Cursor history flushing one conversation: every row
+// in the declared keyspaces is read, and only the staged conversation's are needed.
+func BenchmarkIndexRows(b *testing.B) {
+	rows, staged := syntheticStore(300, 80_000)
+	set := map[string]bool{staged: true}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ix := indexRows(rows, set)
+		if len(ix.bubbles[staged]) == 0 {
+			b.Fatal("staged conversation not indexed")
+		}
+	}
+}
+
+// syntheticStore is bubbles rows spread across convs conversations, each with its composer record,
+// in the key order the read returns them.
+func syntheticStore(convs, bubbles int) ([]sqliteread.Row, string) {
+	var bubbleRows, composerRows []sqliteread.Row
+	perConv := bubbles / convs
+	result := strings.Repeat("internal/config/resolve.go:41: func resolve(cfg *Config) error {\n", 8)
+	for c := range convs {
+		conv := fmt.Sprintf("%08x-9a2c-4e8f-b1d0-3c4a5b6c7d8e", c)
+		headers := make([]string, 0, perConv)
+		for j := range perConv {
+			id := fmt.Sprintf("%08x-0000-4000-8000-%012x", c, j)
+			headers = append(headers, fmt.Sprintf(`{"bubbleId":%q,"type":2}`, id))
+			var body string
+			if j%2 == 0 {
+				body = fmt.Sprintf(`{"_v":3,"type":2,"bubbleId":%q,"text":"","createdAt":"2026-07-28T10:%02d:%02d.000Z","capabilityType":15,`+
+					`"toolFormerData":{"toolCallId":"call_%d","name":"ripgrep_raw_search","tool":41,"status":"completed",`+
+					`"rawArgs":"{\"pattern\":\"func resolve\",\"path\":\"/Users/jane/work/api/internal\"}","result":%q}}`,
+					id, j/60%60, j%60, j, result)
+			} else {
+				body = fmt.Sprintf(`{"_v":3,"type":2,"bubbleId":%q,"text":"Reading the resolver before changing how the config layers merge.",`+
+					`"createdAt":"2026-07-28T10:%02d:%02d.000Z","requestId":"req-%d","modelInfo":{"modelName":"claude-4.5-sonnet"}}`,
+					id, j/60%60, j%60, j)
+			}
+			bubbleRows = append(bubbleRows, sqliteread.Row{Key: "bubbleId:" + conv + ":" + id, Value: []byte(body)})
+		}
+		composer := fmt.Sprintf(`{"composerId":%q,"createdAt":1753700000000,"fullConversationHeadersOnly":[%s]}`, conv, strings.Join(headers, ","))
+		composerRows = append(composerRows, sqliteread.Row{Key: "composerData:" + conv, Value: []byte(composer)})
+	}
+	return append(bubbleRows, composerRows...), fmt.Sprintf("%08x-9a2c-4e8f-b1d0-3c4a5b6c7d8e", convs/2)
 }
 
 // syntheticConversation is n tool calls in the current store generation's shapes: a user query

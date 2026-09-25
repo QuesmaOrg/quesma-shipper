@@ -103,10 +103,16 @@ func (e *Enricher) Enrich(in transforms.Input) transforms.EnrichResult {
 				"sorts after the last key read", len(read.Rows)))
 	}
 
-	store := indexRows(read.Rows)
+	staged := map[string]bool{}
+	for _, u := range in.Units {
+		if conv := conversationID(u.NativePath); conv != "" {
+			staged[conv] = true
+		}
+	}
+	store := indexRows(read.Rows, staged)
 	if store.decodeErrors > 0 {
 		res.Notes = append(res.Notes, fmt.Sprintf(
-			"%d store rows in the declared keyspaces did not decode (the store schema is vendor behaviour and drifts)",
+			"%d store rows of the staged conversations did not decode (the store schema is vendor behaviour and drifts)",
 			store.decodeErrors))
 	}
 
