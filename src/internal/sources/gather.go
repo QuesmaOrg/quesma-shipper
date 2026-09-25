@@ -366,13 +366,17 @@ func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Ove
 		}
 
 		// Before the size cap, so an ignored repository's oversized file is not reported
-		// by name either.
-		if ignore.Match(src, Candidate{Path: named, RelPath: rel}) {
+		// by name either. Size and mtime let the filter keep a probe across passes.
+		info, infoErr := d.Info()
+		probe := Candidate{Path: named, RelPath: rel}
+		if infoErr == nil {
+			probe.Size, probe.MTime = info.Size(), info.ModTime().UTC()
+		}
+		if ignore.Match(src, probe) {
 			ignored = true
 			return nil
 		}
 
-		info, infoErr := d.Info()
 		if infoErr != nil {
 			note(path, infoErr)
 			return nil
