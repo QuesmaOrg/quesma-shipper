@@ -1,0 +1,3 @@
+# The binary `make build` produces. Kept here rather than in the repository root so it stays
+# ignored when this module is split out into its own repository.
+/fleet-manager
