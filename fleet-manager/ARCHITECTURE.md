@@ -19,7 +19,7 @@ src/
   manager.go        organizations, enrollment, revocation
   model.go          the records, and what a valid one is
   upload.go         turning an upload request into a batch of tickets
-  seen.go tags.go   the two disposable, off-critical-path records
+  seen.go tags.go   check-ins and install names, both off the critical path
   telemetry*.go     the forwarding proxy and the deployment signing identity
   health.go         collection-health reports from a reporter credential
   store.go          ObjectStore -- the only durable-state primitive
@@ -50,13 +50,14 @@ delete-plus-create; bucket versioning preserves what is displaced.
 
 **Control records are conditional.** A record is created with `Create` (`If-None-Match: *`) and
 updated with `Replace` (`If-Match`). Replicas coordinate through the store and in no other way,
-which is why the deployment has no leader, no lock and no coordination service — and why object
-versioning is checked at startup and refused if absent.
+which is why the deployment has no leader, no lock and no coordination service — and why an
+organization cannot be created in a bucket without object versioning.
 
-**Disposable records are unconditional, and never fail a request.** `seen/` and `tags.json` use
-`Put`, are tagged `lifecycle=ephemeral` so their superseded versions can be expired, and collapse
-repeated check-ins within a minute into one write. A failed write of one is logged and dropped. The
-hot path must never rewrite a security record.
+**Disposable records are unconditional, and never fail a request.** `seen/` uses `Put`, is tagged
+`lifecycle=ephemeral` so its superseded versions can be expired, and collapses repeated check-ins
+within a minute into one write. A failed write is logged and dropped. The hot path must never
+rewrite a security record. `tags.json`, the install's name, is off the hot path but written like a
+control record: conditionally, and an admin sees a failed write.
 
 **The ticket contract is closed.** A presigned upload ticket may carry `x-amz-tagging` and
 `x-amz-meta-*` and nothing else; `s3TicketHeaders` in `src/aws.go` refuses any other signed header

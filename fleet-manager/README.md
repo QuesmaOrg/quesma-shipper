@@ -40,7 +40,7 @@ repository's [CONTRIBUTING.md](../CONTRIBUTING.md) covers the rest.
 ```sh
 make setup        # start a local MinIO, create the bucket, enable versioning, mint a credential
 make build        # the binary
-make run          # serve on 127.0.0.1:8099
+make run          # serve on port 8099, every interface
 ```
 
 `run` pulls the other two in, so `make run` on a clean checkout is the whole thing. `setup` is
@@ -79,7 +79,7 @@ reach, which makes it the one that can prove an upload end to end.
 | `S3_REGION` | `us-east-1` | |
 | `DEV_BUCKET` | `trajectories` | required against real AWS |
 | `DEV_PORT` | `8099` | |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `localadmin` | ignored against real AWS |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `localadmin` / `localadmin-secret` | ignored against real AWS |
 
 ## Executable mode
 

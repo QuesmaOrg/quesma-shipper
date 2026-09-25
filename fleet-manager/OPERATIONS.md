@@ -50,7 +50,9 @@ no organization deletion: retention, credential revocation and key destruction n
 `default_telemetry_collector_url` in the Terraform (`FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL` and
 `FLEET_MANAGER_DEFAULT_TELEMETRY_COLLECTOR_URL` for the service) apply to every organization that
 never set the value itself, including organizations created before the change. An organization's
-own setting always wins.
+own setting always wins, and the administration UI always sets `allow_quesma_etl`: its checkbox
+starts from the default, so a later change of the default reaches only organizations created
+through the admin API without the field.
 
 **Upgrade.** Push a new image and apply. The service is stateless and its records are
 conditional-write guarded, so a rolling replacement and a mixed fleet of replicas are both safe.
@@ -76,8 +78,10 @@ can open objects only while the organization keeps Quesma's recipient (`allow_qu
 default). The two revoke separately. Empty the list to stop the reading, which takes effect
 immediately; turn off `allow_quesma_etl` to stop the decrypting of objects sealed from then on.
 
-**Running without egress.** Fleet Manager needs no outbound internet access. It connects to object
-storage only, and its UI assets are embedded in the binary. What does reach out: shipper
+**Running without egress.** Fleet Manager needs no outbound internet access beyond its cloud's own
+APIs: object storage, plus IAM Credentials `SignBlob` on Google Cloud, which signs every upload
+ticket, and Azure Resource Manager on Azure, which confirms versioning. Its UI assets are embedded
+in the binary. What does reach out: shipper
 self-update from `updates.quesma.dev` (`SHIPPER_NO_SELFUPDATE` stops it), telemetry forwarding if
 you named a collector, and image pulls if you did not build your own.
 

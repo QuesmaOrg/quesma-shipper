@@ -25,7 +25,8 @@ defaults:
     working-directory: fleet-manager
 
 jobs:
-  check:
+  # Not `check`: required statuses match by job name alone, and that one is the shipper's gate.
+  fleet-manager-check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -47,8 +47,14 @@ gcloud config get-value project
 terraform init
 terraform apply \
   -var="project=$PROJECT_ID" \
-  -var="region=$REGION"
+  -var="region=$REGION" \
+  -var="image=$REGISTRY/fleet-manager@sha256:…"     # your image, by digest
 ```
+
+Build and push the image first, as in
+[Build and push your image](../../../README.md#1-build-and-push-your-image), to a registry Cloud
+Run can pull from. The variable is `image` here, `image_uri` in the AWS template. Without it the
+service runs `docker.io/quesma/fleet-manager:latest`, a moving tag Quesma publishes.
 
 `tofu` works in place of `terraform` throughout. The committed `.terraform.lock.hcl` pins the
 providers as OpenTofu resolves them (`registry.opentofu.org`). Terraform resolves them from

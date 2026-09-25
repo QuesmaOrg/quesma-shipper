@@ -67,8 +67,13 @@ the explicit `region` value below.
 terraform init
 terraform apply \
   -var="region=$AWS_REGION" \
-  -var="bucket=$TRAJECTORIES_BUCKET"
+  -var="bucket=$TRAJECTORIES_BUCKET" \
+  -var="image_uri=$REGISTRY/fleet-manager@sha256:…"     # your image, by digest
 ```
+
+Build and push the image first, as in
+[Build and push your image](../../../README.md#1-build-and-push-your-image). Without `image_uri`
+the service runs `docker.io/quesma/fleet-manager:latest`, a moving tag Quesma publishes.
 
 `tofu` works in place of `terraform` throughout. The committed `.terraform.lock.hcl` pins the
 providers as OpenTofu resolves them (`registry.opentofu.org`). Terraform resolves them from
@@ -161,8 +166,10 @@ listing the bucket below `v1/` and reading two kinds of object: everything under
 (`v1/organization=<org>/install=<id>/`, the sealed uploads and the install's name) and each
 organization's `control/config.json`, which carries its display name. Nothing else: no write, no
 delete, no bucket configuration, and none of the other control records -- invites, grants, install
-records and credential digests. A Deny backs this up, so a reader whose own role allows more
-(one in the same account as the bucket, say) still gets only these.
+records and credential digests. A Deny on reads backs this up, so a reader whose own role allows
+reading more (one in the same account as the bucket, say) still reads only these. The Deny covers
+reads only: a same-account role that its own policy lets write or delete keeps those rights, so
+give the ETL reader a role that grants nothing else on the bucket.
 
 Reading is not decrypting. Every object is sealed to your organization's `age` recipients, and
 Quesma can open one only while the organization keeps its built-in recipient — the

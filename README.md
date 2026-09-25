@@ -176,8 +176,8 @@ make -C fleet-manager run
 ```
 
 This starts a MinIO container named `fleet-minio` on `127.0.0.1:9000`, creates the `trajectories`
-bucket with versioning on, mints an administrator credential, and serves Fleet Manager on
-`127.0.0.1:8099` in the foreground. It prints:
+bucket with versioning on, mints an administrator credential, and serves Fleet Manager on port
+8099 in the foreground. It prints, among other lines:
 
 ```
   storage      http://127.0.0.1:9000   bucket trajectories, versioning on
@@ -186,7 +186,9 @@ bucket with versioning on, mints an administrator credential, and serves Fleet M
   admin UI     http://127.0.0.1:8099/admin/
 ```
 
-Leave it running and continue in a second terminal. Ctrl-C stops it; the bucket and the credential
+Fleet Manager listens on every interface, over plain HTTP, so on a shared network anyone who can
+reach this machine can reach the admin UI; use a trusted network, or a firewall. Leave it running
+and continue in a second terminal. Ctrl-C stops it; the bucket and the credential
 survive, and running it again reuses both. `DEV_PORT=` moves it off 8099; the other settings,
 including pointing it at another store, are in the
 [Fleet Manager README](fleet-manager/README.md#run-it).
