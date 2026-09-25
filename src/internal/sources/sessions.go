@@ -6,15 +6,32 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources/sqliteread"
 )
 
 // Session databases produce one bounded JSONL snapshot per session, never a database upload.
-type sessionPrimitive struct{}
+type sessionReader interface {
+	List(context.Context, string) ([]sqliteread.Session, error)
+	Read(context.Context, string, string, int64) ([]byte, error)
+}
 
-func (sessionPrimitive) Discover(req Request) (Discovery, error) {
+func sessionCollector(emit string) (Primitive, bool) {
+	switch emit {
+	case "opencode_sessions":
+		return opencodeSessions{}, true
+	case "hermes_sessions":
+		return hermesSessions{}, true
+	default:
+		return nil, false
+	}
+}
+
+func discoverSessions(req Request, reader sessionReader) (Discovery, error) {
 	src := req.Source
 	d := Discovery{Health: AgentAbsent, Sniff: SniffOK}
 	if src.Root == "" {
@@ -35,7 +52,7 @@ func (sessionPrimitive) Discover(req Request) (Discovery, error) {
 		now = req.Now()
 	}
 	for _, db := range dbs {
-		sessions, err := sqliteread.ListSessions(ctx, db.Path, src.Family)
+		sessions, err := reader.List(ctx, db.Path)
 		if err != nil {
 			d.Unreadable++
 			d.UnreadableExample = db.Path
@@ -63,7 +80,7 @@ func (sessionPrimitive) Discover(req Request) (Discovery, error) {
 						return Payload{}, fmt.Errorf("session database denied")
 					}
 				}
-				raw, err := sqliteread.ReadSession(ctx, path, src.Family, id, src.MaxFileBytes)
+				raw, err := reader.Read(ctx, path, id, src.MaxFileBytes)
 				return Payload{Bytes: raw, MTime: now}, err
 			}
 			d.Candidates = append(d.Candidates, cand)
@@ -85,7 +102,7 @@ func (sessionPrimitive) Discover(req Request) (Discovery, error) {
 	return d, nil
 }
 
-// Only fixed database locations are inspected; Hermes dependency and model caches can be enormous.
+// Expand declared patterns without walking unrelated dependency and model caches.
 func sessionDatabases(src Resolved, deny *List) ([]Candidate, unreadable, error) {
 	var out []Candidate
 	var bad unreadable
@@ -101,35 +118,48 @@ func sessionDatabases(src Resolved, deny *List) ([]Candidate, unreadable, error)
 		return out, bad, nil
 	}
 	if deny != nil {
-		if denied, _ := deny.MatchPair(src.Root, root); denied {
+		if denied, pattern := deny.MatchPair(src.Root, root); denied {
+			note(src.Root, fmt.Errorf("root resolves to %s, which the deny list refuses (%s)", root, pattern))
 			return out, bad, nil
 		}
 	}
 	names := []string{}
-	switch src.Family {
-	case "opencode":
-		names = append(names, "opencode.db")
-	case "hermes":
-		names = append(names, "state.db")
-		profiles := filepath.Join(root, "profiles")
-		if info, err := os.Lstat(profiles); err == nil && info.IsDir() {
-			entries, err := os.ReadDir(profiles)
-			if err != nil {
-				note(profiles, err)
-			}
-			for _, entry := range entries {
-				if entry.IsDir() {
-					names = append(names, filepath.Join("profiles", entry.Name(), "state.db"))
-				}
-			}
-		} else if err != nil && !os.IsNotExist(err) {
-			note(profiles, err)
+	seen := map[string]bool{}
+	for _, pattern := range normalizeGlobs(src.Include) {
+		matches, err := doublestar.Glob(os.DirFS(root), pattern, doublestar.WithNoFollow(), doublestar.WithFailOnIOErrors())
+		if err != nil {
+			note(root, err)
+			continue
 		}
-	default:
-		return nil, bad, fmt.Errorf("unsupported session family %q", src.Family)
+		for _, name := range matches {
+			if !seen[name] {
+				names = append(names, name)
+				seen[name] = true
+			}
+		}
 	}
 	for _, rel := range names {
 		path, named := filepath.Join(root, rel), filepath.Join(src.Root, rel)
+		// Glob's literal prefix can follow symlinks even with WithNoFollow.
+		nestedLink := false
+		parent := root
+		for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+			parent = filepath.Join(parent, part)
+			info, err := os.Lstat(parent)
+			if err != nil {
+				note(parent, err)
+				nestedLink = true
+				break
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				nestedLink = true
+				break
+			}
+		}
+		if nestedLink {
+			continue
+		}
+
 		if deny != nil {
 			if denied, _ := deny.MatchPair(named, path); denied {
 				continue

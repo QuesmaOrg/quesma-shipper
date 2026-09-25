@@ -157,7 +157,7 @@
           },
           "then": {
             "required": ["emit"],
-            "if": { "properties": { "emit": { "const": "session_jsonl" } } },
+            "if": { "properties": { "emit": { "enum": ["opencode_sessions", "hermes_sessions"] } } },
             "then": { "required": ["roots"] },
             "else": { "required": ["cwd_probe"] }
           }

@@ -10,8 +10,11 @@ encryption, upload state and project mapping. No provider key is needed to colle
 local history. These sources do not collect provider account or subscription quotas.
 
 Pi ships its native JSONL format (session version 3 tested). OpenCode and Hermes use
-the existing `sidecar` gather primitive with `emit: session_jsonl`. The SQLite file
-itself never ships. Fixed table/column queries run in one read-only transaction per
+the existing `sidecar` gather primitive with separate
+`opencode_sessions` and `hermes_sessions` collectors. The SQLite file
+itself never ships. Database locations are declared by YAML include patterns (`opencode.db`, or
+`state.db` and `profiles/*/state.db`); bounded glob expansion avoids unrelated caches.
+Agent-specific table/column queries run in one read-only transaction per
 session, including committed WAL records. A failed, malformed or oversized read
 produces no partial upload. The default snapshot cap is 64 MiB per session; discovery
 refuses more than 100,000 sessions per database. Nested database/profile symlinks

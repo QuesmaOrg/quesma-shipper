@@ -44,8 +44,8 @@ type ProjectRecord struct {
 
 func (p *Sidecar) Discover(req Request) (Discovery, error) {
 	src := req.Source
-	if src.Emit == "session_jsonl" {
-		return (sessionPrimitive{}).Discover(req)
+	if collector, ok := sessionCollector(src.Emit); ok {
+		return collector.Discover(req)
 	}
 	d := Discovery{Health: AgentAbsent, Sniff: SniffOK}
 
@@ -63,10 +63,10 @@ func (p *Sidecar) Discover(req Request) (Discovery, error) {
 		}
 		// The map exists to name repositories; not the ones nobody wants named.
 		var found []Candidate
-		if other.Gather == "sidecar" && other.Emit == "session_jsonl" {
+		if collector, ok := sessionCollector(other.Emit); other.Gather == "sidecar" && ok {
 			inputReq := req
 			inputReq.Source = other
-			discovery, err := (sessionPrimitive{}).Discover(inputReq)
+			discovery, err := collector.Discover(inputReq)
 			if err != nil {
 				return d, err
 			}
@@ -96,16 +96,19 @@ func (p *Sidecar) Discover(req Request) (Discovery, error) {
 		for _, c := range candidates {
 			projectDir := projectDirOf(c.RelPath)
 			cwd, ok := c.CWD, c.CWD != ""
-			if !ok {
-				cwd, ok = probeCWD(c.Path, probe)
-			}
 			if projectDir == "" && (sourceID == "pi-sessions" || sourceID == "opencode-sessions" || sourceID == "hermes-sessions") {
+				if !ok {
+					cwd, ok = probeCWD(c.Path, probe)
+				}
 				projectDir = cwd
 			}
 			if projectDir == "" || seen[projectDir] {
 				continue
 			}
 			seen[projectDir] = true
+			if !ok {
+				cwd, ok = probeCWD(c.Path, probe)
+			}
 
 			rec := ProjectRecord{
 				At:   now.Format(time.RFC3339),

@@ -5,11 +5,12 @@ sources:
   - id: hermes-sessions
     description: Read-only session messages and per-model usage snapshots, including named profiles.
     gather: sidecar
-    emit: session_jsonl
+    emit: hermes_sessions
     artifact_class: trajectory
     roots:
       - $HERMES_HOME
       - ~/.hermes
+    include: ["state.db", "profiles/*/state.db"]
     max_file_bytes: 67108864
     sniff:
       kind: jsonl
