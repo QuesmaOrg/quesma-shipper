@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -15,8 +16,16 @@ import (
 
 func sessionStore(t *testing.T, family string) (string, *sql.DB) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "sessions ?# ü.db")
-	u := url.URL{Scheme: "file", Path: path}
+	name := "sessions ?# ü.db"
+	if runtime.GOOS == "windows" {
+		name = "sessions # ü.db"
+	}
+	path := filepath.Join(t.TempDir(), name)
+	uriPath := filepath.ToSlash(path)
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	u := url.URL{Scheme: "file", Path: uriPath}
 	db, err := sql.Open("sqlite", u.String())
 	if err != nil {
 		t.Fatal(err)
