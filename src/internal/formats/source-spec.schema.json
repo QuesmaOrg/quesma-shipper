@@ -93,7 +93,7 @@
         },
 
         "emit": {
-          "description": "The record kind emitted by an account collector.",
+          "description": "The account record kind or dedicated session collector.",
           "type": "string",
           "minLength": 1
         }
@@ -105,12 +105,19 @@
           "if": {
             "properties": {
               "gather": {
-                "enum": ["file_glob", "compressed_file"]
+                "enum": ["file_glob", "compressed_file", "sidecar"]
               }
             },
             "required": ["gather"]
           },
           "then": { "required": ["roots", "include"] }
+        },
+        {
+          "if": { "properties": { "gather": { "const": "sidecar" } }, "required": ["gather"] },
+          "then": {
+            "required": ["emit"],
+            "properties": { "emit": { "enum": ["opencode_sessions", "hermes_sessions"] } }
+          }
         }
       ]
     },
@@ -143,7 +150,8 @@
       "enum": [
         "account",
         "file_glob",
-        "compressed_file"
+        "compressed_file",
+        "sidecar"
       ]
     },
     "artifact_class": { "enum": ["trajectory", "context"] },

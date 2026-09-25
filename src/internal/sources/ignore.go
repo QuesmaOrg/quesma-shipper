@@ -58,7 +58,7 @@ type GitRead struct {
 func (c *Compiled) RepoFilter() *RepoFilter {
 	home, _ := os.UserHomeDir()
 	return newRepoFilter(
-		&CWDProbe{From: []string{"claude-code-transcripts", "codex-rollouts"}, Fields: []string{"cwd", "payload.cwd"}, ScanBytes: 64 << 10},
+		&CWDProbe{From: []string{"claude-code-transcripts", "codex-rollouts", "pi-sessions", "opencode-sessions", "hermes-sessions"}, Fields: []string{"cwd", "payload.cwd"}, ScanBytes: 64 << 10},
 		&GitRead{WalkUp: true, FollowGitdirFile: true},
 		home)
 }
@@ -72,6 +72,9 @@ func newRepoFilter(probe *CWDProbe, git *GitRead, home string) *RepoFilter {
 func (f *RepoFilter) CWD(src Resolved, c Candidate) string {
 	if f == nil || f.probe == nil || !slices.Contains(f.probe.From, src.ID) {
 		return ""
+	}
+	if c.CWD != "" {
+		return cleanCWD(c.CWD)
 	}
 	key := c.Path
 	if dir := projectDirOf(c.RelPath); dir != "" {

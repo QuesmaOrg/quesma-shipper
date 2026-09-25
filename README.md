@@ -29,7 +29,7 @@ same bucket, and needs no database and no local disk. Only the holders of the or
 [age](https://age-encryption.org/) keys can read what was uploaded; an operator with full access to
 the bucket sees object names, sizes and timestamps, but no contents.
 
-Supported agents: Claude Code, Codex, Cursor.
+Supported agents: Claude Code, Codex, Cursor, Pi, OpenCode, Hermes.
 
 Supported platforms: macOS 13 or newer (app bundle, launchd service), Linux (systemd user
 service), Windows 10 1809 or newer (per-user installer, scheduled task).
@@ -416,6 +416,16 @@ The shipper collects more than chat transcripts. Per agent, from the agent's own
 | Claude Code | Session and subagent transcripts, spilled tool results | Per-project memory files, plans, todos, file-history checkpoint metadata, the user-level `CLAUDE.md`, `settings.json` |
 | Codex | Sessions, archived and compressed sessions, the session index | None |
 | Cursor | Agent transcripts, enriched with conversation text, tool calls, and model names read from Cursor's database | Spilled tool output, terminal captures, agent scratchpad notes |
+| Pi | Native JSONL session trees, messages, usage, branches and tool results | None |
+| OpenCode | Per-session JSONL snapshots of session, message and part records from `opencode.db` | None |
+| Hermes | Per-session JSONL snapshots of messages and model usage from `state.db`, including named profiles | None |
+
+Pi uses `$PI_CODING_AGENT_SESSION_DIR`, `$PI_CODING_AGENT_DIR/sessions`, or
+`~/.pi/agent/sessions`. OpenCode uses `$XDG_DATA_HOME/opencode` or
+`~/.local/share/opencode`. Hermes uses `$HERMES_HOME` or `~/.hermes`, including
+`profiles/*/state.db`. As with other sources, the first existing root wins; set the corresponding
+environment variable in the shipper process for nonstandard locations. See [agent session formats](AGENT_SESSIONS.md)
+for the snapshot contract and validation coverage.
 
 One more record is produced by the shipper itself:
 
