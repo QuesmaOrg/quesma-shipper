@@ -11,6 +11,11 @@ The service exposes shipper endpoints, a bearer-authenticated administration API
 and a self-contained administration UI at `/admin/`. Static UI assets are embedded in the binary and
 make no third-party requests.
 
+To deploy it together with the shippers, on one machine or in your own cloud, follow
+[Get started](../README.md#get-started) in the repository README; once it runs,
+[OPERATIONS.md](OPERATIONS.md) covers operating it. This README covers what the service does and
+how to work on it.
+
 ## Status
 
 Pre-1.0. The wire protocol, the configuration format and the object naming are versioned and

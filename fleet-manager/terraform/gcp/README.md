@@ -1,7 +1,9 @@
 # Deploy fleet manager on Google Cloud
 
 This guide deploys one multi-tenant fleet manager and its storage bucket, creates an
-organization, and enrolls the first shipper. Run the commands from this directory.
+organization, and enrolls the first shipper. Run the commands from this directory. It is the Google
+Cloud counterpart of [Run it in your own cloud](../../../README.md#run-it-in-your-own-cloud), which
+sets out what to decide first and the whole sequence around it.
 
 ## Before you begin
 

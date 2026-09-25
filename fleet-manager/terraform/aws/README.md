@@ -1,7 +1,9 @@
 # Deploy fleet manager on AWS
 
 This guide deploys one multi-tenant fleet manager and its S3 bucket, creates an
-organization, and enrolls the first shipper. Run the commands from this directory.
+organization, and enrolls the first shipper. Run the commands from this directory. It is the full
+runbook for [Run it in your own cloud](../../../README.md#run-it-in-your-own-cloud), which sets out
+what to decide first and the whole sequence around it.
 
 ## Before you begin
 
