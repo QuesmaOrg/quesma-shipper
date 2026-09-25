@@ -1,14 +1,16 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 )
 
 type Manager struct {
@@ -69,6 +71,34 @@ func getRecord[T any](ctx context.Context, store ObjectStore, key string) (T, st
 	return out, version, nil
 }
 
+const recordReadConcurrency = 16
+
+// readRecords reads keys concurrently, in order, dropping what fails to read or to keep: a list
+// that feeds an install table must still render when one record is unusable.
+func readRecords[T any](ctx context.Context, store ObjectStore, keys []string, keep func(rec T, key string) bool) []T {
+	records := make([]T, len(keys))
+	found := make([]bool, len(keys))
+	var group errgroup.Group
+	group.SetLimit(recordReadConcurrency)
+	for i, key := range keys {
+		group.Go(func() error {
+			rec, _, err := getRecord[T](ctx, store, key)
+			if err == nil && keep(rec, key) {
+				records[i], found[i] = rec, true
+			}
+			return nil
+		})
+	}
+	_ = group.Wait()
+	out := make([]T, 0, len(keys))
+	for i, ok := range found {
+		if ok {
+			out = append(out, records[i])
+		}
+	}
+	return out
+}
+
 func createRecord(ctx context.Context, store ObjectStore, key string, value any) error {
 	raw, err := encodeRecord(value)
 	if err != nil {
@@ -96,17 +126,13 @@ func (m *Manager) LoadConfig(ctx context.Context) (FleetConfig, string, error) {
 	if cfg.Organization != m.org {
 		return FleetConfig{}, "", errors.New("stored config names another organization")
 	}
-	if cfg.DisplayName == "" {
-		cfg.DisplayName = cfg.Organization
-	}
+	cfg.DisplayName = cmp.Or(cfg.DisplayName, cfg.Organization)
 	return cfg, version, nil
 }
 
 func (m *Manager) Init(ctx context.Context, cfg FleetConfig) error {
 	cfg.Schema, cfg.Organization, cfg.UpdatedAt = schemaVersion, m.org, m.time()
-	if cfg.DisplayName == "" {
-		cfg.DisplayName = m.org
-	}
+	cfg.DisplayName = cmp.Or(cfg.DisplayName, m.org)
 	if err := validateConfigForWrite(cfg); err != nil {
 		return err
 	}
@@ -128,56 +154,47 @@ func (m *Manager) ApplyConfig(ctx context.Context, cfg FleetConfig, expectedVers
 	return replaceRecord(ctx, m.store, configKey(m.org), expectedVersion, cfg)
 }
 
-func (m *Manager) CreateGrant(ctx context.Context, expires time.Time) (string, error) {
-	prefix := "fmi2." + m.org + "."
-	token, id, digest, err := mintToken(prefix)
+// credential is a grant or an invite, through a pointer so the shared fields can be set in place.
+type credential[T any] interface {
+	*T
+	credential() *credentialRecord
+}
+
+func createCredential[T any, P credential[T]](ctx context.Context, m *Manager, keyOf func(org, id string) string, expires time.Time) (string, error) {
+	token, id, digest, err := mintToken(tokenPrefix(m.org))
 	if err != nil {
 		return "", err
 	}
 	now := m.time()
 	if !expires.After(now) {
-		return "", errors.New("expiry must be in the future")
+		return "", invalidRequest("expiry must be in the future")
 	}
-	rec := GrantRecord{Schema: schemaVersion, ID: id, SecretDigest: digest, ExpiresAt: expires.UTC(), CreatedAt: now}
-	if err := createRecord(ctx, m.store, grantKey(m.org, id), rec); err != nil {
+	var rec T
+	*P(&rec).credential() = credentialRecord{Schema: schemaVersion, ID: id, SecretDigest: digest, ExpiresAt: expires.UTC(), CreatedAt: now}
+	if err := createRecord(ctx, m.store, keyOf(m.org, id), rec); err != nil {
 		return "", err
 	}
 	return token, nil
+}
+
+func (m *Manager) CreateGrant(ctx context.Context, expires time.Time) (string, error) {
+	return createCredential[GrantRecord](ctx, m, grantKey, expires)
 }
 
 func (m *Manager) CreateInvite(ctx context.Context, expires time.Time) (string, error) {
-	prefix := "fmi2." + m.org + "."
-	token, id, digest, err := mintToken(prefix)
-	if err != nil {
-		return "", err
-	}
-	now := m.time()
-	if !expires.After(now) {
-		return "", errors.New("expiry must be in the future")
-	}
-	rec := InviteRecord{Schema: schemaVersion, ID: id, SecretDigest: digest, ExpiresAt: expires.UTC(), CreatedAt: now}
-	if err := createRecord(ctx, m.store, inviteKey(m.org, id), rec); err != nil {
-		return "", err
-	}
-	return token, nil
+	return createCredential[InviteRecord](ctx, m, inviteKey, expires)
 }
 
-var uuidParse = func(value string) (string, error) {
+// uuidParse accepts the hyphenated form only, in either case, and returns it lowercased.
+func uuidParse(value string) (string, error) {
 	if len(value) != 36 {
 		return "", errors.New("not UUID")
 	}
-	for i, c := range value {
-		if i == 8 || i == 13 || i == 18 || i == 23 {
-			if c != '-' {
-				return "", errors.New("not UUID")
-			}
-			continue
-		}
-		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
-			return "", errors.New("not UUID")
-		}
+	parsed, err := uuid.Parse(value)
+	if err != nil {
+		return "", err
 	}
-	return strings.ToLower(value), nil
+	return parsed.String(), nil
 }
 
 func enrollmentDigest(body []byte) string {
@@ -187,7 +204,6 @@ func enrollmentDigest(body []byte) string {
 
 func (m *Manager) EnrollGrant(ctx context.Context, token string, in InstallRecord) error {
 	org, id, err := organizationToken(token)
-	prefix := "fmi2." + m.org + "."
 	if err != nil || org != m.org {
 		return ErrForbidden
 	}
@@ -198,7 +214,7 @@ func (m *Manager) EnrollGrant(ctx context.Context, token string, in InstallRecor
 	if err != nil {
 		return err
 	}
-	if grant.Schema != schemaVersion || !verifyToken(token, prefix, grant.ID, grant.SecretDigest) ||
+	if grant.Schema != schemaVersion || !verifyToken(token, tokenPrefix(m.org), grant.ID, grant.SecretDigest) ||
 		grant.RevokedAt != nil || !m.time().Before(grant.ExpiresAt) {
 		return ErrForbidden
 	}
@@ -222,7 +238,6 @@ func (m *Manager) EnrollGrant(ctx context.Context, token string, in InstallRecor
 // A reservation never times out: only an administrator can prove it safe to release.
 func (m *Manager) EnrollInvite(ctx context.Context, token string, in InstallRecord) error {
 	org, id, err := organizationToken(token)
-	prefix := "fmi2." + m.org + "."
 	if err != nil || org != m.org {
 		return ErrForbidden
 	}
@@ -235,7 +250,7 @@ func (m *Manager) EnrollInvite(ctx context.Context, token string, in InstallReco
 		return err
 	}
 	now := m.time()
-	if inv.Schema != schemaVersion || !verifyToken(token, prefix, inv.ID, inv.SecretDigest) || inv.RevokedAt != nil {
+	if inv.Schema != schemaVersion || !verifyToken(token, tokenPrefix(m.org), inv.ID, inv.SecretDigest) || inv.RevokedAt != nil {
 		return ErrForbidden
 	}
 	in.Schema, in.Organization = schemaVersion, m.org
@@ -262,7 +277,7 @@ func (m *Manager) EnrollInvite(ctx context.Context, token string, in InstallReco
 	}
 
 	installObjectKey := installKey(m.org, in.InstallID)
-	current, installVersion, getErr := getRecord[InstallRecord](ctx, m.store, installObjectKey)
+	current, _, getErr := getRecord[InstallRecord](ctx, m.store, installObjectKey)
 	if errors.Is(getErr, ErrNotFound) {
 		in.Status = InstallPending
 		in.CreatedAt, in.UpdatedAt = now, now
@@ -275,7 +290,6 @@ func (m *Manager) EnrollInvite(ctx context.Context, token string, in InstallReco
 		if err := m.after("install-created"); err != nil {
 			return err
 		}
-		current = in
 	} else if getErr != nil {
 		return getErr
 	} else if !sameEnrollment(current, in) || current.Status == InstallRevoked {
@@ -302,7 +316,7 @@ func (m *Manager) EnrollInvite(ctx context.Context, token string, in InstallReco
 		}
 	}
 
-	current, installVersion, err = getRecord[InstallRecord](ctx, m.store, installObjectKey)
+	current, installVersion, err := getRecord[InstallRecord](ctx, m.store, installObjectKey)
 	if err != nil {
 		return err
 	}
@@ -351,13 +365,23 @@ func (m *Manager) LoadActiveInstall(ctx context.Context, id string) (InstallReco
 	return rec, nil
 }
 
-func decodePublicKey(encoded string) ([]byte, error) {
-	return base64.StdEncoding.DecodeString(encoded)
-}
-
 var (
 	ErrForbidden          = errors.New("enrollment credential refused")
 	ErrEnrollmentConflict = errors.New("enrollment conflicts with an existing install")
 	ErrUnknownInstall     = errors.New("unknown install")
 	ErrRevokedInstall     = errors.New("this install is revoked")
 )
+
+// Refusals the admin API answers with the error's own text, so a kind never shows in the message.
+var (
+	errInvalidRequest = errors.New("invalid request")
+	errStateConflict  = errors.New("state conflict")
+)
+
+type refusal struct{ kind, err error }
+
+func (e refusal) Error() string   { return e.err.Error() }
+func (e refusal) Unwrap() []error { return []error{e.kind, e.err} }
+
+func invalidRequest(message string) error { return refusal{errInvalidRequest, errors.New(message)} }
+func stateConflict(message string) error  { return refusal{errStateConflict, errors.New(message)} }

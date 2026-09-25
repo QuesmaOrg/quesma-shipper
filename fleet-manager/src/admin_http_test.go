@@ -209,7 +209,7 @@ func TestAdminDoesNotExposeBackendErrors(t *testing.T) {
 	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), "backend secret") {
 		t.Fatalf("backend error response = %d: %s", w.Code, w.Body.String())
 	}
-	var response adminErrorResponse
+	var response errorResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || response.Error != "load config unavailable" {
 		t.Fatalf("backend error response = %#v, %v", response, err)
 	}
@@ -393,7 +393,7 @@ func TestAuthenticatedUnknownAdminRouteReturnsJSON(t *testing.T) {
 	if w.Code != http.StatusNotFound || !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
 		t.Fatalf("unknown route = %d %q: %s", w.Code, w.Header().Get("Content-Type"), w.Body.String())
 	}
-	var response adminErrorResponse
+	var response errorResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || response.Error != "not found" {
 		t.Fatalf("unknown route response = %#v, %v", response, err)
 	}

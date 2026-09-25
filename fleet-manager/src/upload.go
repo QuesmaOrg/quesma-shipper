@@ -86,7 +86,6 @@ func (t uploadTicket) MarshalJSON() ([]byte, error) {
 }
 
 var (
-	uploadUUIDRe     = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 	uploadObjectIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 	uploadHashRe     = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	uploadIdentRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
@@ -111,7 +110,7 @@ var uploadHeartbeatMetadata = map[string]uploadMetadataRule{"kind": {true, func(
 var uploadServerDerived = map[string]bool{"source-hash": true, "ticket-id": true}
 
 func validateUploadRequest(req uploadAuthorizeRequest, rec InstallRecord, now time.Time) ([]UploadObjectRequest, error) {
-	if !uploadUUIDRe.MatchString(req.WriterID) {
+	if _, err := uuidParse(req.WriterID); err != nil {
 		return nil, fmt.Errorf("writer_id %q is not a UUID", req.WriterID)
 	}
 	if req.IssuedAt.IsZero() {
@@ -163,7 +162,7 @@ func validateUploadObject(obj uploadObject, rec InstallRecord) (UploadObjectRequ
 	}
 	canonical, err := uuidParse(rec.InstallID)
 	if err != nil {
-		return UploadObjectRequest{}, errorsNew("stored install id is invalid")
+		return UploadObjectRequest{}, errors.New("stored install id is invalid")
 	}
 	v := UploadObjectRequest{ObjectID: obj.ObjectID, Key: obj.Key, Size: obj.Size}
 	var allowed map[string]uploadMetadataRule
@@ -301,5 +300,3 @@ func scrubURLs(message string) string {
 	}
 	return strings.Join(parts, " ")
 }
-
-func errorsNew(s string) error { return fmt.Errorf("%s", s) }

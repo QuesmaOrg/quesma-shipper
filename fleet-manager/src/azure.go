@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -84,15 +85,15 @@ func (s *azureStore) Get(ctx context.Context, key string) ([]byte, string, error
 		return nil, "", mapAzureError(err)
 	}
 	defer response.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(response.Body, stateObjectLimit+1))
+	raw, tooLarge, err := readCapped(response.Body, stateObjectLimit)
 	if err != nil {
 		return nil, "", err
 	}
-	if len(raw) > stateObjectLimit {
-		return nil, "", errorsNew("state object exceeds 4 MiB")
+	if tooLarge {
+		return nil, "", errors.New("state object exceeds 4 MiB")
 	}
 	if response.ETag == nil {
-		return nil, "", errorsNew("Azure response has no ETag")
+		return nil, "", errors.New("Azure response has no ETag")
 	}
 	return raw, string(*response.ETag), nil
 }
@@ -192,10 +193,7 @@ func (s *azureSigner) Authorize(ctx context.Context, _ InstallScope, batch Uploa
 		if object.Tagging != "" {
 			headers["x-ms-tags"] = object.Tagging
 		}
-		signedHeaders := make(map[string]string, len(headers)+1)
-		for name, value := range headers {
-			signedHeaders[name] = value
-		}
+		signedHeaders := maps.Clone(headers)
 		signedHeaders["content-length"] = strconv.FormatInt(object.Size, 10)
 		permissions := (&sas.BlobPermissions{Create: true, Write: true, Tag: object.Tagging != ""}).String()
 		query, err := s.signSAS(sas.BlobSignatureValues{Protocol: sas.ProtocolHTTPS, StartTime: now.Add(-time.Minute), ExpiryTime: batch.ExpiresAt,

@@ -12,11 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"golang.org/x/sync/errgroup"
 )
-
-const healthReadConcurrency = 16
 
 // maxFaults bounds one report. The shipper's own log holds twenty, but every write leaves a
 // permanent noncurrent version in a versioned bucket, and the newest few are what a table shows.
@@ -129,28 +125,7 @@ func (m *Manager) ListHealth(ctx context.Context) ([]HealthRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	records := make([]HealthRecord, len(objects))
-	found := make([]bool, len(objects))
-	var group errgroup.Group
-	group.SetLimit(healthReadConcurrency)
-	for i, object := range objects {
-		group.Go(func() error {
-			rec, _, err := getRecord[HealthRecord](ctx, m.store, object.Key)
-			if err != nil || rec.Schema != schemaVersion || rec.InstallID != recordIDFromKey(object.Key) {
-				return nil
-			}
-			records[i], found[i] = rec, true
-			return nil
-		})
-	}
-	if err := group.Wait(); err != nil {
-		return nil, err
-	}
-	out := make([]HealthRecord, 0, len(objects))
-	for i, ok := range found {
-		if ok {
-			out = append(out, records[i])
-		}
-	}
-	return out, nil
+	return readRecords(ctx, m.store, objectKeys(objects), func(rec HealthRecord, key string) bool {
+		return rec.Schema == schemaVersion && rec.InstallID == recordIDFromKey(key)
+	}), nil
 }

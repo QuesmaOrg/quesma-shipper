@@ -3,8 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -37,12 +37,12 @@ func (s *s3Store) Get(ctx context.Context, key string) ([]byte, string, error) {
 		return nil, "", mapS3Error(err)
 	}
 	defer out.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(out.Body, stateObjectLimit+1))
+	raw, tooLarge, err := readCapped(out.Body, stateObjectLimit)
 	if err != nil {
 		return nil, "", err
 	}
-	if len(raw) > stateObjectLimit {
-		return nil, "", errorsNew("state object exceeds 4 MiB")
+	if tooLarge {
+		return nil, "", errors.New("state object exceeds 4 MiB")
 	}
 	return raw, aws.ToString(out.ETag), nil
 }
@@ -104,7 +104,7 @@ func mapS3Error(err error) error {
 		return nil
 	}
 	var api smithy.APIError
-	if !errorsAs(err, &api) {
+	if !errors.As(err, &api) {
 		return err
 	}
 	switch api.ErrorCode() {
@@ -117,25 +117,6 @@ func mapS3Error(err error) error {
 	}
 }
 
-func errorsAs(err error, target any) bool {
-	switch value := target.(type) {
-	case *smithy.APIError:
-		for err != nil {
-			if api, ok := err.(smithy.APIError); ok {
-				*value = api
-				return true
-			}
-			type unwrapper interface{ Unwrap() error }
-			u, ok := err.(unwrapper)
-			if !ok {
-				break
-			}
-			err = u.Unwrap()
-		}
-	}
-	return false
-}
-
 type s3Signer struct {
 	bucket string
 	client *awss3.Client
@@ -144,7 +125,7 @@ type s3Signer struct {
 func (s *s3Signer) Authorize(ctx context.Context, _ InstallScope, batch UploadBatch) (TicketBatch, error) {
 	lifetime := batch.ExpiresAt.Sub(batch.IssuedAt)
 	if lifetime <= 0 {
-		return TicketBatch{}, errorsNew("authorization already expired")
+		return TicketBatch{}, errors.New("authorization already expired")
 	}
 	if rest := lifetime % time.Second; rest != 0 {
 		lifetime += time.Second - rest
