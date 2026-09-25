@@ -57,6 +57,11 @@ func postinstallCmd() *cobra.Command {
 	}
 }
 
+func preuninstallSystemCmd() *cobra.Command {
+	return &cobra.Command{Use: "preuninstall-system", Args: cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error { return packaging.PreUninstallSystem() }}
+}
+
 func reportRemote(w io.Writer, r *app.Runtime) {
 	rem := r.Remote()
 	if rem.Err != nil && rem.Origin == controlplane.OriginCached {

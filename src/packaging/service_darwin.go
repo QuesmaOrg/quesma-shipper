@@ -20,3 +20,4 @@ func ManagedRunLog(stateDir string) (*os.File, error) { return macos.ManagedRunL
 func ManagedEnrollment() (string, string, error)      { return macos.ManagedEnrollment() }
 func ValidateUserUninstall() error                    { return macos.ValidateUserUninstall() }
 func ValidateRun() error                              { return macos.ValidateRun() }
+func PreUninstallSystem() error                       { return macos.PreUninstallSystem() }

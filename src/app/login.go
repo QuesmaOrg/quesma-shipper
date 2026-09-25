@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"runtime"
 
@@ -39,13 +41,34 @@ func ManagedLogin(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 	if err != nil {
-		// Enrollment errors can include an HTTP response body; never put profile credentials in logs.
-		if errors.Is(err, formats.ErrCredentialsRefused) {
-			return false, fmt.Errorf("managed enrollment grant was refused; ask an administrator to replace an expired or revoked grant")
-		}
-		return false, fmt.Errorf("managed enrollment did not complete; check server reachability and the Server/Grant profile")
+		return false, managedEnrollmentError(err)
 	}
 	return true, nil
+}
+
+func managedEnrollmentError(err error) error {
+	// Response bodies may echo a grant, so only report structured failure details.
+	if errors.Is(err, formats.ErrCredentialsRefused) {
+		return fmt.Errorf("managed enrollment grant was refused; ask an administrator to replace an expired or revoked grant")
+	}
+	var httpErr *controlplane.HTTPStatusError
+	if errors.As(err, &httpErr) {
+		return fmt.Errorf("managed enrollment failed: server returned HTTP %d", httpErr.Status)
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return fmt.Errorf("managed enrollment failed: DNS lookup failed")
+	}
+	var authorityErr x509.UnknownAuthorityError
+	var hostnameErr x509.HostnameError
+	var certErr x509.CertificateInvalidError
+	if errors.As(err, &authorityErr) || errors.As(err, &hostnameErr) || errors.As(err, &certErr) {
+		return fmt.Errorf("managed enrollment failed: TLS certificate validation failed")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("managed enrollment failed: connection timed out")
+	}
+	return fmt.Errorf("managed enrollment did not complete; check server reachability and the Server/Grant profile")
 }
 
 func login(ctx context.Context, server, token string, managed bool) (LoginResult, error) {

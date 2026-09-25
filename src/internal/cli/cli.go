@@ -72,7 +72,7 @@ func Root(b app.Build, out, errOut io.Writer) *cobra.Command {
 	root.AddCommand(login)
 
 	for _, c := range []*cobra.Command{
-		postinstallCmd(), serviceCmd(), runCmd(b), previewCmd(b), logCmd(), configCmd(), stateCmd(), localDevCmd(),
+		preuninstallSystemCmd(), postinstallCmd(), serviceCmd(), runCmd(b), previewCmd(b), logCmd(), configCmd(), stateCmd(), localDevCmd(),
 	} {
 		c.Hidden = true
 		root.AddCommand(c)

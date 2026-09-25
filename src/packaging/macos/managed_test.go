@@ -43,6 +43,16 @@ func TestMixedInstallCheckIncludesDormantUserBundles(t *testing.T) {
 	}
 }
 
+func TestParseLocalUsersDeduplicatesConsoleAccount(t *testing.T) {
+	users, err := parseLocalUsers([]byte("501\t/Users/person one\n501\t/Users/person one\n501\t/Users/alternate\n502\t/Users/person two\n"))
+	if err != nil || len(users) != 3 || users[0].home != "/Users/person one" {
+		t.Fatalf("local users = %+v, %v", users, err)
+	}
+	if _, err := parseLocalUsers([]byte("503\trelative/home\n")); err == nil {
+		t.Fatal("accepted a relative user home")
+	}
+}
+
 func TestInstallCommandLinkPreservesAnotherInstallation(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "bin", executableName)

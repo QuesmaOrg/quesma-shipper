@@ -206,14 +206,23 @@ func (c *Client) post(ctx context.Context, path string, body, out any, signed bo
 		return fmt.Errorf("backend: %s refused this install's credentials (HTTP %d): %w",
 			path, status, formats.ErrCredentialsRefused)
 	default:
-		return fmt.Errorf("backend: %s returned HTTP %d: %s", path, status,
-			truncate(strings.TrimSpace(string(raw)), 200))
+		return fmt.Errorf("backend: %s: %w", path, &HTTPStatusError{Status: status,
+			Body: truncate(strings.TrimSpace(string(raw)), 200)})
 	}
 
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("backend: decode %s response: %w", path, err)
 	}
 	return nil
+}
+
+type HTTPStatusError struct {
+	Status int
+	Body   string
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("returned HTTP %d: %s", e.Status, e.Body)
 }
 
 // exchange sends one JSON POST and returns its status and bounded body. preamble is the domain

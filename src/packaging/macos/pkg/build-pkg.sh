@@ -47,6 +47,7 @@ main() {
 	fi
 	mkdir "$WORK/scripts"
 	cp "$HERE/scripts/preinstall" "$HERE/scripts/postinstall" "$WORK/scripts"
+	cp "$MODULE/packaging/macos/local-users.sh" "$WORK/scripts/local-users.sh"
 
 	build_component "$WORK/payload" com.quesma.shipper "$WORK/quesma-shipper-component.pkg" --scripts "$WORK/scripts"
 	set -- --distribution "$HERE/Distribution.xml" --package-path "$WORK"

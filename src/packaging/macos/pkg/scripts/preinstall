@@ -25,19 +25,11 @@ check_home() {
 if [ "$(id -u)" = 0 ]; then
 	[ "${3:-/}" = / ] || die 'only the running system volume is supported'
 	check_link /usr/local/bin/quesma-shipper '/Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper'
-	users=$(/usr/bin/dscl . -list /Users UniqueID)
-	printf '%s\n' "$users" | while read -r name uid; do
-		[ "$uid" -ge 500 ] || continue
-		home=$(/usr/bin/dscl . -read "/Users/$name" NFSHomeDirectory)
-		home=${home#NFSHomeDirectory: }
+	users=$(/bin/sh "$(dirname "$0")/local-users.sh")
+	printf '%s\n' "$users" | while IFS="$(printf '\t')" read -r uid home; do
+		[ -n "$uid" ] || continue
 		check_home "$home"
 	done
-	console_uid=$(/usr/bin/stat -f %u /dev/console)
-	if [ "$console_uid" -ge 500 ]; then
-		console_name=$(/usr/bin/stat -f %Su /dev/console)
-		home=$(/usr/bin/dscl /Search -read "/Users/$console_name" NFSHomeDirectory)
-		check_home "${home#NFSHomeDirectory: }"
-	fi
 else
 	for path in '/Applications/Quesma Shipper.app' /Library/LaunchAgents/com.quesma.shipper.plist; do
 		[ ! -e "$path" ] && [ ! -L "$path" ] || die "a system installation exists at $path"

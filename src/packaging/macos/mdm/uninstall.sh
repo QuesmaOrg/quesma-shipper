@@ -24,32 +24,16 @@ if [ -e "$app" ]; then
 	[ "$identifier" = "$label" ] || { printf 'Refusing to remove an unrecognized app.\n' >&2; exit 1; }
 fi
 
-users=$(/usr/bin/dscl . -list /Users UniqueID)
-console_uid=$(/usr/bin/stat -f %u /dev/console)
-if [ "$console_uid" -ge 500 ]; then
-	console_name=$(/usr/bin/stat -f %Su /dev/console)
-	users=$(printf '%s\n%s %s\n' "$users" "$console_name" "$console_uid")
+if [ -e "$app" ]; then
+	[ -f "$exe" ] && [ ! -L "$exe" ] && [ "$(/usr/bin/stat -f %u "$exe")" = 0 ] || {
+		printf 'Refusing to run an untrusted system executable.\n' >&2
+		exit 1
+	}
+	"$exe" preuninstall-system
+elif [ -e "$plist" ]; then
+	printf 'LaunchAgent remains without the app; restore the package before removal.\n' >&2
+	exit 1
 fi
-printf '%s\n' "$users" | while read -r name uid; do
-	[ "$uid" -ge 500 ] || continue
-	target="gui/$uid/$label"
-	if /bin/launchctl print "$target" >/dev/null 2>&1; then
-		[ -e "$plist" ] || { printf 'Agent %s is loaded without its LaunchAgent; files left in place.\n' "$target" >&2; exit 1; }
-		home=$(/usr/bin/dscl /Search -read "/Users/$name" NFSHomeDirectory)
-		home=${home#NFSHomeDirectory: }
-		if [ -e "$home/Library/LaunchAgents/$label.plist" ] || [ -L "$home/Library/LaunchAgents/$label.plist" ]; then
-			printf 'A per-user agent exists for %s; resolve the mixed installation before removal.\n' "$name" >&2
-			exit 1
-		fi
-		/bin/launchctl bootout "$target"
-		remaining=$(/usr/bin/plutil -extract ExitTimeOut raw -o - "$plist")
-		while /bin/launchctl print "$target" >/dev/null 2>&1; do
-			[ "$remaining" -gt 0 ] || { printf 'Agent %s is still loaded; files left in place.\n' "$target" >&2; exit 1; }
-			sleep 1
-			remaining=$((remaining - 1))
-		done
-	fi
-done
 
 rm -f "$plist"
 if [ -L /usr/local/bin/quesma-shipper ] && [ "$(readlink /usr/local/bin/quesma-shipper)" = "$exe" ]; then

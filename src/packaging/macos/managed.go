@@ -4,11 +4,11 @@ package macos
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -83,57 +83,72 @@ func renderSystemPlist() string {
 
 type localUser struct{ uid, home string }
 
+//go:embed local-users.sh
+var localUsersScript string
+
+func PreUninstallSystem() error {
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("system removal requires root")
+	}
+	users, err := localUsers()
+	if err != nil {
+		return err
+	}
+	for _, account := range users {
+		if err := checkNoUserInstallation(account.home); err != nil {
+			return err
+		}
+	}
+	started := make(map[string]bool)
+	for _, account := range users {
+		if started[account.uid] {
+			continue
+		}
+		started[account.uid] = true
+		target := "gui/" + account.uid + "/" + bundleIdentifier
+		if exec.Command(launchctl, "print", target).Run() != nil {
+			continue
+		}
+		if _, err := os.Stat(systemAgentPath); err != nil {
+			return fmt.Errorf("agent %s is loaded without its LaunchAgent: %w", target, err)
+		}
+		if err := exec.Command(launchctl, "bootout", target).Run(); err != nil {
+			return fmt.Errorf("stop agent for %s: %w", target, err)
+		}
+		if err := waitForServiceGone(target, common.ExitTimeout(Spec{})); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func localUsers() ([]localUser, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "/usr/bin/dscl", ".", "-list", "/Users", "UniqueID").Output()
+	out, err := exec.CommandContext(ctx, "/bin/sh", "-c", localUsersScript).Output()
 	if err != nil {
 		return nil, fmt.Errorf("list local users: %w", err)
 	}
-	homesOut, err := exec.CommandContext(ctx, "/usr/bin/dscl", ".", "-list", "/Users", "NFSHomeDirectory").Output()
-	if err != nil {
-		return nil, fmt.Errorf("list local user homes: %w", err)
-	}
-	homes := make(map[string]string)
-	for _, line := range strings.Split(string(homesOut), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 {
-			homes[fields[0]] = strings.TrimSpace(strings.TrimPrefix(line, fields[0]))
-		}
-	}
+	return parseLocalUsers(out)
+}
+
+func parseLocalUsers(out []byte) ([]localUser, error) {
 	var users []localUser
+	seen := make(map[string]bool)
 	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
+		if line == "" {
 			continue
 		}
-		uid, err := strconv.Atoi(fields[1])
-		if err != nil || uid < 500 {
-			continue
+		uid, home, ok := strings.Cut(line, "\t")
+		uidNumber, err := strconv.Atoi(uid)
+		if !ok || err != nil || uidNumber < 500 || !filepath.IsAbs(home) {
+			return nil, fmt.Errorf("invalid local user record")
 		}
-		home := homes[fields[0]]
-		if !filepath.IsAbs(home) {
-			return nil, fmt.Errorf("no absolute home for %s", fields[0])
+		key := uid + "\t" + home
+		if !seen[key] {
+			users = append(users, localUser{uid: uid, home: home})
+			seen[key] = true
 		}
-		users = append(users, localUser{uid: fields[1], home: home})
-	}
-	console, err := os.Stat("/dev/console")
-	if err != nil {
-		return nil, fmt.Errorf("read current console user: %w", err)
-	}
-	uid := console.Sys().(*syscall.Stat_t).Uid
-	if uid >= 500 {
-		id := strconv.FormatUint(uint64(uid), 10)
-		for _, existing := range users {
-			if existing.uid == id {
-				return users, nil
-			}
-		}
-		account, err := user.LookupId(id)
-		if err != nil || !filepath.IsAbs(account.HomeDir) {
-			return nil, fmt.Errorf("cannot resolve the current console user's home")
-		}
-		users = append(users, localUser{uid: id, home: account.HomeDir})
 	}
 	return users, nil
 }
@@ -160,7 +175,12 @@ func postInstallSystem() error {
 	if err := platform.WriteAtomic(systemAgentPath, []byte(renderSystemPlist()), 0o644); err != nil {
 		return err
 	}
+	started := make(map[string]bool)
 	for _, account := range users {
+		if started[account.uid] {
+			continue
+		}
+		started[account.uid] = true
 		domain := "gui/" + account.uid
 		if exec.Command(launchctl, "print", domain).Run() != nil {
 			continue

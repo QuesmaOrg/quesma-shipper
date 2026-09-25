@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
@@ -58,5 +59,12 @@ func TestManagedEnrollmentRetriesTheSameIdentityAfterALostResponse(t *testing.T)
 	}
 	if _, err := loginManaged("replacement-grant"); err != ErrAlreadyLoggedIn {
 		t.Fatalf("profile rotation replaced enrollment: %v", err)
+	}
+}
+
+func TestManagedEnrollmentErrorKeepsServerBodyOutOfLogs(t *testing.T) {
+	err := managedEnrollmentError(&controlplane.HTTPStatusError{Status: 500, Body: "grant=private-secret"})
+	if !strings.Contains(err.Error(), "HTTP 500") || strings.Contains(err.Error(), "private-secret") {
+		t.Fatalf("unsafe managed enrollment diagnostic: %v", err)
 	}
 }
