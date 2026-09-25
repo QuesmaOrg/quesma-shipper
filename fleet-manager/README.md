@@ -1,7 +1,7 @@
 # Fleet manager
 
-`fleet-manager` is the control plane for [Quesma
-Shipper](https://github.com/QuesmaOrg/quesma-shipper): a multi-organization control service. It stores configuration, enrollment
+`fleet-manager` is the control plane for [Quesma Shipper](../README.md), which lives beside it in
+this repository: a multi-organization control service. It stores configuration, enrollment
 credentials, and install identities below `v1/organization=<org>/control/`. Trajectory payloads go
 directly from shippers to object storage; the manager has no decrypt, acknowledgement, or cursor
 path for them, and the only object it reads outside `control/` is each install's `tags.json` — see
@@ -28,7 +28,7 @@ make vulncheck    # govulncheck over the module on its own, with the workspace o
 This needs Go 1.27 and Node 22 or newer; the browser script checks use Node's built-in test runner.
 UI assets are embedded, so rebuild and restart the local server after editing them.
 [ARCHITECTURE.md](ARCHITECTURE.md) states the invariants a change has to preserve, and the
-shipper repository's [CONTRIBUTING.md](https://github.com/QuesmaOrg/quesma-shipper/blob/main/CONTRIBUTING.md) covers the rest.
+repository's [CONTRIBUTING.md](../CONTRIBUTING.md) covers the rest.
 
 ### Run it
 
@@ -205,11 +205,10 @@ See [TELEMETRY.md](TELEMETRY.md).
 
 ## Contributing
 
-One system, one set of rules: the shipper repository holds them for the client and this service
-alike. [CONSTITUTION.md](https://github.com/QuesmaOrg/quesma-shipper/blob/main/CONSTITUTION.md) is
-the design authority, [CONTRIBUTING.md](https://github.com/QuesmaOrg/quesma-shipper/blob/main/CONTRIBUTING.md)
-covers setup and the commit gate, and all participation is subject to its
-[code of conduct](https://github.com/QuesmaOrg/quesma-shipper/blob/main/CODE_OF_CONDUCT.md).
+One system, one set of rules, kept at the repository root for the client and this service alike.
+[CONSTITUTION.md](../CONSTITUTION.md) is the design authority, [CONTRIBUTING.md](../CONTRIBUTING.md)
+covers setup and the commit gate, and all participation is subject to the
+[code of conduct](../CODE_OF_CONDUCT.md).
 
 ## Security
 
@@ -221,6 +220,6 @@ disclosure process and states what is in scope.
 [Apache License 2.0](LICENSE). Third-party notices are in [NOTICE](NOTICE), and every dependency's
 license text is under [third_party/](third_party/).
 
-The Quesma name and logo are trademarks and are not covered by that license. See the shipper
-repository's [TRADEMARKS.md](https://github.com/QuesmaOrg/quesma-shipper/blob/main/TRADEMARKS.md): you may fork
-and run this freely; a redistributed fork carries a different name.
+The Quesma name and logo are trademarks and are not covered by that license. See
+[TRADEMARKS.md](../TRADEMARKS.md): you may fork and run this freely; a redistributed fork carries a
+different name.

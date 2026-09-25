@@ -50,8 +50,7 @@ In scope:
 
 Out of scope:
 
-- The shipper itself. It has [its own repository and its own
-  policy](https://github.com/QuesmaOrg/quesma-shipper/blob/main/SECURITY.md).
+- The shipper itself. It has [its own policy](../SECURITY.md), at the repository root.
 - Anything that needs an attacker who already holds the deployment's cloud credentials, its
   Terraform state, or its administrator credential.
 - The design trade-offs the [README](README.md) already states: that the runtime identity may list
@@ -80,8 +79,8 @@ guarded, so a rolling replacement is safe.
 
 ## Design guarantees
 
-A security-relevant change must preserve the articles in the shipper's
-[CONSTITUTION.md](https://github.com/QuesmaOrg/quesma-shipper/blob/main/CONSTITUTION.md) and the
+A security-relevant change must preserve the articles in the repository's
+[CONSTITUTION.md](../CONSTITUTION.md) and the
 invariants in [ARCHITECTURE.md](ARCHITECTURE.md). The control plane never receives trajectory
 bytes. No install can overwrite another's objects. Configuration cannot turn off scrubbing or
 encryption. The service has no decrypt path and no delete operation.

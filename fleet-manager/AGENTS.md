@@ -1,15 +1,12 @@
 ## Design
 
-Design decisions are governed by
-[CONSTITUTION.md](https://github.com/QuesmaOrg/quesma-shipper/blob/main/CONSTITUTION.md) in the
-shipper repository — it is the constitution of the whole system, client and control plane.
+Design decisions are governed by the repository's [CONSTITUTION.md](../CONSTITUTION.md) — it is
+the constitution of the whole system, client and control plane.
 [ARCHITECTURE.md](ARCHITECTURE.md) holds this module's own invariants.
 
 ## Workflow and style
 
-The shipper repository's
-[AGENTS.md](https://github.com/QuesmaOrg/quesma-shipper/blob/main/AGENTS.md) covers both, for the
-client and for this service: draft PRs, comment density, when to simplify. Follow it rather than a
+The repository's [AGENTS.md](../AGENTS.md) covers both, for the client and for this service: draft PRs, comment density, when to simplify. Follow it rather than a
 copy that would drift from it. What follows is only what differs here.
 
 ## Before opening a PR

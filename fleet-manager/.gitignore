@@ -1,3 +1,5 @@
-# The binary `make build` produces. Kept here rather than in the repository root so it stays
-# ignored when this module is split out into its own repository.
+# The binary `make build` produces, and `make setup`'s local store: its config and the admin
+# credential, the only copy of it. Kept here rather than at the repository root, which is the
+# shipper's.
 /fleet-manager
+/data/

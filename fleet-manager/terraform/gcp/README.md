@@ -114,7 +114,7 @@ The installer verifies the bootstrap checksum, enrolls the machine, and starts t
 per-user background service. It must not be run as root. Release builds of the shipper
 keep themselves current from Quesma's signed update channel, a
 [TUF](https://theupdateframework.io/) repository; see the
-[shipper README](https://github.com/QuesmaOrg/quesma-shipper#readme).
+[shipper README](../../../README.md).
 
 Confirm the enrollment on the UI's Installs page. The new install must appear
 with status `active`. Repeat this section with a new

@@ -1,8 +1,6 @@
 # Architecture
 
-The shipper's
-[CONSTITUTION.md](https://github.com/QuesmaOrg/quesma-shipper/blob/main/CONSTITUTION.md) governs
-what this service assumes. This document governs how its code is arranged, and it is short for a
+The repository's [CONSTITUTION.md](../CONSTITUTION.md) governs what this service assumes. This document governs how its code is arranged, and it is short for a
 reason: fleet-manager is one `package main` under `src/`, with no internal packages and no import
 graph to police. There is nothing here resembling the shipper's layering table.
 

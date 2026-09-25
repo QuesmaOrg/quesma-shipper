@@ -1,9 +1,8 @@
-# Makefile for fleet-manager -- the control plane a customer deploys. The verbs every component
-# here answers:
+# Makefile for fleet-manager -- the control plane a customer deploys. Its own, beside the shipper's
+# at the repository root; the two components build, check and release separately.
 #
-#   make build                the binary (BIN= to put it elsewhere; the root passes bin/fleet-manager)
-#   make run                  serve on the host against the local pipeline's archive bucket, with a
-#                             dev organization -- or report that it is already serving
+#   make build                the binary (BIN= to put it elsewhere)
+#   make run                  serve on the host against a local store, setting it up first
 #   make run ENV=<deployment> nothing to run from here: deployments are customers' Terraform
 #   make deploy               build the linux/amd64 image and push quesma/fleet-manager:<sha> and
 #                             :latest to Docker Hub -- or report that the commit is already there.
@@ -16,7 +15,6 @@
 # Run from anywhere: make -C fleet-manager help
 
 HERE := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
-ROOT := $(abspath $(HERE)..)
 
 GO  := CGO_ENABLED=0 go
 IN  := cd $(HERE) &&
@@ -29,8 +27,8 @@ BIN ?= $(HERE)fleet-manager
 SRC := $(shell find $(HERE)src -type f -not -name '*_test.go') $(HERE)go.mod $(HERE)VERSION
 
 # The reviewed release line, plus the commit that built it. Deliberately not the shipper's
-# `VERSION-<commit count>-<sha>`: the count is taken over the whole repository, so it would jump
-# discontinuously the day this module is split out into its own. The sha does not.
+# `VERSION-<commit count>-<sha>`: the count is taken over the whole repository, which this module
+# shares with the shipper, so it would move with every shipper commit. The sha does not.
 VERSION  := $(shell tr -d '\r\n' < $(HERE)VERSION)
 REVISION := $(shell cd $(HERE) && git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 LDFLAGS  := -X main.version=$(VERSION)+$(REVISION)
@@ -53,10 +51,7 @@ clean: ## Remove the binary
 # covers the host the client will reach, and the client -- the shipper -- is on the host. A service
 # inside a container network would sign for a name the shipper cannot resolve.
 #
-# Two worlds share this verb. Inside this monorepo, local-pipeline owns the local stack and wires
-# the same service into the ETL, so `run` hands over to it. Outside -- a clone of this module on its
-# own, which is the open-source case -- there is no local-pipeline, and `run` is the whole thing: a
-# MinIO it starts, a bucket, a credential, and the server.
+# `run` is the whole local deployment: a MinIO it starts, a bucket, a credential, and the server.
 # S3_ENDPOINT names the store. Left at its default it is the loopback MinIO below; set EMPTY it is
 # real AWS, which means the standard credential chain -- AWS_PROFILE, SSO, an instance role -- and
 # no endpoint override anywhere, rather than the loopback keys. Everything else is the same API.
@@ -103,17 +98,13 @@ endif
 .PHONY: run
 run: ## Serve on 127.0.0.1:8099 against the local store, setting it up first if needed
 ifeq ($(ENV),local)
-	@if [ -d $(ROOT)/local-pipeline ]; then \
-	  $(MAKE) -C $(ROOT)/local-pipeline start-fleet-manager; \
-	else \
-	  $(MAKE) --no-print-directory build setup; \
-	  printf '  admin UI     http://127.0.0.1:%s/admin/\n' "$(DEV_PORT)"; \
-	  printf '\n  Next: open the admin UI, paste the credential, and create an organization with two\n'; \
-	  printf '  age recipients (age-keygen -o first.agekey && age-keygen -y first.agekey).\n'; \
-	  printf '  Ctrl-C stops the server; the bucket and the credential survive.\n\n'; \
-	  $(SERVE_ENV) PORT=$(DEV_PORT) \
-	    $(BIN) --serve --provider aws --bucket $(DEV_BUCKET) --region $(S3_REGION); \
-	fi
+	@$(MAKE) --no-print-directory build setup
+	@printf '  admin UI     http://127.0.0.1:%s/admin/\n' "$(DEV_PORT)"
+	@printf '\n  Next: open the admin UI, paste the credential, and create an organization with two\n'
+	@printf '  age recipients (age-keygen -o first.agekey && age-keygen -y first.agekey).\n'
+	@printf '  Ctrl-C stops the server; the bucket and the credential survive.\n\n'
+	@$(SERVE_ENV) PORT=$(DEV_PORT) \
+	  $(BIN) --serve --provider aws --bucket $(DEV_BUCKET) --region $(S3_REGION)
 else
 	@echo "fleet-manager is deployed into a customer's cloud by the Terraform under terraform/aws"
 	@echo "and terraform/gcp. Nothing to run from here."
@@ -122,11 +113,6 @@ endif
 
 # setup provisions, run serves. Both idempotent, so `make setup && make build && make run` and
 # `make run` on its own both work.
-#
-# Inside this monorepo local-pipeline owns the local stack and wires the same service into the ETL,
-# against its own MinIO on another port, so run hands over to it. Outside -- a clone of this module
-# on its own, which is the open-source case -- there is no local-pipeline and run serves directly.
-# That branch is a bridge: it should go in the commit that moves this module out.
 
 .PHONY: setup
 setup: ## Create the bucket, turn on versioning, and mint the admin credential
@@ -187,11 +173,6 @@ setup: ## Create the bucket, turn on versioning, and mint the admin credential
 	@printf '  credential   %s\n' "$$(cat $(DEV_CRED))"
 	@printf '               kept in %s -- this is the only copy\n\n' "$(DEV_CRED_REL)"
 
-.PHONY: stop
-stop: ## Stop the background local process started by local-pipeline (monorepo only)
-	@if [ -d $(ROOT)/local-pipeline ]; then $(MAKE) -C $(ROOT)/local-pipeline stop-fleet-manager; \
-	else echo "make run serves in the foreground; Ctrl-C stops it."; fi
-
 # amd64 is the one architecture all three deployment targets accept: Cloud Run and Azure Container
 # Apps are x86-only, ECS takes either. The cloud-run stage is the plain one; the lambda stage adds
 # the web adapter, and nothing pulls it from Docker Hub.
@@ -203,7 +184,9 @@ stop: ## Stop the background local process started by local-pipeline (monorepo o
 #   :<sha> absent                                  build and push both tags
 # A dirty working tree is refused, since :<sha> would name a commit that is not what was built.
 # `docker login` is assumed. No provenance or SBOM attestations: they turn the pushed artifact
-# into an index that Lambda and some Batch runtimes refuse.
+# into an index that Lambda and some Batch runtimes refuse -- and for the same reason the retag
+# copies the manifest as it is (--prefer-index=false) rather than wrapping it in a new index,
+# which would also give :latest a digest that never matches :<sha> again.
 PLATFORM ?= linux/amd64
 
 .PHONY: deploy
@@ -221,7 +204,7 @@ deploy: ## Push quesma/fleet-manager:<sha> and :latest to Docker Hub, which ever
 	if [ -n "$$have" ]; then \
 	  current=$$(digest $(IMAGE):latest) || exit 1; \
 	  if [ "$$current" = "$$have" ]; then echo "$(REVISION) is already $(IMAGE):latest. Nothing to do."; exit 0; fi; \
-	  docker buildx imagetools create -t $(IMAGE):latest $(IMAGE):$(REVISION); \
+	  docker buildx imagetools create --prefer-index=false -t $(IMAGE):latest $(IMAGE):$(REVISION); \
 	  echo "latest -> $(REVISION), retagged"; exit 0; fi; \
 	echo "building $(REVISION) for $(PLATFORM)"; \
 	docker buildx build --platform $(PLATFORM) --provenance=false --sbom=false --target cloud-run \
