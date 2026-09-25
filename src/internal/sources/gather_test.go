@@ -457,3 +457,23 @@ func mustParse(t *testing.T, s string) time.Time {
 	}
 	return p
 }
+
+// Candidates are oldest first: for a store that deletes itself, the file closest to deletion cannot be collected later.
+func TestOldestFileIsFirstInLine(t *testing.T) {
+	root := t.TempDir()
+	old := filepath.Join(root, "projects", "p", "old.jsonl")
+	fresh := filepath.Join(root, "projects", "p", "fresh.jsonl")
+	write(t, old, `{"a":1}`+"\n")
+	write(t, fresh, `{"a":2}`+"\n")
+
+	longAgo := mustParse(t, "2020-01-01T00:00:00Z")
+	if err := os.Chtimes(old, longAgo, longAgo); err != nil {
+		t.Fatal(err)
+	}
+
+	d := discover(t, source(root, []string{"projects/**/*.jsonl"}), nil)
+	// It must be first in line.
+	if !strings.HasSuffix(d.Candidates[0].RelPath, "old.jsonl") {
+		t.Errorf("the file closest to deletion must be collected first, got %s", d.Candidates[0].RelPath)
+	}
+}

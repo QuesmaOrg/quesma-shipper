@@ -236,8 +236,7 @@ func generateScrubVectors(t *testing.T) []byte {
 			`{"type":"user","uuid":"u1","cwd":"/Users/__USER__/Work2026/SampleOrg/blink-UI","message":{"content":[{"type":"text","text":"logs under ~/.claude/projects/-Users-__USER__-Work2026-SampleOrg-blink-UI/f00.jsonl"}]}}` + "\n",
 			"The placeholder is built from in-class characters and ADDS entropy when substituted, so the " +
 				"username rule's own output used to push dash-encoded slugs over the threshold: a second " +
-				"scrub ate what the first pass had preserved, and project-map records arrive with __USER__ " +
-				"already baked in. Byte-identical now, and it must stay that way.",
+				"scrub ate what the first pass had preserved. Byte-identical now, and it must stay that way.",
 		},
 		{
 			"grep output with long descriptive paths stays legible", "claude-code", true,

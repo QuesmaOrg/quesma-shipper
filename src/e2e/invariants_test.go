@@ -76,8 +76,6 @@ func TestNoShippedByteCarriesTheOSUsername(t *testing.T) {
 		if strings.Contains(o.Manifest.NativePath, username) {
 			t.Errorf("%s: the OS username survived in native_path: %s", o.Key, o.Manifest.NativePath)
 		}
-		// Only where the fixture planted one: the sidecar's native path is the state directory,
-		// which sits under home on a real machine but not here.
 		if isTranscript(o) && !strings.Contains(o.Manifest.NativePath, "__USER__") {
 			t.Errorf("%s: native_path carries no placeholder: %s", o.Key, o.Manifest.NativePath)
 		}
@@ -294,8 +292,8 @@ func TestATranscriptTheStoreDoesNotKnowShipsRawAndSaysSo(t *testing.T) {
 	}
 }
 
-// The shipper rewrites its own project map every run and reads it straight back, so an otherwise
-// idle run still moves bytes: counting those would put the throughput line under every summary.
+// The shipper writes its own account snapshots and reads them straight back, so an otherwise idle
+// run still moves bytes: counting those would put the throughput line under every summary.
 func TestAnIdleSyncPrintsNoThroughputLine(t *testing.T) {
 	w := stageWorld(t)
 	stageClaude(t, w, realUsername(t))

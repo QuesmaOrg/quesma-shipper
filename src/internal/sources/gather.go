@@ -278,7 +278,6 @@ func NewRegistry() *Registry {
 	return &Registry{primitives: map[string]Primitive{
 		// file_glob: append-only JSONL stores (a .zst file is decoded on load), copied config files, spill directories.
 		"file_glob": globPrimitive{},
-		"sidecar":   &Sidecar{},
 		"account":   &Accounts{},
 	}}
 }

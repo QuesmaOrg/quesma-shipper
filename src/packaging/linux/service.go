@@ -92,34 +92,26 @@ WantedBy=default.target
 `, cmd, env.String(), int(stop.Seconds()))
 }
 
-func InstallService(spec Spec) (Status, error) {
+func InstallService(spec Spec) error {
 	path := systemdPath(spec.Home)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return Status{}, fmt.Errorf("supervise: %w", err)
+		return fmt.Errorf("supervise: %w", err)
 	}
 	// Atomic: systemd re-reads units on daemon-reload, and a torn unit fails to parse.
 	if err := platform.WriteAtomic(path, []byte(renderUnit(spec)), common.EntryMode); err != nil {
-		return Status{}, fmt.Errorf("supervise: write %s: %w", path, err)
+		return fmt.Errorf("supervise: write %s: %w", path, err)
 	}
 
-	st := Status{Kind: common.KindSystemd, Installed: true, Path: path}
 	if err := daemonReload(); err != nil {
-		st.Detail = "unit written but " + err.Error()
-		return st, fmt.Errorf("supervise: %w", err)
+		return fmt.Errorf("supervise: %w", err)
 	}
 	// enable then restart, not `enable --now`: start is a no-op and would keep the old binary.
 	for _, verb := range []string{"enable", "restart"} {
 		if out, err := exec.Command("systemctl", "--user", verb, unitName).CombinedOutput(); err != nil {
-			st.Detail = fmt.Sprintf("unit written but %s failed: %v: %s", verb, err, strings.TrimSpace(string(out)))
-			return st, fmt.Errorf("supervise: systemctl --user %s: %w: %s", verb, err, strings.TrimSpace(string(out)))
+			return fmt.Errorf("supervise: systemctl --user %s: %w: %s", verb, err, strings.TrimSpace(string(out)))
 		}
 	}
-	st.Loaded = true
-	st.Detail = "enabled and started"
-	if hint := lingerHint(context.Background()); hint != "" {
-		st.Detail += "; " + hint
-	}
-	return st, nil
+	return nil
 }
 
 // lingerHint is the session-less-box caveat: without linger a --user service stops with the

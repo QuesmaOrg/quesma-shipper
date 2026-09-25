@@ -43,8 +43,8 @@ const (
 	smokeRoundTrips = (smokeRoundFiles + smokePutWidth - 1) / smokePutWidth
 )
 
-// A heartbeat, project map, and Claude account snapshot.
-const smokeSidecarObjects = 3
+// A heartbeat and Claude account snapshot.
+const smokeSidecarObjects = 2
 
 // Measured, and narrow: two runs of unchanged code over this corpus agree to within an HTTP header.
 const (
@@ -202,7 +202,7 @@ func smokeBacklog(t *testing.T, m *smokeMachine, baseline time.Duration) smokeBa
 // --- S2: the sync after it ---------------------------------------------------
 
 // What a machine with nothing to do costs, measured on the world S1 left behind. The floor is not
-// zero (config fetch, heartbeat, project map), so the claim is a ratio.
+// zero (config fetch, heartbeat, account snapshots), so the claim is a ratio.
 func smokeSteady(t *testing.T, m *smokeMachine, backlog smokeBacklogResult) {
 	t.Run("S2-incremental-no-op-sync", func(t *testing.T) {
 		if backlog.best <= 0 || backlog.bytes <= 0 || backlog.versions == nil {
@@ -247,7 +247,7 @@ func smokeSteady(t *testing.T, m *smokeMachine, backlog smokeBacklogResult) {
 			}
 		}
 
-		// Rewriting the heartbeat and project map is where an unrenamed temp file would show up.
+		// Rewriting the heartbeat and account snapshots is where an unrenamed temp file would show up.
 		assertNoResidualScratch(t, m.w)
 		assertPeakUnderBudget(t, smokeSteadyScenario, meas.peak, smokeSteadyBudget)
 	})

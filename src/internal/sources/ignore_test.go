@@ -235,7 +235,7 @@ func TestRepoDirIsTheMainWorktree(t *testing.T) {
 	}
 
 	if got := newRepoFilter(testProbe(), nil, home).RepoDir(src, candidateFor(root, "projects/p-1/s.jsonl")); got != nested {
-		t.Errorf("without git_read the worktree keeps its own directory, got %q", got)
+		t.Errorf("without git rules the worktree keeps its own directory, got %q", got)
 	}
 }
 
@@ -343,8 +343,8 @@ func TestDiscoveryDropsAMarkedRepositorysWorktree(t *testing.T) {
 	}
 }
 
-// The catalog wires the probe source's git_read into the filter; without it a worktree
-// session would be attributed to its disposable directory name.
+// The filter the catalog builds reads git; without it a worktree session would be attributed
+// to its disposable directory name.
 func TestCatalogRepoFilterReadsGit(t *testing.T) {
 	catalog, err := Load()
 	if err != nil {

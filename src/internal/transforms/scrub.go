@@ -134,7 +134,11 @@ func (s *Scrubber) noteCost(d time.Duration, size int) {
 	n := int64(d)
 	for {
 		prev := s.slowestNanos.Load()
-		if n <= prev {
+		if n < prev {
+			return
+		}
+		// On equal durations, prefer the larger payload.
+		if n == prev && int64(size) <= s.slowestBytes.Load() {
 			return
 		}
 		if s.slowestNanos.CompareAndSwap(prev, n) {

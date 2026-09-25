@@ -18,6 +18,5 @@ func PostInstallPackage() (string, error) {
 	if err != nil {
 		return warning, err
 	}
-	_, err = packaging.InstallService(spec)
-	return warning, err
+	return warning, packaging.InstallService(spec)
 }

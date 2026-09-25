@@ -1093,7 +1093,7 @@ func TestARunReplacesTheStateDocumentOncePerBatchNotOncePerFile(t *testing.T) {
 		}
 	})
 
-	// 25 files at a batch of 10: two batches, the source-boundary flush, plus project-map's own.
+	// 25 files at a batch of 10: two batches and the source-boundary flush.
 	if writes > 6 {
 		t.Errorf("state document replaced %d times for %d files; batching is not working", writes, files)
 	}

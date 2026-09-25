@@ -36,12 +36,6 @@ func CompiledExemptions() map[string][]string {
 			// opaque payload, keyed on the nested path.
 			"content[].image.hex",
 		},
-		"project-map": {
-			// Filesystem paths, project_dir arriving with __USER__ already baked in,
-			// which ADDS entropy. Inert today (the inventory is raw-text scanned) so that
-			// adding a jsonl sniff later cannot silently expose them to the backstop.
-			"cwd", "project_dir",
-		},
 		"*": {"timestamp", "version"},
 	}
 }
