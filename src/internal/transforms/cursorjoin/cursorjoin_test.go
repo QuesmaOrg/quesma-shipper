@@ -541,6 +541,27 @@ func TestUndecodableStoreRowsProduceANote(t *testing.T) {
 	successfulObject(t, res)
 }
 
+// Only the staged conversations' rows are decoded, so another conversation's drifted row neither
+// raises the note nor changes the object.
+func TestUndecodableRowsOfUnstagedConversationsAreNotCounted(t *testing.T) {
+	const other = "0e9d8c7b-6a5f-4e3d-9c2b-1a0f9e8d7c6b"
+	unstaged := []storeRow{
+		{"bubbleId:" + other + ":bad", `{"bubbleId":{"not":"a string"},"type":2}`},
+		{"bubbleId:" + other, `{}`},
+		{"composerData:" + other, `{"fullConversationHeadersOnly":"not a list"}`},
+	}
+	clean := successfulObject(t, run(t, newStore(t, lsRows(lsTool)), unit(t, transcript)))
+	res := run(t, newStore(t, append(lsRows(lsTool), unstaged...)), unit(t, transcript))
+	assert.Empty(t, res.Notes)
+	d := successfulObject(t, res)
+	assert.Equal(t, clean.OutputHash, d.OutputHash)
+	assert.Equal(t, clean.DBRowsRead+len(unstaged), d.DBRowsRead, "rows read still counts every row in the keyspaces")
+
+	res = run(t, newStore(t, append(append(lsRows(lsTool), unstaged...), bubbleRow("bad", `{"bubbleId":{"not":"a string"},"type":2}`))), unit(t, transcript))
+	assert.Contains(t, res.Notes, "1 store rows of the staged conversations did not decode (the store schema is vendor behaviour and drifts)")
+	successfulObject(t, res)
+}
+
 // No database is not an error, and an unreadable one fails open with a count.
 func TestAMissingOrUnreadableDatabaseFailsOpen(t *testing.T) {
 	res := run(t, "", unit(t, transcript))

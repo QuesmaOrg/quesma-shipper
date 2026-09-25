@@ -125,7 +125,9 @@ type indexed struct {
 	decodeErrors int
 }
 
-func indexRows(rows []sqliteread.Row) *indexed {
+// indexRows decodes only the staged conversations' rows: the keyspaces hold a machine's whole
+// Cursor history, and the join reads nothing else.
+func indexRows(rows []sqliteread.Row, staged map[string]bool) *indexed {
 	ix := &indexed{
 		composers: map[string]*composerData{},
 		bubbles:   map[string]map[string]*bubble{},
@@ -134,16 +136,23 @@ func indexRows(rows []sqliteread.Row) *indexed {
 	for _, r := range rows {
 		switch {
 		case strings.HasPrefix(r.Key, composerPrefix):
+			conv := strings.TrimPrefix(r.Key, composerPrefix)
+			if !staged[conv] {
+				continue
+			}
 			var c composerData
 			if err := json.Unmarshal(r.Value, &c); err != nil {
 				ix.decodeErrors++
 				continue
 			}
-			ix.composers[strings.TrimPrefix(r.Key, composerPrefix)] = &c
+			ix.composers[conv] = &c
 
 		case strings.HasPrefix(r.Key, bubblePrefix):
 			// bubbleId:<conversation>:<bubble>
 			conv, bubbleID, ok := strings.Cut(strings.TrimPrefix(r.Key, bubblePrefix), ":")
+			if !staged[conv] {
+				continue
+			}
 			if !ok {
 				ix.decodeErrors++
 				continue

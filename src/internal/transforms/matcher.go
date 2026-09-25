@@ -63,11 +63,16 @@ func NewExemptionSet(spec map[string][]string) *ExemptionSet {
 // Exempt reports whether a field is exempt from heuristic detectors for a family. No
 // nil-receiver tolerance: New always builds the set, and answering from a nil one would
 // fail open.
-func (e *ExemptionSet) Exempt(family string, field FieldPath) bool {
-	if e.global[field] {
+func (e *ExemptionSet) Exempt(family string, field []byte) bool {
+	if e.global[FieldPath(field)] {
 		return true
 	}
-	return e.byFamily[family][field]
+	return e.byFamily[family][FieldPath(field)]
+}
+
+// None reports whether no field is exempt for a family, so a walker need not track paths.
+func (e *ExemptionSet) None(family string) bool {
+	return len(e.global) == 0 && len(e.byFamily[family]) == 0
 }
 
 // prioritizedSpan carries the matcher class alongside the span, so overlapping

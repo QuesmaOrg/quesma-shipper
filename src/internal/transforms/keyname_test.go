@@ -1,6 +1,9 @@
 package transforms
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The key-name rule is the only backstop for a credential with no recognisable shape: letters
 // and digits, in a field whose name says what it is.
@@ -74,6 +77,62 @@ func TestKeyNamesSplitOnSeparatorsAndCamelHumps(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+// The configured-name compare folds ASCII in place; strings.ToUpper, the fold it replaced,
+// stays here as the oracle. The corners: bytes next to the fold range, and non-ASCII runes
+// whose uppercase changes length or lands on ASCII.
+func TestConfiguredKeyNameFoldMatchesToUpper(t *testing.T) {
+	reference := func(m *keyNameMatcher, key string) bool {
+		if key == "" {
+			return false
+		}
+		if matchesSecretKeyName(key) {
+			return true
+		}
+		upper := strings.ToUpper(key)
+		for _, n := range m.names {
+			if n.suffix && strings.HasSuffix(upper, n.upper) || !n.suffix && upper == n.upper {
+				return true
+			}
+		}
+		return false
+	}
+
+	names := append(DefaultSecretKeyNames(),
+		"STRASSE", "*_SS", "ſTAGE", "*_ﬀ", "DIẞ", "İD", "KKY", "A@[B", "*_Z`", "*", "")
+
+	keys := []string{
+		"", "a", "A", "@", "[", "`", "{", "a@[b", "A@[B", "a`{b", "A`{B", "x_z`", "X_Z`", "x_Z@",
+		"strasse", "Strasse", "straße", "STRAẞE", "x_ss", "x_ß", "X_SS", "x_ẞ",
+		"x_ﬀ", "x_ff", "X_FF", "X_ﬀ", "ﬀ", "stage", "ſtage", "ſTAGE", "STAGE",
+		"diß", "DIẞ", "diẞ", "DISS", "İd", "id", "iD", "ıd", "ID", "i̇d",
+		"kkey", "kKy", "KKY", "KKY", "kky",
+		"database_url", "Database_Url", "DATABASE_URL", "DATABASE_URL ", "xDATABASE_URL",
+		"my_token", "My_Token", "ı_token", "x_tokEn", "_TOKEN", "TOKEN_", "_token\xff", "a\xffb_ss",
+		"\xff", "\xc3", "é_passwd", "É_PASSWD",
+	}
+	for _, n := range names {
+		lit := strings.TrimPrefix(n, "*")
+		keys = append(keys, lit, strings.ToLower(lit), "x_"+lit, "X_"+strings.ToLower(lit), lit+"_x")
+	}
+	// One matcher per name, so a catch-all like "*" cannot mask the others.
+	matched := 0
+	for _, n := range names {
+		m := newKeyNameMatcher([]string{n})
+		for _, key := range keys {
+			got, want := m.MatchesKeyName(key), reference(m, key)
+			if got != want {
+				t.Errorf("name %q: MatchesKeyName(%q) = %v, strings.ToUpper reference = %v", n, key, got, want)
+			}
+			if want && !isASCII(key) && !matchesSecretKeyName(key) {
+				matched++
+			}
+		}
+	}
+	if matched == 0 {
+		t.Error("no non-ASCII key matched a configured name; the fallback went untested")
 	}
 }
 

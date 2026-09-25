@@ -63,6 +63,10 @@ type Runtime struct {
 	// env expands an enricher's declared database candidates, with the same rules catalog roots use.
 	env sources.Env
 
+	// ignore outlives a flush so its cwd cache spares a long-running service re-probing every
+	// unchanged session each tick; each flush opens a pass on it.
+	ignore *sources.RepoFilter
+
 	// OnProgress is the per-file hook a verb registers before flushing; rendering is CLI-owned.
 	// Nil (the default) is silent.
 	OnProgress formats.Progress
@@ -159,7 +163,7 @@ func NewFrom(
 	hostname, _ := os.Hostname()
 	return &Runtime{eff: eff, unit: unit, upload: up, uploadErr: upErr, telemetry: telemetry,
 		hostname: hostname, log: log, build: build,
-		remote: remote, env: env, recipients: recipients}, nil
+		remote: remote, env: env, ignore: eff.Catalog.RepoFilter(), recipients: recipients}, nil
 }
 
 // recipientsFor composes the encryption set from the identity unit and the resolved config:
@@ -184,7 +188,7 @@ func recipientsFor(eff *config.Effective, unit *identity.Unit) ([]age.Recipient,
 
 func (r *Runtime) options(dryRun bool) engine.Options {
 	return engine.Options{
-		Plan:       planFor(r.eff),
+		Plan:       planFor(r.eff, r.ignore),
 		Identity:   r.unit,
 		Upload:     r.upload,
 		Log:        r.log,
@@ -246,6 +250,7 @@ func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (format
 	o := r.options(dryRun)
 	o.Unbounded = unbounded
 	o.Heartbeat = r.WriteHeartbeat
+	r.ignore.BeginPass()
 	rep, err := engine.Run(ctx, store, o)
 
 	// Stamped even when the run shipped nothing: the marker answers "is the agent running at all",
@@ -347,7 +352,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 // planFor is the one place configuration becomes something the loop can read: the core gets
 // values, never the resolver, so adding a config key does not touch the engine. The repo
 // attributor comes from the catalog alone: tracking is answered by marker files, not config.
-func planFor(eff *config.Effective) engine.Plan {
+func planFor(eff *config.Effective, ignore *sources.RepoFilter) engine.Plan {
 	interval, _ := config.TickInterval(eff.Schedule)
 	return engine.Plan{
 		Interval:       interval,
@@ -359,7 +364,7 @@ func planFor(eff *config.Effective) engine.Plan {
 		SecretKeyNames: eff.SecretKeyNames,
 		StructuralEx:   eff.StructuralEx,
 		Deny:           eff.Deny,
-		Ignore:         eff.Catalog.RepoFilter(),
+		Ignore:         ignore,
 		ConfigVersion:  eff.ConfigVersion,
 		ConfigExpired:  eff.ConfigExpired,
 	}

@@ -190,6 +190,7 @@ type bubbleState struct {
 	used, declined bool
 	ev             evidence
 	n              int
+	args           *storedArgs // decoded on the bubble's first weighing
 }
 
 // alignment is one conversation's alignment outcome: the rendered lines, the events nothing
@@ -246,9 +247,15 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, state []bu
 		wantType = 1
 	}
 
+	var args *blockArgs
+	if blk.Type == "tool_use" {
+		args = newBlockArgs(blk.Input)
+	}
+
 	// weigh is one candidate's evidence, shared by both scan directions. The second value is
 	// argsEvidence's strength; text evidence has no gradation, so its positives carry 1.
-	weigh := func(b *bubble) (evidence, int) {
+	weigh := func(i int) (evidence, int) {
+		b := events[i]
 		if b.Type != 0 && b.Type != wantType {
 			return evidenceNegative, 0
 		}
@@ -260,7 +267,10 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, state []bu
 			// Arguments, not names: the transcript's display name and the store's
 			// internal name differ, so the arguments are what tells two calls of the
 			// same tool apart.
-			return argsEvidence(blk.Input, b.ToolFormerData)
+			if state[i].args == nil {
+				state[i].args = newStoredArgs(b.ToolFormerData)
+			}
+			return argsEvidence(args, state[i].args)
 
 		case "text":
 			if b.ToolFormerData != nil {
@@ -325,7 +335,7 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, state []bu
 		if state[i].declined {
 			continue
 		}
-		ev, n := weigh(events[i])
+		ev, n := weigh(i)
 		consider(i, ev, n, &fwd)
 	}
 	if bestPos >= 0 {
@@ -347,7 +357,7 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, state []bu
 			// worse is a different call sharing values with it. Unbounded, unlike the
 			// windows — nothing is consumed here.
 			if blk.Type == "tool_use" && state[i].ev >= evidencePartial {
-				if ev, n := weigh(events[i]); ev == state[i].ev && n == state[i].n {
+				if ev, n := weigh(i); ev == state[i].ev && n == state[i].n {
 					repeat = true
 					if ev > repeatEv || (ev == repeatEv && n > repeatN) {
 						repeatEv, repeatN = ev, n
@@ -359,7 +369,7 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, state []bu
 		if i < cursor-lookBehind || state[i].declined {
 			continue
 		}
-		ev, n := weigh(events[i])
+		ev, n := weigh(i)
 		if blk.Type != "tool_use" && ev != evidencePositive {
 			// No positional look-behind for prose: text that did not overlap is a far
 			// weaker claim than an argument-less tool call at a known position.
@@ -411,12 +421,12 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, state []bu
 			if state[i].used || state[i].declined {
 				continue
 			}
-			if ev, _ := weigh(events[i]); ev == evidencePositive {
+			if ev, _ := weigh(i); ev == evidencePositive {
 				return -1, matchNone, evidenceNegative, 0
 			}
 		}
 		if best >= 0 {
-			ev, n := weigh(events[best])
+			ev, n := weigh(best)
 			if ev == evidenceNeutral {
 				return best, matchAmbiguous, evidenceNeutral, 0
 			}
@@ -429,7 +439,7 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, state []bu
 		return -1, matchRepeat, evidenceNegative, 0
 	}
 	if best >= 0 {
-		ev, n := weigh(events[best])
+		ev, n := weigh(best)
 		return best, matchFound, ev, n
 	}
 	return -1, matchNone, evidenceNegative, 0

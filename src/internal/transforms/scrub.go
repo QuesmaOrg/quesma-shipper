@@ -343,9 +343,9 @@ func (p valuePlan) apply(value string) string {
 
 // planValue applies the full ladder to one decoded JSON string without building the
 // rewritten value; the walker maps the decoded spans back to the original token.
-func (s *Scrubber) planValue(value, key string, field FieldPath, family string, scan *packs.ValueScan) valuePlan {
+func (s *Scrubber) planValue(value, key string, exempt bool, scan *packs.ValueScan) valuePlan {
 	entropy := s.entropy
-	if s.exempt.Exempt(family, field) {
+	if exempt {
 		// Detector-scoped: the field stands down the heuristics and nothing else.
 		entropy = nil
 	}

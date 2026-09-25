@@ -2,9 +2,11 @@ package sources
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
@@ -19,19 +21,39 @@ const cwdProbeBytes = 64 << 10
 // Not a glob: only Claude Code encodes the working directory in the path; Codex files a
 // rollout under its start date and the repository appears only in a cwd field inside the
 // file. So attribution asks the file, with the catalog's own bounded head probe, and only
-// for the sources that probe names.
+// for the sources that probe names. Not safe for concurrent use: a pass is one goroutine.
 type RepoFilter struct {
 	probe CWDProbe
 	git   bool
 	home  string
+	read  func(path, field string) (string, bool)
 
-	// cwds caches a hit per project directory (every session under an agent-encoded
-	// projects/<cwd> directory shares the answer) and hits and misses per file (a sidecar
-	// with no cwd field must not speak for its siblings); scopes caches the git resolution
-	// per cwd. Markers are deliberately not cached: a stat is cheap, and a marker created
-	// while the daemon runs must bite on the next flush, not the next restart.
-	cwds   map[string]string
+	// files caches each file's probe, hits and misses (a sidecar with no cwd field must not
+	// speak for its siblings), while its size and mtime hold; dirs caches a hit per
+	// agent-encoded projects/<cwd> directory, which every session under it shares. An entry
+	// no lookup touched during a whole pass is swept at the next BeginPass.
+	files  map[string]*probedFile
+	dirs   map[string]*projectCWD
+	pass   uint64
+	looked bool
+
+	// scopes caches the git resolution per cwd and marked Match's verdict per cwd, both for
+	// one pass: a marker or checkout created while the daemon runs must bite on the next
+	// flush, not the next restart. Outside a pass (marked nil) no verdict is remembered.
 	scopes map[string]gitScope
+	marked map[string]bool
+}
+
+type probedFile struct {
+	size  int64
+	mtime time.Time
+	cwd   string
+	pass  uint64
+}
+
+type projectCWD struct {
+	cwd  string
+	pass uint64
 }
 
 // gitScope is the checkout containing a working directory and the repository's main
@@ -55,33 +77,54 @@ func (c *Compiled) RepoFilter() *RepoFilter {
 }
 
 func newRepoFilter(probe CWDProbe, git bool, home string) *RepoFilter {
-	return &RepoFilter{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}}
+	return &RepoFilter{probe: probe, git: git, home: home, read: probeCWD,
+		files: map[string]*probedFile{}, dirs: map[string]*projectCWD{}, scopes: map[string]gitScope{}}
+}
+
+// BeginPass opens a discovery pass on a filter kept across them. A pass that looked nothing
+// up (a paused tick) says nothing about which files are gone, so it sweeps nothing.
+func (f *RepoFilter) BeginPass() {
+	if f == nil {
+		return
+	}
+	if f.looked {
+		maps.DeleteFunc(f.files, func(_ string, e *probedFile) bool { return e.pass != f.pass })
+		maps.DeleteFunc(f.dirs, func(_ string, e *projectCWD) bool { return e.pass != f.pass })
+		f.pass++
+		f.looked = false
+	}
+	f.scopes = map[string]gitScope{}
+	f.marked = map[string]bool{}
 }
 
 // CWD is the working directory a candidate's session ran in, or "" when none was found,
-// which is a legal outcome.
+// which is a legal outcome. A file whose size or mtime moved is probed again: a rotated or
+// rewritten head can name another cwd, and a grown one can name its first.
 func (f *RepoFilter) CWD(src Resolved, c Candidate) string {
 	if f == nil || f.probe[src.ID] == "" {
 		return ""
 	}
-	key := c.Path
+	f.looked = true
+	key := ""
 	if dir := ProjectDir(c.RelPath); dir != "" {
 		key = src.Root + "\x00" + dir
-		if cwd, hit := f.cwds[key]; hit {
-			return cwd
+		if e, hit := f.dirs[key]; hit {
+			e.pass = f.pass
+			return e.cwd
 		}
 	}
-	if cwd, hit := f.cwds[c.Path]; hit {
-		return cwd
+	if e, hit := f.files[c.Path]; hit && e.size == c.Size && e.mtime.Equal(c.MTime) {
+		e.pass = f.pass
+		return e.cwd
 	}
 	cwd := ""
-	if p, ok := probeCWD(c.Path, f.probe[src.ID]); ok {
+	if p, ok := f.read(c.Path, f.probe[src.ID]); ok {
 		cwd = cleanCWD(p)
 	}
-	if cwd != "" {
-		f.cwds[key] = cwd
+	if cwd != "" && key != "" {
+		f.dirs[key] = &projectCWD{cwd: cwd, pass: f.pass}
 	}
-	f.cwds[c.Path] = cwd
+	f.files[c.Path] = &probedFile{size: c.Size, mtime: c.MTime, cwd: cwd, pass: f.pass}
 	return cwd
 }
 
@@ -174,7 +217,14 @@ func (f *RepoFilter) Match(src Resolved, c Candidate) bool {
 	if f == nil {
 		return false
 	}
-	_, marked := f.Marker(f.CWD(src, c))
+	cwd := f.CWD(src, c)
+	marked, hit := f.marked[cwd]
+	if !hit {
+		_, marked = f.Marker(cwd)
+		if f.marked != nil {
+			f.marked[cwd] = marked
+		}
+	}
 	return marked
 }
 
