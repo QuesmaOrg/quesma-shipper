@@ -9,6 +9,10 @@ participation is subject to the [code of conduct](CODE_OF_CONDUCT.md).
 - Clone the repository. Run `make build` and `make test`.
 - The Go module root is `src/`. Run `go` commands from there, or use the Makefile from the
   repository root.
+- The control plane, [Fleet Manager](fleet-manager/), is a second component with its own Go module,
+  Makefile and release line under `fleet-manager/`. It needs Go 1.27 and Node 22 or newer, for the
+  administration UI's tests. Run its targets with `make -C fleet-manager <target>`; `make -C
+  fleet-manager help` lists them. Nothing in one component builds or tests the other.
 
 ## Before you open a pull request
 
@@ -20,6 +24,11 @@ This is the commit gate. CI runs the same command. It runs gofmt and go vet, wit
 type-check. It then runs VERSION validation, dead-code detection, and the dependency license check.
 Last, it runs the unit suite under the race detector. `make test` is
 the faster local loop.
+
+For a change under `fleet-manager/`, the gate is `make -C fleet-manager check`: gofmt, go vet,
+VERSION, its own dependency license check, the Go suite, and the administration UI's tests. CI runs
+both gates on every pull request. [fleet-manager/AGENTS.md](fleet-manager/AGENTS.md) lists what
+differs there, such as the Terraform grants its tests pin.
 
 Open the pull request as a draft. A maintainer marks it ready for review. Put small fixes on the
 same branch. Put a larger follow-up in a stacked pull request.
@@ -34,9 +43,10 @@ article is not merged. A change to the constitution is its own pull request. Arg
 in the description.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) states which package can import which. Follow the table. If a
-change needs a new edge, say so in the description.
+change needs a new edge, say so in the description. The table is the shipper's; Fleet Manager is one
+package, and [fleet-manager/ARCHITECTURE.md](fleet-manager/ARCHITECTURE.md) holds its invariants.
 
-Reviewers check these invariants on every change:
+Reviewers check these invariants on every shipper change:
 
 - Scrub fails closed. A scrub error means the file is not uploaded.
 - No configuration layer can remove scrub or encrypt.
@@ -48,8 +58,10 @@ Reviewers check these invariants on every change:
 
 Golden tests pin output byte for byte. They are `src/e2e/golden_test.go`, the conformance vectors
 under `src/conformance/`, and the wire fixtures that the contract tests import from the
-[shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) module. A golden diff is a claim
-that the output must change. Read the diff. Explain it in the pull request. Do not run with
+[shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) module. Fleet Manager's contract
+is pinned the same way, by `fleet-manager/src/protocol_test.go` and the same wire fixtures, and
+what its deployment templates may grant by `fleet-manager/src/terraform_test.go`. A golden diff is
+a claim that the output must change. Read the diff. Explain it in the pull request. Do not run with
 `-update` until a maintainer agrees.
 
 File formats, the wire protocol, configuration keys, and the object-key grammar are compatibility
@@ -66,7 +78,9 @@ request.
 - Comment the intent and the non-obvious corner cases. Do not describe what the code does.
 - Use about three lines of top-level comment per file. Use one line elsewhere.
 - Keep dependencies few. Argue each new one in the pull request. `make check` rejects licenses
-  outside Apache-2.0, MIT, BSD, ISC, and Unlicense.
+  outside Apache-2.0, MIT, BSD, ISC, and Unlicense, and so does `make -C fleet-manager check`. A new
+  Fleet Manager dependency also means running `make -C fleet-manager licenses` and committing the
+  regenerated `fleet-manager/third_party/`.
 - After a large change, simplify before you ask for review.
 
 ## Test data
