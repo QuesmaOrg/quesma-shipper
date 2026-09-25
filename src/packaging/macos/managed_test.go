@@ -30,6 +30,24 @@ func TestSystemProgramRemovalRefusesBeforeTouchingFiles(t *testing.T) {
 	}
 }
 
+func TestPersonalUninstallRemainsAvailableWhenSystemAgentExists(t *testing.T) {
+	previous := systemAgentPath
+	systemAgentPath = filepath.Join(t.TempDir(), "system-agent.plist")
+	t.Cleanup(func() { systemAgentPath = previous })
+	if err := os.WriteFile(systemAgentPath, []byte("system agent"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !SystemManaged() {
+		t.Fatal("test did not detect the system agent")
+	}
+	if err := ValidateUserUninstall(); err != nil {
+		t.Fatalf("personal executable could not uninstall: %v", err)
+	}
+	if err := UninstallService(); !errors.Is(err, errSystemManaged) {
+		t.Fatalf("direct service removal could stop the system agent: %v", err)
+	}
+}
+
 func TestMixedInstallCheckIncludesDormantUserBundles(t *testing.T) {
 	home := t.TempDir()
 	if err := checkNoUserInstallation(home); err != nil {

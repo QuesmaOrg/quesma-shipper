@@ -30,6 +30,9 @@ func Login(ctx context.Context, server, token string) (LoginResult, error) {
 // ManagedLogin only enrolls an unconfigured user; profile rotation never replaces device identity.
 func ManagedLogin(ctx context.Context) (bool, error) {
 	if _, ok := LoggedIn(); ok {
+		if _, paths, err := ResolveEffective(); err == nil {
+			_ = controlplane.ClearManagedEnrollmentAttempt(paths.StateDir)
+		}
 		return true, nil
 	}
 	server, grant, err := packaging.ManagedEnrollment()
@@ -89,7 +92,7 @@ func loginWithRunCheck(ctx context.Context, server, token string, managed bool, 
 	}
 	defer unlock()
 	if existing, err := controlplane.LoadEnrollment(paths.StateDir); err == nil {
-		_ = controlplane.ClearManagedEnrollmentKey(paths.StateDir)
+		_ = controlplane.ClearManagedEnrollmentAttempt(paths.StateDir)
 		return LoginResult{Organization: existing.Organization}, ErrAlreadyLoggedIn
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return LoginResult{}, err
@@ -98,34 +101,38 @@ func loginWithRunCheck(ctx context.Context, server, token string, managed bool, 
 	if err != nil {
 		return LoginResult{}, err
 	}
-	var pub []byte
-	var priv []byte
-	if managed {
-		pub, priv, err = controlplane.ManagedEnrollmentKey(paths.StateDir, unit.InstallID.String())
-	} else {
-		pub, priv, err = controlplane.NewDeviceKey()
-	}
-	if err != nil {
-		return LoginResult{}, err
-	}
-	c, err := controlplane.New(controlplane.Options{Endpoint: server})
-	if err != nil {
-		return LoginResult{}, err
-	}
 	hostname, _ := os.Hostname()
 	req := controlplane.EnrollRequest{
-		InstallID:       unit.InstallID.String(),
-		DevicePublicKey: controlplane.EncodeKey(pub),
-		AgeRecipient:    unit.Recipient().String(),
-		Hostname:        hostname,
-		Platform:        runtime.GOOS + "/" + runtime.GOARCH,
+		InstallID:    unit.InstallID.String(),
+		AgeRecipient: unit.Recipient().String(),
+		Hostname:     hostname,
+		Platform:     runtime.GOOS + "/" + runtime.GOARCH,
 	}
+	endpoint := server
+	var body []byte
+	var priv []byte
 	if managed {
 		req.Grant = token
+		endpoint, body, priv, err = controlplane.ManagedEnrollmentAttempt(paths.StateDir, server, req)
 	} else {
+		var pub []byte
+		pub, priv, err = controlplane.NewDeviceKey()
+		req.DevicePublicKey = controlplane.EncodeKey(pub)
 		req.Invite = token
 	}
-	resp, err := c.Enroll(ctx, req)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	c, err := controlplane.New(controlplane.Options{Endpoint: endpoint})
+	if err != nil {
+		return LoginResult{}, err
+	}
+	var resp *controlplane.EnrollResponse
+	if managed {
+		resp, err = c.EnrollJSON(ctx, body)
+	} else {
+		resp, err = c.Enroll(ctx, req)
+	}
 	if !managed && errors.Is(err, formats.ErrCredentialsRefused) {
 		req.Invite, req.Grant = "", token
 		resp, err = c.Enroll(ctx, req)
@@ -136,16 +143,14 @@ func loginWithRunCheck(ctx context.Context, server, token string, managed bool, 
 	rec := controlplane.Enrollment{
 		InstallID:    unit.InstallID.String(),
 		Organization: resp.Organization,
-		Endpoint:     server,
+		Endpoint:     endpoint,
 		DeviceKey:    controlplane.EncodeKey(priv),
 		EnrolledAt:   controlplane.Now(),
 	}
 	if err := rec.Save(paths.StateDir); err != nil {
 		return LoginResult{}, err
 	}
-	if managed {
-		_ = controlplane.ClearManagedEnrollmentKey(paths.StateDir)
-	}
+	_ = controlplane.ClearManagedEnrollmentAttempt(paths.StateDir)
 	return LoginResult{Organization: resp.Organization, Machine: hostname}, nil
 }
 

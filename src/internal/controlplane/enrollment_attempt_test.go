@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -26,24 +27,37 @@ func TestEnrollmentLockRejectsConcurrentLoginAndReleases(t *testing.T) {
 	unlock()
 }
 
-func TestManagedEnrollmentKeyPersistsAndCannotCrossIdentities(t *testing.T) {
+func TestManagedEnrollmentAttemptPreservesTheExactRequest(t *testing.T) {
 	dir := t.TempDir()
-	pub, priv, err := ManagedEnrollmentKey(dir, "one")
+	req := EnrollRequest{InstallID: "one", AgeRecipient: "recipient", Hostname: "old-host", Grant: "old-grant", Platform: "darwin/arm64"}
+	endpoint, body, priv, err := ManagedEnrollmentAttempt(dir, "https://old.example", req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	againPub, againPriv, err := ManagedEnrollmentKey(dir, "one")
-	if err != nil || !bytes.Equal(pub, againPub) || !bytes.Equal(priv, againPriv) {
-		t.Fatalf("pending device key changed on retry: %v", err)
+	req.Hostname, req.Grant = "new-host", "new-grant"
+	againEndpoint, againBody, againPriv, err := ManagedEnrollmentAttempt(dir, "https://new.example", req)
+	if err != nil || endpoint != againEndpoint || !bytes.Equal(body, againBody) || !bytes.Equal(priv, againPriv) {
+		t.Fatalf("pending enrollment changed on retry: %v", err)
 	}
-	if _, _, err := ManagedEnrollmentKey(dir, "two"); err == nil {
-		t.Fatal("pending key accepted another identity")
+	var saved EnrollRequest
+	if err := json.Unmarshal(againBody, &saved); err != nil || saved.Grant != "old-grant" || saved.Hostname != "old-host" || saved.DevicePublicKey == "" {
+		t.Fatalf("pending request was not preserved: %+v, %v", saved, err)
 	}
-	info, err := os.Stat(filepath.Join(dir, "managed-enrollment-key.json"))
+	req.InstallID = "two"
+	if _, _, _, err := ManagedEnrollmentAttempt(dir, "https://old.example", req); err == nil {
+		t.Fatal("pending request accepted another identity")
+	}
+	info, err := os.Stat(filepath.Join(dir, managedAttemptFile))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if info.Mode().Perm()&0o077 != 0 && runtime.GOOS != "windows" {
-		t.Fatal("pending device key is not private")
+		t.Fatal("pending enrollment request is not private")
+	}
+	if err := ClearManagedEnrollmentAttempt(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, managedAttemptFile)); !os.IsNotExist(err) {
+		t.Fatalf("pending request survived cleanup: %v", err)
 	}
 }

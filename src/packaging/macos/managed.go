@@ -19,7 +19,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
-const systemAgentPath = "/Library/LaunchAgents/" + bundleIdentifier + ".plist"
+var systemAgentPath = "/Library/LaunchAgents/" + bundleIdentifier + ".plist"
 
 var errSystemManaged = common.ErrSystemManaged
 var errRootRun = errors.New("refusing to run as root: this agent reads the current user's files")
@@ -36,7 +36,11 @@ func SystemManaged() bool {
 }
 
 func ValidateUserUninstall() error {
-	if SystemManaged() {
+	exe, err := common.CurrentExecutable()
+	if err != nil {
+		return err
+	}
+	if systemExecutable(exe) {
 		return errSystemManaged
 	}
 	return nil

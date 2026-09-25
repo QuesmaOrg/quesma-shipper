@@ -126,9 +126,6 @@ func runCmd(build app.Build) *cobra.Command {
 			"waiting the full interval, so a backlog converges at upload speed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := packaging.ValidateRun(); err != nil {
-				return err
-			}
 			if !once && (drain || quiet) {
 				return fmt.Errorf("--drain and --quiet require --once")
 			}
@@ -142,12 +139,20 @@ func runCmd(build app.Build) *cobra.Command {
 			if logStateDir == "" {
 				logStateDir, _ = app.StateDirWithoutConfig()
 			}
-			if log, err := packaging.ManagedRunLog(logStateDir); err != nil {
+			log, err := packaging.ManagedRunLog(logStateDir)
+			if err != nil {
 				return err
-			} else if log != nil {
+			}
+			if log != nil {
 				defer log.Close()
 				cmd.SetOut(log)
 				cmd.SetErr(log)
+			}
+			if err := packaging.ValidateRun(); err != nil {
+				if log != nil {
+					fmt.Fprintln(log, "run:", err)
+				}
+				return err
 			}
 			waiting := false
 			var lastManagedAttempt time.Time
@@ -194,7 +199,7 @@ func runCmd(build app.Build) *cobra.Command {
 				stateDir, dirErr = app.StateDirWithoutConfig()
 			}
 			fl, runID, lastCrash := startCrashJournal(cmd.ErrOrStderr(), stateDir, dirErr)
-			err := runLoop(cmd, ctx, build, once, drain, quiet, fl, runID, lastCrash)
+			err = runLoop(cmd, ctx, build, once, drain, quiet, fl, runID, lastCrash)
 			fl.Exit()
 			return err
 		},

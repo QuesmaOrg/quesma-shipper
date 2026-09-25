@@ -45,6 +45,8 @@ distribution and revoke an exposed grant. Expiry or revocation stops new enrollm
 the profile before expiry for future users. Existing users retain their device credentials
 when the grant changes or the profile is removed. Manual login remains available with
 `quesma-shipper login --server URL TOKEN`.
+An unfinished enrollment keeps its original request, including the grant, in a private per-user
+state file until enrollment succeeds or local state is purged.
 
 ## Jamf Pro
 

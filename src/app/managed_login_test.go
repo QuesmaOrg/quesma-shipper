@@ -1,9 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,15 +21,21 @@ func TestManagedEnrollmentRetriesTheSameIdentityAfterALostResponse(t *testing.T)
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "state"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-	var requests []controlplane.EnrollRequest
+	var requests [][]byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req controlplane.EnrollRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
 			t.Error(err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		requests = append(requests, req)
+		var req controlplane.EnrollRequest
+		if err := json.Unmarshal(raw, &req); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		requests = append(requests, raw)
 		if len(requests) == 1 {
 			http.Error(w, "response lost after the server saved enrollment", http.StatusInternalServerError)
 			return
@@ -45,16 +53,20 @@ func TestManagedEnrollmentRetriesTheSameIdentityAfterALostResponse(t *testing.T)
 	if _, ok := LoggedIn(); ok {
 		t.Fatal("a lost response was persisted as successful enrollment")
 	}
-	if _, err := loginManaged("managed-grant"); err != nil {
+	if _, err := loginManaged("replacement-grant"); err != nil {
 		t.Fatal(err)
 	}
-	if len(requests) != 2 || requests[0] != requests[1] {
+	if len(requests) != 2 || !bytes.Equal(requests[0], requests[1]) {
 		t.Fatalf("managed retry changed its enrollment identity: %d requests", len(requests))
 	}
-	if _, err := os.Stat(filepath.Join(home, "state", "trajectory-shipper", "managed-enrollment-key.json")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(home, "state", "trajectory-shipper", "managed-enrollment-attempt.json")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("pending enrollment key survived successful enrollment: %v", err)
 	}
-	if requests[1].Invite != "" || requests[1].Grant != "managed-grant" {
+	var second controlplane.EnrollRequest
+	if err := json.Unmarshal(requests[1], &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.Invite != "" || second.Grant != "managed-grant" {
 		t.Fatal("managed enrollment did not use the grant request")
 	}
 	if _, err := loginManaged("replacement-grant"); err != ErrAlreadyLoggedIn {

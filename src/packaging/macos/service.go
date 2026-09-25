@@ -216,8 +216,8 @@ func waitForServiceGone(target string, within time.Duration) error {
 }
 
 func UninstallService() error {
-	if err := ValidateUserUninstall(); err != nil {
-		return err
+	if SystemManaged() {
+		return errSystemManaged
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
