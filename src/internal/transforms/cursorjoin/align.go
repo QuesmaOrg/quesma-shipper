@@ -234,6 +234,9 @@ const (
 	matchAmbiguous
 )
 
+// tier is one scan direction's first candidate at each lesser grade, -1 where there is none.
+type tier struct{ partial, neutral, weak int }
+
 // matchBlock finds the bubble for one content block: forward from the cursor first, then a
 // bounded look-behind over bubbles the forward scans skipped. It also returns the evidence the
 // match was made on, which the caller records per bubble for repeat detection.
@@ -293,14 +296,8 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, state []bu
 	// compatibility gates only the grades where position is the whole claim.
 	bestPos, bestPosN := -1, 0
 	partials := 0
-	fwdPartial, fwdNeutral, fwdWeak := -1, -1, -1
-	for i := cursor; i < len(events) && i < cursor+lookAhead; i++ {
-		// Nothing at or past the cursor is consumed — consuming a bubble always
-		// advances the cursor past it — so this scan needs no used check.
-		if state[i].declined {
-			continue
-		}
-		ev, n := weigh(events[i])
+	fwd, bhd := tier{-1, -1, -1}, tier{-1, -1, -1}
+	consider := func(i int, ev evidence, n int, t *tier) {
 		switch ev {
 		case evidencePositive:
 			if n > bestPosN {
@@ -308,18 +305,28 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, state []bu
 			}
 		case evidencePartial:
 			partials++
-			if fwdPartial < 0 {
-				fwdPartial = i
+			if t.partial < 0 {
+				t.partial = i
 			}
 		case evidenceNeutral:
-			if fwdNeutral < 0 && (blk.Type != "tool_use" || namesCompatible(string(blk.Name), events[i].ToolFormerData)) {
-				fwdNeutral = i
+			// Text candidates have no ToolFormerData to name-check; weigh never grades text weak.
+			if t.neutral < 0 && (blk.Type != "tool_use" || namesCompatible(string(blk.Name), events[i].ToolFormerData)) {
+				t.neutral = i
 			}
 		case evidenceWeak:
-			if fwdWeak < 0 && namesCompatible(string(blk.Name), events[i].ToolFormerData) {
-				fwdWeak = i
+			if t.weak < 0 && namesCompatible(string(blk.Name), events[i].ToolFormerData) {
+				t.weak = i
 			}
 		}
+	}
+	for i := cursor; i < len(events) && i < cursor+lookAhead; i++ {
+		// Nothing at or past the cursor is consumed — consuming a bubble always
+		// advances the cursor past it — so this scan needs no used check.
+		if state[i].declined {
+			continue
+		}
+		ev, n := weigh(events[i])
+		consider(i, ev, n, &fwd)
 	}
 	if bestPos >= 0 {
 		return bestPos, matchFound, evidencePositive, bestPosN
@@ -332,7 +339,6 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, state []bu
 	// the cursor has been passed over once already.
 	repeat := false
 	repeatEv, repeatN := evidenceNegative, 0
-	bhdPartial, bhdNeutral, bhdWeak := -1, -1, -1
 	for i := cursor - 1; i >= 0; i-- {
 		if state[i].used {
 			// A consumed bubble still testifies, but only to a block relating to it
@@ -359,25 +365,7 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, state []bu
 			// weaker claim than an argument-less tool call at a known position.
 			continue
 		}
-		switch ev {
-		case evidencePositive:
-			if n > bestPosN {
-				bestPos, bestPosN = i, n
-			}
-		case evidencePartial:
-			partials++
-			if bhdPartial < 0 {
-				bhdPartial = i
-			}
-		case evidenceNeutral:
-			if bhdNeutral < 0 && namesCompatible(string(blk.Name), events[i].ToolFormerData) {
-				bhdNeutral = i
-			}
-		case evidenceWeak:
-			if bhdWeak < 0 && namesCompatible(string(blk.Name), events[i].ToolFormerData) {
-				bhdWeak = i
-			}
-		}
+		consider(i, ev, n, &bhd)
 	}
 	if bestPos >= 0 {
 		return bestPos, matchFound, evidencePositive, bestPosN
@@ -390,25 +378,25 @@ func matchBlock(blk block, role string, events []*bubble, cursor int, state []bu
 	// half-belong to some other call.
 	best := -1
 	if partials == 1 {
-		best = fwdPartial
+		best = fwd.partial
 		if best < 0 {
-			best = bhdPartial
+			best = bhd.partial
 		}
 	} else {
-		fwdTier := fwdNeutral
-		if fwdPartial >= 0 && (fwdTier < 0 || fwdPartial < fwdTier) {
-			fwdTier = fwdPartial
+		fwdTier := fwd.neutral
+		if fwd.partial >= 0 && (fwdTier < 0 || fwd.partial < fwdTier) {
+			fwdTier = fwd.partial
 		}
-		bhdTier := max(bhdNeutral, bhdPartial)
+		bhdTier := max(bhd.neutral, bhd.partial)
 		switch {
 		case fwdTier >= 0:
 			best = fwdTier
 		case bhdTier >= 0:
 			best = bhdTier
-		case fwdWeak >= 0:
-			best = fwdWeak
+		case fwd.weak >= 0:
+			best = fwd.weak
 		default:
-			best = bhdWeak
+			best = bhd.weak
 		}
 	}
 
