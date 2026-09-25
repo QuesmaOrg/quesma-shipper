@@ -16,7 +16,7 @@ import (
 // A plausible cross-region hop, far enough above loopback noise to not be an artifact.
 const shapedRTT = 50 * time.Millisecond
 
-// Selects only what came off the machine; the heartbeat and project map change every run by design.
+// Selects only what came off the machine; the heartbeat and account snapshots change by design.
 const transcriptPrefix = "mirror/source=claude-code-transcripts/"
 
 // The claim the upload pool exists for: a backlog against a store 50ms away must not cost one
@@ -68,7 +68,7 @@ func TestBacklogFirstSyncOverlapsRoundTrips(t *testing.T) {
 }
 
 // A machine whose backlog is already shipped must cost almost nothing, however far the store is.
-// The floor is not zero (config fetch, heartbeat, project map), so the claim is a ratio.
+// The floor is not zero (config fetch, heartbeat, account snapshots), so the claim is a ratio.
 func TestSteadyStateSyncMakesAlmostNoNetworkCalls(t *testing.T) {
 	withLatency(t, shapedRTT, 0)
 

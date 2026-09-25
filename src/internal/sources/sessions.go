@@ -31,6 +31,17 @@ func sessionCollector(emit string) (Primitive, bool) {
 	}
 }
 
+// Keep the existing manifest gather name; session-specific collectors own the reads.
+type sessionDispatch struct{}
+
+func (sessionDispatch) Discover(req Request) (Discovery, error) {
+	collector, ok := sessionCollector(req.Source.Emit)
+	if !ok {
+		return Discovery{}, fmt.Errorf("unknown session collector %q", req.Source.Emit)
+	}
+	return collector.Discover(req)
+}
+
 func discoverSessions(req Request, reader sessionReader) (Discovery, error) {
 	src := req.Source
 	d := Discovery{Health: AgentAbsent, Sniff: SniffOK}

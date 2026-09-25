@@ -93,46 +93,9 @@
         },
 
         "emit": {
-          "description": "The record kind emitted by a sidecar or account collector.",
+          "description": "The account record kind or dedicated session collector.",
           "type": "string",
           "minLength": 1
-        },
-        "cwd_probe": {
-          "description": "sidecar only: a bounded probe, NOT a parser. Head-of-file budget, first match wins, no record types, no version awareness, never errors, never retries.",
-          "type": "object",
-          "required": ["from", "fields", "scan_bytes"],
-          "additionalProperties": false,
-          "properties": {
-            "from": {
-              "type": "array",
-              "minItems": 1,
-              "items": { "$ref": "#/$defs/identifier" }
-            },
-            "fields": {
-              "description": "Field names live in config so a renamed field is a config fix, not a release.",
-              "type": "array",
-              "minItems": 1,
-              "items": { "type": "string", "minLength": 1 }
-            },
-            "scan_bytes": { "type": "integer", "minimum": 1 }
-          }
-        },
-        "git_read": {
-          "description": "sidecar only: equally bounded .git handling.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "walk_up": { "type": "boolean" },
-            "follow_gitdir_file": {
-              "description": "Worktrees: .git is a file holding a gitdir: pointer.",
-              "type": "boolean"
-            },
-            "take": {
-              "description": "Scan .git/config for these keys only, ignoring insteadOf, credential helpers, everything else.",
-              "type": "array",
-              "items": { "type": "string", "minLength": 1 }
-            }
-          }
         }
       },
 
@@ -142,7 +105,7 @@
           "if": {
             "properties": {
               "gather": {
-                "enum": ["file_glob", "compressed_file"]
+                "enum": ["file_glob", "compressed_file", "sidecar"]
               }
             },
             "required": ["gather"]
@@ -150,16 +113,10 @@
           "then": { "required": ["roots", "include"] }
         },
         {
-          "$comment": "A sidecar source derives its records from other sources, so it takes a probe rather than globs.",
-          "if": {
-            "properties": { "gather": { "const": "sidecar" } },
-            "required": ["gather"]
-          },
+          "if": { "properties": { "gather": { "const": "sidecar" } }, "required": ["gather"] },
           "then": {
             "required": ["emit"],
-            "if": { "properties": { "emit": { "enum": ["opencode_sessions", "hermes_sessions"] } } },
-            "then": { "required": ["roots"] },
-            "else": { "required": ["cwd_probe"] }
+            "properties": { "emit": { "enum": ["opencode_sessions", "hermes_sessions"] } }
           }
         }
       ]
@@ -193,8 +150,8 @@
       "enum": [
         "account",
         "file_glob",
-        "sidecar",
-        "compressed_file"
+        "compressed_file",
+        "sidecar"
       ]
     },
     "artifact_class": { "enum": ["trajectory", "context"] },

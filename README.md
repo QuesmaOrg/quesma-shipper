@@ -95,11 +95,8 @@ Pi uses `$PI_CODING_AGENT_SESSION_DIR`, `$PI_CODING_AGENT_DIR/sessions`, or
 environment variable in the shipper process for nonstandard locations. See [agent session formats](AGENT_SESSIONS.md)
 for the snapshot contract and validation coverage.
 
-Two more records are produced by the shipper itself:
+One more record is produced by the shipper itself:
 
-- **Project map.** For each project directory an agent used: the directory name, the working
-  directory, and the git remote as host and path. Credentials embedded in a remote URL are removed
-  before the value is written anywhere.
 - **Account and usage history.** Independent Claude Code, Codex, and Cursor collectors upload
   account metadata and provider usage JSON in UTC buckets matching the collection interval (default 15 minutes). Unknown fields are preserved;
   these records skip scrubbing and ship encrypted.

@@ -6,7 +6,8 @@ it must be set in the shipper process. Other supported root environment variable
 are listed in the README. Arbitrary new root templates still require a catalog change.
 
 These sources use normal source configuration, repository ignore markers, scrubbing,
-encryption, upload state and project mapping. No provider key is needed to collect
+encryption and upload state. Working directories remain in session records; no
+project-map artifact is generated. No provider key is needed to collect
 local history. These sources do not collect provider account or subscription quotas.
 
 Pi ships its native JSONL format (session version 3 tested). OpenCode and Hermes use

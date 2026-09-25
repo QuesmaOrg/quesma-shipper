@@ -115,15 +115,6 @@ sources:
     roots: ["~/.demo"]
     include: ["**/*.jsonl"]
 `,
-		"sidecar without a bounded probe": `
-spec_version: 1
-family: demo
-sources:
-  - id: demo-src
-    gather: sidecar
-    artifact_class: context
-    emit: git_project_map
-`,
 	}
 
 	for name, src := range cases {

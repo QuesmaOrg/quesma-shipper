@@ -82,7 +82,7 @@ func TestVendPathShipsNothingOnASecondRun(t *testing.T) {
 	v := stageWorld(t)
 	stageClaude(t, v, realUsername(t))
 	// Generated observations change each run; this check covers unchanged files.
-	writeConfig(t, v, "sources:\n  - id: project-map\n    enabled: false\n  - id: claude-account\n    enabled: false\n")
+	writeConfig(t, v, "sources:\n  - id: claude-account\n    enabled: false\n")
 
 	runOneShot(t)
 	first := len(v.store.mirrorPuts())
