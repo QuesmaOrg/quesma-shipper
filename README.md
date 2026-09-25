@@ -41,26 +41,19 @@ Three ways in. Each one below is a complete sequence -- follow one, in order.
 | You have | Start here |
 | --- | --- |
 | A control plane your organisation runs, and an enrollment token | [From a release](#from-a-release): install the signed build and enroll it |
-| Nothing yet, and want to see the whole system work | [From source](#from-source): MinIO, Fleet Manager and a shipper on one machine, no cloud account |
+| Nothing yet, and want to see the whole system work | [On one machine](#on-one-machine): MinIO, Fleet Manager and a shipper built from this clone, no cloud account |
 | Nothing yet, and want to run it for real | [Run it in your own cloud](#run-it-in-your-own-cloud): Fleet Manager on AWS or Google Cloud, shippers on developer machines |
 
 The last two run the control plane yourself, so both start from a clone of this repository and the
-three decisions in [Decide these first](#decide-these-first).
+three decisions in [Before you run the control plane](#before-you-run-the-control-plane).
+
+To look at the pipeline without any control plane, install the shipper and run `quesma-shipper
+local-dev`, then `quesma-shipper preview`: collection and scrubbing work, and upload is disabled.
 
 ## Status
 
 The project is pre-1.0. The wire protocol, the configuration format, and the object naming are
 versioned and pinned by tests. They can still change between minor releases.
-
-The shipper needs a control plane to send data. Without one it runs in local development mode:
-collection, scrubbing, and preview work, and upload is disabled.
-
-The public update channel is the supported way to install the shipper and stay current. Released
-builds update themselves from its signed TUF repository. See
-[Versions and releases](#versions-and-releases).
-
-`trajectory-shipper` remains the wire identifier and on-disk configuration/state namespace.
-Those protocol-facing names are separate from the user-facing Quesma Shipper package and command.
 
 ## From a release
 
@@ -89,10 +82,9 @@ between the two, uninstall the previous installation without purging local state
 
 **Linux.** The script downloads a hash-pinned bootstrap binary and installs a systemd user service.
 Run it again to upgrade; existing enrollment is kept. `--no-service` skips the service. The
-released binaries are also available directly for
-[AMD64](https://updates.quesma.dev/targets/3ae805e2d630af5cb52fff51a5c8ae77aeb7b12f2d73a56fd7723698e9bfe48e.shipper-linux-amd64)
-and
-[ARM64](https://updates.quesma.dev/targets/78f0c89019d8a2f86fe3723359c00082ba9ec6ddedfc5fde1709f7516c33a3b0.shipper-linux-arm64).
+latest released binaries are also available directly for
+[AMD64](https://updates.quesma.dev/download/quesma-shipper-linux-amd64) and
+[ARM64](https://updates.quesma.dev/download/quesma-shipper-linux-arm64).
 
 **Windows.** Run the setup as your normal user. It installs the command under `%LOCALAPPDATA%`,
 adds it to your user `PATH`, and registers a scheduled task that starts immediately and at login,
@@ -120,13 +112,6 @@ every platform:
 quesma-shipper login <enrollment-token> --server https://cp.example.com
 ```
 
-Without a control plane at all, the pipeline still runs locally:
-
-```sh
-quesma-shipper local-dev      # create a local identity and state directory
-quesma-shipper preview        # show what would be collected and how it would be scrubbed
-```
-
 ### 3. Check it enrolled
 
 ```sh
@@ -137,7 +122,9 @@ quesma-shipper doctor
 no arguments shows whether it is on, what is collected, and what is waiting to be sent. The service
 ships on start and then every 15 minutes.
 
-## Decide these first
+## Before you run the control plane
+
+For the two paths below. Joining a fleet somebody else runs, you can skip this.
 
 Three settings shape an organisation. Two of them only act on files uploaded after they are set, so
 decide them before the first shipper enrolls.
@@ -159,14 +146,17 @@ registered when they are uploaded; changing the recipients later does not re-enc
 > If every private identity is lost, nobody can decrypt the uploaded files, and nothing reports it:
 > shippers keep enrolling and uploading normally.
 
-**2. Whether Quesma may decrypt.** `allow_quesma_etl` is **on unless you turn it off.** While it is
-on, Fleet Manager adds Quesma's built-in public recipient to every configuration it serves, so what
-is sealed from then on can also be opened by Quesma, for its dashboards and analytics. On its own
-that grants nothing: Quesma holds no bucket access until you grant it one. It is on by default
-because sealing cannot be added after the fact; turning it on later covers only uploads from then
-on. Turn it off per organisation (the checkbox when you create it), or for every organisation that
-never chose with `default_allow_quesma_etl = false` in the Terraform. Set it before the first upload
-if nothing should ever be sealed to Quesma.
+**2. Whether Quesma may decrypt.** `allow_quesma_etl` is **on unless you turn it off.**
+
+- While it is on, Fleet Manager adds Quesma's built-in public recipient to every configuration it
+  serves, so files sealed from then on can also be opened by Quesma, for its dashboards and
+  analytics.
+- On its own that grants nothing: Quesma holds no bucket access until you grant it one.
+- It is on by default because sealing cannot be added after the fact: turning it on later covers
+  only uploads from then on.
+- Turn it off per organisation (the checkbox when you create it), or for every organisation that
+  never chose with `default_allow_quesma_etl = false` in the Terraform. Do it before the first
+  upload if nothing should ever be sealed to Quesma.
 
 **3. Where operational telemetry goes.** Shippers report their own failures to Fleet Manager, which
 forwards them only if a collector is named. None is by default. Name one for every organisation with
@@ -174,7 +164,7 @@ forwards them only if a collector is named. None is by default. Name one for eve
 (`telemetry_collector_url`). This one can be changed at any time and applies immediately. See
 [fleet-manager/TELEMETRY.md](fleet-manager/TELEMETRY.md).
 
-## From source
+## On one machine
 
 MinIO, Fleet Manager and a shipper on a single machine, built from this repository. Nothing
 connects to a cloud provider. Use this to evaluate the system, to develop against it, or to
@@ -211,8 +201,8 @@ including pointing it at another store, are in the
 
 Open `http://127.0.0.1:8099/admin/`, paste the credential, and create an organisation: a lowercase
 slug (`acme` in the commands below; use your own), a display name, the **two age recipients** from
-[decision 1](#decide-these-first), and the Quesma ETL checkbox from decision 2. The slug is
-permanent: it is part of every object key.
+[decision 1](#before-you-run-the-control-plane), and the Quesma ETL checkbox from decision 2. The
+slug is permanent: it is part of every object key.
 
 Before enrolling any machine, check that a custodian can decrypt files sealed to those recipients:
 
@@ -231,10 +221,8 @@ make build        # bin/quesma-shipper
 ```
 
 **Pin the upload target before enrolling.** The local MinIO is plain HTTP and addressed path-style,
-and the shipper refuses an upload ticket that is not HTTPS unless told otherwise. That pin lives in
-the shipper's own user configuration and only there: a presigned ticket authorises itself, so a
-served document that could write the pin could also loosen it.
-`~/.config/trajectory-shipper/config.yaml`:
+and the shipper refuses an upload ticket that is not HTTPS unless told otherwise, in its
+[user configuration](#configuration). `~/.config/trajectory-shipper/config.yaml`:
 
 ```yaml
 upload_targets:
@@ -277,14 +265,24 @@ aws s3 cp --endpoint-url http://127.0.0.1:9000 "s3://trajectories/<key from the 
 age -d -i acme-security.agekey object.age | zstd -d | tar -t     # manifest.json, payload
 ```
 
-When you are done: Ctrl-C Fleet Manager, `docker rm -f fleet-minio`, and delete
-`fleet-manager/data/`.
+When you are done, remove the shipper and its service first, so it stops trying to upload, then
+the pin, then the control plane and its storage:
+
+```sh
+~/.local/bin/quesma-shipper uninstall --purge     # --purge also deletes enrollment and local state
+rm ~/.config/trajectory-shipper/config.yaml        # the pin, if nothing else is in the file
+docker rm -f fleet-minio                           # after Ctrl-C in the Fleet Manager terminal
+rm -rf fleet-manager/data/
+```
 
 ## Run it in your own cloud
 
 Terraform creates the bucket, the scoped roles, the service and the administrator credential; the
 shippers go on developer machines as usual. The steps below are for AWS. Google Cloud follows the
-same shape with [fleet-manager/terraform/gcp](fleet-manager/terraform/gcp/README.md).
+same shape with [fleet-manager/terraform/gcp](fleet-manager/terraform/gcp/README.md). Fleet
+Manager also runs on Azure (`--provider azure`, see the
+[Fleet Manager README](fleet-manager/README.md#executable-mode)), but there is no Azure template
+yet.
 
 You need Terraform 1.5 or later (or OpenTofu); the AWS CLI with a profile allowed to create S3, IAM,
 CloudWatch Logs and ECS Express Mode resources; a default VPC with two public subnets in different
@@ -352,7 +350,7 @@ for this step, including authenticating the AWS CLI and rotating the credential.
 
 ### 3. The organisation
 
-As in [Try it on one machine](#2-the-organisation), at `admin_url` with the credential from
+As in [On one machine](#2-the-organisation), at `admin_url` with the credential from
 `terraform output`: the same recipients, the same custody check, an invite or a grant.
 
 ### 4. The shippers
@@ -374,7 +372,8 @@ shipper allows by default. To enroll a build from source instead, use `install.s
 aws s3 ls --recursive "s3://$BUCKET/v1/organization=acme/install=" | head
 ```
 
-Then open one object with a custodian's identity, as on one machine. What comes next, from
+Then open one object with a custodian's identity, as in
+[On one machine](#4-check-that-it-arrived). What comes next, from
 rotating the credential and upgrading to backups, letting an outside ETL read and running without
 egress, is in [fleet-manager/OPERATIONS.md](fleet-manager/OPERATIONS.md), together with why the
 installation order matters and how to prepare the bucket by hand.
@@ -494,6 +493,14 @@ File locations. `XDG_CONFIG_HOME` and `XDG_STATE_HOME` are honoured.
 |---|---|
 | `~/.config/trajectory-shipper/config.yaml` | Optional user layer |
 | `~/.local/state/trajectory-shipper/` | Identity, upload record, audit log, run logs |
+
+`trajectory-shipper` remains the wire identifier and the on-disk configuration and state namespace,
+separate from the user-facing Quesma Shipper package and command.
+
+**Upload targets.** The shipper refuses an upload ticket that is not HTTPS, so a store such as a
+local MinIO needs an `upload_targets` entry in the user file, as in
+[On one machine](#3-the-shipper). The pin lives there and only there: a presigned ticket authorises
+itself, so a served document that could write the pin could also loosen it.
 
 Defaults: a 15-minute schedule, a maximum of 512 files per run, a 5-minute drain deadline.
 
