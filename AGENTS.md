@@ -2,6 +2,10 @@
 
 Design decisions are governed by [CONSTITUTION.md](CONSTITUTION.md).
 
+The control plane in `fleet-manager/` is its own component. For a change there, also follow
+[fleet-manager/AGENTS.md](fleet-manager/AGENTS.md), which lists what differs, and run
+`make -C fleet-manager check`.
+
 ## Workflow
 
 - Open a draft PR when you are done. Only humans mark a branch ready to review. Fixes go to the same branch, but bigger follow-ups should use a stacked PR. Ask if unsure.
