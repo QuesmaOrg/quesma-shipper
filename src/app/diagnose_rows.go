@@ -267,7 +267,7 @@ func familyRows(name string, probes []sourceProbe, up familyUpload, now time.Tim
 		if verbose && len(parts) > 1 {
 			head.Detail += " (" + strings.Join(parts, ", ") + ")"
 		}
-		if h := claudeHeadline(probes, verbose); h != "" {
+		if h := sessionHeadline(probes, verbose); h != "" {
 			head.Detail = h
 		}
 	default:
@@ -311,29 +311,29 @@ func familyRows(name string, probes []sourceProbe, up familyUpload, now time.Tim
 	return append(rows, disabled...), collecting, files
 }
 
-func claudeHeadline(probes []sourceProbe, verbose bool) string {
+// sessionHeadline counts sessions and projects for a family whose trajectories all live under
+// <root>/projects/<encoded-cwd>/; any other trajectory layout keeps the generic file count.
+func sessionHeadline(probes []sourceProbe, verbose bool) string {
 	sessions := 0
 	projects := map[string]bool{}
 	var extras []string
 	for _, pr := range probes {
-		if pr.src.Family != "claude-code" {
-			return ""
-		}
 		if !pr.src.Enabled || pr.err != nil || pr.d.Health != sources.Collected {
 			continue
 		}
-		if pr.src.ID != "claude-code-transcripts" {
+		if pr.src.ArtifactClass != "trajectory" {
 			extras = append(extras, partName(pr.src))
 			continue
+		}
+		if pr.src.RequireSubdir != "projects" {
+			return ""
 		}
 		for _, c := range pr.d.Candidates {
 			if strings.HasSuffix(c.RelPath, ".jsonl") {
 				sessions++
 			}
-			if rest, ok := strings.CutPrefix(c.RelPath, "projects/"); ok {
-				if proj, _, found := strings.Cut(rest, "/"); found {
-					projects[proj] = true
-				}
+			if dir := sources.ProjectDir(c.RelPath); dir != "" {
+				projects[dir] = true
 			}
 		}
 	}

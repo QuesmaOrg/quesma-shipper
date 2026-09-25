@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
@@ -22,7 +21,7 @@ const cwdProbeBytes = 64 << 10
 // file. So attribution asks the file, with the catalog's own bounded head probe, and only
 // for the sources that probe names.
 type RepoFilter struct {
-	probe *CWDProbe
+	probe CWDProbe
 	git   bool
 	home  string
 
@@ -41,35 +40,32 @@ type gitScope struct {
 	root, main string
 }
 
-// CWDProbe is the bounded head-of-file probe: the sources whose files name their session's cwd
-// and the fields that hold it.
-type CWDProbe struct {
-	From   []string
-	Fields []string
-}
+// CWDProbe is the bounded head-of-file probe: each source whose files name their session's cwd,
+// mapped to the field that holds it.
+type CWDProbe map[string]string
 
 // RepoFilter builds the attributor. Claude Code states cwd at the top level of a transcript
 // record, Codex under payload.
 func (c *Compiled) RepoFilter() *RepoFilter {
 	home, _ := os.UserHomeDir()
 	return newRepoFilter(
-		&CWDProbe{From: []string{"claude-code-transcripts", "codex-rollouts"}, Fields: []string{"cwd", "payload.cwd"}},
+		CWDProbe{"claude-code-transcripts": "cwd", "codex-rollouts": "payload.cwd"},
 		true,
 		home)
 }
 
-func newRepoFilter(probe *CWDProbe, git bool, home string) *RepoFilter {
+func newRepoFilter(probe CWDProbe, git bool, home string) *RepoFilter {
 	return &RepoFilter{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}}
 }
 
 // CWD is the working directory a candidate's session ran in, or "" when none was found,
 // which is a legal outcome.
 func (f *RepoFilter) CWD(src Resolved, c Candidate) string {
-	if f == nil || f.probe == nil || !slices.Contains(f.probe.From, src.ID) {
+	if f == nil || f.probe[src.ID] == "" {
 		return ""
 	}
 	key := c.Path
-	if dir := projectDirOf(c.RelPath); dir != "" {
+	if dir := ProjectDir(c.RelPath); dir != "" {
 		key = src.Root + "\x00" + dir
 		if cwd, hit := f.cwds[key]; hit {
 			return cwd
@@ -79,7 +75,7 @@ func (f *RepoFilter) CWD(src Resolved, c Candidate) string {
 		return cwd
 	}
 	cwd := ""
-	if p, ok := probeCWD(c.Path, f.probe); ok {
+	if p, ok := probeCWD(c.Path, f.probe[src.ID]); ok {
 		cwd = cleanCWD(p)
 	}
 	if cwd != "" {
@@ -196,20 +192,20 @@ func (f *RepoFilter) Track(dir string) error {
 	return nil
 }
 
-// projectDirOf takes the agent's encoded project directory out of a relative path. Only a real
-// projects/<encoded-cwd> segment counts.
-func projectDirOf(rel string) string {
+// ProjectDir takes the agent's encoded project directory out of a relative path. Only a real
+// projects/<encoded-cwd>/ directory counts, never a file directly under projects/.
+func ProjectDir(rel string) string {
 	parts := strings.Split(filepath.ToSlash(rel), "/")
-	for i, seg := range parts {
-		if seg == "projects" && i+1 < len(parts) {
+	for i := 0; i+2 < len(parts); i++ {
+		if parts[i] == "projects" {
 			return parts[i+1]
 		}
 	}
 	return ""
 }
 
-// probeCWD reads the first cwd-shaped value out of the head of a file, bounded on purpose: the client does not parse.
-func probeCWD(path string, probe *CWDProbe) (string, bool) {
+// probeCWD reads the field's first non-empty value out of the head of a file, bounded on purpose: the client does not parse.
+func probeCWD(path, field string) (string, bool) {
 	head, _, err := readHead(path, cwdProbeBytes)
 	if err != nil {
 		return "", false
@@ -223,10 +219,8 @@ func probeCWD(path string, probe *CWDProbe) (string, bool) {
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			continue
 		}
-		for _, field := range probe.Fields {
-			if v, ok := lookupField(rec, field); ok && v != "" {
-				return v, true
-			}
+		if v, ok := lookupField(rec, field); ok && v != "" {
+			return v, true
 		}
 	}
 	return "", false

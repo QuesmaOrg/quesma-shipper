@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-func testProbe() *CWDProbe {
-	return &CWDProbe{From: []string{"claude-code-transcripts", "codex-rollouts"}, Fields: []string{"cwd", "payload.cwd"}}
+func testProbe() CWDProbe {
+	return CWDProbe{"claude-code-transcripts": "cwd", "codex-rollouts": "payload.cwd"}
 }
 
 func writeSession(t *testing.T, path, cwd string) {
@@ -19,6 +19,17 @@ func writeSession(t *testing.T, path, cwd string) {
 	if cwd != "" {
 		body = `{"type":"summary"}` + "\n" + `{"type":"user","cwd":` + strconv.Quote(cwd) + `}` + "\n"
 	}
+	writeBody(t, path, body)
+}
+
+// writeRollout writes Codex's envelope, which states cwd only under payload.
+func writeRollout(t *testing.T, path, cwd string) {
+	t.Helper()
+	writeBody(t, path, `{"timestamp":"2026-07-20T09:00:00Z","type":"session_meta","payload":{"id":"s1","cwd":`+strconv.Quote(cwd)+`}}`+"\n")
+}
+
+func writeBody(t *testing.T, path, body string) {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -114,8 +125,8 @@ func TestMarkersDoNotLeakAcrossADateDirectory(t *testing.T) {
 	acme := repoDir(t, home, "work/acme", true)
 	keeper := repoDir(t, home, "work/keeper", false)
 	root := t.TempDir()
-	writeSession(t, filepath.Join(root, "sessions/2026/07/20/rollout-a.jsonl"), acme)
-	writeSession(t, filepath.Join(root, "sessions/2026/07/20/rollout-b.jsonl"), keeper)
+	writeRollout(t, filepath.Join(root, "sessions/2026/07/20/rollout-a.jsonl"), acme)
+	writeRollout(t, filepath.Join(root, "sessions/2026/07/20/rollout-b.jsonl"), keeper)
 	src := Resolved{Source: Source{ID: "codex-rollouts"}, Root: root}
 	f := newRepoFilter(testProbe(), false, home)
 	if !f.Match(src, candidateFor(root, "sessions/2026/07/20/rollout-a.jsonl")) {
@@ -123,6 +134,20 @@ func TestMarkersDoNotLeakAcrossADateDirectory(t *testing.T) {
 	}
 	if f.Match(src, candidateFor(root, "sessions/2026/07/20/rollout-b.jsonl")) {
 		t.Error("a rollout from another repository must not match")
+	}
+}
+
+func TestProjectDir(t *testing.T) {
+	for rel, want := range map[string]string{
+		"projects/-Users-jane-acme/s.jsonl":             "-Users-jane-acme",
+		"projects/-Users-jane-acme/s/subagents/a.jsonl": "-Users-jane-acme",
+		"projects/s.jsonl":                              "",
+		"sessions/2026/07/20/rollout-a.jsonl":           "",
+		"-Users-jane-acme/agent-transcripts/c.jsonl":    "",
+	} {
+		if got := ProjectDir(rel); got != want {
+			t.Errorf("ProjectDir(%q) = %q, want %q", rel, got, want)
+		}
 	}
 }
 
