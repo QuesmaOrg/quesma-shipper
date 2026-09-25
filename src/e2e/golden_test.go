@@ -16,8 +16,8 @@ import (
 // Goldens for the fields where the exact value is the point. What is pinned stays narrow, because a
 // golden nobody reads is worse than none: the object key is pinned and can be, being an HMAC over
 // the home-relative path, while the source digest is not, being taken before redaction over bytes
-// carrying the OS username. Only collected transcripts are recorded; the sidecar and heartbeat would
-// pin the environment rather than the behaviour.
+// carrying the OS username. Only collected transcripts are recorded; the account snapshots and heartbeat
+// would pin the environment rather than the behaviour.
 //
 // A golden diff is a claim that the output SHOULD have changed, and -update on a red test is how a
 // regression becomes a committed expectation. Read the diff before running `go test ./e2e -update`.

@@ -59,11 +59,11 @@ func TestSummarizeLeavesOutDerivedObjects(t *testing.T) {
 	}
 }
 
-// The project map is written by the shipper itself and re-ships on every run, so counting it
+// An account snapshot is written by the shipper itself and re-ships on every run, so counting it
 // would mean an idle machine never totals zero bytes.
 func TestSummarizeLeavesOutWhatTheShipperWroteItself(t *testing.T) {
 	rep := Report{Sources: []SourceOutcome{
-		{SourceID: "project-map", Emitted: true, Files: []FileOutcome{
+		{SourceID: "claude-account", Emitted: true, Files: []FileOutcome{
 			{Decision: formats.DecisionShipped, BytesIn: 203, BytesOut: 1100},
 		}},
 	}}

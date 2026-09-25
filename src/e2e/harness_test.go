@@ -679,8 +679,8 @@ func summary(t *testing.T, out string) map[string]int {
 }
 
 // The source id of everything the run actually sent, per file. A global "shipped 0" would be both
-// too strict and too vague, because the generated project-map sidecar can legitimately change when
-// nothing was collected. Change-detection assertions must feed this the run log via shippedFromLog:
+// too strict and too vague, because the account snapshots the shipper generates can legitimately
+// change when nothing was collected. Change-detection assertions must feed this the run log via shippedFromLog:
 // the console truncates to 32 per-file lines, so parsing it directly is only for console tests.
 func shippedSources(out string) []string {
 	var out2 []string

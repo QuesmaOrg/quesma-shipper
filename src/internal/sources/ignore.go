@@ -1,10 +1,13 @@
 package sources
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
 
 const notrajectories = ".notrajectories"
@@ -36,20 +39,28 @@ type gitScope struct {
 	root, main string
 }
 
-// RepoFilter builds the attributor from the catalog's cwd probe and the git rules of that
-// same source, so the field names and what may be read stay data. With no probe nothing is
-// attributed and nothing is ignored.
+// CWDProbe is the bounded head-of-file probe: the sources whose files name their session's cwd,
+// the fields that hold it, and how far into a file to look.
+type CWDProbe struct {
+	From      []string
+	Fields    []string
+	ScanBytes int64
+}
+
+// GitRead is the equally bounded .git handling.
+type GitRead struct {
+	WalkUp           bool
+	FollowGitdirFile bool
+}
+
+// RepoFilter builds the attributor. Claude Code states cwd at the top level of a transcript
+// record, Codex under payload.
 func (c *Compiled) RepoFilter() *RepoFilter {
-	var probe *CWDProbe
-	var git *GitRead
-	for _, s := range c.Sources() {
-		if s.CWDProbe != nil {
-			probe, git = s.CWDProbe, s.GitRead
-			break
-		}
-	}
 	home, _ := os.UserHomeDir()
-	return newRepoFilter(probe, git, home)
+	return newRepoFilter(
+		&CWDProbe{From: []string{"claude-code-transcripts", "codex-rollouts"}, Fields: []string{"cwd", "payload.cwd"}, ScanBytes: 64 << 10},
+		&GitRead{WalkUp: true, FollowGitdirFile: true},
+		home)
 }
 
 func newRepoFilter(probe *CWDProbe, git *GitRead, home string) *RepoFilter {
@@ -188,4 +199,139 @@ func (f *RepoFilter) Track(dir string) error {
 		return err
 	}
 	return nil
+}
+
+// projectDirOf takes the agent's encoded project directory out of a relative path. Only a real
+// projects/<encoded-cwd> segment counts.
+func projectDirOf(rel string) string {
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	for i, seg := range parts {
+		if seg == "projects" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
+}
+
+// probeCWD reads the first cwd-shaped value out of the head of a file, bounded on purpose: the client does not parse.
+func probeCWD(path string, probe *CWDProbe) (string, bool) {
+	budget := probe.ScanBytes
+	if budget <= 0 {
+		budget = 64 << 10
+	}
+	head, _, err := readHead(path, budget)
+	if err != nil {
+		return "", false
+	}
+
+	for line := range strings.SplitSeq(string(head), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var rec map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			continue
+		}
+		for _, field := range probe.Fields {
+			if v, ok := lookupField(rec, field); ok && v != "" {
+				return v, true
+			}
+		}
+	}
+	return "", false
+}
+
+// lookupField resolves a dotted field name, so a config can name payload.cwd as easily as cwd.
+func lookupField(rec map[string]json.RawMessage, field string) (string, bool) {
+	parts := strings.Split(field, ".")
+	current := rec
+	for i, part := range parts {
+		raw, ok := current[part]
+		if !ok {
+			return "", false
+		}
+		if i == len(parts)-1 {
+			var s string
+			if err := json.Unmarshal(raw, &s); err != nil {
+				return "", false
+			}
+			return s, true
+		}
+		var nested map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &nested); err != nil {
+			return "", false
+		}
+		current = nested
+	}
+	return "", false
+}
+
+// findGitDir walks up from cwd to the checkout root holding .git and the repository's
+// COMMON git dir: a linked worktree's own gitdir holds no config, and its commondir
+// names the one that does.
+func findGitDir(cwd string, cfg *GitRead, ceiling string) (root, common string, ok bool) {
+	if !filepath.IsAbs(cwd) {
+		return "", "", false
+	}
+	dir := filepath.Clean(cwd)
+	for dir != ceiling {
+		candidate := filepath.Join(dir, ".git")
+		info, err := os.Lstat(candidate)
+		if err == nil {
+			if info.IsDir() {
+				return dir, candidate, true
+			}
+			// A worktree: .git is a file holding "gitdir: <path>".
+			if cfg.FollowGitdirFile {
+				if target, ok := gitPointer(candidate, "gitdir:", dir); ok {
+					return dir, gitCommonDir(target), true
+				}
+			}
+			return "", "", false
+		}
+		if !cfg.WalkUp {
+			return "", "", false
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", "", false
+		}
+		dir = parent
+	}
+	return "", "", false
+}
+
+// gitPointer reads one of git's pointer files (a "gitdir:" line, or commondir's bare
+// path) and resolves it against base.
+func gitPointer(file, prefix, base string) (string, bool) {
+	body, _, err := platform.ReadWhole(file, 64<<10)
+	if err != nil {
+		return "", false
+	}
+	target, ok := strings.CutPrefix(strings.TrimSpace(string(body)), prefix)
+	target = filepath.FromSlash(strings.TrimSpace(target))
+	if !ok || target == "" {
+		return "", false
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(base, target)
+	}
+	return filepath.Clean(target), true
+}
+
+// gitCommonDir follows a linked worktree's commondir; none means this is the common dir.
+func gitCommonDir(gitDir string) string {
+	if common, ok := gitPointer(filepath.Join(gitDir, "commondir"), "", gitDir); ok {
+		return common
+	}
+	return gitDir
+}
+
+// mainWorktreeDir is the checkout holding the common git dir; "" for a bare repository,
+// which has no working tree to mark.
+func mainWorktreeDir(commonDir string) string {
+	if filepath.Base(commonDir) == ".git" {
+		return filepath.Dir(commonDir)
+	}
+	return ""
 }

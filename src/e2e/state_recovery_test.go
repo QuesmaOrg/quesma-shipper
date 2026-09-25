@@ -20,7 +20,7 @@ func TestALostDocumentReShipsOnlyWhatChanged(t *testing.T) {
 	username := realUsername(t)
 	stageClaudeSession(t, w, username, claudeSessionID)
 	grown := stageClaudeSession(t, w, username, numericSessionID)
-	writeConfig(t, w, "sources:\n  - id: project-map\n    enabled: false\n  - id: claude-account\n    enabled: false\n")
+	writeConfig(t, w, "sources:\n  - id: claude-account\n    enabled: false\n")
 
 	runOneShot(t)
 	if got := len(mirrorObjects(collect(t, w))); got != 2 {
