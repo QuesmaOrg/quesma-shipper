@@ -28,6 +28,8 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Its reviewers approve each push of `latest`; the Docker Hub secrets live there, not in the repo.
+    environment: fleet-manager-publishing
     steps:
       - uses: actions/checkout@v7
 
