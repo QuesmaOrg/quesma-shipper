@@ -277,11 +277,10 @@ func summariseLaunchctlPrint(out string) string {
 	var pid, lastExit string
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(f, "pid = "):
-			pid = strings.TrimPrefix(f, "pid = ")
-		case strings.HasPrefix(f, "last exit code = "):
-			lastExit = strings.TrimPrefix(f, "last exit code = ")
+		if v, ok := strings.CutPrefix(f, "pid = "); ok {
+			pid = v
+		} else if v, ok := strings.CutPrefix(f, "last exit code = "); ok {
+			lastExit = v
 		}
 	}
 	switch {

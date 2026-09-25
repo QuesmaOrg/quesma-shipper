@@ -167,6 +167,15 @@ func (r *Registry) For(gather string) (Primitive, error) {
 	return p, nil
 }
 
+// Discover runs the primitive the request's source declares.
+func (r *Registry) Discover(req Request) (Discovery, error) {
+	p, err := r.For(req.Source.Gather)
+	if err != nil {
+		return Discovery{}, err
+	}
+	return p.Discover(req)
+}
+
 // globPrimitive walks a root and matches include globs; both glob-shaped gathers share it.
 type globPrimitive struct{}
 

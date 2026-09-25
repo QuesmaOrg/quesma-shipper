@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -81,24 +82,26 @@ func newUploadPort(client *controlplane.Client, eff *config.Effective) (*vendPor
 // AuthorizeAndUpload spends one bounded group: one authorization, then one PUT per ticket. The
 // batch is authorized whole or not at all; past that point the objects succeed or fail alone.
 func (p *vendPort) AuthorizeAndUpload(ctx context.Context, batch []engine.PreparedObject) []error {
-	out := make([]error, len(batch))
+	// One verdict for the whole group, for the failures that leave no per-object information.
 	req, err := p.request(batch)
 	if err != nil {
-		return sameOutcome(out, err)
+		return slices.Repeat([]error{err}, len(batch))
 	}
 	resp, err := p.client.AuthorizeUploads(ctx, req)
 	if err != nil {
-		return sameOutcome(out, classifyAuthorize(err))
+		return slices.Repeat([]error{classifyAuthorize(err)}, len(batch))
 	}
 
 	tickets := make(map[string]controlplane.Ticket, len(resp.Tickets))
 	for _, t := range resp.Tickets {
 		if _, dup := tickets[t.ObjectID]; dup {
-			return sameOutcome(out, fmt.Errorf(
-				"upload: the control plane issued two tickets naming object %q", t.ObjectID))
+			return slices.Repeat([]error{fmt.Errorf(
+				"upload: the control plane issued two tickets naming object %q", t.ObjectID)}, len(batch))
 		}
 		tickets[t.ObjectID] = t
 	}
+
+	out := make([]error, len(batch))
 
 	// Bounds the PUTs one authorization group has in flight; without it a group of 32 sends 32 at once.
 	slots := make(chan struct{}, 4*runtime.GOMAXPROCS(0))
@@ -254,14 +257,6 @@ func (p *vendPort) classifyPut(err error, ticket upload.Ticket) error {
 		}
 	}
 	return err
-}
-
-// sameOutcome is one verdict for the whole group, for the failures that leave no per-object information.
-func sameOutcome(out []error, err error) []error {
-	for i := range out {
-		out[i] = err
-	}
-	return out
 }
 
 // DescribeDestination names where objects go for the verbs that print it before a runtime exists:

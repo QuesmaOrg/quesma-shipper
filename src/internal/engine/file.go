@@ -113,7 +113,7 @@ func (o Options) prepareFile(
 	}
 
 	jsonl := src.Sniff != nil && src.Sniff.Kind == "jsonl"
-	scrubbed, err := scrubSource(src, raw, jsonl, o.scrub, o.scrubErr)
+	scrubbed, err := o.scrubSource(src, raw, jsonl)
 	if err != nil {
 		// Fail closed: a scrub-ENGINE error means this file does not upload.
 		failAndBackOff(o, &res, key, fp, "scrub failed closed: "+err.Error())
@@ -188,12 +188,12 @@ func failAndBackOff(o Options, res *fileResult, key Key, fp Fingerprint, reason 
 	res.intent = intent{kind: intentBackoff, key: key, fp: next, reason: reason}
 }
 
-func scrubSource(src sources.Resolved, raw []byte, jsonl bool, scrubber *transforms.Scrubber, scrubErr error) (transforms.Result, error) {
-	if src.Scrub != nil && !*src.Scrub {
+func (o Options) scrubSource(src sources.Resolved, raw []byte, jsonl bool) (transforms.Result, error) {
+	if !src.ScrubEnabled() {
 		return transforms.Result{Out: raw, BytesTotal: len(raw)}, nil
 	}
-	if scrubErr != nil {
-		return transforms.Result{}, scrubErr
+	if o.scrubErr != nil {
+		return transforms.Result{}, o.scrubErr
 	}
-	return scrubber.Scrub(raw, transforms.Hint{Family: src.Family, JSONL: jsonl})
+	return o.scrub.Scrub(raw, transforms.Hint{Family: src.Family, JSONL: jsonl})
 }

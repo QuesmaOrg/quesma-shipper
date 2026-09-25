@@ -209,15 +209,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			continue
 		}
 
-		prim, err := o.Registry.For(src.Gather)
-		if err != nil {
-			out.Health = sources.MatchPresentUnreadable
-			out.Reason = err.Error()
-			rep.Sources = append(rep.Sources, out)
-			continue
-		}
-
-		disc, err := prim.Discover(sources.Request{
+		disc, err := o.Registry.Discover(sources.Request{
 			Source:   src,
 			All:      o.Plan.Sources,
 			Deny:     o.Plan.Deny,

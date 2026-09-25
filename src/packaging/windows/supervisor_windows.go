@@ -23,9 +23,6 @@ func RunSupervisor() {
 		logDir = os.Args[1]
 	}
 	err := supervise(logDir)
-	if err == nil {
-		return
-	}
 	if f, openErr := openLog(logDir, "agent.err.log"); openErr == nil {
 		fmt.Fprintf(f, "supervisor giving up: %v\n", err)
 		f.Close()

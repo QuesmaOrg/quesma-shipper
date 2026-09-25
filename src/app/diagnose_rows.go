@@ -348,8 +348,9 @@ func claudeHeadline(probes []sourceProbe, verbose bool) string {
 }
 
 func HomeTilde(path string) string {
-	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(path, home) {
-		return "~" + strings.TrimPrefix(path, home)
+	home, err := os.UserHomeDir()
+	if rest, ok := strings.CutPrefix(path, home); err == nil && ok {
+		return "~" + rest
 	}
 	return path
 }

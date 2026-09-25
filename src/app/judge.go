@@ -77,11 +77,7 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 			// shortcut would silently empty the field.
 			rec.ConsecutiveFailures = 0
 		} else {
-			ev := newEvent(r.eff.StateDir, r.runID, kind, err.Error())
-			rec.Append(ev)
-			if ev.Counted() {
-				rec.ConsecutiveFailures++
-			}
+			appendCounted(rec, newEvent(r.eff.StateDir, r.runID, kind, err.Error()))
 		}
 	})
 
@@ -134,8 +130,7 @@ func (r *Runtime) persistRecord(what string, errOut io.Writer, mutate func(*form
 	r.recMu.Lock()
 	rec := r.loadRecordLocked()
 	mutate(rec)
-	snapshot := *rec
-	snapshot.Recent = append([]formats.FailureEvent(nil), rec.Recent...)
+	snapshot := cloneRecord(rec)
 	r.recMu.Unlock()
 
 	if err := writeFailureRecord(r.eff.StateDir, snapshot); err != nil {
@@ -251,13 +246,24 @@ func RecordUpdateFailure(message string) {
 
 func recordWithoutRuntime(runID, kind, message string) {
 	appendWithoutRuntime("failure", func(dir string, rec *formats.FailureRecord) bool {
-		ev := newEvent(dir, runID, kind, message)
-		rec.Append(ev)
-		if ev.Counted() {
-			rec.ConsecutiveFailures++
-		}
+		appendCounted(rec, newEvent(dir, runID, kind, message))
 		return true
 	})
+}
+
+// appendCounted logs ev and extends the failure streak when its kind counts toward one.
+func appendCounted(rec *formats.FailureRecord, ev formats.FailureEvent) {
+	rec.Append(ev)
+	if ev.Counted() {
+		rec.ConsecutiveFailures++
+	}
+}
+
+// cloneRecord copies the event log too, so the copy can be used after the lock is released.
+func cloneRecord(rec *formats.FailureRecord) formats.FailureRecord {
+	c := *rec
+	c.Recent = append([]formats.FailureEvent(nil), rec.Recent...)
+	return c
 }
 
 // appendWithoutRuntime serves the paths with no resolved configuration. The state directory
@@ -295,8 +301,7 @@ func newEvent(stateDir, runID, kind, message string) formats.FailureEvent {
 // What the heartbeat carries: the in-memory failures, plus the crash read out of the journal.
 func (r *Runtime) failureRecord() formats.FailureRecord {
 	r.recMu.Lock()
-	rec := *r.loadRecordLocked()
-	rec.Recent = append([]formats.FailureEvent(nil), rec.Recent...)
+	rec := cloneRecord(r.loadRecordLocked())
 	r.recMu.Unlock()
 	rec.LastCrash = r.lastCrash
 	return rec

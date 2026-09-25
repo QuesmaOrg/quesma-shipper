@@ -177,14 +177,13 @@ func maybeSelfUpdate(ctx context.Context, build app.Build, autoupdate bool, errO
 		return
 	}
 	fmt.Fprintf(errOut, "self-update: %s -> %s, restarting\n", res.From, res.To)
-	if stateErr != nil {
-		fmt.Fprintf(errOut, "self-update: cannot persist the restart guard (%v); the new version runs from the next supervised restart\n", stateErr)
-		app.RecordUpdateFailure(fmt.Sprintf("updated to %s but could not persist the restart guard: %v", res.To, stateErr))
-		return
+	guardErr := stateErr
+	if guardErr == nil {
+		guardErr = packaging.WriteSelfUpdateHop(stateDir, res.To)
 	}
-	if err := packaging.WriteSelfUpdateHop(stateDir, res.To); err != nil {
-		fmt.Fprintf(errOut, "self-update: cannot persist the restart guard (%v); the new version runs from the next supervised restart\n", err)
-		app.RecordUpdateFailure(fmt.Sprintf("updated to %s but could not persist the restart guard: %v", res.To, err))
+	if guardErr != nil {
+		fmt.Fprintf(errOut, "self-update: cannot persist the restart guard (%v); the new version runs from the next supervised restart\n", guardErr)
+		app.RecordUpdateFailure(fmt.Sprintf("updated to %s but could not persist the restart guard: %v", res.To, guardErr))
 		return
 	}
 	os.Setenv(app.ReexecGuardEnv, res.To) // keeps compatibility with an older Unix binary on the hop

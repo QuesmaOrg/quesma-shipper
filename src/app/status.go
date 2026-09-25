@@ -83,11 +83,7 @@ func CurrentStatus(build Build) (Status, error) {
 			if src.Family != a.Family || src.Root == "" || !src.Enabled {
 				continue
 			}
-			prim, err := registry.For(src.Gather)
-			if err != nil {
-				continue
-			}
-			d, err := prim.Discover(sources.Request{Source: src, All: eff.Sources, Deny: eff.Deny,
+			d, err := registry.Discover(sources.Request{Source: src, All: eff.Sources, Deny: eff.Deny,
 				Ignore: eff.Catalog.RepoFilter(), StateDir: paths.StateDir})
 			if err != nil {
 				continue
