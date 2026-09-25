@@ -1,6 +1,6 @@
 # Quesma Shipper
 
-[![version](https://img.shields.io/badge/version-0.0.3-blue)](#download)
+[![version](https://img.shields.io/badge/version-0.0.3-blue)](#from-a-release)
 
 Quesma Shipper collects the session files that AI coding agents write on developer machines,
 removes secrets and personal data from each file, encrypts it, and uploads the ciphertext to object
@@ -36,32 +36,16 @@ service), Windows 10 1809 or newer (per-user installer, scheduled task).
 
 ## Get started
 
-Start from what you already have:
+Three ways in. Each one below is a complete sequence -- follow one, in order.
 
-| You have | Do this |
+| You have | Start here |
 | --- | --- |
-| A control plane your organisation runs, and an enrollment token | [Download](#download) the shipper and [enroll](#enroll) it |
-| Nothing yet, and want to try the whole system on one machine | [Try it on one machine](#try-it-on-one-machine): MinIO, Fleet Manager and a shipper, no cloud account |
+| A control plane your organisation runs, and an enrollment token | [From a release](#from-a-release): install the signed build and enroll it |
+| Nothing yet, and want to see the whole system work | [From source](#from-source): MinIO, Fleet Manager and a shipper on one machine, no cloud account |
 | Nothing yet, and want to run it for real | [Run it in your own cloud](#run-it-in-your-own-cloud): Fleet Manager on AWS or Google Cloud, shippers on developer machines |
 
-Both ways of running it yourself start from a clone of this repository and the three decisions in
-[Decide these first](#decide-these-first).
-
-## Download
-
-Every download below installs for the current user and needs no administrator rights. Released
-builds keep themselves current from the signed update channel.
-
-| Platform | Download |
-|---|---|
-| macOS 13+ | [quesma-shipper-macos-universal.pkg](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg), or with Homebrew `brew install --cask quesmaorg/tap/quesma-shipper` |
-| Windows 10 1809+ | [QuesmaShipperSetup-amd64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe) for x64, [QuesmaShipperSetup-arm64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe) for Arm |
-| Linux | `curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/src/packaging/linux/install.sh && sh install.sh` |
-
-Collection, scrubbing, and preview work straight away. Uploading needs enrollment against a
-control plane: your organisation's, or one you run yourself ([Get started](#get-started)). See
-[Install](#install) for the full instructions, [Enroll](#enroll) for enrollment, and
-[RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md) for the trust boundary these links sit behind.
+The last two run the control plane yourself, so both start from a clone of this repository and the
+three decisions in [Decide these first](#decide-these-first).
 
 ## Status
 
@@ -77,6 +61,81 @@ builds update themselves from its signed TUF repository. See
 
 `trajectory-shipper` remains the wire identifier and on-disk configuration/state namespace.
 Those protocol-facing names are separate from the user-facing Quesma Shipper package and command.
+
+## From a release
+
+Joining a fleet somebody else already runs. You need an enrollment token and the address of their
+Fleet Manager; nothing is built here.
+
+### 1. Install
+
+Every download installs for the current user and needs no administrator rights. Released builds
+keep themselves current from the signed TUF repository; the public repository and the stable
+download endpoints are described in [RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md).
+
+| Platform | Download |
+|---|---|
+| macOS 13+ | [quesma-shipper-macos-universal.pkg](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg), or with Homebrew `brew install --cask quesmaorg/tap/quesma-shipper` |
+| Windows 10 1809+ | [QuesmaShipperSetup-amd64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe) for x64, [QuesmaShipperSetup-arm64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe) for Arm |
+| Linux | `curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/src/packaging/linux/install.sh && sh install.sh` |
+
+**macOS.** The Homebrew cask installs the command on your Homebrew `PATH` and starts a per-user
+background service, which waits for enrollment. It supports macOS 13 or newer on Apple Silicon and
+Intel, without administrator rights. `brew uninstall --cask quesmaorg/tap/quesma-shipper` removes
+it and keeps enrollment and upload history; add `--zap` to delete local state too, from the
+shipper's configured state directory. The signed `.pkg` is the same thing without Homebrew: it
+installs `Quesma Shipper.app` for the current user and registers a launchd agent. Before switching
+between the two, uninstall the previous installation without purging local state.
+
+**Linux.** The script downloads a hash-pinned bootstrap binary and installs a systemd user service.
+Run it again to upgrade; existing enrollment is kept. `--no-service` skips the service. The
+released binaries are also available directly for
+[AMD64](https://updates.quesma.dev/targets/3ae805e2d630af5cb52fff51a5c8ae77aeb7b12f2d73a56fd7723698e9bfe48e.shipper-linux-amd64)
+and
+[ARM64](https://updates.quesma.dev/targets/78f0c89019d8a2f86fe3723359c00082ba9ec6ddedfc5fde1709f7516c33a3b0.shipper-linux-arm64).
+
+**Windows.** Run the setup as your normal user. It installs the command under `%LOCALAPPDATA%`,
+adds it to your user `PATH`, and registers a scheduled task that starts immediately and at login,
+without administrator rights. Re-running setup repairs that integration without changing
+enrollment. For managed deployments, follow the
+[Intune setup guide](src/packaging/windows/intune/README.md): user-context installation and
+unattended enrollment, a platform-script route you can configure from macOS, and a Win32 app
+package route with detection and uninstall scripts.
+
+Windows release signing is temporarily disabled while the publisher identity is validated. Until it
+is restored, Microsoft Defender SmartScreen may warn about the download, and managed devices whose
+application-control policy requires a trusted publisher may block it. The raw
+`quesma-shipper-windows-<arch>.exe` files remain available for portable use and are the payloads
+installed by the TUF self-updater; a portable copy has no scheduled task or uninstaller.
+
+The shipper updates itself automatically. `quesma-shipper update` updates it immediately.
+
+### 2. Enroll
+
+Collection, scrubbing and preview work straight away; uploading does not, until the shipper is
+enrolled. Your administrator gives you the token and the server address. The command is the same on
+every platform:
+
+```sh
+quesma-shipper login <enrollment-token> --server https://cp.example.com
+```
+
+Without a control plane at all, the pipeline still runs locally:
+
+```sh
+quesma-shipper local-dev      # create a local identity and state directory
+quesma-shipper preview        # show what would be collected and how it would be scrubbed
+```
+
+### 3. Check it enrolled
+
+```sh
+quesma-shipper doctor
+```
+
+`doctor` reports whether the machine enrolled and received its configuration. `quesma-shipper` with
+no arguments shows whether it is on, what is collected, and what is waiting to be sent. The service
+ships on start and then every 15 minutes.
 
 ## Decide these first
 
@@ -115,7 +174,7 @@ forwards them only if a collector is named. None is by default. Name one for eve
 (`telemetry_collector_url`). This one can be changed at any time and applies immediately. See
 [fleet-manager/TELEMETRY.md](fleet-manager/TELEMETRY.md).
 
-## Try it on one machine
+## From source
 
 MinIO, Fleet Manager and a shipper on a single machine, built from this repository. Nothing
 connects to a cloud provider. Use this to evaluate the system, to develop against it, or to
@@ -194,7 +253,10 @@ sh src/packaging/linux/install.sh --from bin/quesma-shipper fmi2.… --server ht
 ```
 
 It installs into `~/.local/bin` for your user; do not run it as root. On a machine that already has
-a shipper installed, this replaces it. `--no-service` enrolls without registering the service.
+a shipper installed, this replaces it. `--no-service` enrolls without registering the service. `make
+install` is the other way to get your build: it puts the binary in GOBIN, for running by hand, with
+no background service. Neither self-updates -- development builds report their commit and never
+fetch a release.
 
 ### 4. Check that it arrived
 
@@ -295,8 +357,8 @@ As in [Try it on one machine](#2-the-organisation), at `admin_url` with the cred
 
 ### 4. The shippers
 
-On each developer machine, install the shipper from [Download](#download) and enroll it with the
-invite or grant:
+On each developer machine, install the shipper as in [From a release](#from-a-release) and enroll
+it with the invite or grant:
 
 ```sh
 quesma-shipper login fmi2.… --server "$FLEET_MANAGER_URL"
@@ -319,8 +381,8 @@ installation order matters and how to prepare the bucket by hand.
 
 ## The shipper
 
-What runs on each developer machine: how it works, what it collects, and how to install, use and
-configure it.
+What runs on each developer machine: how it works, what it collects, and how to use and
+configure it. Installing it is step 1 of each path above.
 
 ### How it works
 
@@ -388,117 +450,6 @@ Everything derived this way passes through the scrub stage like any other file.
 
 `quesma-shipper tracking` shows what is collected on this machine, per agent and repository.
 `quesma-shipper preview` shows what the next run would send, after scrubbing, without sending it.
-
-### Install
-
-#### From a release
-
-Release builds, including Homebrew installations, use the signed TUF repository to update themselves. The public
-repository and stable download endpoints are described in
-[RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md).
-
-**macOS**
-
-With Homebrew already installed:
-
-```sh
-brew install --cask quesmaorg/tap/quesma-shipper
-```
-
-The cask installs the command on your Homebrew `PATH` and starts a per-user background service,
-which waits for enrollment. It supports macOS 13 or newer on Apple Silicon and Intel, without
-administrator rights. Run the login command below after installing.
-
-The shipper updates itself automatically; run `quesma-shipper update` to update immediately.
-Use `brew uninstall --cask quesmaorg/tap/quesma-shipper` to remove it. Uninstall keeps enrollment and
-upload history. Add `--zap` to delete local state too, using the shipper's configured state directory.
-Before switching between Homebrew and the `.pkg`, uninstall the previous installation
-without purging local state.
-
-Without Homebrew:
-
-Download and install the signed
-[`quesma-shipper-macos-universal.pkg`](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg).
-It installs `Quesma Shipper.app` for the current user and registers a launchd agent. It does not
-need administrator rights.
-
-**Linux**
-
-```sh
-curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/src/packaging/linux/install.sh
-sh install.sh
-```
-
-The script downloads a hash-pinned bootstrap binary and installs a systemd user service. Run it
-again to upgrade. Existing enrollment is kept. Use `--no-service` to skip the service.
-
-The released binaries are also available directly for
-[AMD64](https://updates.quesma.dev/targets/3ae805e2d630af5cb52fff51a5c8ae77aeb7b12f2d73a56fd7723698e9bfe48e.shipper-linux-amd64)
-and
-[ARM64](https://updates.quesma.dev/targets/78f0c89019d8a2f86fe3723359c00082ba9ec6ddedfc5fde1709f7516c33a3b0.shipper-linux-arm64).
-
-**Windows**
-
-Download [QuesmaShipperSetup-amd64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe)
-on an x64 PC or [QuesmaShipperSetup-arm64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe)
-on an Arm PC and run it as your normal user. The setup installs the command under `%LOCALAPPDATA%`, adds it to
-your user `PATH`, and registers a scheduled task that starts immediately and at login without
-administrator rights. Re-running setup repairs that integration without changing enrollment.
-
-For managed deployments, follow the [Intune setup guide](src/packaging/windows/intune/README.md).
-It includes user-context installation and unattended enrollment, a platform-script route you can
-configure from macOS, and a Win32 app package route with detection and uninstall scripts.
-
-Windows release signing is temporarily disabled while the publisher identity is validated. Until
-it is restored, Microsoft Defender SmartScreen may warn about the download, and managed devices
-whose application-control policy requires a trusted publisher may block it.
-
-The raw `quesma-shipper-windows-<arch>.exe` files remain available for portable use and are the
-payloads installed by the TUF self-updater. A portable copy has no scheduled task or uninstaller.
-
-#### From source
-
-You need Go 1.27 or newer. No other tool is required. `make doctor` lists the optional ones.
-
-**The control plane first**, unless you already have one to enroll against. A shipper cannot upload
-until it is enrolled, and enrollment needs a server to enroll with:
-
-```sh
-make -C fleet-manager run     # MinIO, the bucket, a credential, serving on 127.0.0.1:8099
-```
-
-[Try it on one machine](#try-it-on-one-machine) covers what to do with it: the organisation, its
-recipients, and the invite you enroll with.
-
-**Then the shipper.** `install.sh --from` installs your own build the way a release installs
-itself, with the background service, on Linux and on macOS:
-
-```sh
-make build                                     # bin/quesma-shipper
-sh src/packaging/linux/install.sh --from bin/quesma-shipper
-```
-
-`make install` puts the binary in GOBIN instead, for running it by hand: no background service, and
-no self-updating either way. Development builds report their commit and never fetch a release.
-
-Then [enroll](#enroll) it.
-
-#### Enroll
-
-Every new shipper must be enrolled with a control plane. Your administrator gives you an
-enrollment token and the server address; if you run [Fleet Manager](fleet-manager/) yourself,
-[Get started](#get-started) shows how to create them. The command is the same on every platform:
-
-```sh
-quesma-shipper login <enrollment-token> --server https://cp.example.com
-```
-
-To run the pipeline without a control plane:
-
-```sh
-bin/quesma-shipper local-dev      # create a local identity and state directory
-bin/quesma-shipper preview        # show what would be collected and how it would be scrubbed
-```
 
 ### Usage
 
