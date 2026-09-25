@@ -8,14 +8,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"path/filepath"
+	"strings"
 )
 
 // Session stores only routing metadata; transcript bytes are loaded one session at a time.
 type Session struct{ ID, CWD string }
 
 func openSessions(path string) (*sql.DB, error) {
-	u := url.URL{Scheme: "file", Path: path}
-	return sql.Open("sqlite", u.String()+"?mode=ro&_pragma=query_only(1)&_pragma=busy_timeout(2000)")
+	return sql.Open("sqlite", sessionFileURI(filepath.ToSlash(path))+"?mode=ro&_pragma=query_only(1)&_pragma=busy_timeout(2000)")
+}
+
+// SQLite requires drive letters in the URI path, not the authority (file:///C:/...).
+func sessionFileURI(slashPath string) string {
+	if !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath
+	}
+	return (&url.URL{Scheme: "file", Path: slashPath}).String()
 }
 
 // ListSessions never reads configuration, credentials or arbitrary tables from an agent store.
