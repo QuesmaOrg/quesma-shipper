@@ -4,6 +4,8 @@ import (
 	"math"
 	"math/rand"
 	"testing"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 )
 
 // The narrow histogram and the fused hex test are only allowed to be faster, never different.
@@ -151,8 +153,8 @@ func TestContainsDelimitedMatchesTheNaiveScan(t *testing.T) {
 			if s[i:i+len(sub)] != sub {
 				continue
 			}
-			leftOK := i == 0 || !isAlnumByte(s[i-1])
-			rightOK := i+len(sub) == len(s) || !isAlnumByte(s[i+len(sub)])
+			leftOK := i == 0 || !formats.IsAlnum(s[i-1])
+			rightOK := i+len(sub) == len(s) || !formats.IsAlnum(s[i+len(sub)])
 			if leftOK && rightOK {
 				return true
 			}

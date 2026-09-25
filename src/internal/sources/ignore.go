@@ -12,6 +12,8 @@ import (
 
 const notrajectories = ".notrajectories"
 
+const cwdProbeBytes = 64 << 10
+
 // RepoFilter attributes candidates to the repository their session ran in and drops the
 // ones whose repository carries a .notrajectories marker.
 //
@@ -21,7 +23,7 @@ const notrajectories = ".notrajectories"
 // for the sources that probe names.
 type RepoFilter struct {
 	probe *CWDProbe
-	git   *GitRead
+	git   bool
 	home  string
 
 	// cwds caches a hit per project directory (every session under an agent-encoded
@@ -39,18 +41,11 @@ type gitScope struct {
 	root, main string
 }
 
-// CWDProbe is the bounded head-of-file probe: the sources whose files name their session's cwd,
-// the fields that hold it, and how far into a file to look.
+// CWDProbe is the bounded head-of-file probe: the sources whose files name their session's cwd
+// and the fields that hold it.
 type CWDProbe struct {
-	From      []string
-	Fields    []string
-	ScanBytes int64
-}
-
-// GitRead is the equally bounded .git handling.
-type GitRead struct {
-	WalkUp           bool
-	FollowGitdirFile bool
+	From   []string
+	Fields []string
 }
 
 // RepoFilter builds the attributor. Claude Code states cwd at the top level of a transcript
@@ -58,12 +53,12 @@ type GitRead struct {
 func (c *Compiled) RepoFilter() *RepoFilter {
 	home, _ := os.UserHomeDir()
 	return newRepoFilter(
-		&CWDProbe{From: []string{"claude-code-transcripts", "codex-rollouts"}, Fields: []string{"cwd", "payload.cwd"}, ScanBytes: 64 << 10},
-		&GitRead{WalkUp: true, FollowGitdirFile: true},
+		&CWDProbe{From: []string{"claude-code-transcripts", "codex-rollouts"}, Fields: []string{"cwd", "payload.cwd"}},
+		true,
 		home)
 }
 
-func newRepoFilter(probe *CWDProbe, git *GitRead, home string) *RepoFilter {
+func newRepoFilter(probe *CWDProbe, git bool, home string) *RepoFilter {
 	return &RepoFilter{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}}
 }
 
@@ -165,14 +160,14 @@ func (f *RepoFilter) RepoDir(src Resolved, c Candidate) string {
 
 // A checkout at or above home (dotfiles) would claim every directory under it.
 func (f *RepoFilter) scopeOf(cwd string) gitScope {
-	if cwd == "" || f.git == nil {
+	if cwd == "" || !f.git {
 		return gitScope{}
 	}
 	if sc, hit := f.scopes[cwd]; hit {
 		return sc
 	}
 	sc := gitScope{}
-	if root, common, ok := findGitDir(cwd, f.git, f.home); ok {
+	if root, common, ok := findGitDir(cwd, f.home); ok {
 		sc = gitScope{root: root, main: mainWorktreeDir(common)}
 	}
 	f.scopes[cwd] = sc
@@ -215,11 +210,7 @@ func projectDirOf(rel string) string {
 
 // probeCWD reads the first cwd-shaped value out of the head of a file, bounded on purpose: the client does not parse.
 func probeCWD(path string, probe *CWDProbe) (string, bool) {
-	budget := probe.ScanBytes
-	if budget <= 0 {
-		budget = 64 << 10
-	}
-	head, _, err := readHead(path, budget)
+	head, _, err := readHead(path, cwdProbeBytes)
 	if err != nil {
 		return "", false
 	}
@@ -241,7 +232,7 @@ func probeCWD(path string, probe *CWDProbe) (string, bool) {
 	return "", false
 }
 
-// lookupField resolves a dotted field name, so a config can name payload.cwd as easily as cwd.
+// lookupField resolves a dotted field name such as payload.cwd.
 func lookupField(rec map[string]json.RawMessage, field string) (string, bool) {
 	parts := strings.Split(field, ".")
 	current := rec
@@ -269,7 +260,7 @@ func lookupField(rec map[string]json.RawMessage, field string) (string, bool) {
 // findGitDir walks up from cwd to the checkout root holding .git and the repository's
 // COMMON git dir: a linked worktree's own gitdir holds no config, and its commondir
 // names the one that does.
-func findGitDir(cwd string, cfg *GitRead, ceiling string) (root, common string, ok bool) {
+func findGitDir(cwd, ceiling string) (root, common string, ok bool) {
 	if !filepath.IsAbs(cwd) {
 		return "", "", false
 	}
@@ -282,14 +273,9 @@ func findGitDir(cwd string, cfg *GitRead, ceiling string) (root, common string, 
 				return dir, candidate, true
 			}
 			// A worktree: .git is a file holding "gitdir: <path>".
-			if cfg.FollowGitdirFile {
-				if target, ok := gitPointer(candidate, "gitdir:", dir); ok {
-					return dir, gitCommonDir(target), true
-				}
+			if target, ok := gitPointer(candidate, "gitdir:", dir); ok {
+				return dir, gitCommonDir(target), true
 			}
-			return "", "", false
-		}
-		if !cfg.WalkUp {
 			return "", "", false
 		}
 		parent := filepath.Dir(dir)

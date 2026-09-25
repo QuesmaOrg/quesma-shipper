@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"filippo.io/age"
@@ -92,14 +93,11 @@ func writeContainer(
 	if err != nil {
 		return nil, fmt.Errorf("seal: age encrypt: %w", err)
 	}
-	zstdWriter, err := zstd.NewWriter(ageWriter,
-		zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(ZstdLevel)),
-		zstd.WithEncoderConcurrency(1),
-		zstd.WithZeroFrames(true),
-	)
+	zstdWriter, err := getZstdWriter(ageWriter)
 	if err != nil {
 		return nil, fmt.Errorf("seal: zstd writer: %w", err)
 	}
+	defer putZstdWriter(zstdWriter)
 	if err := writeTar(zstdWriter, manifestJSON, payload, payloadMTime); err != nil {
 		return nil, err
 	}
@@ -110,6 +108,28 @@ func writeContainer(
 		return nil, fmt.Errorf("seal: age close: %w", err)
 	}
 	return out.Bytes(), nil
+}
+
+// zstdWriters recycles encoders across objects: a fresh one allocates MBs of match tables,
+// and Reset starts an independent stream, so reuse does not change a byte of output.
+var zstdWriters sync.Pool
+
+func getZstdWriter(w io.Writer) (*zstd.Encoder, error) {
+	if enc, ok := zstdWriters.Get().(*zstd.Encoder); ok {
+		enc.Reset(w)
+		return enc, nil
+	}
+	return zstd.NewWriter(w,
+		zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(ZstdLevel)),
+		zstd.WithEncoderConcurrency(1),
+		zstd.WithZeroFrames(true),
+	)
+}
+
+// putZstdWriter detaches the encoder first so the pool does not pin the last object's buffer.
+func putZstdWriter(enc *zstd.Encoder) {
+	enc.Reset(nil)
+	zstdWriters.Put(enc)
 }
 
 func ciphertextHint(manifestLen, payloadLen, recipients int) int {

@@ -77,7 +77,7 @@ func newEntropyMatcher(cfg EntropyConfig, username string) *entropyMatcher {
 // isCandidateByte is the entropy candidate alphabet: base64url and hex, plus the "+"
 // and "=" of standard base64. See newEntropyMatcher for why "/" is not in it.
 func isCandidateByte(c byte) bool {
-	return isAlnumByte(c) || c == '+' || c == '=' || c == '_' || c == '-'
+	return formats.IsAlnum(c) || c == '+' || c == '=' || c == '_' || c == '-'
 }
 
 // entropySymbols is the candidate alphabet size, and so the ceiling on distinct
@@ -197,8 +197,8 @@ func containsDelimited(s, sub string) bool {
 			return false
 		}
 		i += at
-		leftOK := i == 0 || !isAlnumByte(s[i-1])
-		rightOK := i+len(sub) == len(s) || !isAlnumByte(s[i+len(sub)])
+		leftOK := i == 0 || !formats.IsAlnum(s[i-1])
+		rightOK := i+len(sub) == len(s) || !formats.IsAlnum(s[i+len(sub)])
 		if leftOK && rightOK {
 			return true
 		}
@@ -394,8 +394,4 @@ func (m *keyNameMatcher) MatchesKeyName(key string) bool {
 		}
 	}
 	return false
-}
-
-func isAlnumByte(c byte) bool {
-	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"net/http"
 	"path/filepath"
 	"strings"
 )
@@ -38,23 +37,11 @@ func (p *Accounts) collectCodex(ctx context.Context, req Request) ([]accountObse
 	}
 	body, _ := json.Marshal(metadata)
 	out = append(out, localAccount(req, "codex.local.account", body, err))
-	obs := accountObservation{Source: "codex.wham.usage", ObservedAt: req.Now().UTC()}
-	if tokens.Access == "" {
-		obs.Error = "credentials_unavailable"
-	} else {
-		request, err := http.NewRequestWithContext(ctx, "GET", "https://chatgpt.com/backend-api/wham/usage", nil)
-		if err != nil {
-			obs.Error = "request_failed"
-		} else {
-			request.Header.Set("Authorization", "Bearer "+tokens.Access)
-			request.Header.Set("Accept", "application/json")
-			request.Header.Set("User-Agent", "quesma-shipper")
-			if tokens.AccountID != "" {
-				request.Header.Set("ChatGPT-Account-Id", tokens.AccountID)
-			}
-			obs = p.fetch(obs, request)
-		}
+	headers := map[string]string{}
+	if tokens.AccountID != "" {
+		headers["ChatGPT-Account-Id"] = tokens.AccountID
 	}
-	out = append(out, obs)
+	out = append(out, p.fetchWithToken(ctx, req, "codex.wham.usage", tokens.Access,
+		"GET", "https://chatgpt.com/backend-api/wham/usage", nil, headers))
 	return out, true
 }

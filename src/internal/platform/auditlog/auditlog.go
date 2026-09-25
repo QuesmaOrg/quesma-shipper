@@ -4,6 +4,7 @@
 package auditlog
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -82,9 +83,7 @@ func (l *Log) Append(e Entry) error {
 	if e.At.IsZero() {
 		e.At = time.Now().UTC()
 	}
-	if e.RunID == "" {
-		e.RunID = l.runID
-	}
+	e.RunID = cmp.Or(e.RunID, l.runID)
 	e = sanitize(e)
 
 	body, err := json.Marshal(e)

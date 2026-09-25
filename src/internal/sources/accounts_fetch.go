@@ -1,6 +1,7 @@
 package sources
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -35,6 +36,33 @@ func accountJSON(path string, limit int64) (map[string]json.RawMessage, error) {
 	var doc map[string]json.RawMessage
 	err = json.Unmarshal(raw, &doc)
 	return doc, err
+}
+
+// fetchWithToken observes one provider endpoint; headers carries only what that provider adds.
+func (p *Accounts) fetchWithToken(
+	ctx context.Context,
+	req Request,
+	source, token, method, url string,
+	body io.Reader,
+	headers map[string]string,
+) accountObservation {
+	obs := accountObservation{Source: source, ObservedAt: req.Now().UTC()}
+	if token == "" {
+		obs.Error = "credentials_unavailable"
+		return obs
+	}
+	request, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		obs.Error = "request_failed"
+		return obs
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("User-Agent", "quesma-shipper")
+	for k, v := range headers {
+		request.Header.Set(k, v)
+	}
+	return p.fetch(obs, request)
 }
 
 func (p *Accounts) fetch(obs accountObservation, request *http.Request) accountObservation {

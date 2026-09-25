@@ -209,9 +209,12 @@ const (
 // RotateLog moves an oversized log aside. Rename, not truncate: a writer holding the file open keeps
 // its offset and would write past a hole, and a reader keeps the bytes it already had. Failures are
 // ignored, since a rotation must never fail the write that triggered it.
-func RotateLog(path string) {
+func RotateLog(path string) { RotateLogAt(path, maxLogBytes) }
+
+// RotateLogAt is RotateLog with a caller-chosen threshold.
+func RotateLogAt(path string, maxBytes int64) {
 	info, err := os.Stat(path)
-	if err != nil || info.Size() < maxLogBytes {
+	if err != nil || info.Size() < maxBytes {
 		return
 	}
 	_ = os.Rename(path, path+PreviousLogSuffix)

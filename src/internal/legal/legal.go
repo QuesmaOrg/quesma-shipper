@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"path"
 	"sort"
 	"strings"
 )
@@ -34,8 +35,8 @@ func Write(w io.Writer) error {
 	}
 	sort.Strings(paths)
 	for _, p := range paths {
-		dep := strings.TrimPrefix(strings.TrimSuffix(p, "/"+p[strings.LastIndex(p, "/")+1:]), "third_party/licenses/")
-		if err := section(w, dep+" ("+p[strings.LastIndex(p, "/")+1:]+")", p); err != nil {
+		dep := strings.TrimPrefix(path.Dir(p), "third_party/licenses/")
+		if err := section(w, dep+" ("+path.Base(p)+")", p); err != nil {
 			return err
 		}
 	}

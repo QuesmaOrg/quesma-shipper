@@ -127,7 +127,7 @@ func Resolve(in Input) (*Effective, error) {
 		StateDir:       in.StateDir,
 		ConfigExpired:  in.ConfigExpired,
 		Catalog:        in.Catalog,
-		RulePacks:      []string{"gitleaks-core", "quesma-extra", "cloud-keys", "generic-entropy", "pii-core"},
+		RulePacks:      slices.Clone(packs.Default),
 		// Without the compiled exemption baseline the entropy backstop shreds the join keys that make a trajectory a graph.
 		StructuralEx:            transforms.CompiledExemptions(),
 		IncludeInstallRecipient: true,
@@ -323,21 +323,21 @@ type layeredOverride struct {
 func applySourceOverrides(eff *Effective, overrides map[string][]layeredOverride) error {
 	for i := range eff.Sources {
 		src := &eff.Sources[i]
-		locallyDisabledBy := Layer(0)
+		locallyDisabled := false
 		// The enricher map is detached from the compiled catalog on first touch, once per source.
 		clonedEnrichers := false
 
 		for _, lo := range overrides[src.ID] {
 			o := lo.override
 			if o.Enabled != nil {
-				if locallyDisabledBy != 0 && !lo.layer.IsLocal() && *o.Enabled {
+				if locallyDisabled && !lo.layer.IsLocal() && *o.Enabled {
 					// A remote enable cannot undo a local disable.
 					continue
 				}
 				src.Enabled = *o.Enabled
 				eff.setOrigin("sources."+src.ID+".enabled", lo.layer)
 				if !*o.Enabled && lo.layer.IsLocal() {
-					locallyDisabledBy = lo.layer
+					locallyDisabled = true
 				}
 			}
 			if len(o.Roots) > 0 {
