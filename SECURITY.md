@@ -18,6 +18,11 @@ Do not include real trajectories, credentials, presigned URLs, or exploit code i
 We acknowledge each report, assess it, and coordinate disclosure with you. Allow time for a fix to
 reach installed clients through self-update before you publish details.
 
+The control plane, [Fleet Manager](fleet-manager/), lives in this repository too and has its own
+scope, report details and design guarantees in
+[fleet-manager/SECURITY.md](fleet-manager/SECURITY.md). Report it through the same channels. This
+file covers the shipper.
+
 ## Scope
 
 In scope:
@@ -34,8 +39,8 @@ In scope:
 
 Out of scope:
 
-<!-- TODO(control-plane-oss): link the control-plane repository here. https://github.com/QuesmaOrg/quesma-shipper/issues/1 -->
-- The control plane and the storage reader. They are not part of this repository.
+- The control plane. It is in scope under [fleet-manager/SECURITY.md](fleet-manager/SECURITY.md).
+- The storage reader. It is not part of this repository.
 - Issues that need an attacker who already controls the user account on the machine.
 
 ## Handle data safely

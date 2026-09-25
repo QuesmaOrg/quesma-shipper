@@ -1,6 +1,6 @@
 # Trademark policy
 
-Quesma, Quesma Shipper, and the Quesma logo are trademarks of Quesma Inc.
+Quesma, Quesma Shipper, Quesma Fleet Manager, and the Quesma logo are trademarks of Quesma Inc.
 
 This policy explains how you may use those marks. It does not limit what you may do with the code.
 The code is licensed under the [Apache License 2.0](LICENSE). Section 6 of that license grants no
@@ -21,23 +21,26 @@ many other open source projects.
 - Use, modify, fork, and redistribute the code under the Apache License 2.0, for any purpose the
   license allows.
 - State truthfully that your software is based on, derived from, or compatible with Quesma
-  Shipper. Examples: "based on Quesma Shipper", "a fork of Quesma Shipper", "implements the
-  Quesma Shipper protocol".
-- Refer to Quesma and Quesma Shipper by name in documentation, articles, comparisons, and
-  discussions.
+  Shipper or Quesma Fleet Manager. Examples: "based on Quesma Shipper", "a fork of Quesma Fleet
+  Manager", "implements the Quesma Shipper protocol".
+- Refer to Quesma, Quesma Shipper, and Quesma Fleet Manager by name in documentation, articles,
+  comparisons, and discussions.
 - Use the wire-protocol identifiers defined in the
   [protocol specification](https://github.com/QuesmaOrg/shipper-protocol/blob/main/PROTOCOL.md),
   such as header names and signing prefixes. They are part of the protocol, not the brand, and any implementation may
   use them.
-- Redistribute unmodified official releases under their original name.
+- Redistribute unmodified official releases under their original name, including the official
+  `quesma/fleet-manager` container image.
 
 ## What you must do when you distribute a modified version
 
 A modified version is any build that is not an unmodified official release from Quesma Inc.
 
 - Do not name the binary, process, package, container image, service, or repository
-  `quesma-shipper`, `Quesma Shipper`, or any name that contains `Quesma`.
-- Do not use the Quesma logo.
+  `quesma-shipper`, `Quesma Shipper`, `quesma/fleet-manager`, `Quesma Fleet Manager`, or any name
+  that contains `Quesma`.
+- Do not use the Quesma logo. A modified Fleet Manager must replace the logo and favicon its
+  administration UI embeds (`fleet-manager/src/admin-ui/quesma-logo.png` and `favicon.svg`).
 - Remove `Quesma` from the command-line name, help text, version string, and other user-facing
   output. If you keep any Quesma string, state clearly and prominently that the software is an
   unofficial fork and is not endorsed or supported by Quesma Inc. Put this statement in the first
