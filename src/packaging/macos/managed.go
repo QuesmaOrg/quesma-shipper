@@ -21,7 +21,8 @@ import (
 
 const systemAgentPath = "/Library/LaunchAgents/" + bundleIdentifier + ".plist"
 
-var errSystemManaged = errors.New("this macOS installation is managed by an administrator; ask them to update or remove the Quesma Shipper package")
+var errSystemManaged = common.ErrSystemManaged
+var errRootRun = errors.New("refusing to run as root: this agent reads the current user's files")
 
 func systemExecutable(exe string) bool { return exe == installedExecutable("/") }
 
@@ -46,7 +47,7 @@ func ValidateRun() error {
 		return nil
 	}
 	if os.Geteuid() == 0 {
-		return common.ErrRoot
+		return errRootRun
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -55,50 +56,29 @@ func ValidateRun() error {
 	return checkNoUserInstallation(home)
 }
 
-func checkAbsent(path string) error {
-	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
-		return nil
-	} else if err != nil {
-		return err
+func checkAbsent(paths ...string) error {
+	for _, path := range paths {
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		return fmt.Errorf("another installation exists at %s; uninstall it without purging local state before changing installation methods", path)
 	}
-	return fmt.Errorf("another installation exists at %s; uninstall it without purging local state before changing installation methods", path)
+	return nil
 }
 
 func checkNoUserInstallation(home string) error {
-	for _, path := range []string{installedApp(home), launchdPath(home)} {
-		if err := checkAbsent(path); err != nil {
-			return err
-		}
-	}
-	return nil
+	return checkAbsent(installedApp(home), launchdPath(home))
 }
 
 func checkNoSystemInstallation() error {
-	for _, path := range []string{installedApp("/"), systemAgentPath} {
-		if err := checkAbsent(path); err != nil {
-			return err
-		}
-	}
-	return nil
+	return checkAbsent(installedApp("/"), systemAgentPath)
 }
 
 // A shared LaunchAgent inherits each login's HOME; no identity or collection runs as root.
 func renderSystemPlist() string {
-	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>Label</key><string>%s</string>
-<key>AssociatedBundleIdentifiers</key><array><string>%s</string></array>
-<key>ProgramArguments</key><array><string>%s</string><string>run</string></array>
-<key>EnvironmentVariables</key><dict><key>QUESMA_SHIPPER_SYSTEM_AGENT</key><string>1</string></dict>
-<key>RunAtLoad</key><true/>
-<key>KeepAlive</key><true/>
-<key>LimitLoadToSessionType</key><string>Aqua</string>
-<key>ProcessType</key><string>Background</string>
-<key>ExitTimeOut</key><integer>%d</integer>
-<key>ThrottleInterval</key><integer>60</integer>
-</dict></plist>
-`, bundleIdentifier, bundleIdentifier, escapeXML(installedExecutable("/")), int(common.ExitTimeout(Spec{}).Seconds()))
+	return renderPlist(Spec{Executable: installedExecutable("/"), Args: []string{"run"}, SessionType: "Aqua", Environment: map[string]string{"QUESMA_SHIPPER_SYSTEM_AGENT": "1"}})
 }
 
 type localUser struct{ uid, home string }
@@ -110,6 +90,17 @@ func localUsers() ([]localUser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list local users: %w", err)
 	}
+	homesOut, err := exec.CommandContext(ctx, "/usr/bin/dscl", ".", "-list", "/Users", "NFSHomeDirectory").Output()
+	if err != nil {
+		return nil, fmt.Errorf("list local user homes: %w", err)
+	}
+	homes := make(map[string]string)
+	for _, line := range strings.Split(string(homesOut), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			homes[fields[0]] = strings.TrimSpace(strings.TrimPrefix(line, fields[0]))
+		}
+	}
 	var users []localUser
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
@@ -120,11 +111,7 @@ func localUsers() ([]localUser, error) {
 		if err != nil || uid < 500 {
 			continue
 		}
-		out, err := exec.CommandContext(ctx, "/usr/bin/dscl", ".", "-read", "/Users/"+fields[0], "NFSHomeDirectory").Output()
-		if err != nil {
-			return nil, fmt.Errorf("read home for %s: %w", fields[0], err)
-		}
-		home := strings.TrimSpace(strings.TrimPrefix(string(out), "NFSHomeDirectory: "))
+		home := homes[fields[0]]
 		if !filepath.IsAbs(home) {
 			return nil, fmt.Errorf("no absolute home for %s", fields[0])
 		}
@@ -159,8 +146,8 @@ func postInstallSystem() error {
 	if err != nil {
 		return err
 	}
-	for _, user := range users {
-		if err := checkNoUserInstallation(user.home); err != nil {
+	for _, account := range users {
+		if err := checkNoUserInstallation(account.home); err != nil {
 			return err
 		}
 	}
@@ -173,8 +160,8 @@ func postInstallSystem() error {
 	if err := platform.WriteAtomic(systemAgentPath, []byte(renderSystemPlist()), 0o644); err != nil {
 		return err
 	}
-	for _, user := range users {
-		domain := "gui/" + user.uid
+	for _, account := range users {
+		domain := "gui/" + account.uid
 		if exec.Command(launchctl, "print", domain).Run() != nil {
 			continue
 		}
@@ -210,11 +197,8 @@ func installCLILink(path, executable string) error {
 
 // launchd cannot expand a per-user log path in the shared plist, so the user opens it at startup.
 func ManagedRunLog(stateDir string) (*os.File, error) {
-	if os.Getenv("QUESMA_SHIPPER_SYSTEM_AGENT") != "1" || !SystemManaged() {
+	if os.Getenv("QUESMA_SHIPPER_SYSTEM_AGENT") != "1" {
 		return nil, nil
-	}
-	if err := ValidateRun(); err != nil {
-		return nil, err
 	}
 	if !filepath.IsAbs(stateDir) {
 		return nil, fmt.Errorf("managed agent requires an absolute state directory")
@@ -225,6 +209,7 @@ func ManagedRunLog(stateDir string) (*os.File, error) {
 	}
 	common.RotateLogs(dir)
 	path := filepath.Join(dir, "agent.err.log")
+	// NONBLOCK rejects a planted FIFO; chmod also fixes an existing log with loose permissions.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0o600)
 	if err != nil {
 		return nil, err

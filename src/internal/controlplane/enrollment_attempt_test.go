@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -42,7 +43,7 @@ func TestManagedEnrollmentKeyPersistsAndCannotCrossIdentities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm()&0o077 != 0 && os.PathSeparator != '\\' {
+	if info.Mode().Perm()&0o077 != 0 && runtime.GOOS != "windows" {
 		t.Fatal("pending device key is not private")
 	}
 }

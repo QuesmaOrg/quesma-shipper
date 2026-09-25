@@ -2,7 +2,7 @@
 
 Use the same signed, notarized
 [`quesma-shipper-macos-universal.pkg`](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg)
-for personal and company installations. It supports macOS 13+, Apple Silicon and Intel.
+for personal and company installations on Apple Silicon and Intel.
 
 | Installer destination | App and command | Service | Updates/removal |
 | --- | --- | --- | --- |
@@ -39,28 +39,17 @@ users' files. Users who have not yet logged in will not appear in the fleet yet.
    managed preferences at startup and retries each minute if the profile arrives late, the
    server is unavailable or the grant is refused. It starts collecting after enrollment.
 
-The agent reads managed preferences through CoreFoundation, including user and device
-profiles. Ordinary `defaults write` settings do not authorize managed enrollment. An already
-enrolled user keeps their existing device identity and organization when the profile changes
-or disappears. Manual `quesma-shipper login --server URL TOKEN` remains available.
-
-**Treat the profile as an enrollment credential, not a secret vault.** macOS users who receive
-the profile can read its grant, and possession permits additional enrollments until the grant
-expires or is revoked. Restrict profile distribution, use an appropriate expiry, and revoke
-the grant if exposed. Revocation/expiry prevents new enrollments; already enrolled users keep
-their separate device credentials. A user who first logs in after expiry or revocation needs
-a replacement grant in the profile. Rotate the profile before expiry when future users need
-to enroll; grant replacement does not reset existing users or upload history. Removing the
-profile alone neither uninstalls nor unenrolls existing users.
+The agent reads forced `Server` and `Grant` strings through CoreFoundation; ordinary
+`defaults write` settings do not authorize enrollment. Users can read the grant, so restrict profile
+distribution and revoke an exposed grant. Expiry or revocation stops new enrollments; rotate
+the profile before expiry for future users. Existing users retain their device credentials
+when the grant changes or the profile is removed. Manual login remains available with
+`quesma-shipper login --server URL TOKEN`.
 
 ## Jamf Pro
 
-Upload the signed package to your distribution point and add it to a computer policy with
-an **Install** action. Scope that policy to the intended computers. Use a computer configuration
-profile to upload the customized `.mobileconfig`, or configure Application & Custom Settings
-with preference domain `com.quesma.shipper` and the two string keys. Scope the profile to the
-same group. Run the package policy through your usual enrollment or recurring-check-in trigger;
-Jamf's root installer uses the system destination automatically.
+Jamf's root installer selects the system destination. Deploy the customized profile and
+package to the same computers.
 
 For an upgrade, replace the package in the policy with the new signed release and run it on the
 same computers. For removal, remove/exclude the deployment policy and enrollment profile, then
@@ -68,10 +57,8 @@ run [`uninstall.sh`](uninstall.sh) as a root policy script. This preserves users
 
 ## Kandji
 
-Create a Custom App library item with the signed `.pkg` as its installer. Assign it to the
-intended Blueprint. Add the customized `.mobileconfig` as a Custom Profile library item in the
-same Blueprint. Kandji installs the package with administrative privileges. If configuring
-an audit for enforcement, check both the app's `CFBundleIdentifier` (`com.quesma.shipper`) and
+Kandji installs the package with administrative privileges. For enforcement, audit the app's
+`CFBundleIdentifier` (`com.quesma.shipper`) and
 the release version `QuesmaShipperReleaseVersion` in `/Applications/Quesma Shipper.app/Contents/Info.plist`,
 plus the presence of `/Library/LaunchAgents/com.quesma.shipper.plist`.
 
@@ -108,7 +95,3 @@ the `Server` URL, grant expiry/revocation, and server connectivity. Do not paste
 into support logs. A shared Mac appears as separate enrolled installations for separate users.
 The MDM inventory import and ownership rules live in
 [Agent Statement's MDM guide](https://github.com/QuesmaOrg/agent-statement/blob/main/docs/MDM-ENROLLMENT.md).
-
-Profile format and installer domains follow Apple's
-[managed-preferences payload](https://github.com/apple/device-management/blob/release/mdm/profiles/com.apple.ManagedClient.preferences.yaml)
-and [Distribution XML reference](https://developer.apple.com/library/archive/documentation/DeveloperTools/Reference/DistributionDefinitionRef/Chapters/Distribution_XML_Ref.html).

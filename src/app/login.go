@@ -49,7 +49,11 @@ func ManagedLogin(ctx context.Context) (bool, error) {
 }
 
 func login(ctx context.Context, server, token string, managed bool) (LoginResult, error) {
-	if err := packaging.ValidateRun(); err != nil {
+	return loginWithRunCheck(ctx, server, token, managed, packaging.ValidateRun)
+}
+
+func loginWithRunCheck(ctx context.Context, server, token string, managed bool, validateRun func() error) (LoginResult, error) {
+	if err := validateRun(); err != nil {
 		return LoginResult{}, err
 	}
 	_, paths, err := ResolveEffective()
@@ -62,6 +66,7 @@ func login(ctx context.Context, server, token string, managed bool) (LoginResult
 	}
 	defer unlock()
 	if existing, err := controlplane.LoadEnrollment(paths.StateDir); err == nil {
+		_ = controlplane.ClearManagedEnrollmentKey(paths.StateDir)
 		return LoginResult{Organization: existing.Organization}, ErrAlreadyLoggedIn
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return LoginResult{}, err
@@ -70,9 +75,12 @@ func login(ctx context.Context, server, token string, managed bool) (LoginResult
 	if err != nil {
 		return LoginResult{}, err
 	}
-	pub, priv, err := controlplane.NewDeviceKey()
+	var pub []byte
+	var priv []byte
 	if managed {
 		pub, priv, err = controlplane.ManagedEnrollmentKey(paths.StateDir, unit.InstallID.String())
+	} else {
+		pub, priv, err = controlplane.NewDeviceKey()
 	}
 	if err != nil {
 		return LoginResult{}, err
@@ -111,6 +119,9 @@ func login(ctx context.Context, server, token string, managed bool) (LoginResult
 	}
 	if err := rec.Save(paths.StateDir); err != nil {
 		return LoginResult{}, err
+	}
+	if managed {
+		_ = controlplane.ClearManagedEnrollmentKey(paths.StateDir)
 	}
 	return LoginResult{Organization: resp.Organization, Machine: hostname}, nil
 }

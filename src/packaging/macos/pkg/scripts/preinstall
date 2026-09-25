@@ -9,6 +9,7 @@ check_link() {
 		[ -L "$1" ] || die "another installation owns $1"
 		target=$(readlink "$1")
 		if [ "$target" != "$2" ]; then
+			# Older personal packages used a relative link into ~/Applications.
 			[ "${3:-}" = user ] && [ "$target" = '../../Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper' ] || die "another installation owns $1"
 		fi
 	fi

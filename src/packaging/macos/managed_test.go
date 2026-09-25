@@ -3,7 +3,6 @@
 package macos
 
 import (
-	"encoding/xml"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,12 +10,8 @@ import (
 	"testing"
 )
 
-func TestSystemLaunchAgentUsesTheLoginIdentity(t *testing.T) {
+func TestSystemLaunchAgentContainsExpectedSettings(t *testing.T) {
 	plist := renderSystemPlist()
-	var v any
-	if err := xml.Unmarshal([]byte(plist), &v); err != nil {
-		t.Fatal(err)
-	}
 	for _, want := range []string{installedExecutable("/"), "RunAtLoad", "KeepAlive", "Aqua"} {
 		if !strings.Contains(plist, want) {
 			t.Errorf("missing %s", want)

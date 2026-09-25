@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -32,23 +34,29 @@ func TestManagedEnrollmentRetriesTheSameIdentityAfterALostResponse(t *testing.T)
 		_ = json.NewEncoder(w).Encode(controlplane.EnrollResponse{Organization: "example"})
 	}))
 	defer srv.Close()
+	loginManaged := func(grant string) (LoginResult, error) {
+		return loginWithRunCheck(context.Background(), srv.URL, grant, true, func() error { return nil })
+	}
 
-	if _, err := login(context.Background(), srv.URL, "managed-grant", true); err == nil {
+	if _, err := loginManaged("managed-grant"); err == nil {
 		t.Fatal("first enrollment should fail locally")
 	}
 	if _, ok := LoggedIn(); ok {
 		t.Fatal("a lost response was persisted as successful enrollment")
 	}
-	if _, err := login(context.Background(), srv.URL, "managed-grant", true); err != nil {
+	if _, err := loginManaged("managed-grant"); err != nil {
 		t.Fatal(err)
 	}
 	if len(requests) != 2 || requests[0] != requests[1] {
 		t.Fatalf("managed retry changed its enrollment identity: %d requests", len(requests))
 	}
+	if _, err := os.Stat(filepath.Join(home, "state", "trajectory-shipper", "managed-enrollment-key.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("pending enrollment key survived successful enrollment: %v", err)
+	}
 	if requests[1].Invite != "" || requests[1].Grant != "managed-grant" {
 		t.Fatal("managed enrollment did not use the grant request")
 	}
-	if _, err := login(context.Background(), srv.URL, "replacement-grant", true); err != ErrAlreadyLoggedIn {
+	if _, err := loginManaged("replacement-grant"); err != ErrAlreadyLoggedIn {
 		t.Fatalf("profile rotation replaced enrollment: %v", err)
 	}
 }

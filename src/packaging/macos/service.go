@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -49,9 +50,22 @@ func renderPlist(spec Spec) string {
 		fmt.Fprintf(&envXML, "\t\t<key>XDG_STATE_HOME</key>\n\t\t<string>%s</string>\n",
 			escapeXML(filepath.Dir(spec.StateDir)))
 	}
+	keys := make([]string, 0, len(spec.Environment))
+	for key := range spec.Environment {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		fmt.Fprintf(&envXML, "\t\t<key>%s</key>\n\t\t<string>%s</string>\n", escapeXML(key), escapeXML(spec.Environment[key]))
+	}
 
-	stdout := filepath.Join(spec.LogDir, "agent.out.log")
-	stderr := filepath.Join(spec.LogDir, "agent.err.log")
+	var sessionXML, logXML string
+	if spec.SessionType != "" {
+		sessionXML = fmt.Sprintf("\t<key>LimitLoadToSessionType</key>\n\t<string>%s</string>\n", escapeXML(spec.SessionType))
+	}
+	if spec.LogDir != "" {
+		logXML = fmt.Sprintf("\t<key>StandardOutPath</key>\n\t<string>%s</string>\n\t<key>StandardErrorPath</key>\n\t<string>%s</string>\n", escapeXML(filepath.Join(spec.LogDir, "agent.out.log")), escapeXML(filepath.Join(spec.LogDir, "agent.err.log")))
+	}
 	// ExitTimeOut must be stated: launchd's unstated 20 seconds truncates the client's drain.
 	stop := int(common.ExitTimeout(spec).Seconds())
 
@@ -75,19 +89,16 @@ func renderPlist(spec Spec) string {
 	<true/>
 	<key>KeepAlive</key>
 	<true/>
-	<key>ProcessType</key>
+%s	<key>ProcessType</key>
 	<string>Background</string>
 	<key>ExitTimeOut</key>
 	<integer>%d</integer>
 	<key>ThrottleInterval</key>
 	<integer>60</integer>
-	<key>StandardOutPath</key>
-	<string>%s</string>
-	<key>StandardErrorPath</key>
-	<string>%s</string>
+%s
 </dict>
 </plist>
-`, bundleIdentifier, bundleIdentifier, argXML.String(), envXML.String(), stop, escapeXML(stdout), escapeXML(stderr))
+`, bundleIdentifier, bundleIdentifier, argXML.String(), envXML.String(), sessionXML, stop, logXML)
 }
 
 const launchctl = "/bin/launchctl"

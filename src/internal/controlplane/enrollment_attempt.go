@@ -62,3 +62,7 @@ func ManagedEnrollmentKey(stateDir, installID string) (ed25519.PublicKey, ed2551
 	}
 	return pub, priv, nil
 }
+
+func ClearManagedEnrollmentKey(stateDir string) error {
+	return platform.RemoveFile(filepath.Join(stateDir, "managed-enrollment-key.json"))
+}

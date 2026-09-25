@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 	"github.com/ebitengine/purego"
 )
 
@@ -54,7 +53,7 @@ var loadPreferences = sync.OnceValues(func() (*preferencesAPI, error) {
 
 func ManagedEnrollment() (server, grant string, err error) {
 	if os.Geteuid() == 0 {
-		return "", "", common.ErrRoot
+		return "", "", errRootRun
 	}
 	api, err := loadPreferences()
 	if err != nil {
