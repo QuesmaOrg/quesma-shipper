@@ -414,7 +414,7 @@ The shipper collects more than chat transcripts. Per agent, from the agent's own
 | Agent | Trajectories | Context artifacts |
 |---|---|---|
 | Claude Code | Session and subagent transcripts, spilled tool results | Per-project memory files, plans, todos, file-history checkpoint metadata, the user-level `CLAUDE.md`, `settings.json` |
-| Codex | Sessions, archived and compressed sessions, the session index | None |
+| Codex | Sessions, one object each whether live, archived or zstd-compressed (decompressed and scrubbed like the rest), the session index | None |
 | Cursor | Agent transcripts, enriched with conversation text, tool calls, and model names read from Cursor's database | Spilled tool output, terminal captures, agent scratchpad notes |
 
 One more record is produced by the shipper itself:

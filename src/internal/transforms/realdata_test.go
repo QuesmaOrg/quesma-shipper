@@ -84,7 +84,7 @@ func TestRealDataRescrub(t *testing.T) {
 			engineErrs++
 			return nil
 		}
-		if string(res.Out) != string(payload) {
+		if string(res.Out.Bytes()) != string(payload) {
 			changed++
 		}
 		if len(res.RuleHits) > 0 {
@@ -94,7 +94,7 @@ func TestRealDataRescrub(t *testing.T) {
 			}
 			if len(samples) < maxSamples {
 				samples = append(samples, fmt.Sprintf("%s %v\n  %s",
-					payloadPath, res.RuleHits, firstDiffLine(string(payload), string(res.Out))))
+					payloadPath, res.RuleHits, firstDiffLine(string(payload), string(res.Out.Bytes()))))
 			}
 		}
 		return nil

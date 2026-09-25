@@ -85,6 +85,25 @@
           "default": true
         },
 
+        "identity": {
+          "description": "Logical identity for the forms one object takes on disk (live, archived, compressed), so they collapse to one object key and one state entry. A path that `match` does not match keeps path identity. Part of the spec fingerprint.",
+          "type": "object",
+          "required": ["match", "key"],
+          "additionalProperties": false,
+          "properties": {
+            "match": {
+              "description": "RE2 regular expression over the root-relative path.",
+              "type": "string",
+              "minLength": 1
+            },
+            "key": {
+              "description": "Identity template; $1 and ${name} expand to the capture groups of `match`.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+
         "enrichers": {
           "description": "Registered enrichers to run for this source. Config can only enable or disable a compiled enricher -- no layer can install transformation code. For DB-backed inputs the derived view is the only carrier of the DB-side fields, so disabling one stops that capture entirely.",
           "type": "object",
@@ -105,7 +124,7 @@
           "if": {
             "properties": {
               "gather": {
-                "enum": ["file_glob", "compressed_file"]
+                "const": "file_glob"
               }
             },
             "required": ["gather"]
@@ -142,8 +161,7 @@
     "gather_name": {
       "enum": [
         "account",
-        "file_glob",
-        "compressed_file"
+        "file_glob"
       ]
     },
     "artifact_class": { "enum": ["trajectory", "context"] },

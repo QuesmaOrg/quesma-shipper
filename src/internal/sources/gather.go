@@ -2,12 +2,16 @@
 package sources
 
 import (
+	"bufio"
 	"bytes"
 	"cmp"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,6 +19,7 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
@@ -47,6 +52,10 @@ type Candidate struct {
 	// RelPath is relative to the resolved root and derives the mirror key, so a store that moves keeps its keys.
 	RelPath string
 
+	// Identity is the logical object this file is one form of (a session across live, archived
+	// and compressed paths); empty means the path is the identity.
+	Identity string
+
 	Load func(context.Context) (Payload, error)
 
 	Size  int64
@@ -64,12 +73,129 @@ func fileLoader(path string, maxBytes int64) func(context.Context) (Payload, err
 		if err := ctx.Err(); err != nil {
 			return Payload{}, err
 		}
-		raw, info, err := platform.ReadWhole(path, maxBytes)
+		read := platform.ReadWhole
+		if IsZstd(path) {
+			read = readZstd
+		}
+		raw, info, err := read(path, maxBytes)
 		if err != nil {
 			return Payload{}, err
 		}
 		return Payload{Bytes: raw, MTime: info.ModTime()}, nil
 	}
+}
+
+// zstdMaxWindow bounds decoder memory against a crafted frame header; it is zstd --long's default window.
+const zstdMaxWindow = 1 << 27
+
+var zstdMagic = []byte{0x28, 0xb5, 0x2f, 0xfd}
+
+// IsZstd says a path is loaded by decoding it, so its stat size is not what it holds.
+func IsZstd(path string) bool { return strings.HasSuffix(path, ".zst") }
+
+// newZstdReader refuses a .zst path that is not a zstd stream, so it can never ship as opaque bytes.
+// It also returns the first frame's declared content size, 0 when absent: a pre-size hint only.
+func newZstdReader(f io.Reader, path string) (*zstd.Decoder, int64, error) {
+	br := bufio.NewReader(f)
+	head, err := br.Peek(zstd.HeaderMaxSize)
+	if err != nil && !errors.Is(err, io.EOF) || !bytes.HasPrefix(head, zstdMagic) {
+		return nil, 0, fmt.Errorf("%s: .zst file does not start with zstd magic", path)
+	}
+	contentSize, _, _ := declaredSize(head)
+	dec, err := zstd.NewReader(br, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxWindow(zstdMaxWindow))
+	if err != nil {
+		return nil, 0, fmt.Errorf("%s: zstd reader: %w", path, err)
+	}
+	return dec, contentSize, nil
+}
+
+// readZstd is ReadWhole over the decoded stream: max_file_bytes caps what the pipeline holds, which is the decoded size.
+func readZstd(path string, maxBytes int64) ([]byte, os.FileInfo, error) {
+	if maxBytes <= 0 {
+		return nil, nil, fmt.Errorf("%s: no max_file_bytes to bound the decoded size", path)
+	}
+	f, info, err := platform.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer f.Close()
+	dec, contentSize, err := newZstdReader(f, path)
+	if err != nil {
+		return nil, info, err
+	}
+	defer dec.Close()
+
+	var buf bytes.Buffer
+	// Pre-size like ReadWhole so a large rollout is not held twice while the buffer doubles.
+	if contentSize > 0 {
+		buf.Grow(int(min(contentSize, maxBytes)) + bytes.MinRead)
+	}
+	if _, err := buf.ReadFrom(io.LimitReader(dec, maxBytes+1)); err != nil {
+		return nil, info, fmt.Errorf("%s: zstd decode: %w", path, err)
+	}
+	body := buf.Bytes()
+	if int64(len(body)) > maxBytes {
+		return nil, info, fmt.Errorf("%w: %s: decoded size exceeds max_file_bytes %d",
+			platform.ErrTooLarge, path, maxBytes)
+	}
+	return body, info, nil
+}
+
+// LoadBytes is what loading c holds, for the in-flight memory gate: a .zst holds its decoded size, so it is
+// charged its declared content size when the file is one such frame, else maxBytes, capped at maxBytes.
+func LoadBytes(c Candidate, maxBytes int64) int64 {
+	if !IsZstd(c.Path) || maxBytes <= 0 {
+		return c.Size
+	}
+	f, info, err := platform.Open(c.Path)
+	if err != nil {
+		// Load fails on it and names the path; until then assume the worst.
+		return maxBytes
+	}
+	defer f.Close()
+	if size, ok := singleFrameSize(f, info.Size()); ok && size < maxBytes {
+		return size
+	}
+	return maxBytes
+}
+
+// singleFrameSize is the declared content size of a .zst that is exactly one frame. The decoder
+// reads every concatenated frame, so bytes past the first make its declaration a lower bound.
+func singleFrameSize(r io.ReaderAt, fileSize int64) (int64, bool) {
+	var head [zstd.HeaderMaxSize]byte
+	n, _ := r.ReadAt(head[:], 0)
+	size, h, ok := declaredSize(head[:n])
+	if !ok {
+		return 0, false
+	}
+	end := int64(h.HeaderSize)
+	for last := false; !last; {
+		var bh [3]byte
+		if _, err := r.ReadAt(bh[:], end); err != nil {
+			return 0, false
+		}
+		v := uint32(bh[0]) | uint32(bh[1])<<8 | uint32(bh[2])<<16
+		last = v&1 == 1
+		n := int64(v >> 3)
+		if (v>>1)&3 == 1 {
+			// An RLE block stores its one repeated byte; the size field is the decoded length.
+			n = 1
+		}
+		end += 3 + n
+	}
+	if h.HasCheckSum {
+		end += 4
+	}
+	return size, end == fileSize
+}
+
+// declaredSize is the frame header's content size; ok is false when the header is bad or has none.
+func declaredSize(head []byte) (int64, zstd.Header, bool) {
+	var h zstd.Header
+	if h.Decode(head) != nil || !h.HasFCS || h.FrameContentSize > math.MaxInt64 {
+		return 0, h, false
+	}
+	return int64(h.FrameContentSize), h, true
 }
 
 // Discovery is what one source's discovery pass found, plus why.
@@ -150,11 +276,9 @@ type Registry struct {
 // NewRegistry builds the registry. Reserved names (acp, cloud_pull) are absent by construction, so a source naming one fails validation.
 func NewRegistry() *Registry {
 	return &Registry{primitives: map[string]Primitive{
-		// file_glob: append-only JSONL stores, copied config files, spill directories.
-		// compressed_file: already-compressed files by whole-file hash, advertised separately.
-		"file_glob":       globPrimitive{},
-		"compressed_file": globPrimitive{},
-		"account":         &Accounts{},
+		// file_glob: append-only JSONL stores (a .zst file is decoded on load), copied config files, spill directories.
+		"file_glob": globPrimitive{},
+		"account":   &Accounts{},
 	}}
 }
 
@@ -167,7 +291,7 @@ func (r *Registry) For(gather string) (Primitive, error) {
 	return p, nil
 }
 
-// globPrimitive walks a root and matches include globs; both glob-shaped gathers share it.
+// globPrimitive walks a root and matches include globs.
 type globPrimitive struct{}
 
 func (p globPrimitive) Discover(req Request) (Discovery, error) {
@@ -183,7 +307,12 @@ func discoverByGlob(req Request) (Discovery, error) {
 		return d, nil
 	}
 
+	identity, err := src.Identity.compile()
+	if err != nil {
+		return d, fmt.Errorf("source %s: %w", src.ID, err)
+	}
 	matched, oversize, bad, ignored := walkGlobs(src, req.Deny, req.Ignore)
+	matched = collapseIdentities(matched, identity)
 	d.Oversize, d.Ignored = oversize, ignored
 	d.Unreadable, d.UnreadableExample = bad.count, bad.example
 	d.UnreadableReason = bad.reason()
@@ -227,6 +356,43 @@ func discoverByGlob(req Request) (Discovery, error) {
 		d.Candidates = nil
 	}
 	return d, nil
+}
+
+// collapseIdentities keeps one form per identity: plaintext over .zst (the compressed copy is
+// the older one), then the newest, then the lowest RelPath, so walk order never decides.
+func collapseIdentities(matched []Candidate, identity *regexpIdentity) []Candidate {
+	if identity == nil {
+		return matched
+	}
+	at := map[string]int{}
+	out := matched[:0]
+	for _, c := range matched {
+		c.Identity = identity.of(c.RelPath)
+		i, seen := at[c.Identity]
+		switch {
+		case c.Identity == "":
+			out = append(out, c)
+		case !seen:
+			at[c.Identity] = len(out)
+			out = append(out, c)
+		case preferForm(c, out[i]) < 0:
+			out[i] = c
+		}
+	}
+	return out
+}
+
+func preferForm(a, b Candidate) int {
+	if za, zb := IsZstd(a.RelPath), IsZstd(b.RelPath); za != zb {
+		if za {
+			return 1
+		}
+		return -1
+	}
+	if c := b.MTime.Compare(a.MTime); c != 0 {
+		return c
+	}
+	return strings.Compare(a.RelPath, b.RelPath)
 }
 
 // ignoredReason explains a source emptied by the ignore list: the config working, not drift.
@@ -433,15 +599,14 @@ func sniff(path string, spec *Sniff) (SniffResult, string) {
 	if budget <= 0 {
 		budget = 64 << 10
 	}
-	head, info, err := readHead(path, budget)
+	// Whether the head stopped at the budget or at end of file changes what a missing newline means.
+	head, truncated, err := readHead(path, budget)
 	if err != nil {
 		return SniffUnreadable, ""
 	}
 	if len(head) == 0 {
 		return SniffEmpty, ""
 	}
-	// Whether the head stopped at the budget or at end of file changes what a missing newline means.
-	truncated := info != nil && info.Size() > int64(len(head))
 
 	switch spec.Kind {
 	case "jsonl":
@@ -467,22 +632,36 @@ func sniff(path string, spec *Sniff) (SniffResult, string) {
 	}
 }
 
-func readHead(path string, budget int64) ([]byte, os.FileInfo, error) {
+// readHead returns up to budget bytes of content, decoded for a .zst path, and whether more follows.
+func readHead(path string, budget int64) ([]byte, bool, error) {
 	f, info, err := platform.Open(path)
 	if err != nil {
-		return nil, nil, err
+		return nil, false, err
 	}
 	defer f.Close()
 
 	if info.Size() == 0 {
-		return nil, info, nil
+		return nil, false, nil
+	}
+	if IsZstd(path) {
+		dec, _, err := newZstdReader(f, path)
+		if err != nil {
+			return nil, false, err
+		}
+		defer dec.Close()
+		head := make([]byte, budget+1)
+		n, err := io.ReadFull(dec, head)
+		if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+			return nil, false, fmt.Errorf("%s: zstd decode: %w", path, err)
+		}
+		return head[:min(int64(n), budget)], int64(n) > budget, nil
 	}
 	buf := make([]byte, min(budget, info.Size()))
 	n, err := f.Read(buf)
 	if err != nil && n == 0 {
-		return nil, info, err
+		return nil, false, err
 	}
-	return buf[:n], info, nil
+	return buf[:n], info.Size() > int64(n), nil
 }
 
 // sniffSampleSize is how many files are asked before condemning a source, spread across the ordering rather than taken from one end.

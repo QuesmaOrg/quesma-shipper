@@ -28,6 +28,7 @@ const (
 	singleLineScenario       = "single-line-file"
 	singleLineSecretScenario = "single-line-file-redacted"
 	scrubGuardScenario       = "smoke-scrub-guard"
+	codexGuardScenario       = "smoke-codex-scrub-guard"
 )
 
 // Names the file the rows are appended to; CI points it at the workspace so the upload finds it.

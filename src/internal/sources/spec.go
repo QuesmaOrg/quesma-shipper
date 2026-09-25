@@ -10,7 +10,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"slices"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -41,6 +43,7 @@ type Source struct {
 	Sniff         *Sniff          `yaml:"sniff"`
 	Enrichers     map[string]bool `yaml:"enrichers"`
 	Scrub         *bool           `yaml:"scrub"`
+	Identity      *Identity       `yaml:"identity"`
 
 	// Emit names what a source writes itself rather than finds; the account collectors set it.
 	Emit string `yaml:"emit"`
@@ -54,6 +57,46 @@ type Sniff struct {
 	Kind         string `yaml:"kind"`
 	MagicHex     string `yaml:"magic_hex"`
 	MaxScanBytes int64  `yaml:"max_scan_bytes"`
+}
+
+// Identity names the logical object behind a path, so the forms one session takes on disk
+// (live, archived, compressed) are one object. A path Match does not match keeps path identity.
+type Identity struct {
+	Match string `yaml:"match"`
+	Key   string `yaml:"key"`
+
+	// Compiled once: every copy of a Source shares this Identity by pointer.
+	once     sync.Once
+	compiled *regexpIdentity
+	err      error
+}
+
+type regexpIdentity struct {
+	re  *regexp.Regexp
+	key string
+}
+
+func (id *Identity) compile() (*regexpIdentity, error) {
+	if id == nil {
+		return nil, nil
+	}
+	id.once.Do(func() {
+		re, err := regexp.Compile(id.Match)
+		if err != nil {
+			id.err = fmt.Errorf("identity.match %q: %w", id.Match, err)
+			return
+		}
+		id.compiled = &regexpIdentity{re: re, key: id.Key}
+	})
+	return id.compiled, id.err
+}
+
+func (r *regexpIdentity) of(rel string) string {
+	m := r.re.FindStringSubmatchIndex(rel)
+	if m == nil {
+		return ""
+	}
+	return string(r.re.ExpandString(nil, r.key, rel, m))
 }
 
 // IsEnabledByDefault reports the spec's own default; only the compiled tier decides what exists at all.
@@ -100,6 +143,9 @@ func Load() (*Compiled, error) {
 		for i := range spec.Sources {
 			spec.Sources[i].Family = spec.Family
 			s := spec.Sources[i]
+			if _, err := s.Identity.compile(); err != nil {
+				return nil, fmt.Errorf("catalog: %s: source %s: %w", name, s.ID, err)
+			}
 			if prev, dup := c.byID[s.ID]; dup {
 				return nil, fmt.Errorf("catalog: source id %q declared twice (family %s and %s)",
 					s.ID, prev.Family, s.Family)
@@ -141,6 +187,10 @@ func SpecFingerprint(s Source) string {
 	write("include", s.Include...)
 	write("exclude", s.Exclude...)
 	write("emit", s.Emit)
+	// Only when set, so every source without one keeps its fingerprint.
+	if s.Identity != nil {
+		write("identity", s.Identity.Match, s.Identity.Key)
+	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 

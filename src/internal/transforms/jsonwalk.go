@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/packs"
@@ -20,6 +21,8 @@ var (
 	errTrailingContent = errors.New("trailing content after JSON value")
 	errStringToken     = errors.New("invalid JSON string token")
 	errInvalidEdit     = errors.New("invalid JSON source edit")
+	// An engine fault, not a parse failure: Scrub fails closed on it instead of raw-scanning.
+	errEmbeddedEdit = errors.New("apply embedded JSON redaction spans")
 )
 
 var decoderOptions = []jsontext.Options{
@@ -42,6 +45,15 @@ type jsonWalker struct {
 
 	redacted int
 	hits     map[string]int
+
+	// Walks a string value that is itself a JSON document; one per nesting level, reused.
+	inner *jsonWalker
+
+	// Inside such a document no whole-value scan saw the numbers, so the walk scans them itself.
+	embedded bool
+
+	// Reused across values: an escape-dense Codex line would otherwise allocate each twice.
+	unquoted, doc, rewritten []byte
 }
 
 func (w *jsonWalker) reset(s *Scrubber, family string, scan *packs.ValueScan, line []byte) {
@@ -86,11 +98,14 @@ func (w *jsonWalker) walk(depth int, key, path string) error {
 	case '[':
 		return w.walkArray(depth, path)
 	case '"':
-		return w.walkString(key, path)
-	default:
-		_, err := w.dec.ReadValue()
-		return err
+		return w.walkString(depth, key, path)
+	case '0':
+		if w.embedded {
+			return w.walkNumber(key, path)
+		}
 	}
+	_, err := w.dec.ReadValue()
+	return err
 }
 
 func (w *jsonWalker) walkObject(depth int, path string) error {
@@ -105,7 +120,7 @@ func (w *jsonWalker) walkObject(depth int, path string) error {
 		}
 
 		field := joinFieldPath(path, key)
-		plan := w.s.planValue(key, "", FieldPath(field), w.family, w.scan)
+		plan := w.s.planValue(key, false, FieldPath(field), w.family, w.scan)
 		w.addPlan(raw, rawStart, key, plan)
 		if len(plan.spans) > 0 {
 			field = joinFieldPath(path, plan.apply(key))
@@ -133,14 +148,93 @@ func (w *jsonWalker) walkArray(depth int, path string) error {
 	return err
 }
 
-func (w *jsonWalker) walkString(key, path string) error {
+func (w *jsonWalker) walkString(depth int, key, path string) error {
 	raw, rawStart, text, err := w.readString()
 	if err != nil {
 		return err
 	}
-	w.addPlan(raw, rawStart, text,
-		w.s.planValue(text, key, FieldPath(path), w.family, w.scan))
+	secretKey := w.s.keyNamesSecret(key, text)
+	// A document the inner walk completes on is scanned leaf by leaf, so the whole-value scan
+	// would read every byte twice; a secret-named key or a key-plus-value rule hit still takes it.
+	if !secretKey && looksLikeDocument(text) && !w.s.spansKeyAndValue(text) {
+		embedded, walked, err := w.walkEmbedded(depth, path, text)
+		if err != nil {
+			return err
+		}
+		if walked {
+			if embedded != text {
+				w.replace(raw, rawStart, embedded)
+			}
+			return nil
+		}
+	}
+	plan := w.s.planValue(text, secretKey, FieldPath(path), w.family, w.scan)
+	if len(plan.spans) == 0 {
+		return nil
+	}
+	out := plan.apply(text)
+	if looksLikeDocument(out) {
+		if out, _, err = w.walkEmbedded(depth, path, out); err != nil {
+			return err
+		}
+	}
+	w.replace(raw, rawStart, out)
+	w.addLedger(plan)
 	return nil
+}
+
+// walkNumber gives a number the ladder a string gets; a redacted one becomes a JSON string.
+func (w *jsonWalker) walkNumber(key, path string) error {
+	raw, err := w.dec.ReadValue()
+	if err != nil {
+		return err
+	}
+	text := string(raw)
+	plan := w.s.planValue(text, w.s.keyNamesSecret(key, text), FieldPath(path), w.family, w.scan)
+	w.addPlan(raw, int(w.dec.InputOffset())-len(raw), text, plan)
+	return nil
+}
+
+// embeddedSuffix marks a path as descending into a string that holds a JSON document, so an
+// exemption for the outer field never reaches the fields encoded inside it.
+const embeddedSuffix = "#json"
+
+// walkEmbedded walks a string value that is a JSON object or array (tool arguments and outputs
+// stored as encoded JSON) so its keys get key-name redaction and its leaves the full ladder. A
+// value that does not parse comes back unchanged with walked false.
+func (w *jsonWalker) walkEmbedded(depth int, path, text string) (out string, walked bool, err error) {
+	if w.inner == nil {
+		w.inner = &jsonWalker{embedded: true}
+	}
+	in := w.inner
+	in.doc = append(in.doc[:0], text...)
+	in.reset(w.s, w.family, w.scan, in.doc)
+	if err := in.walk(depth+1, "", path+embeddedSuffix); errors.Is(err, errEmbeddedEdit) {
+		return "", false, err
+	} else if err != nil {
+		return text, false, nil
+	}
+	if _, err := in.dec.ReadToken(); !errors.Is(err, io.EOF) {
+		return text, false, nil
+	}
+	if len(in.edits) == 0 {
+		return text, true, nil
+	}
+	rewritten, err := in.appendTo(in.rewritten[:0], in.doc)
+	if err != nil {
+		return "", false, fmt.Errorf("%w at %s: %w", errEmbeddedEdit, path, err)
+	}
+	in.rewritten = rewritten
+	w.redacted += in.redacted
+	for id, count := range in.hits {
+		w.hits[id] += count
+	}
+	return string(rewritten), true, nil
+}
+
+func looksLikeDocument(text string) bool {
+	trimmed := strings.TrimLeft(text, " \t\r\n")
+	return trimmed != "" && (trimmed[0] == '{' || trimmed[0] == '[')
 }
 
 func (w *jsonWalker) readString() (raw []byte, rawStart int, text string, err error) {
@@ -155,8 +249,8 @@ func (w *jsonWalker) readString() (raw []byte, rawStart int, text string, err er
 	if bytes.IndexByte(body, '\\') < 0 && utf8.Valid(body) {
 		return raw, int(w.dec.InputOffset()) - len(raw), string(body), nil
 	}
-	decoded, _ := jsontext.AppendUnquote(nil, raw)
-	return raw, int(w.dec.InputOffset()) - len(raw), string(decoded), nil
+	w.unquoted, _ = jsontext.AppendUnquote(w.unquoted[:0], raw)
+	return raw, int(w.dec.InputOffset()) - len(raw), string(w.unquoted), nil
 }
 
 func joinFieldPath(parent, child string) string {
@@ -170,9 +264,16 @@ func (w *jsonWalker) addPlan(raw []byte, rawStart int, decoded string, plan valu
 	if len(plan.spans) == 0 {
 		return
 	}
-	w.edits = append(w.edits, replacementSpan{
-		Start: rawStart, End: rawStart + len(raw), Replacement: plan.apply(decoded),
-	})
+	w.replace(raw, rawStart, plan.apply(decoded))
+	w.addLedger(plan)
+}
+
+// replace swaps the whole JSON value raw, found at rawStart, for the string s.
+func (w *jsonWalker) replace(raw []byte, rawStart int, s string) {
+	w.edits = append(w.edits, replacementSpan{Start: rawStart, End: rawStart + len(raw), Replacement: s})
+}
+
+func (w *jsonWalker) addLedger(plan valuePlan) {
 	w.redacted += plan.redacted
 	for id, count := range plan.hits {
 		w.hits[id] += count

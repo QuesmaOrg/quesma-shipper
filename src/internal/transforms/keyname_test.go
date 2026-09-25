@@ -92,7 +92,7 @@ func TestAConfiguredNameIsHonoured(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(res.Out) == `{"ACME_DEPLOY_SIG":"zx81-plain-value"}`+"\n" {
-		t.Errorf("a configured secret key name did not redact:\n%s", res.Out)
+	if string(res.Out.Bytes()) == `{"ACME_DEPLOY_SIG":"zx81-plain-value"}`+"\n" {
+		t.Errorf("a configured secret key name did not redact:\n%s", res.Out.Bytes())
 	}
 }

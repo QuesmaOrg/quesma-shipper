@@ -35,9 +35,6 @@ type fileResult struct {
 	// unit is the raw bytes staged for the enricher, carried out through every later exit.
 	unit *transforms.RawUnit
 
-	// bytes is the candidate's size, released back to the in-flight gate when folded.
-	bytes int64
-
 	// pending lives only between the compute leg and the loop thread that stages it.
 	pending *pendingPut
 
@@ -83,7 +80,8 @@ type sourcePass struct {
 
 	decided       int // what Progress reports as done
 	inFlightBytes int64
-	fatal         bool // the first refusal has landed; admit nothing more
+	charges       map[int]int64 // by candidate index, so admission and release agree
+	fatal         bool          // the first refusal has landed; admit nothing more
 	fatalReason   string
 
 	// staged is the authorization accumulator; it belongs to the loop goroutine alone.
@@ -153,17 +151,15 @@ func (p *sourcePass) run(ctx context.Context) error {
 	// settle releases a decided file's slot and gate share, then folds it; every exit ends here.
 	settle := func(r fileResult) {
 		inFlight--
-		p.inFlightBytes -= r.bytes
+		p.inFlightBytes -= p.charge(r.idx)
+		delete(p.charges, r.idx)
 		p.fold(r)
 	}
 	for {
 		for inFlight < limit && p.canAdmit(ctx, next, inFlight, &stopped) {
 			job := fileJob{idx: next, cand: p.disc.Candidates[next]}
-			job.fp, job.seen = p.store.Get(Key{
-				SourceID:   p.src.ID,
-				NativePath: job.cand.Path,
-			})
-			p.inFlightBytes += job.cand.Size
+			job.fp, job.seen = p.store.Get(KeyOf(p.src.ID, job.cand))
+			p.inFlightBytes += p.charge(next)
 			go func() {
 				computeSlots <- struct{}{}
 				r, pending := p.o.prepareFile(ctx, job, p.src, p.disc, p.staging)
@@ -275,12 +271,33 @@ func (p *sourcePass) canAdmit(ctx context.Context, next, inFlight int, stopped *
 	}
 	// Memory, not concurrency: the memstat limit was derived from ONE worst-case file, so the sum
 	// of raw bytes in flight is held to the same figure. A file larger than the gate runs alone.
-	if sz := p.disc.Candidates[next].Size; inFlight > 0 && p.inFlightBytes+sz > platform.MaxInFlightBytes() {
+	if sz := p.charge(next); inFlight > 0 && p.inFlightBytes+sz > platform.MaxInFlightBytes() {
 		return false
 	}
 	// Budget is RESERVED here and refunded in fold, which is what makes overshoot impossible.
 	*p.budget--
 	return true
+}
+
+// charge is candidate i's share of the in-flight gate, read once: a .zst decodes to far more than it
+// stats, unless its fingerprint says it will not be opened at all.
+func (p *sourcePass) charge(i int) int64 {
+	cand := p.disc.Candidates[i]
+	if !sources.IsZstd(cand.Path) {
+		return cand.Size
+	}
+	if c, ok := p.charges[i]; ok {
+		return c
+	}
+	if p.charges == nil {
+		p.charges = map[int]int64{}
+	}
+	c := cand.Size
+	if fp, seen := p.store.Get(KeyOf(p.src.ID, cand)); !p.o.unchangedByStat(fp, seen, cand, p.staging) {
+		c = sources.LoadBytes(cand, p.src.MaxFileBytes)
+	}
+	p.charges[i] = c
+	return c
 }
 
 // fold is the only place a result touches the report, store, audit log and progress stream.

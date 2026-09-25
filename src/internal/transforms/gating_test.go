@@ -26,11 +26,11 @@ func TestNonASCIIKeyNameStillRedacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(res.Out), transforms.Sentinel("key-name")) {
-		t.Errorf("the secret survived: %s", res.Out)
+	if !strings.Contains(string(res.Out.Bytes()), transforms.Sentinel("key-name")) {
+		t.Errorf("the secret survived: %s", res.Out.Bytes())
 	}
-	if strings.Contains(string(res.Out), "hunter2") {
-		t.Errorf("the secret survived verbatim: %s", res.Out)
+	if strings.Contains(string(res.Out.Bytes()), "hunter2") {
+		t.Errorf("the secret survived verbatim: %s", res.Out.Bytes())
 	}
 
 	// Dropping the whole gate is the fallback; dropping a rule is not.
@@ -39,8 +39,8 @@ func TestNonASCIIKeyNameStillRedacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(res.Out), "hunter2") {
-		t.Errorf("an ASCII name stopped firing next to a non-ASCII one: %s", res.Out)
+	if strings.Contains(string(res.Out.Bytes()), "hunter2") {
+		t.Errorf("an ASCII name stopped firing next to a non-ASCII one: %s", res.Out.Bytes())
 	}
 }
 
@@ -92,8 +92,8 @@ func TestWideObjectKeepsDuplicateKeySemantics(t *testing.T) {
 					t.Errorf("%s: expected the line to stay decoded, got parsed=%d raw=%d",
 						name, res.LinesParsed, res.LinesRawScanned)
 				}
-				if strings.Contains(string(res.Out), "AKIAIOSFODNN7EXAMPLE") {
-					t.Errorf("%s: the secret survived: %s", name, res.Out)
+				if strings.Contains(string(res.Out.Bytes()), "AKIAIOSFODNN7EXAMPLE") {
+					t.Errorf("%s: the secret survived: %s", name, res.Out.Bytes())
 				}
 				continue
 			}
@@ -101,7 +101,7 @@ func TestWideObjectKeepsDuplicateKeySemantics(t *testing.T) {
 				t.Errorf("%s: expected a parsed line, got parsed=%d raw=%d",
 					name, res.LinesParsed, res.LinesRawScanned)
 			}
-			if string(res.Out) != b.String() {
+			if string(res.Out.Bytes()) != b.String() {
 				t.Errorf("%s: a record with nothing to redact must come out verbatim", name)
 			}
 		}

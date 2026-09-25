@@ -30,7 +30,8 @@ func (o Options) baseManifest(src sources.Resolved, nativePath string) transform
 	}
 }
 
-// mirrorKey is the key an object ships to. Path-derived, so a re-run lands on the same one.
+// mirrorKey is the key an object ships to, from the logical identity or else the path, so a re-run
+// lands on the same one.
 func (o Options) mirrorKey(sourceID, relPath string) (string, error) {
 	return formats.MirrorKey(orgOf(o.Plan), o.Identity.InstallID.String(), sourceID,
 		o.Identity.NameKey, formats.CanonicalPath(relPath, o.user))

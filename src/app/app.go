@@ -316,7 +316,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 		ConfigExpired: r.eff.ConfigExpired,
 		Client:        clientBlock(),
 		RunID:         r.runID,
-	}, body, r.recipients)
+	}, transforms.Unscrubbed(body, "heartbeat: shipper-authored"), r.recipients)
 	if err != nil {
 		return err
 	}

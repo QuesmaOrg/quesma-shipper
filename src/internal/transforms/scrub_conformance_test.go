@@ -76,8 +76,8 @@ func TestConformanceRedaction(t *testing.T) {
 			if err != nil {
 				t.Fatalf("engine error: %v", err)
 			}
-			if string(res.Out) != c.After {
-				t.Errorf("output drifted:\n got %q\nwant %q", res.Out, c.After)
+			if string(res.Out.Bytes()) != c.After {
+				t.Errorf("output drifted:\n got %q\nwant %q", res.Out.Bytes(), c.After)
 			}
 			if c.ScanMode != "" && res.ScanMode != c.ScanMode {
 				t.Errorf("scan_mode: got %q want %q", res.ScanMode, c.ScanMode)
@@ -273,6 +273,26 @@ func generateScrubVectors(t *testing.T) []byte {
 			"The other side of the card-pan tightening: the networks' published test number, written the way " +
 				"people write cards, must keep matching through every added gate.",
 		},
+		{
+			"codex tool arguments are a JSON document inside a string", "codex", true,
+			`{"timestamp":"2026-09-20T10:00:00.000Z","type":"response_item","payload":{"type":"function_call","name":"mcp__db__connect","call_id":"call_1","arguments":"{\"host\":\"db.internal\",\"user\":\"admin\",\"password\":\"hunter2\"}"}}` + "\n",
+			"Codex stores function_call.arguments as encoded JSON where Claude Code stores an object. The " +
+				"walker descends into a string value that is a JSON document, so its keys get the same " +
+				"key-name rule; fields inside it never inherit the outer field's exemptions.",
+		},
+		{
+			"codex cat config.json output encoded twice", "codex", true,
+			`{"timestamp":"2026-09-20T10:00:00.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_1","output":"{\"output\":\"{\\\"output\\\":\\\"{\\\\n  \\\\\\\"db\\\\\\\": {\\\\\\\"user\\\\\\\": \\\\\\\"app\\\\\\\", \\\\\\\"password\\\\\\\": \\\\\\\"hunter2\\\\\\\"}\\\\n}\\\\n\\\",\\\"metadata\\\":{\\\"exit_code\\\":0}}\"}"}}` + "\n",
+			"A tool output holding a JSON document, recorded as a JSON document, inside a JSON string: " +
+				"each level is walked in turn under the shared nesting bound.",
+		},
+		{
+			"an escaped newline before a token in a truncated codex output", "codex", true,
+			`{"timestamp":"2026-09-20T10:00:00.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_1","output":"{\"output\":\"keys\\nAKIAIOSFODNN7EXAMPLE\\nghp_abcdefghijklmnopqrstuvwxyz0123456789\\n[output truncated"}}` + "\n",
+			"The decoded value is not JSON, so its escapes stay: the n of an escaped newline would glue " +
+				"onto the token after it and defeat every word-boundary rule. The rules also run over a " +
+				"same-length copy with each escape turned into non-word bytes.",
+		},
 	}
 
 	out := scrubVectors{
@@ -300,7 +320,7 @@ func generateScrubVectors(t *testing.T) []byte {
 			Family:   c.family,
 			JSONL:    c.jsonl,
 			Before:   c.before,
-			After:    string(res.Out),
+			After:    string(res.Out.Bytes()),
 			RuleHits: res.RuleHits,
 			ScanMode: res.ScanMode,
 			Note:     c.note,

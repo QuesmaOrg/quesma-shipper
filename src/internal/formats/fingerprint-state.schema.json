@@ -30,7 +30,7 @@
       "$ref": "#/$defs/sha256"
     },
     "entries": {
-      "description": "One entry per (source_id, native_path). Kept sorted by that key so the serialized document is deterministic.",
+      "description": "One entry per (source_id, identity if present else native_path). Kept sorted by that key so the serialized document is deterministic.",
       "type": "array",
       "items": { "$ref": "#/$defs/entry" }
     }
@@ -46,7 +46,12 @@
           "$ref": "#/$defs/identifier"
         },
         "native_path": {
-          "description": "Absolute path of the source file as read. Local state only -- on the wire the path exists solely inside the age-encrypted manifest.",
+          "description": "Absolute path of the source file as last read. Local state only -- on the wire the path exists solely inside the age-encrypted manifest.",
+          "type": "string",
+          "minLength": 1
+        },
+        "identity": {
+          "description": "Logical identity from the source's identity rule, shared by every form one object takes on disk (live, archived, compressed); native_path is then the form last observed. Absent means the path is the identity. Not additive for a rollback: a binary that predates this field fails the checksum on a document carrying it and discards the whole store once. Accepted: that costs a re-hash, the uploads are answered already_present, and Codex rollouts go back to their path keys.",
           "type": "string",
           "minLength": 1
         },
