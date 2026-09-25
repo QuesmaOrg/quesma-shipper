@@ -3,6 +3,7 @@
 package linux
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -22,10 +23,7 @@ type Status = common.Status
 const unitName = "trajectory-shipper.service"
 
 func systemdPath(home string) string {
-	configHome := os.Getenv("XDG_CONFIG_HOME")
-	if configHome == "" {
-		configHome = filepath.Join(home, ".config")
-	}
+	configHome := cmp.Or(os.Getenv("XDG_CONFIG_HOME"), filepath.Join(home, ".config"))
 	return filepath.Join(configHome, "systemd", "user", unitName)
 }
 

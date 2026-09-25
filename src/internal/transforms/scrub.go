@@ -78,7 +78,7 @@ type Config struct {
 // DefaultConfig is the compiled baseline.
 func DefaultConfig() Config {
 	return Config{
-		RulePacks:      []string{packs.GitleaksCore, packs.QuesmaExtra, packs.CloudKeys, packs.GenericEntropy, packs.PIICore},
+		RulePacks:      slices.Clone(packs.Default),
 		Exemptions:     CompiledExemptions(),
 		Username:       "",
 		SecretKeyNames: DefaultSecretKeyNames(),
@@ -226,7 +226,11 @@ func (s *Scrubber) Scrub(payload []byte, hint Hint) (Result, error) {
 	// One Scrubber serves many goroutines, so no per-value state may live on it.
 	var scan packs.ValueScan
 	if !hint.JSONL {
-		res.Out = []byte(s.scrubRawText(string(payload), &res, &scan))
+		text := string(payload)
+		res.Out = payload
+		if scrubbed := s.scrubRawText(text, &res, &scan); scrubbed != text {
+			res.Out = []byte(scrubbed)
+		}
 		res.ScanMode = ScanModeRawText
 		res.LinesRawScanned = 1
 		return res, nil
@@ -305,7 +309,7 @@ func (s *Scrubber) Scrub(payload []byte, hint Hint) (Result, error) {
 // path there is no exemption to consult, and the entropy backstop would shred any hex
 // digest or base64 blob in a terminal capture.
 func (s *Scrubber) scrubRawText(text string, res *Result, scan *packs.ValueScan) string {
-	plan := s.planValueWith(text, nil, "", "", scan)
+	plan := s.planValueWith(text, nil, "", scan)
 	res.record(plan.redacted, plan.hits)
 	return plan.apply(text)
 }
@@ -345,14 +349,13 @@ func (s *Scrubber) planValue(value, key string, field FieldPath, family string, 
 		// Detector-scoped: the field stands down the heuristics and nothing else.
 		entropy = nil
 	}
-	return s.planValueWith(value, entropy, key, field, scan)
+	return s.planValueWith(value, entropy, key, scan)
 }
 
 func (s *Scrubber) planValueWith(
 	value string,
 	entropy *entropyMatcher,
 	key string,
-	field FieldPath,
 	scan *packs.ValueScan,
 ) valuePlan {
 	// A key that names a secret takes the whole value, whatever shape the value has.
@@ -444,14 +447,14 @@ func pathUserReplacementSpans(value, username string, blocked []replacementSpan)
 			continue
 		}
 
-		leftOK := start == 0 || !isAlnumByte(value[start-1])
+		leftOK := start == 0 || !formats.IsAlnum(value[start-1])
 		if blockedAt > 0 && blocked[blockedAt-1].End == start {
 			r := blocked[blockedAt-1].Replacement
-			leftOK = !isAlnumByte(r[len(r)-1])
+			leftOK = !formats.IsAlnum(r[len(r)-1])
 		}
-		rightOK := end == len(value) || !isAlnumByte(value[end])
+		rightOK := end == len(value) || !formats.IsAlnum(value[end])
 		if blockedAt < len(blocked) && blocked[blockedAt].Start == end {
-			rightOK = !isAlnumByte(blocked[blockedAt].Replacement[0])
+			rightOK = !formats.IsAlnum(blocked[blockedAt].Replacement[0])
 		}
 		if leftOK && rightOK {
 			spans = append(spans, replacementSpan{
@@ -505,7 +508,7 @@ func base64Shaped(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		switch {
-		case isAlnumByte(c):
+		case formats.IsAlnum(c):
 		case c == '+', c == '/', c == '=', c == '-', c == '_', c == '\r':
 		default:
 			return false

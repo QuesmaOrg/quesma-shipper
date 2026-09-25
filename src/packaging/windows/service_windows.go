@@ -54,10 +54,11 @@ func InstallService(spec Spec) error {
 	}
 
 	// /F is an overwrite of this user's own task now that the name carries their SID.
-	if out, err := schtasks("/Create", "/TN", name, "/XML", path, "/F"); err != nil {
+	ctx := context.Background()
+	if out, err := schtasksContext(ctx, "/Create", "/TN", name, "/XML", path, "/F"); err != nil {
 		return fmt.Errorf("supervise: register scheduled task: %s", commandError(err, out))
 	}
-	if out, err := schtasks("/Run", "/TN", name); err != nil {
+	if out, err := schtasksContext(ctx, "/Run", "/TN", name); err != nil {
 		return fmt.Errorf("supervise: start scheduled task: %s", commandError(err, out))
 	}
 	return nil
@@ -72,12 +73,13 @@ func UninstallService() error {
 	// An install that predates per-user names is removed too, or uninstalling would leave it live.
 	legacyErr := retireLegacyTask(sid)
 
-	_, _ = schtasks("/End", "/TN", name)
-	out, err := schtasks("/Delete", "/TN", name, "/F")
+	ctx := context.Background()
+	_, _ = schtasksContext(ctx, "/End", "/TN", name)
+	out, err := schtasksContext(ctx, "/Delete", "/TN", name, "/F")
 	if err == nil {
 		return legacyErr
 	}
-	exists, verifyErr := taskExists(context.Background(), name)
+	exists, verifyErr := taskExists(ctx, name)
 	if verifyErr == nil && !exists {
 		return legacyErr
 	}
@@ -91,16 +93,12 @@ func UninstallService() error {
 // retireLegacyTask removes the pre-rename task, and only when this user owns it. A failure to read
 // it is not an error: it is either absent, or another user's and therefore invisible to us.
 func retireLegacyTask(userSID string) error {
-	out, err := schtasks("/Query", "/TN", legacyTaskName, "/XML")
-	if err != nil {
+	ctx := context.Background()
+	if _, ok := ownedLegacyTask(ctx, userSID); !ok {
 		return nil
 	}
-	doc, err := parseTask(out)
-	if err != nil || !legacyTaskIsOurs(doc, userSID) {
-		return nil
-	}
-	_, _ = schtasks("/End", "/TN", legacyTaskName)
-	if out, err := schtasks("/Delete", "/TN", legacyTaskName, "/F"); err != nil {
+	_, _ = schtasksContext(ctx, "/End", "/TN", legacyTaskName)
+	if out, err := schtasksContext(ctx, "/Delete", "/TN", legacyTaskName, "/F"); err != nil {
 		return fmt.Errorf("supervise: retire the former scheduled task %q: %s",
 			legacyTaskName, commandError(err, out))
 	}
@@ -135,15 +133,24 @@ func queryOwnTask(ctx context.Context, userSID string) (string, []byte, error) {
 	if err == nil {
 		return name, out, nil
 	}
-	legacyOut, legacyErr := schtasksContext(ctx, "/Query", "/TN", legacyTaskName, "/XML")
-	if legacyErr != nil {
-		return name, out, err
+	if legacyOut, ok := ownedLegacyTask(ctx, userSID); ok {
+		return legacyTaskName, legacyOut, nil
 	}
-	doc, parseErr := parseTask(legacyOut)
-	if parseErr != nil || !legacyTaskIsOurs(doc, userSID) {
-		return name, out, err
+	return name, out, err
+}
+
+// ownedLegacyTask reads the pre-rename task's definition; ok is false when it is absent,
+// unreadable, or another user's.
+func ownedLegacyTask(ctx context.Context, userSID string) (out []byte, ok bool) {
+	out, err := schtasksContext(ctx, "/Query", "/TN", legacyTaskName, "/XML")
+	if err != nil {
+		return nil, false
 	}
-	return legacyTaskName, legacyOut, nil
+	doc, err := parseTask(out)
+	if err != nil || !legacyTaskIsOurs(doc, userSID) {
+		return nil, false
+	}
+	return out, true
 }
 
 // ErrTaskDeleteUnverified marks a delete whose outcome could not be confirmed either way. Removal
@@ -226,12 +233,6 @@ func RemoveProgram(executable string) (string, error) {
 
 func SameProgram(a, b string) bool {
 	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
-}
-
-func ProgramRemovalDeferred() bool { return true }
-
-func schtasks(args ...string) ([]byte, error) {
-	return exec.Command("schtasks.exe", args...).CombinedOutput()
 }
 
 func schtasksContext(ctx context.Context, args ...string) ([]byte, error) {

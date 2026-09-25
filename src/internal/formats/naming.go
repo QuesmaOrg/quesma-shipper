@@ -55,9 +55,9 @@ func ApplyUserPlaceholder(s, username string) string {
 			i++
 			continue
 		}
-		leftOK := i == 0 || !isAlnum(s[i-1])
+		leftOK := i == 0 || !IsAlnum(s[i-1])
 		end := i + len(username)
-		rightOK := end == len(s) || !isAlnum(s[end])
+		rightOK := end == len(s) || !IsAlnum(s[end])
 		if leftOK && rightOK {
 			b.WriteString(UserPlaceholder)
 			i = end
@@ -69,7 +69,8 @@ func ApplyUserPlaceholder(s, username string) string {
 	return b.String()
 }
 
-func isAlnum(c byte) bool {
+// IsAlnum is ASCII-only: the key grammar and scrub word boundaries work on bytes, not runes.
+func IsAlnum(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
 
@@ -81,7 +82,7 @@ func encodeSegment(s string) string {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		switch {
-		case isAlnum(c), c == '.', c == '_', c == '~', c == '-':
+		case IsAlnum(c), c == '.', c == '_', c == '~', c == '-':
 			b.WriteByte(c)
 		default:
 			b.WriteByte('%')

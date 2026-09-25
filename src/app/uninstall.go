@@ -14,10 +14,11 @@ type UninstallStep struct {
 	Err    error
 }
 
-func Uninstall(purge bool, report func(UninstallStep)) (bool, error) {
+// Uninstall removes along plan, which the caller also used to word its prompt.
+func Uninstall(plan packaging.RemovalChannel, purge bool, report func(UninstallStep)) error {
 	_, paths, err := ResolveEffective()
 	if err != nil {
-		return false, err
+		return err
 	}
 	exe, err := os.Executable()
 	if err == nil {
@@ -39,29 +40,38 @@ func Uninstall(purge bool, report func(UninstallStep)) (bool, error) {
 		}
 		report(UninstallStep{Done: "background service stopped and removed", Detail: string(kind), Err: err})
 		if err != nil {
-			return false, err
+			return err
 		}
 	}
-	if packaging.HomebrewManaged() {
+	switch plan {
+	case packaging.RemovalHomebrew:
 		report(UninstallStep{Skip: "program managed by Homebrew; remove with " + packaging.BrewUninstall})
-		return false, uninstallState(paths.StateDir, purge, report)
-	}
-	if packaging.ProgramRemovalDeferred() {
+		return uninstallState(paths.StateDir, purge, report)
+	case packaging.RemovalDeferred:
 		if err := uninstallState(paths.StateDir, purge, report); err != nil {
-			return false, err
+			return err
 		}
+		removed, err := removeProgram(exe, report)
+		if err == nil {
+			report(UninstallStep{Done: "Windows uninstaller started", Detail: removed})
+		}
+		return err
+	default:
+		removed, err := removeProgram(exe, report)
+		if err != nil {
+			return err
+		}
+		report(UninstallStep{Done: "program removed", Detail: removed})
+		return uninstallState(paths.StateDir, purge, report)
 	}
+}
+
+func removeProgram(exe string, report func(UninstallStep)) (string, error) {
 	removed, err := packaging.RemoveProgram(exe)
 	if err != nil {
 		report(UninstallStep{Done: "program removed", Detail: removed, Err: err})
-		return false, err
 	}
-	if packaging.ProgramRemovalDeferred() {
-		report(UninstallStep{Done: "Windows uninstaller started", Detail: removed})
-		return true, nil
-	}
-	report(UninstallStep{Done: "program removed", Detail: removed})
-	return false, uninstallState(paths.StateDir, purge, report)
+	return removed, err
 }
 
 func uninstallState(stateDir string, purge bool, report func(UninstallStep)) error {

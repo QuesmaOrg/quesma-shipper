@@ -26,6 +26,14 @@ type ObjectInfo struct {
 	Version string
 }
 
+func objectKeys(objects []ObjectInfo) []string {
+	keys := make([]string, len(objects))
+	for i, object := range objects {
+		keys[i] = object.Key
+	}
+	return keys
+}
+
 var (
 	ErrNotFound = errors.New("object not found")
 	ErrConflict = errors.New("conditional write conflict")

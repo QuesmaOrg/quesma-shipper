@@ -58,11 +58,7 @@ func Survey(eff *config.Effective, paths config.Paths, attr *sources.RepoFilter)
 		if src.Root == "" {
 			continue
 		}
-		prim, err := registry.For(src.Gather)
-		if err != nil {
-			continue
-		}
-		d, err := prim.Discover(sources.Request{Source: src, All: eff.Sources, Deny: eff.Deny, StateDir: paths.StateDir})
+		d, err := registry.Discover(sources.Request{Source: src, All: eff.Sources, Deny: eff.Deny, StateDir: paths.StateDir})
 		if err != nil {
 			continue
 		}

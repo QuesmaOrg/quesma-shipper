@@ -13,8 +13,6 @@ type UpdateResult = common.Result
 
 const BrewUninstall = common.BrewUninstall
 
-func HomebrewManaged() bool { return common.HomebrewManaged() }
-
 func CheckUpdate(ctx context.Context, o UpdateOptions) (string, time.Time, bool, error) {
 	return common.Check(ctx, o)
 }

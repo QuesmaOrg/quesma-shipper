@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -469,7 +470,7 @@ func TestUploadAuthorizationAnswersAlreadyPresent(t *testing.T) {
 type failingHashStore struct{ ObjectStore }
 
 func (failingHashStore) SourceHash(context.Context, string) (string, error) {
-	return "", errorsNew("store answered 500 for https://bucket.example/k?sig=secret")
+	return "", errors.New("store answered 500 for https://bucket.example/k?sig=secret")
 }
 
 // A probe failure is advisory (the object is authorized as new) and the log never carries URLs.

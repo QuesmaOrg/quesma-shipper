@@ -61,6 +61,11 @@ func (s Source) IsEnabledByDefault() bool {
 	return s.Enabled == nil || *s.Enabled
 }
 
+// ScrubEnabled holds Article 4: a source is scrubbed unless its compiled spec explicitly says false.
+func (s Source) ScrubEnabled() bool {
+	return s.Scrub == nil || *s.Scrub
+}
+
 // Compiled is the whole parsed catalog.
 type Compiled struct {
 	Specs   []Spec

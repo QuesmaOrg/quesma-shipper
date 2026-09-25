@@ -93,13 +93,22 @@ type configResponse struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+// readCapped reads up to limit bytes, and one more to tell a body at the limit from one past it.
+func readCapped(r io.Reader, limit int64) (body []byte, tooLarge bool, err error) {
+	body, err = io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, false, err
+	}
+	return body, int64(len(body)) > limit, nil
+}
+
 func readRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, requestLimit+1))
+	body, tooLarge, err := readCapped(r.Body, requestLimit)
 	if err != nil {
 		http.Error(w, "read request", http.StatusBadRequest)
 		return nil, false
 	}
-	if len(body) > requestLimit {
+	if tooLarge {
 		http.Error(w, "request exceeds 1 MiB", http.StatusBadRequest)
 		return nil, false
 	}
@@ -379,6 +388,21 @@ func ticketSchemeAllowed(u *url.URL) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+var ticketHeaderDialects = []struct{ prefix, dialect string }{
+	{"x-amz-", "aws"}, {"x-goog-", "gcp"}, {"x-ms-", "azure"},
+}
+
+func ticketHeaderDialect(name string) string {
+	for _, d := range ticketHeaderDialects {
+		if strings.HasPrefix(name, d.prefix) {
+			return d.dialect
+		}
+	}
+	return ""
+}
+
+// validateTicketHeaders rebuilds the expected headers itself rather than calling the signers'
+// builders, so it checks them instead of agreeing with them.
 func validateTicketHeaders(object UploadObjectRequest, headers map[string]string) error {
 	if len(headers) == 0 {
 		return errors.New("ticket carries no required headers")
@@ -388,25 +412,14 @@ func validateTicketHeaders(object UploadObjectRequest, headers map[string]string
 		if name != strings.ToLower(name) {
 			return errors.New("ticket header names must be lowercase")
 		}
-		switch {
-		case strings.HasPrefix(name, "x-amz-"):
-			if dialect != "" && dialect != "aws" {
-				return errors.New("ticket mixes provider header dialects")
-			}
-			dialect = "aws"
-		case strings.HasPrefix(name, "x-goog-"):
-			if dialect != "" && dialect != "gcp" {
-				return errors.New("ticket mixes provider header dialects")
-			}
-			dialect = "gcp"
-		case strings.HasPrefix(name, "x-ms-"):
-			if dialect != "" && dialect != "azure" {
-				return errors.New("ticket mixes provider header dialects")
-			}
-			dialect = "azure"
-		default:
+		d := ticketHeaderDialect(name)
+		if d == "" {
 			return fmt.Errorf("ticket header %q is outside the protocol", name)
 		}
+		if dialect != "" && dialect != d {
+			return errors.New("ticket mixes provider header dialects")
+		}
+		dialect = d
 	}
 	want := map[string]string{}
 	for name, value := range object.Metadata {
@@ -417,8 +430,6 @@ func validateTicketHeaders(object UploadObjectRequest, headers map[string]string
 			want["x-goog-meta-"+strings.ToLower(name)] = value
 		case "azure":
 			want["x-ms-meta-"+strings.ReplaceAll(strings.ToLower(name), "-", "_")] = value
-		default:
-			return errors.New("ticket carries no recognized provider headers")
 		}
 	}
 	switch dialect {
@@ -441,6 +452,14 @@ func validateTicketHeaders(object UploadObjectRequest, headers map[string]string
 		}
 	}
 	return nil
+}
+
+type errorResponse struct {
+	Error string `json:"error"`
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	writeJSONStatus(w, status, errorResponse{Error: message})
 }
 
 func writeJSON(w http.ResponseWriter, value any) {

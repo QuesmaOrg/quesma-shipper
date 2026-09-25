@@ -17,5 +17,5 @@ func RestartService(context.Context) error            { return nil }
 func RestartCommand() string                          { return "" }
 func RemoveProgram(executable string) (string, error) { return common.RemoveProgram(executable) }
 func SameProgram(a, b string) bool                    { return a == b }
-func ProgramRemovalDeferred() bool                    { return false }
+func RemovalPlan() RemovalChannel                     { return RemovalDirect }
 func RemovalUnverified(error) bool                    { return false }

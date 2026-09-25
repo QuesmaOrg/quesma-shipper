@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -50,7 +51,7 @@ func (s *memoryStore) Get(ctx context.Context, key string) ([]byte, string, erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failGetIn != "" && strings.Contains(key, s.failGetIn) {
-		return nil, "", errorsNew("store is unavailable")
+		return nil, "", errors.New("store is unavailable")
 	}
 	object, ok := s.objects[key]
 	if !ok {
@@ -85,7 +86,7 @@ func (s *memoryStore) Put(_ context.Context, key string, raw []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failPut {
-		return errorsNew("store is unavailable")
+		return errors.New("store is unavailable")
 	}
 	object := s.objects[key]
 	object.raw, object.version = append([]byte(nil), raw...), object.version+1

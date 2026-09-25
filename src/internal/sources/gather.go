@@ -167,6 +167,15 @@ func (r *Registry) For(gather string) (Primitive, error) {
 	return p, nil
 }
 
+// Discover runs the primitive the request's source declares.
+func (r *Registry) Discover(req Request) (Discovery, error) {
+	p, err := r.For(req.Source.Gather)
+	if err != nil {
+		return Discovery{}, err
+	}
+	return p.Discover(req)
+}
+
 // globPrimitive walks a root and matches include globs; both glob-shaped gathers share it.
 type globPrimitive struct{}
 
@@ -326,10 +335,7 @@ func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Ove
 			}
 			return nil
 		}
-		// Type() reports the entry's own type without following it.
-		if d.Type()&os.ModeSymlink != 0 {
-			return nil
-		}
+		// Type() reports the entry's own type without following it, so symlinks are skipped here too.
 		if !d.Type().IsRegular() {
 			return nil
 		}
@@ -418,9 +424,13 @@ func matchesAny(rel string, patterns []string) bool {
 func normalizeGlobs(globs []string) []string {
 	out := make([]string, len(globs))
 	for i, g := range globs {
-		out[i] = strings.TrimPrefix(filepath.ToSlash(g), "/")
+		out[i] = normalizeGlob(g)
 	}
 	return out
+}
+
+func normalizeGlob(g string) string {
+	return strings.TrimPrefix(filepath.ToSlash(g), "/")
 }
 
 // sniff runs the catalog's shape assertion: shape, never semantics, so a drifted format is a data fix rather than a release.

@@ -15,8 +15,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // TelemetryPreamble domain-separates this signature the way the v2 upload one is separated: the
@@ -47,7 +46,7 @@ type TelemetryRequest struct {
 
 // NewBatchID mints the identifier for one event, not for the request carrying it: the far end
 // deduplicates on it, so a resend of the same event has to present the same id.
-func NewBatchID() string { return uuid.NewString() }
+func NewBatchID() string { return uuid.NewV4().String() }
 
 // ErrTelemetryDisabled says this install's organization has no collector. Not a failure: the caller
 // stops submitting until its next configuration load, because the answer cannot change before then.

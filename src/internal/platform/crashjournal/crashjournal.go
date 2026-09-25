@@ -55,9 +55,7 @@ func Open(stateDir, runID string) (*Log, error) {
 		return nil, err
 	}
 	path := filepath.Join(stateDir, fileName)
-	if info, err := os.Stat(path); err == nil && info.Size() >= maxLogBytes {
-		_ = os.Rename(path, path+".1")
-	}
+	platform.RotateLogAt(path, maxLogBytes)
 	return &Log{path: path, runID: runID}, nil
 }
 

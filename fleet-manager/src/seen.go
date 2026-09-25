@@ -7,15 +7,12 @@ import (
 	"strings"
 	"time"
 	"unicode"
-
-	"golang.org/x/sync/errgroup"
 )
 
 // seenWriteInterval collapses bursts into one write. Every write leaves a permanent noncurrent
 // version in a versioned bucket, so unthrottled telemetry would be the fleet's largest churn.
 const seenWriteInterval = time.Minute
 
-const seenReadConcurrency = 16
 const seenWriteTimeout = 3 * time.Second
 
 type clientFacts struct{ Version, OS, BootedAt string }
@@ -105,30 +102,7 @@ func (m *Manager) ListSeen(ctx context.Context) ([]SeenRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	records := make([]SeenRecord, len(objects))
-	found := make([]bool, len(objects))
-	var group errgroup.Group
-	group.SetLimit(seenReadConcurrency)
-	for i, object := range objects {
-		group.Go(func() error {
-			rec, _, err := getRecord[SeenRecord](ctx, m.store, object.Key)
-			if err != nil || !validSeenRecord(rec, object.Key) {
-				return nil
-			}
-			records[i], found[i] = rec, true
-			return nil
-		})
-	}
-	if err := group.Wait(); err != nil {
-		return nil, err
-	}
-	out := make([]SeenRecord, 0, len(objects))
-	for i, ok := range found {
-		if ok {
-			out = append(out, records[i])
-		}
-	}
-	return out, nil
+	return readRecords(ctx, m.store, objectKeys(objects), validSeenRecord), nil
 }
 
 // clientFact bounds device-chosen text before it reaches an administrator's table.

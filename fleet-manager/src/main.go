@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -123,13 +124,7 @@ func runServe(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = os.Getenv("AWS_LWA_PORT")
-	}
-	if port == "" {
-		port = "8080"
-	}
+	port := cmp.Or(os.Getenv("PORT"), os.Getenv("AWS_LWA_PORT"), "8080")
 	if _, err := strconv.Atoi(port); err != nil {
 		return errors.New("PORT must be numeric")
 	}
@@ -137,10 +132,7 @@ func runServe(ctx context.Context, args []string) error {
 	log.Printf("serving multiple organizations with provider %s on port %s", target.provider, port)
 	// Said at startup, because it decides what every organization that left a setting unset is
 	// served, and nothing else in the log would show it.
-	collector := defaults.TelemetryCollectorURL
-	if collector == "" {
-		collector = "none"
-	}
+	collector := cmp.Or(defaults.TelemetryCollectorURL, "none")
 	log.Printf("organizations that state nothing get: Quesma ETL recipient %t, telemetry collector %s", defaults.AllowQuesmaETL, collector)
 	return httpServer.ListenAndServe()
 }

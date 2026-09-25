@@ -99,12 +99,6 @@ func (p *telemetryProxy) allow(id string, now time.Time) bool {
 	return allowed
 }
 
-func telemetryError(w http.ResponseWriter, status int, code string) {
-	writeJSONStatus(w, status, struct {
-		Error string `json:"error"`
-	}{code})
-}
-
 // Admission bounds concurrent request buffers as well as upstream work, including unknown devices.
 func (s *Server) telemetryAdmission(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -114,20 +108,20 @@ func (s *Server) telemetryAdmission(next http.HandlerFunc) http.HandlerFunc {
 			defer func() { <-s.telemetry.slots }()
 		default:
 			w.Header().Set("Retry-After", "1")
-			telemetryError(w, http.StatusTooManyRequests, "telemetry_busy")
+			writeJSONError(w, http.StatusTooManyRequests, "telemetry_busy")
 			return
 		}
 		// Use a deadline even for incoming bodies so slow senders cannot retain every slot.
 		deadline := time.Now().Add(5 * time.Second)
 		_ = http.NewResponseController(w).SetReadDeadline(deadline)
 		defer func() { _ = http.NewResponseController(w).SetReadDeadline(time.Time{}) }()
-		raw, err := io.ReadAll(io.LimitReader(r.Body, requestLimit+1))
+		raw, tooLarge, err := readCapped(r.Body, requestLimit)
 		if err != nil {
-			telemetryError(w, http.StatusBadRequest, "telemetry_read_failed")
+			writeJSONError(w, http.StatusBadRequest, "telemetry_read_failed")
 			return
 		}
-		if len(raw) > requestLimit {
-			telemetryError(w, http.StatusRequestEntityTooLarge, "telemetry_too_large")
+		if tooLarge {
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "telemetry_too_large")
 			return
 		}
 		r.Body = io.NopCloser(bytes.NewReader(raw))
@@ -139,38 +133,38 @@ func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request, rec Ins
 	scoped, _ := s.manager.ForOrganization(rec.Organization)
 	cfg, _, err := scoped.LoadConfig(r.Context())
 	if err != nil {
-		telemetryError(w, http.StatusServiceUnavailable, "telemetry_unavailable")
+		writeJSONError(w, http.StatusServiceUnavailable, "telemetry_unavailable")
 		return
 	}
 	cfg = s.defaults.resolve(cfg)
 	if cfg.telemetryCollectorURL() == "" {
-		telemetryError(w, http.StatusForbidden, "telemetry_disabled")
+		writeJSONError(w, http.StatusForbidden, "telemetry_disabled")
 		return
 	}
 	p := s.telemetry
 	if !p.allow(rec.Organization+"/"+rec.InstallID, time.Now()) {
 		w.Header().Set("Retry-After", strconv.Itoa(max(1, (60+p.rate-1)/p.rate)))
-		telemetryError(w, http.StatusTooManyRequests, "telemetry_rate_limited")
+		writeJSONError(w, http.StatusTooManyRequests, "telemetry_rate_limited")
 		return
 	}
 	var request telemetryRequest
 	if err := strictDecode(body, &request); err != nil || request.Schema != 1 || len(request.Payload) == 0 {
-		telemetryError(w, http.StatusBadRequest, "telemetry_invalid_request")
+		writeJSONError(w, http.StatusBadRequest, "telemetry_invalid_request")
 		return
 	}
 	id, err := uuid.Parse(request.BatchID)
 	if err != nil || id == uuid.Nil || id.String() != request.BatchID {
-		telemetryError(w, http.StatusBadRequest, "telemetry_invalid_batch_id")
+		writeJSONError(w, http.StatusBadRequest, "telemetry_invalid_batch_id")
 		return
 	}
 	now := s.manager.time()
 	if request.IssuedAt.Before(now.Add(-5*time.Minute)) || request.IssuedAt.After(now.Add(time.Minute)) {
-		telemetryError(w, http.StatusBadRequest, "telemetry_stale_request")
+		writeJSONError(w, http.StatusBadRequest, "telemetry_stale_request")
 		return
 	}
 	endpoint, err := normalizeTelemetryCollectorURL(cfg.telemetryCollectorURL())
 	if err != nil {
-		telemetryError(w, http.StatusServiceUnavailable, "telemetry_unavailable")
+		writeJSONError(w, http.StatusServiceUnavailable, "telemetry_unavailable")
 		return
 	}
 	envelope := forwardedTelemetry{Schema: 1, FleetManagerID: p.identity.FleetManagerID,
@@ -178,14 +172,14 @@ func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request, rec Ins
 		ForwardedAt: now, Audience: endpoint, ShipperEnvelope: body}
 	encoded, err := json.Marshal(envelope)
 	if err != nil {
-		telemetryError(w, http.StatusInternalServerError, "telemetry_encoding_failed")
+		writeJSONError(w, http.StatusInternalServerError, "telemetry_encoding_failed")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), p.timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
 	if err != nil {
-		telemetryError(w, http.StatusServiceUnavailable, "telemetry_unavailable")
+		writeJSONError(w, http.StatusServiceUnavailable, "telemetry_unavailable")
 		return
 	}
 	signature := ed25519.Sign(p.key, append([]byte(telemetryFleetPreamble(req.URL)), encoded...))
@@ -197,7 +191,7 @@ func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request, rec Ins
 		if errors.Is(err, context.DeadlineExceeded) {
 			status, code = http.StatusGatewayTimeout, "telemetry_upstream_timeout"
 		}
-		telemetryError(w, status, code)
+		writeJSONError(w, status, code)
 		s.logger.Printf("telemetry forwarding failed: %s", code)
 		return
 	}
@@ -207,10 +201,10 @@ func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request, rec Ins
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		s.logger.Printf("telemetry collector rejected request: status=%d", response.StatusCode)
 		if response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusConflict || response.StatusCode == http.StatusRequestEntityTooLarge || response.StatusCode == http.StatusUnprocessableEntity {
-			telemetryError(w, response.StatusCode, "telemetry_rejected")
+			writeJSONError(w, response.StatusCode, "telemetry_rejected")
 			return
 		}
-		telemetryError(w, http.StatusBadGateway, "telemetry_upstream_failed")
+		writeJSONError(w, http.StatusBadGateway, "telemetry_upstream_failed")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -30,7 +30,7 @@ func RestartService(ctx context.Context) error        { return windowspkg.Restar
 func RestartCommand() string                          { return windowspkg.RestartCommand() }
 func RemoveProgram(executable string) (string, error) { return windowspkg.RemoveProgram(executable) }
 func SameProgram(a, b string) bool                    { return windowspkg.SameProgram(a, b) }
-func ProgramRemovalDeferred() bool                    { return windowspkg.ProgramRemovalDeferred() }
+func RemovalPlan() RemovalChannel                     { return RemovalDeferred }
 func RemovalUnverified(err error) bool {
 	return errors.Is(err, windowspkg.ErrTaskDeleteUnverified)
 }

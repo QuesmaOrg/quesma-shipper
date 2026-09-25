@@ -51,7 +51,7 @@ func (o Options) manifestFor(
 	m.PayloadMTime = &mtime
 	m.AgentVersion = disc.AgentVersion
 	m.ShapeSniff = string(disc.Sniff)
-	if src.Scrub == nil || *src.Scrub {
+	if src.ScrubEnabled() {
 		m.Redaction = &transforms.RedactionSummary{
 			Density:  res.Density(),
 			RuleHits: res.RuleHits,

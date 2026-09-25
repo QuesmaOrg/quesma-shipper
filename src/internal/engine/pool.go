@@ -287,12 +287,11 @@ func (p *sourcePass) canAdmit(ctx context.Context, next, inFlight int, stopped *
 func (p *sourcePass) fold(r fileResult) {
 	// Only the first refusal or unavailable verdict is counted, or rep.Failed becomes a function
 	// of GOMAXPROCS. The duplicates' intents still apply: one may have shipped before the refusal.
+	p.applyIntent(&r)
 	if (r.outcome.Fatal && p.fatal) || (r.unavailable && p.uploadHalted) {
-		p.applyIntent(&r)
 		return
 	}
 
-	p.applyIntent(&r)
 	if r.loadWarning != "" {
 		p.out.Unreadable++
 		p.out.UnreadableReason = r.loadWarning

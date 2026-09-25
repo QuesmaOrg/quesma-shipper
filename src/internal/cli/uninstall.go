@@ -26,9 +26,9 @@ func uninstallCmd(b app.Build) *cobra.Command {
 			}
 			printHeader(w, p, st, time.Now())
 			to := cmp.Or(st.Organization, "your organisation")
-			homebrew := packaging.HomebrewManaged()
+			plan := packaging.RemovalPlan()
 			program, target := "deletes the program", app.Name
-			if homebrew {
+			if plan == packaging.RemovalHomebrew {
 				program, target = "keeps the Homebrew command installed", "the background service"
 			}
 			effect := program + ". Local state is kept\nso a later reinstall can resume this machine."
@@ -50,7 +50,7 @@ func uninstallCmd(b app.Build) *cobra.Command {
 				}
 			}
 			fmt.Fprintln(w)
-			deferred, err := app.Uninstall(purge, func(s app.UninstallStep) {
+			err = app.Uninstall(plan, purge, func(s app.UninstallStep) {
 				switch {
 				case s.Err != nil:
 					fmt.Fprintf(w, "  %s  %s  %s: %v\n", p.glyph(app.SevFail), s.Done, app.HomeTilde(s.Detail), s.Err)
@@ -69,11 +69,12 @@ func uninstallCmd(b app.Build) *cobra.Command {
 				banner(w, p, p.red, "not fully removed", "")
 				return errSilent{code: 1}
 			}
-			if deferred {
+			switch plan {
+			case packaging.RemovalDeferred:
 				banner(w, p, p.red, "removal finishing", "the Windows uninstaller is running in the background")
-			} else if homebrew {
+			case packaging.RemovalHomebrew:
 				banner(w, p, p.red, "uninstall finished", "Homebrew command remains installed; remove with "+packaging.BrewUninstall)
-			} else {
+			default:
 				banner(w, p, p.red, "removed", "")
 			}
 			return nil

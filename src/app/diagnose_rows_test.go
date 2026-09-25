@@ -298,27 +298,54 @@ func TestFamilyUploadRow(t *testing.T) {
 	}
 }
 
-func TestClaudeHeadline(t *testing.T) {
-	cand := func(rel string) sources.Candidate { return sources.Candidate{RelPath: rel} }
-	probes := []sourceProbe{
-		{src: config.ResolvedSource{Source: sources.Source{ID: "claude-code-transcripts", Family: "claude-code"}, Enabled: true},
-			d: sources.Discovery{Health: sources.Collected, Sniff: sources.SniffOK, Candidates: []sources.Candidate{
-				cand("projects/alpha/a.jsonl"),
-				cand("projects/alpha/b.jsonl"),
-				cand("projects/beta/c.jsonl"),
-				cand("projects/beta/c.meta.json"), // join metadata, not a session
-			}}},
-		{src: config.ResolvedSource{Source: sources.Source{ID: "claude-code-settings", Family: "claude-code"}, Enabled: true},
-			d: sources.Discovery{Health: sources.Collected, Sniff: sources.SniffOK, Candidates: make([]sources.Candidate, 2)}},
+// Pinned against the compiled catalog: only the family keeping trajectories under
+// projects/<encoded-cwd>/ gets a headline, whatever its other sources' paths look like.
+func TestSessionHeadline(t *testing.T) {
+	catalog, err := sources.Load()
+	if err != nil {
+		t.Fatal(err)
 	}
-	got := claudeHeadline(probes, true)
-	want := "3 sessions in 2 projects, plus settings"
-	if got != want {
-		t.Errorf("claudeHeadline = %q, want %q", got, want)
+	probe := func(id string, rels ...string) sourceProbe {
+		src, ok := catalog.Source(id)
+		if !ok {
+			t.Fatalf("no source %s in the catalog", id)
+		}
+		cands := make([]sources.Candidate, len(rels))
+		for i, rel := range rels {
+			cands[i] = sources.Candidate{RelPath: rel}
+		}
+		return sourceProbe{src: config.ResolvedSource{Source: src, Enabled: true},
+			d: sources.Discovery{Health: sources.Collected, Sniff: sources.SniffOK, Candidates: cands}}
 	}
 
-	if got := claudeHeadline([]sourceProbe{{src: config.ResolvedSource{Source: sources.Source{ID: "codex-rollouts", Family: "codex"}}}}, true); got != "" {
-		t.Errorf("other families must fall back to the generic count, got %q", got)
+	claude := []sourceProbe{
+		probe("claude-code-transcripts",
+			"projects/alpha/a.jsonl",
+			"projects/alpha/b.jsonl",
+			"projects/beta/c.jsonl",
+			"projects/beta/c.meta.json", // join metadata, not a session
+			"projects/stray.jsonl",      // a session, but no project directory
+		),
+		probe("claude-code-settings", "CLAUDE.md", "settings.json"),
+	}
+	if got, want := sessionHeadline(claude, true), "4 sessions in 2 projects, plus settings"; got != want {
+		t.Errorf("sessionHeadline(claude) = %q, want %q", got, want)
+	}
+
+	for name, probes := range map[string][]sourceProbe{
+		"codex": {
+			probe("codex-rollouts", "sessions/2026/07/20/rollout-a.jsonl", "archived_sessions/projects/x/rollout-b.jsonl"),
+			probe("codex-rollouts-compressed", "sessions/2026/07/01/rollout-c.jsonl.zst"),
+		},
+		// A workspace opened at /projects gets the slug "projects".
+		"cursor": {
+			probe("cursor-transcripts", "projects/agent-transcripts/c.jsonl", "-Users-jane-acme/agent-transcripts/d.jsonl"),
+			probe("cursor-agent-outputs", "projects/agent-tools/out.txt"),
+		},
+	} {
+		if got := sessionHeadline(probes, true); got != "" {
+			t.Errorf("%s must fall back to the generic count, got %q", name, got)
+		}
 	}
 }
 

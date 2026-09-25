@@ -69,8 +69,8 @@ func (e Env) expandVars(s string) (string, error) {
 
 // ExpandHome resolves a leading ~ against a home directory.
 func ExpandHome(p, home string) string {
-	if strings.HasPrefix(p, "~") {
-		return home + strings.TrimPrefix(p, "~")
+	if rest, ok := strings.CutPrefix(p, "~"); ok {
+		return home + rest
 	}
 	return p
 }

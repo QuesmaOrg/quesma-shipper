@@ -25,6 +25,9 @@ const (
 	GenericEntropy = "generic-entropy"
 )
 
+// Default is the compiled baseline pack list, in the order config reports it.
+var Default = []string{GitleaksCore, QuesmaExtra, CloudKeys, GenericEntropy, PIICore}
+
 // HeuristicPacks are the low-confidence packs; the engine checks exemptions first.
 var HeuristicPacks = []string{GenericEntropy}
 

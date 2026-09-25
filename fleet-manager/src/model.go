@@ -154,7 +154,9 @@ type TagsRecord struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-type GrantRecord struct {
+// credentialRecord is what a grant and an invite share. It is embedded first, so its fields encode
+// first and flattened, exactly as when each record spelled them out.
+type credentialRecord struct {
 	Schema       int        `json:"schema"`
 	ID           string     `json:"id"`
 	SecretDigest string     `json:"secret_digest,omitempty"`
@@ -163,19 +165,21 @@ type GrantRecord struct {
 	RevokedAt    *time.Time `json:"revoked_at,omitempty"`
 }
 
+func (r *credentialRecord) credential() *credentialRecord { return r }
+
+type GrantRecord struct {
+	credentialRecord
+}
+
 type InviteRecord struct {
-	Schema                   int        `json:"schema"`
-	ID                       string     `json:"id"`
-	SecretDigest             string     `json:"secret_digest,omitempty"`
-	ExpiresAt                time.Time  `json:"expires_at"`
-	CreatedAt                time.Time  `json:"created_at"`
-	RevokedAt                *time.Time `json:"revoked_at,omitempty"`
+	credentialRecord
 	ReservedInstallID        string     `json:"reserved_install_id,omitempty"`
 	ReservedEnrollmentDigest string     `json:"reserved_enrollment_digest,omitempty"`
 	ReservedAt               *time.Time `json:"reserved_at,omitempty"`
 	SpentAt                  *time.Time `json:"spent_at,omitempty"`
 }
 
+func tokenPrefix(org string) string        { return "fmi2." + org + "." }
 func controlPrefix(org string) string      { return "v1/organization=" + org + "/control/" }
 func configKey(org string) string          { return controlPrefix(org) + "config.json" }
 func deploymentAdminCredentialKey() string { return "v1/control/admin/credential.json" }

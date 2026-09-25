@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
-	"io"
+	"maps"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -53,12 +54,12 @@ func (s *gcsStore) Get(ctx context.Context, key string) ([]byte, string, error) 
 		return nil, "", mapGCSError(err)
 	}
 	defer reader.Close()
-	raw, err := io.ReadAll(io.LimitReader(reader, stateObjectLimit+1))
+	raw, tooLarge, err := readCapped(reader, stateObjectLimit)
 	if err != nil {
 		return nil, "", err
 	}
-	if len(raw) > stateObjectLimit {
-		return nil, "", errorsNew("state object exceeds 4 MiB")
+	if tooLarge {
+		return nil, "", errors.New("state object exceeds 4 MiB")
 	}
 	return raw, strconv.FormatInt(reader.Attrs.Generation, 10), nil
 }
@@ -151,13 +152,8 @@ func (s *gcsSigner) Authorize(ctx context.Context, _ InstallScope, batch UploadB
 		for name, value := range object.Metadata {
 			headers["x-goog-meta-"+strings.ToLower(name)] = value
 		}
-		names := make([]string, 0, len(headers))
-		for name := range headers {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		signedHeaders := make([]string, 0, len(names)+1)
-		for _, name := range names {
+		signedHeaders := make([]string, 0, len(headers)+1)
+		for _, name := range slices.Sorted(maps.Keys(headers)) {
 			signedHeaders = append(signedHeaders, name+":"+headers[name])
 		}
 		signedHeaders = append(signedHeaders, "content-length:"+strconv.FormatInt(object.Size, 10))

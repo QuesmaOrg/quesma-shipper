@@ -211,14 +211,14 @@ func (o Options) prepareDerived(
 		return fo, nil
 	}
 
-	res, err := scrubSource(src, d.Payload, true, o.scrub, o.scrubErr)
+	res, err := o.scrubSource(src, d.Payload, true)
 	if err != nil {
 		return fail("scrub failed closed on derived payload: " + err.Error())
 	}
 
 	relPath := d.NativePath
-	if src.Root != "" && strings.HasPrefix(relPath, src.Root) {
-		relPath = strings.TrimPrefix(strings.TrimPrefix(relPath, src.Root), string(filepath.Separator))
+	if rest, ok := strings.CutPrefix(relPath, src.Root); ok && src.Root != "" {
+		relPath = strings.TrimPrefix(rest, string(filepath.Separator))
 	}
 	objectKey, err := o.mirrorKey(src.ID, relPath)
 	if err != nil {
@@ -251,7 +251,7 @@ func (o Options) prepareDerived(
 		Keyspaces:  d.DBKeyspaces,
 		RowsRead:   d.DBRowsRead,
 	}
-	if src.Scrub == nil || *src.Scrub {
+	if src.ScrubEnabled() {
 		m.Redaction = &transforms.RedactionSummary{
 			Density:  res.Density(),
 			RuleHits: res.RuleHits,

@@ -34,16 +34,10 @@ type Info struct {
 // releaseVersion is set by release CI via -ldflags -X; believed only when applyStamp corroborates it.
 var releaseVersion string
 
-var (
-	once   sync.Once
-	cached Info
-)
+var current = sync.OnceValue(read)
 
 // Current reads the stamped information once.
-func Current() Info {
-	once.Do(func() { cached = read() })
-	return cached
-}
+func Current() Info { return current() }
 
 func read() Info {
 	i := Info{

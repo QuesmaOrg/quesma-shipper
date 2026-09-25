@@ -41,40 +41,29 @@ func (m *Manager) ListOrganizations(ctx context.Context) ([]OrganizationSummary,
 }
 
 func (m *Manager) ListGrants(ctx context.Context) ([]GrantRecord, error) {
-	objects, err := m.store.List(ctx, controlPrefix(m.org)+"grants/")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]GrantRecord, 0, len(objects))
-	for _, object := range objects {
-		rec, _, err := getRecord[GrantRecord](ctx, m.store, object.Key)
-		if err != nil {
-			return nil, err
-		}
-		if rec.Schema != schemaVersion {
-			return nil, fmt.Errorf("grant %s has unsupported schema", rec.ID)
-		}
-		rec.SecretDigest = ""
-		out = append(out, rec)
-	}
-	return out, nil
+	return listCredentials[GrantRecord](ctx, m, "grants/", "grant")
 }
 
 func (m *Manager) ListInvites(ctx context.Context) ([]InviteRecord, error) {
-	objects, err := m.store.List(ctx, controlPrefix(m.org)+"invites/")
+	return listCredentials[InviteRecord](ctx, m, "invites/", "invite")
+}
+
+func listCredentials[T any, P credential[T]](ctx context.Context, m *Manager, dir, noun string) ([]T, error) {
+	objects, err := m.store.List(ctx, controlPrefix(m.org)+dir)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]InviteRecord, 0, len(objects))
+	out := make([]T, 0, len(objects))
 	for _, object := range objects {
-		rec, _, err := getRecord[InviteRecord](ctx, m.store, object.Key)
+		rec, _, err := getRecord[T](ctx, m.store, object.Key)
 		if err != nil {
 			return nil, err
 		}
-		if rec.Schema != schemaVersion {
-			return nil, fmt.Errorf("invite %s has unsupported schema", rec.ID)
+		shared := P(&rec).credential()
+		if shared.Schema != schemaVersion {
+			return nil, fmt.Errorf("%s %s has unsupported schema", noun, shared.ID)
 		}
-		rec.SecretDigest = ""
+		shared.SecretDigest = ""
 		out = append(out, rec)
 	}
 	return out, nil
@@ -100,42 +89,34 @@ func (m *Manager) ListInstalls(ctx context.Context) ([]InstallRecord, error) {
 }
 
 func (m *Manager) RevokeGrant(ctx context.Context, id string) error {
-	if _, err := uuidParse(id); err != nil {
-		return errors.New("grant id is not a UUID")
-	}
-	key := grantKey(m.org, id)
-	rec, version, err := getRecord[GrantRecord](ctx, m.store, key)
-	if err != nil {
-		return err
-	}
-	if rec.RevokedAt != nil {
-		return nil
-	}
-	now := m.time()
-	rec.RevokedAt = &now
-	return replaceRecord(ctx, m.store, key, version, rec)
+	return revokeCredential[GrantRecord](ctx, m, grantKey, id, "grant")
 }
 
 func (m *Manager) RevokeInvite(ctx context.Context, id string) error {
+	return revokeCredential[InviteRecord](ctx, m, inviteKey, id, "invite")
+}
+
+func revokeCredential[T any, P credential[T]](ctx context.Context, m *Manager, keyOf func(org, id string) string, id, noun string) error {
 	if _, err := uuidParse(id); err != nil {
-		return errors.New("invite id is not a UUID")
+		return invalidRequest(noun + " id is not a UUID")
 	}
-	key := inviteKey(m.org, id)
-	rec, version, err := getRecord[InviteRecord](ctx, m.store, key)
+	key := keyOf(m.org, id)
+	rec, version, err := getRecord[T](ctx, m.store, key)
 	if err != nil {
 		return err
 	}
-	if rec.RevokedAt != nil {
+	shared := P(&rec).credential()
+	if shared.RevokedAt != nil {
 		return nil
 	}
 	now := m.time()
-	rec.RevokedAt = &now
+	shared.RevokedAt = &now
 	return replaceRecord(ctx, m.store, key, version, rec)
 }
 
 func (m *Manager) RevokeInstall(ctx context.Context, id string) error {
 	if _, err := uuidParse(id); err != nil {
-		return errors.New("install id is not a UUID")
+		return invalidRequest("install id is not a UUID")
 	}
 	key := installKey(m.org, id)
 	rec, version, err := getRecord[InstallRecord](ctx, m.store, key)
@@ -152,7 +133,7 @@ func (m *Manager) RevokeInstall(ctx context.Context, id string) error {
 
 func (m *Manager) ReleaseInvite(ctx context.Context, id string) error {
 	if _, err := uuidParse(id); err != nil {
-		return errors.New("invite id is not a UUID")
+		return invalidRequest("invite id is not a UUID")
 	}
 	key := inviteKey(m.org, id)
 	rec, version, err := getRecord[InviteRecord](ctx, m.store, key)
@@ -160,14 +141,14 @@ func (m *Manager) ReleaseInvite(ctx context.Context, id string) error {
 		return err
 	}
 	if rec.SpentAt != nil {
-		return errors.New("a spent invite cannot be released")
+		return stateConflict("a spent invite cannot be released")
 	}
 	if rec.ReservedInstallID == "" {
 		return nil
 	}
 	install, _, installErr := getRecord[InstallRecord](ctx, m.store, installKey(m.org, rec.ReservedInstallID))
 	if installErr == nil && install.Status != InstallRevoked {
-		return errors.New("reservation install exists and is not revoked")
+		return stateConflict("reservation install exists and is not revoked")
 	}
 	if installErr != nil && !errors.Is(installErr, ErrNotFound) {
 		return installErr
