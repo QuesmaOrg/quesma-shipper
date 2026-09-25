@@ -1,0 +1,5 @@
+# The binary `make build` produces, and `make setup`'s local store: its config and the admin
+# credential, the only copy of it. Kept here rather than at the repository root, which is the
+# shipper's.
+/fleet-manager
+/data/

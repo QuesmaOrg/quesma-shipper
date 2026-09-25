@@ -11,3 +11,24 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # Fleet Manager, the control plane: its own module, image and deployment templates. A Go
+  # update also needs `make -C fleet-manager licenses`, which fleet-manager-check enforces.
+  - package-ecosystem: gomod
+    directory: /fleet-manager
+    schedule:
+      interval: weekly
+    groups:
+      fleet-manager-go-deps:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /fleet-manager
+    schedule:
+      interval: weekly
+  - package-ecosystem: terraform
+    directory: /fleet-manager/terraform/aws
+    schedule:
+      interval: weekly
+  - package-ecosystem: terraform
+    directory: /fleet-manager/terraform/gcp
+    schedule:
+      interval: weekly

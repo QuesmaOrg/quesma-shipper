@@ -1,19 +1,28 @@
 name: Bug report
-description: The shipper does something wrong on your machine
+description: The shipper or Fleet Manager does something wrong
 labels: [bug]
 body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Shipper
+        - Fleet Manager (the control plane)
+    validations:
+      required: true
   - type: input
     id: version
     attributes:
-      label: Shipper version
-      description: Output of `quesma-shipper --version`.
+      label: Version
+      description: Output of `quesma-shipper --version`, or of `fleet-manager` run with no arguments and the provider it runs on (aws, gcp or azure).
     validations:
       required: true
   - type: input
     id: platform
     attributes:
       label: OS and agent
-      description: For example "macOS 15.1, Claude Code" or "Ubuntu 24.04, Cursor".
+      description: For example "macOS 15.1, Claude Code" or "Ubuntu 24.04, Cursor". For Fleet Manager, where it runs, for example "ECS Express Mode from the AWS template".
     validations:
       required: true
   - type: textarea
@@ -27,4 +36,4 @@ body:
     id: doctor
     attributes:
       label: Output of `quesma-shipper doctor`
-      description: Remove hostnames or paths you do not want public.
+      description: Shipper issues only. Remove hostnames or paths you do not want public.

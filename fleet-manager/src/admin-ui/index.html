@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Fleet Manager</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="shell-container masthead__inner">
+      <div class="masthead__brand">
+        <a id="home" href="./" aria-label="Quesma administration home"><img class="brand" src="quesma-logo.png" alt="Quesma" width="130" height="40"></a>
+        <span class="masthead__label">Administration</span>
+      </div>
+      <div id="organization-controls" class="organization-controls hidden"><div class="select"><select id="org-select" aria-label="Organization"></select></div><button id="new-org" class="quiet">New organization</button><button id="logout" class="quiet">Log out</button></div>
+    </div>
+  </header>
+  <main>
+    <section id="login" class="entry" aria-labelledby="login-title">
+      <form id="login-form" class="entry__panel" autocomplete="on" aria-labelledby="login-title">
+        <h1 id="login-title">Connect to your fleet</h1>
+        <p>Paste the administrator credential from your sensitive Terraform output. It stays in this browser tab.</p>
+        <input class="visually-hidden" name="username" autocomplete="username" value="fleet-administrator" readonly tabindex="-1" aria-hidden="true">
+        <label>Administrator credential<input id="credential" name="password" type="password" required autocomplete="current-password" placeholder="fma1.…"></label>
+        <button>Continue</button>
+      </form>
+    </section>
+
+    <section id="organizations" class="card narrow hidden">
+      <p class="eyebrow">Organizations</p><h1>Create an organization</h1>
+      <p>Its slug is permanent and becomes part of every object key. The display name can be changed later.</p>
+      <form id="organization-form" class="config-form">
+        <label>Organization slug<input name="slug" required pattern="[a-z0-9][a-z0-9._-]{0,63}" placeholder="acme-production"></label>
+        <label>Display name<input name="display_name" required maxlength="100" placeholder="Acme Production"></label>
+        <fieldset class="recipient-fieldset" data-quesma-etl-recipient="age1ge6plfgzzhzagl7qkp8k74qa90zxh4qvp84sgsw3up2zxrp5mq6qvex69a"><legend>Public age recipients</legend><p>Add at least two independently held customer recipients. Quesma's recipient appears here while Quesma ETL is enabled.</p><p class="recipient-help">For each custodian, run this command. It creates the private key file and prints its public recipient:</p><div class="keygen-commands"><pre><code>age-keygen -o custodian.agekey</code></pre><button type="button" class="quiet copy-icon" data-copy-keygen aria-label="Copy key generation command" title="Copy command"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="1"></rect><path d="M16 8V5H5v11h3"></path></svg></button></div><p class="recipient-help">Make sure to store the private <code>.agekey</code> file in a secure location.</p><div class="recipient-list" data-recipient-list></div><button type="button" class="quiet add-recipient" data-add-recipient>Add recipient</button></fieldset>
+        <fieldset class="etl-fieldset">
+          <legend id="organization-etl-title">Encrypt uploads with the Quesma ETL public key</legend>
+          <label class="check"><input name="quesma-etl" type="checkbox" checked aria-labelledby="organization-etl-title" aria-describedby="organization-etl-help"><span id="organization-etl-help">This enables Quesma ETL to process future uploads for dashboards, analytics, and other Quesma features. Quesma cannot access your bucket unless you separately provide bucket access.</span></label>
+        </fieldset>
+        <label>Authored fleet YAML <span>(optional)</span><textarea name="yaml" class="code" placeholder="mode: daemon"></textarea></label>
+        <div class="actions"><button type="button" id="cancel-org" class="quiet hidden">Cancel</button><button>Create organization</button></div>
+      </form>
+    </section>
+
+    <section id="dashboard" class="hidden">
+      <nav><button data-view="configuration" class="active">Configuration</button><button data-view="grants">Grants</button><button data-view="invites">Invites</button><button data-view="installs">Installs</button></nav>
+
+      <section id="configuration" class="view card">
+        <div class="section-title"><div><h2>Configuration</h2><p>Encryption custody and authored fleet settings.</p></div><div class="config-head"><span id="config-time" class="muted"></span><button type="button" id="edit-config">Edit configuration</button></div></div>
+        <form id="config-form" class="config-form locked">
+          <label>Display name<input name="display_name" required maxlength="100"></label>
+          <fieldset class="recipient-fieldset" data-quesma-etl-recipient="age1ge6plfgzzhzagl7qkp8k74qa90zxh4qvp84sgsw3up2zxrp5mq6qvex69a"><legend>Public age recipients</legend><p>Add at least two independently held customer recipients. Quesma's recipient appears here while Quesma ETL is enabled.</p><p class="recipient-help">For each custodian, run this command. It creates the private key file and prints its public recipient:</p><div class="keygen-commands"><pre><code>age-keygen -o custodian.agekey</code></pre><button type="button" class="quiet copy-icon" data-copy-keygen aria-label="Copy key generation command" title="Copy command"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="1"></rect><path d="M16 8V5H5v11h3"></path></svg></button></div><p class="recipient-help">Make sure to store the private <code>.agekey</code> file in a secure location.</p><div class="recipient-list" data-recipient-list></div><button type="button" class="quiet add-recipient" data-add-recipient>Add recipient</button></fieldset>
+          <fieldset class="etl-fieldset">
+            <legend id="config-etl-title">Encrypt uploads with the Quesma ETL public key</legend>
+            <label class="check"><input name="quesma-etl" type="checkbox" checked aria-labelledby="config-etl-title" aria-describedby="config-etl-help"><span id="config-etl-help">This enables Quesma ETL to process future uploads for dashboards, analytics, and other Quesma features. Quesma cannot access your bucket unless you separately provide bucket access.</span></label>
+          </fieldset>
+          <label>Authored fleet YAML<textarea name="yaml" class="code"></textarea></label>
+          <p class="edit-warning">Apply replaces this organization's stored configuration. Recipients you add only cover uploads made from then on; a recipient you remove cannot decrypt anything uploaded after that.</p>
+          <div class="actions"><button type="button" id="cancel-config" class="quiet hidden">Cancel</button><button id="apply-config" class="hidden">Apply configuration</button></div>
+        </form>
+      </section>
+
+      <section id="grants" class="view card hidden"><div class="section-title"><div><h2>Grants</h2><p>One secret, any number of machines. Every shipper you hand it to enrolls as its own install, until the grant expires or you revoke it.</p></div><button data-create="grants">Create grant</button></div><div class="table-wrap" tabindex="0" role="region" aria-label="Grants"><table><thead><tr><th>ID</th><th>Expires</th><th>Status<span class="hint"><button type="button" class="hint-mark" aria-label="What each status means">?</button><span class="hint-body" role="tooltip" popover="manual"><dl><dt>Active</dt><dd>Accepts enrollments until it expires.</dd><dt>Expired</dt><dd>Past its expiry. Enrollment is refused; create a new grant.</dd><dt>Revoked</dt><dd>Switched off by an administrator. Enrollment is refused permanently.</dd></dl></span></span></th><th>Actions<span class="hint"><button type="button" class="hint-mark" aria-label="What each action does">?</button><span class="hint-body" role="tooltip" popover="manual"><dl><dt>Revoke</dt><dd>Stops the grant enrolling any more shippers. Permanent — shippers already enrolled with it keep working.</dd></dl></span></span></th></tr></thead><tbody></tbody></table></div><p class="table-empty hidden" role="status">No grants yet. Create a grant to enroll multiple machines.</p><div class="enrollment-help"><p>Enroll one or more shippers with this grant:</p><pre>quesma-shipper login --server <span data-server></span> &lt;grant&gt;</pre><p class="muted">Replace <code>&lt;grant&gt;</code> with the secret shown after creation.</p></div></section>
+      <section id="invites" class="view card hidden"><div class="section-title"><div><h2>Invites</h2><p>One secret, one machine. The first shipper to enroll spends it; no second machine can use it.</p></div><button data-create="invites">Create invite</button></div><div class="table-wrap" tabindex="0" role="region" aria-label="Invites"><table><thead><tr><th>ID</th><th>Expires</th><th>Status<span class="hint"><button type="button" class="hint-mark" aria-label="What each status means">?</button><span class="hint-body" role="tooltip" popover="manual"><dl><dt>Active</dt><dd>Unused. The first machine to enroll claims it.</dd><dt>Reserved</dt><dd>A machine has claimed it and is finishing enrollment. Only that machine can complete it; Release hands the invite back.</dd><dt>Spent</dt><dd>Enrollment completed. It cannot enroll a second machine.</dd><dt>Expired</dt><dd>Past its expiry with no machine claiming it.</dd><dt>Revoked</dt><dd>Switched off by an administrator. Enrollment is refused permanently.</dd></dl></span></span></th><th>Actions<span class="hint"><button type="button" class="hint-mark" aria-label="What each action does">?</button><span class="hint-body" role="tooltip" popover="manual"><dl><dt>Revoke</dt><dd>Stops the invite being used. Permanent.</dd><dt>Release</dt><dd>Clears a reservation so the invite can go to another machine. Only offered while it is Reserved, and only accepted once the claiming install is revoked or was never created.</dd></dl></span></span></th></tr></thead><tbody></tbody></table></div><p class="table-empty hidden" role="status">No invites yet. Create an invite to enroll one machine.</p><div class="enrollment-help"><p>Enroll one shipper with this invite:</p><pre>quesma-shipper login --server <span data-server></span> &lt;invite&gt;</pre><p class="muted">Replace <code>&lt;invite&gt;</code> with the secret shown after creation.</p></div></section>
+      <section id="installs" class="view card hidden"><div class="section-title"><div><h2>Installs</h2><p>Enrolled shipper identities.</p></div></div><div class="table-wrap" tabindex="0" role="region" aria-label="Installs"><table><thead><tr><th>Install</th><th>Name<span class="hint"><button type="button" class="hint-mark" aria-label="What the name is for">?</button><span class="hint-body" role="tooltip" popover="manual"><dl><dt>Name</dt><dd>What to call this machine in reports. An install id is a pseudonym and nothing a shipper uploads says who holds the machine, so this mapping is written here and nowhere else. It is stored beside the install’s own objects, as <code>tags.json</code>, so tools reading the bucket can resolve the id without asking this service.</dd></dl></span></span></th><th>Host</th><th>Platform</th><th>OS</th><th>Booted</th><th>Enrolled</th><th>Last config</th><th>Last vend<span class="hint"><button type="button" class="hint-mark" aria-label="What last vend means">?</button><span class="hint-body" role="tooltip" popover="manual"><dl><dt>Last vend</dt><dd>When this shipper last asked for upload tickets and got them. It is not a confirmation that the files reached storage — uploads go straight from the machine to the bucket, which this service never sees.</dd></dl></span></span></th><th>Client version</th><th>Status<span class="hint"><button type="button" class="hint-mark" aria-label="What each status means">?</button><span class="hint-body" role="tooltip" popover="manual"><dl><dt>pending</dt><dd>An invite enrollment started but did not finish. The shipper cannot upload yet.</dd><dt>active</dt><dd>Enrolled. The shipper can upload.</dd><dt>revoked</dt><dd>Credentials refused. Uploads are rejected and the shipper cannot re-enroll.</dd></dl></span></span></th><th>Actions<span class="hint"><button type="button" class="hint-mark" aria-label="What each action does">?</button><span class="hint-body" role="tooltip" popover="manual"><dl><dt>Revoke</dt><dd>Rejects this shipper’s uploads from now on. Permanent — the machine has to enrol again as a new install.</dd></dl></span></span></th></tr></thead><tbody></tbody></table></div><p class="table-empty hidden" role="status">No installs yet. Enroll a shipper with a grant or invite to see it here.</p></section>
+    </section>
+  </main>
+
+  <dialog id="create-dialog" aria-labelledby="create-title">
+    <form>
+      <button type="button" class="close" data-close-create aria-label="Close">×</button>
+      <h2 id="create-title">Create credential</h2>
+      <fieldset class="expiry-picker">
+        <legend>Expires at</legend>
+        <div class="expiry-fields">
+          <div>
+            <label for="expires-date">Date <span>(DD/MM/YYYY)</span></label>
+            <div class="expiry-date-control">
+              <input id="expires-date" data-expiry-date type="text" required pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" placeholder="DD/MM/YYYY" inputmode="numeric" autocomplete="off">
+              <button type="button" class="quiet calendar-toggle" data-calendar-toggle aria-label="Choose expiry date" aria-haspopup="dialog" aria-expanded="false" aria-controls="expiry-calendar"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="1"></rect><path d="M7 3v4m10-4v4M3 11h18"></path></svg></button>
+            </div>
+          </div>
+          <label>Time <span>(24-hour)</span><input id="expires-time" data-expiry-time type="text" required pattern="[0-9]{2}:[0-9]{2}" placeholder="HH:MM" inputmode="numeric" autocomplete="off"></label>
+        </div>
+        <p class="expiry-zone" data-expiry-zone></p>
+        <div id="expiry-calendar" class="expiry-calendar" data-calendar popover="manual" role="dialog" aria-label="Choose expiry date">
+          <div class="calendar-heading"><button type="button" class="quiet" data-calendar-step="-1" aria-label="Previous month">‹</button><strong id="expiry-month" data-calendar-month aria-live="polite"></strong><button type="button" class="quiet" data-calendar-step="1" aria-label="Next month">›</button></div>
+          <table class="calendar-grid" role="grid" aria-labelledby="expiry-month"><thead><tr><th scope="col" abbr="Monday">Mo</th><th scope="col" abbr="Tuesday">Tu</th><th scope="col" abbr="Wednesday">We</th><th scope="col" abbr="Thursday">Th</th><th scope="col" abbr="Friday">Fr</th><th scope="col" abbr="Saturday">Sa</th><th scope="col" abbr="Sunday">Su</th></tr></thead><tbody data-calendar-days></tbody></table>
+          <div class="calendar-footer"><button type="button" class="quiet" data-calendar-today>Today</button><button type="button" class="quiet" data-calendar-close>Done</button></div>
+        </div>
+      </fieldset>
+      <div class="actions"><button type="button" data-close-create class="quiet">Cancel</button><button id="confirm-create" type="submit">Create</button></div>
+    </form>
+  </dialog>
+  <dialog id="rename-dialog"><form method="dialog"><button class="close" value="cancel" aria-label="Close">×</button><h2>Name this install</h2><p class="muted" id="rename-install"></p><label>Name<input id="rename-name" type="text" maxlength="100" autocomplete="off"></label><p class="field-note">Leave it empty to go back to showing the install id.</p><div class="actions"><button value="cancel" class="quiet">Cancel</button><button id="confirm-rename" value="default">Save</button></div></form></dialog>
+  <dialog id="disable-quesma-dialog"><div><p class="eyebrow">Quesma features</p><h2>Disable Quesma ETL decryption?</h2><p>Quesma ETL, dashboards, and other Quesma features will not be available for uploads encrypted after this change.</p><p>Quesma still cannot access your bucket unless you provide Quesma with bucket access. Uploads encrypted before this change remain decryptable with the recipient that was active at the time.</p><div class="actions"><button id="keep-quesma-etl" class="quiet">Keep enabled</button><button id="confirm-disable-quesma" class="danger-solid">Disable Quesma ETL</button></div></div></dialog>
+  <dialog id="secret-dialog"><div><p class="eyebrow">Shown once</p><h2>Enroll with this credential</h2><p>Copy the command or secret now. They cannot be recovered after this dialog is closed.</p><label>Command<pre id="enroll-command"></pre></label><label>Secret<pre id="secret"></pre></label><div class="actions"><button id="copy-command">Copy command</button><button id="copy-secret" class="quiet">Copy secret</button><button id="close-secret" class="quiet">Done</button></div></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="date-time.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
