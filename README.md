@@ -460,27 +460,28 @@ payloads installed by the TUF self-updater. A portable copy has no scheduled tas
 
 You need Go 1.27 or newer. No other tool is required. `make doctor` lists the optional ones.
 
+**The control plane first**, unless you already have one to enroll against. A shipper cannot upload
+until it is enrolled, and enrollment needs a server to enroll with:
+
 ```sh
-make build                                     # bin/quesma-shipper
-make install                                   # into GOBIN, or GOPATH/bin
+make -C fleet-manager run     # MinIO, the bucket, a credential, serving on 127.0.0.1:8099
 ```
 
-To test the Linux installer and the background service with a local build:
+[Try it on one machine](#try-it-on-one-machine) covers what to do with it: the organisation, its
+recipients, and the invite you enroll with.
+
+**Then the shipper.** `install.sh --from` installs your own build the way a release installs
+itself, with the background service, on Linux and on macOS:
 
 ```sh
-make build
+make build                                     # bin/quesma-shipper
 sh src/packaging/linux/install.sh --from bin/quesma-shipper
 ```
 
-To build the macOS package: `make macos-pkg RELEASE_VERSION=<version>`. This works on macOS only.
-On Windows with Inno Setup installed, build an installer with:
+`make install` puts the binary in GOBIN instead, for running it by hand: no background service, and
+no self-updating either way. Development builds report their commit and never fetch a release.
 
-```powershell
-src/packaging/windows/build-setup.ps1 -ReleaseVersion <version> -Architecture amd64 `
-  -BinaryPath <binary> -SupervisorPath <supervisor-binary> -OutputDir bin/dist
-```
-
-`make dist RELEASE_VERSION=<version>` cross-compiles both Windows binaries.
+Then [enroll](#enroll) it.
 
 #### Enroll
 
@@ -610,6 +611,15 @@ make help        # every target
 
 CI runs `make check` and `make perf-smoke`. `make perf` runs the full performance tier against a
 local MinIO and Toxiproxy. Both perf targets need Docker and are skipped without it.
+
+Installers come from the same tree. `make macos-pkg RELEASE_VERSION=<version>` builds the macOS
+package, on macOS only, and `make dist RELEASE_VERSION=<version>` cross-compiles both Windows
+binaries. On Windows with Inno Setup installed:
+
+```powershell
+src/packaging/windows/build-setup.ps1 -ReleaseVersion <version> -Architecture amd64 `
+  -BinaryPath <binary> -SupervisorPath <supervisor-binary> -OutputDir bin/dist
+```
 
 Fleet Manager builds and checks on its own: `make -C fleet-manager check` (Go, plus Node 22 for the
 administration UI's tests), which CI runs on every pull request as well. Tests that run the shipper
