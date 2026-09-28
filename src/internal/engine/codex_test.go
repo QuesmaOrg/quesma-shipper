@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 
@@ -233,12 +234,13 @@ func TestCodexRolloutLifecycleIsOneObject(t *testing.T) {
 		}
 	}
 	idle("archived")
+	f.assertStatOnly(codexUUID1)
 	f.write("archived_sessions/"+codexRolloutName(codexUUID1)+".zst", zstdOf(t, rollout))
 	if err := os.Remove(archived); err != nil {
 		t.Fatal(err)
 	}
 	idle("compressed")
-	idle("idle")
+	f.assertStatOnly(codexUUID1)
 
 	f.assertKeys(f.keyFor("codex-session/" + codexUUID1))
 }
@@ -246,17 +248,99 @@ func TestCodexRolloutLifecycleIsOneObject(t *testing.T) {
 func TestCodexPlainAndCompressedInOneTickShipOnce(t *testing.T) {
 	f := newCodexFixture(t)
 	rollout := []byte(codexRollout(codexUUID1))
-	f.write("sessions/2026/09/01/"+codexRolloutName(codexUUID1), rollout)
-	f.write("sessions/2026/09/01/"+codexRolloutName(codexUUID1)+".zst", zstdOf(t, rollout))
+	plain := f.write("sessions/2026/09/01/"+codexRolloutName(codexUUID1), rollout)
+	cold := f.write("sessions/2026/09/01/"+codexRolloutName(codexUUID1)+".zst", zstdOf(t, rollout))
+	stamp := time.Now().Add(-time.Hour)
+	setMTime(t, plain, stamp)
+	setMTime(t, cold, stamp)
 	f.run()
 	if n := f.port.putCount(); n != 1 {
 		t.Errorf("want 1 upload for one session in two forms, got %d", n)
 	}
 	key := f.keyFor("codex-session/" + codexUUID1)
 	f.assertKeys(key)
-	// The plaintext form is preferred when both exist.
+	// On an mtime tie the plaintext form is preferred.
 	if m, _ := f.plaintext(key); strings.HasSuffix(m.NativePath, ".zst") {
 		t.Errorf("shipped the compressed form %s while the plaintext one exists", m.NativePath)
+	}
+}
+
+// A resumed session can leave the newer content in the compressed copy; the plaintext form must
+// not win just for being plaintext, on this tick or the next.
+func TestCodexNewerCompressedCopyWinsOverOlderPlaintext(t *testing.T) {
+	f := newCodexFixture(t)
+	rollout := codexRollout(codexUUID1)
+	plain := f.write("sessions/2026/09/01/"+codexRolloutName(codexUUID1), []byte(rollout))
+	cold := f.write("archived_sessions/"+codexRolloutName(codexUUID1)+".zst", zstdOf(t, []byte(rollout+codexResumed)))
+	setMTime(t, plain, time.Now().Add(-2*time.Hour))
+	setMTime(t, cold, time.Now().Add(-time.Hour))
+
+	key := f.keyFor("codex-session/" + codexUUID1)
+	for tick := range 2 {
+		f.run()
+		f.assertKeys(key)
+		if m, body := f.plaintext(key); !strings.Contains(body, `"message":"resumed"`) {
+			t.Errorf("tick %d: shipped %s without the resumed event", tick, m.NativePath)
+		}
+	}
+	f.assertStatOnly(codexUUID1)
+}
+
+// A copy that keeps size and mtime (cp -p, rsync -t) proves nothing about content once the path
+// changed, so the moved file is hashed rather than trusted.
+func TestCodexMovedCopyWithSameStatButNewContentShips(t *testing.T) {
+	f := newCodexFixture(t)
+	rollout := codexRollout(codexUUID1)
+	live := f.write("sessions/2026/09/01/"+codexRolloutName(codexUUID1), []byte(rollout))
+	stamp := time.Now().Add(-time.Hour)
+	setMTime(t, live, stamp)
+	f.run()
+
+	changed := strings.Replace(rollout, `"model":"gpt-5-codex"`, `"model":"gpt-5-codez"`, 1)
+	if len(changed) != len(rollout) || changed == rollout {
+		t.Fatal("fixture edit must keep the length and change the content")
+	}
+	archived := f.write("archived_sessions/"+codexRolloutName(codexUUID1), []byte(changed))
+	setMTime(t, archived, stamp)
+	if err := os.Remove(live); err != nil {
+		t.Fatal(err)
+	}
+
+	if rep := f.run(); rep.Shipped != 1 {
+		t.Fatalf("changed content under a new path must ship, got %+v", rep)
+	}
+	if _, body := f.plaintext(f.keyFor("codex-session/" + codexUUID1)); !strings.Contains(body, "gpt-5-codez") {
+		t.Error("the object still holds the old content")
+	}
+	f.assertStatOnly(codexUUID1)
+}
+
+// assertStatOnly runs a tick and fails unless the session was settled without opening its file:
+// a moved session is hashed once, then its new path is what the stat compares against.
+func (f *codexFixture) assertStatOnly(uuid string) {
+	f.t.Helper()
+	rep := f.run()
+	found := false
+	for _, so := range rep.Sources {
+		for _, fo := range so.Files {
+			if !strings.Contains(fo.NativePath, uuid) {
+				continue
+			}
+			found = true
+			if fo.Reason != "size and mtime unchanged" {
+				f.t.Errorf("%s: want the stat shortcut, got %s (%q)", filepath.Base(fo.NativePath), fo.Decision, fo.Reason)
+			}
+		}
+	}
+	if !found {
+		f.t.Errorf("session %s is missing from the report", uuid)
+	}
+}
+
+func setMTime(t *testing.T, path string, at time.Time) {
+	t.Helper()
+	if err := os.Chtimes(path, at, at); err != nil {
+		t.Fatal(err)
 	}
 }
 

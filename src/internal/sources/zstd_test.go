@@ -19,6 +19,7 @@ import (
 const (
 	testUUID  = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"
 	otherUUID = "0199ffff-0000-7000-8000-000000000001"
+	thirdUUID = "0199ffff-0000-7000-8000-000000000002"
 )
 
 func compress(t *testing.T, plain []byte) []byte {
@@ -255,7 +256,7 @@ func TestCollapseKeepsOneFormPerIdentity(t *testing.T) {
 	base := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 	zst := compress(t, []byte(rolloutBody))
 
-	// Plaintext beats .zst even when the .zst is newer; among plaintext the newest wins.
+	// The newest form wins, compressed or not: a resumed session may live in the .zst.
 	liveOld := rollout("sessions/2026/09/01", testUUID, ".jsonl")
 	archived := rollout("archived_sessions", testUUID, ".jsonl")
 	cold := rollout("archived_sessions", testUUID, ".jsonl.zst")
@@ -263,9 +264,15 @@ func TestCollapseKeepsOneFormPerIdentity(t *testing.T) {
 	writeAt(t, filepath.Join(root, archived), []byte(rolloutBody), base.Add(time.Hour))
 	writeAt(t, filepath.Join(root, cold), zst, base.Add(2*time.Hour))
 
+	// Same mtime: plaintext beats .zst.
+	tiePlain := rollout("sessions/2026/09/01", otherUUID, ".jsonl")
+	tieCold := rollout("archived_sessions", otherUUID, ".jsonl.zst")
+	writeAt(t, filepath.Join(root, tiePlain), []byte(rolloutBody), base)
+	writeAt(t, filepath.Join(root, tieCold), zst, base)
+
 	// Same kind and mtime: the lower RelPath wins.
-	tieArchived := rollout("archived_sessions", otherUUID, ".jsonl")
-	tieLive := rollout("sessions/2026/09/01", otherUUID, ".jsonl")
+	tieArchived := rollout("archived_sessions", thirdUUID, ".jsonl")
+	tieLive := rollout("sessions/2026/09/01", thirdUUID, ".jsonl")
 	writeAt(t, filepath.Join(root, tieArchived), []byte(rolloutBody), base)
 	writeAt(t, filepath.Join(root, tieLive), []byte(rolloutBody), base)
 
@@ -283,8 +290,9 @@ func TestCollapseKeepsOneFormPerIdentity(t *testing.T) {
 		got[c.Identity] = c.RelPath
 	}
 	want := map[string]string{
-		"codex-session/" + testUUID:  archived,
-		"codex-session/" + otherUUID: tieArchived,
+		"codex-session/" + testUUID:  cold,
+		"codex-session/" + otherUUID: tiePlain,
+		"codex-session/" + thirdUUID: tieArchived,
 		"":                           "session_index.jsonl",
 	}
 	if len(got) != len(want) {
@@ -296,19 +304,17 @@ func TestCollapseKeepsOneFormPerIdentity(t *testing.T) {
 		}
 	}
 
-	// Once the plaintext is gone the .zst is the session.
-	for _, rel := range []string{liveOld, archived} {
-		if err := os.Remove(filepath.Join(root, rel)); err != nil {
-			t.Fatal(err)
-		}
+	// Once the .zst is gone the newest plaintext is the session.
+	if err := os.Remove(filepath.Join(root, cold)); err != nil {
+		t.Fatal(err)
 	}
 	d, err = discoverByGlob(Request{Source: codexRollouts(t, root)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range d.Candidates {
-		if c.Identity == "codex-session/"+testUUID && c.RelPath != cold {
-			t.Errorf("kept %q, want the compressed form %q", c.RelPath, cold)
+		if c.Identity == "codex-session/"+testUUID && c.RelPath != archived {
+			t.Errorf("kept %q, want the newest plaintext %q", c.RelPath, archived)
 		}
 	}
 }

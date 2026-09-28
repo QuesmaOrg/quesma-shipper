@@ -293,7 +293,8 @@ func (p *sourcePass) charge(i int) int64 {
 		p.charges = map[int]int64{}
 	}
 	c := cand.Size
-	if fp, seen := p.store.Get(KeyOf(p.src.ID, cand)); !p.o.unchangedByStat(fp, seen, cand, p.staging) {
+	key := KeyOf(p.src.ID, cand)
+	if fp, seen := p.store.Get(key); !p.o.unchangedByStat(key, fp, seen, cand, p.staging) {
 		c = sources.LoadBytes(cand, p.src.MaxFileBytes)
 	}
 	p.charges[i] = c

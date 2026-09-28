@@ -358,8 +358,9 @@ func discoverByGlob(req Request) (Discovery, error) {
 	return d, nil
 }
 
-// collapseIdentities keeps one form per identity: plaintext over .zst (the compressed copy is
-// the older one), then the newest, then the lowest RelPath, so walk order never decides.
+// collapseIdentities keeps one form per identity: the newest, since a resumed session may be
+// the compressed copy; on an mtime tie plaintext (cheaper to read), then the lowest RelPath, so
+// walk order never decides.
 func collapseIdentities(matched []Candidate, identity *regexpIdentity) []Candidate {
 	if identity == nil {
 		return matched
@@ -383,14 +384,14 @@ func collapseIdentities(matched []Candidate, identity *regexpIdentity) []Candida
 }
 
 func preferForm(a, b Candidate) int {
+	if c := b.MTime.Compare(a.MTime); c != 0 {
+		return c
+	}
 	if za, zb := IsZstd(a.RelPath), IsZstd(b.RelPath); za != zb {
 		if za {
 			return 1
 		}
 		return -1
-	}
-	if c := b.MTime.Compare(a.MTime); c != 0 {
-		return c
 	}
 	return strings.Compare(a.RelPath, b.RelPath)
 }

@@ -56,15 +56,9 @@ func (o Options) prepareFile(
 
 	// Cheap pre-filter on size and mtime only: mtime alone re-ships byte-identical files, so the
 	// content hash below stays the authority.
-	if o.unchangedByStat(fp, seen, cand, staging) {
+	if o.unchangedByStat(key, fp, seen, cand, staging) {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "size and mtime unchanged"
-		// A rename keeps size and mtime: record the new path so Prune tests the file that exists.
-		if !o.DryRun && observedPath(key, fp) != cand.Path {
-			moved := fp
-			moved.NativePath = cand.Path
-			res.intent = intent{kind: intentRefresh, key: key, fp: moved}
-		}
 		return res, nil
 	}
 
@@ -168,10 +162,11 @@ func (o Options) prepareFile(
 }
 
 // unchangedByStat says the file will not be opened: a non-empty SourceHash marks a committed ship,
-// and a staged file changed within the recompute window is still read, for its enricher.
-func (o Options) unchangedByStat(fp Fingerprint, seen bool, cand sources.Candidate, staging bool) bool {
+// and a staged file changed within the recompute window is still read, for its enricher. A stat
+// says nothing across paths: a copy that kept size and mtime can still differ in content.
+func (o Options) unchangedByStat(key Key, fp Fingerprint, seen bool, cand sources.Candidate, staging bool) bool {
 	return seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
-		!(staging && o.Now().Sub(cand.MTime) < recomputeWindow)
+		cand.Path == observedPath(key, fp) && !(staging && o.Now().Sub(cand.MTime) < recomputeWindow)
 }
 
 // keySpread is a cheap stable hash of a state key, used only to separate backoff wakeups.
