@@ -12,6 +12,9 @@ import (
 )
 
 func RemoveProgram(executable string) (string, error) {
+	if systemExecutable(executable) {
+		return executable, errSystemManaged
+	}
 	if common.HomebrewCaskRoot(executable) != "" {
 		return executable, fmt.Errorf("Homebrew manages this installation; run `%s`", common.BrewUninstall)
 	}

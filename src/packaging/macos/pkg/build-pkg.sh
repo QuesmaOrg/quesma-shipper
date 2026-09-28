@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds the universal Quesma Shipper.app and its rootless user-domain pkg.
+# Builds one universal package for personal and administrator-managed installations.
 set -eu
 
 main() {
@@ -27,7 +27,7 @@ main() {
 	WORK=$(mktemp -d "${TMPDIR:-/tmp}/quesma-shipper-pkg.XXXXXX")
 	trap 'rm -rf "$WORK"' EXIT HUP INT TERM
 	APP="$WORK/payload/Applications/Quesma Shipper.app"
-	mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$WORK/payload/.local/bin" "$OUT"
+	mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$OUT"
 
 	build_binary "$MODULE" "$WORK" "$RELEASE_VERSION"
 	cp "$WORK/quesma-shipper-arm64" "$OUT/quesma-shipper-darwin-arm64"
@@ -41,14 +41,13 @@ main() {
 	esac
 
 	fill_bundle "$APP"
-	ln -s '../../Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper' \
-		"$WORK/payload/.local/bin/quesma-shipper"
 	/usr/bin/xattr -cr "$WORK/payload" "$OUT/quesma-shipper-darwin-arm64" "$OUT/quesma-shipper-darwin-amd64"
 	if [ -n "$APPLICATION_IDENTITY" ]; then
 		sign_code "$APPLICATION_IDENTITY" "$APP" "$OUT/quesma-shipper-darwin-arm64" "$OUT/quesma-shipper-darwin-amd64"
 	fi
 	mkdir "$WORK/scripts"
-	cp "$HERE/scripts/postinstall" "$WORK/scripts"
+	cp "$HERE/scripts/preinstall" "$HERE/scripts/postinstall" "$WORK/scripts"
+	cp "$MODULE/packaging/macos/local-users.sh" "$WORK/scripts/local-users.sh"
 
 	build_component "$WORK/payload" com.quesma.shipper "$WORK/quesma-shipper-component.pkg" --scripts "$WORK/scripts"
 	set -- --distribution "$HERE/Distribution.xml" --package-path "$WORK"
@@ -60,9 +59,7 @@ main() {
 
 	domains=$(/usr/sbin/installer -dominfo -pkg "$OUT/quesma-shipper-macos-universal.pkg")
 	printf '%s\n' "$domains" | grep -q CurrentUserHomeDirectory || die "package does not enable the user home domain"
-	if printf '%s\n' "$domains" | grep -q LocalSystem; then
-		die "package unexpectedly enables the system domain"
-	fi
+	printf '%s\n' "$domains" | grep -q LocalSystem || die "package does not enable the system domain"
 	printf 'built %s\n' "$OUT/quesma-shipper-macos-universal.pkg"
 }
 

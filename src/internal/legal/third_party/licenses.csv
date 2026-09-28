@@ -5,6 +5,7 @@ github.com/bmatcuk/doublestar/v4,MIT
 github.com/cenkalti/backoff/v5,MIT
 github.com/creativeprojects/go-selfupdate,MIT
 github.com/dustin/go-humanize,MIT
+github.com/ebitengine/purego,Apache-2.0
 github.com/google/go-containerregistry/pkg/name,Apache-2.0
 github.com/google/uuid,BSD-3-Clause
 github.com/inconshreveable/mousetrap,Apache-2.0

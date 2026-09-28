@@ -442,7 +442,122 @@ Everything derived this way passes through the scrub stage like any other file.
 `quesma-shipper tracking` shows what is collected on this machine, per agent and repository.
 `quesma-shipper preview` shows what the next run would send, after scrubbing, without sending it.
 
-### Usage
+## Install
+
+### From a release
+
+Personal release builds, including Homebrew installations, use the signed TUF repository to update themselves. System-wide macOS installations are updated by an administrator or MDM. The public
+repository and stable download endpoints are described in
+[RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md).
+
+**macOS**
+
+With Homebrew already installed:
+
+```sh
+brew install --cask quesmaorg/tap/quesma-shipper
+```
+
+The cask installs the command on your Homebrew `PATH` and starts a per-user background service,
+which waits for enrollment. It supports macOS 13 or newer on Apple Silicon and Intel, without
+administrator rights. Run the login command below after installing.
+
+The shipper updates itself automatically; run `quesma-shipper update` to update immediately.
+Use `brew uninstall --cask quesmaorg/tap/quesma-shipper` to remove it. Uninstall keeps enrollment and
+upload history. Add `--zap` to delete local state too, using the shipper's configured state directory.
+Before switching between Homebrew and the `.pkg`, uninstall the previous installation
+without purging local state.
+
+Without Homebrew:
+
+Download and install the signed
+[`quesma-shipper-macos-universal.pkg`](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg).
+Choose **Install for me only** to install in `~/Applications` without administrator rights,
+or **Install for all users of this computer** to install in `/Applications` with administrator
+authorization. Both run a per-user LaunchAgent with separate enrollment and collection state.
+The system installation is updated and removed by an administrator.
+
+For Jamf, Kandji and other MDM deployment, use the same package and a `com.quesma.shipper`
+managed-preferences profile containing `Server` and `Grant`. See the
+[macOS MDM deployment guide and profile template](src/packaging/macos/mdm/README.md).
+
+**Linux**
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/src/packaging/linux/install.sh
+sh install.sh
+```
+
+The script downloads a hash-pinned bootstrap binary and installs a systemd user service. Run it
+again to upgrade. Existing enrollment is kept. Use `--no-service` to skip the service.
+
+The released binaries are also available directly for
+[AMD64](https://updates.quesma.dev/targets/3ae805e2d630af5cb52fff51a5c8ae77aeb7b12f2d73a56fd7723698e9bfe48e.shipper-linux-amd64)
+and
+[ARM64](https://updates.quesma.dev/targets/78f0c89019d8a2f86fe3723359c00082ba9ec6ddedfc5fde1709f7516c33a3b0.shipper-linux-arm64).
+
+**Windows**
+
+Download [QuesmaShipperSetup-amd64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe)
+on an x64 PC or [QuesmaShipperSetup-arm64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe)
+on an Arm PC and run it as your normal user. The setup installs the command under `%LOCALAPPDATA%`, adds it to
+your user `PATH`, and registers a scheduled task that starts immediately and at login without
+administrator rights. Re-running setup repairs that integration without changing enrollment.
+
+For managed deployments, follow the [Intune setup guide](src/packaging/windows/intune/README.md).
+It includes user-context installation and unattended enrollment, a platform-script route you can
+configure from macOS, and a Win32 app package route with detection and uninstall scripts.
+
+Windows release signing is temporarily disabled while the publisher identity is validated. Until
+it is restored, Microsoft Defender SmartScreen may warn about the download, and managed devices
+whose application-control policy requires a trusted publisher may block it.
+
+The raw `quesma-shipper-windows-<arch>.exe` files remain available for portable use and are the
+payloads installed by the TUF self-updater. A portable copy has no scheduled task or uninstaller.
+
+### From source
+
+You need Go 1.27 or newer. No other tool is required. `make doctor` lists the optional ones.
+
+```sh
+make build                                     # bin/quesma-shipper
+make install                                   # into GOBIN, or GOPATH/bin
+```
+
+To test the Linux installer and the background service with a local build:
+
+```sh
+make build
+sh src/packaging/linux/install.sh --from bin/quesma-shipper
+```
+
+To build the macOS package: `make macos-pkg RELEASE_VERSION=<version>`. This works on macOS only.
+On Windows with Inno Setup installed, build an installer with:
+
+```powershell
+src/packaging/windows/build-setup.ps1 -ReleaseVersion <version> -Architecture amd64 `
+  -BinaryPath <binary> -SupervisorPath <supervisor-binary> -OutputDir bin/dist
+```
+
+`make dist RELEASE_VERSION=<version>` cross-compiles both Windows binaries.
+
+### Enroll
+
+Every new shipper must be enrolled with the control plane selected by your administrator. The
+command is the same on every platform:
+
+```sh
+quesma-shipper login <enrollment-token> --server https://cp.example.com
+```
+
+To run the pipeline without a control plane:
+
+```sh
+bin/quesma-shipper local-dev      # create a local identity and state directory
+bin/quesma-shipper preview        # show what would be collected and how it would be scrubbed
+```
+
+## Usage
 
 ```
 quesma-shipper                Status: is it on, what is collected, what is waiting to be sent

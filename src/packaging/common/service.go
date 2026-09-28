@@ -42,7 +42,9 @@ type Spec struct {
 	StateDir string
 
 	// LogDir is where stdout/stderr go; discarded output makes "it never runs" undiagnosable.
-	LogDir string
+	LogDir      string
+	SessionType string
+	Environment map[string]string
 
 	// Tick is the configured collection cadence. launchd and systemd ignore it because the loop
 	// keeps its own ticker, but the cron fallback IS the ticker. Zero means the 15-minute default.
@@ -101,6 +103,8 @@ type Status struct {
 // ErrRoot is returned when install is attempted as root.
 var ErrRoot = errors.New("supervise: refusing to install as root: this is a per-user agent, " +
 	"and running as root would resolve ~ to root's home and read the wrong user's files")
+
+var ErrSystemManaged = errors.New("this macOS installation is managed by an administrator; use the Quesma Shipper package to update or remove it")
 
 // ValidateInstall checks the invariants shared by every platform service installer.
 func ValidateInstall(spec Spec) error {

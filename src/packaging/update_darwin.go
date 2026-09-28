@@ -7,3 +7,4 @@ import (
 
 func updateTarget(release common.Release) string   { return macos.UpdateTarget(release) }
 func applyTarget(raw []byte, version string) error { return macos.ApplyTarget(raw, version) }
+func SystemManaged() bool                          { return macos.SystemManaged() }

@@ -106,27 +106,31 @@ func TestCheckUpdate(t *testing.T) {
 		}
 		return ""
 	}
-	if got := checkUpdate(ctx, Build{Release: true}, true, disabled, boom); got.State != "disabled" {
+	if got := checkUpdate(ctx, Build{Release: true}, true, false, disabled, boom); got.State != "disabled" {
 		t.Errorf("env off switch: state %q", got.State)
 	}
-	if got := checkUpdate(ctx, Build{Release: true}, false, noEnv, boom); got.State != "disabled" {
+	if got := checkUpdate(ctx, Build{Release: true}, false, false, noEnv, boom); got.State != "disabled" {
 		t.Errorf("autoupdate.enabled off switch: state %q", got.State)
 	}
 	// A dev build never checks: no TUF, no source repository, no network.
-	if got := checkUpdate(ctx, Build{Release: false}, true, noEnv, boom); got.State != "skipped" {
+	if got := checkUpdate(ctx, Build{Release: false}, true, false, noEnv, boom); got.State != "skipped" {
 		t.Errorf("dev build: state %q, want skipped", got.State)
 	}
-	if got := checkUpdate(ctx, Build{Release: true}, true, noEnv, fixed("", false, errors.New("dns"))); got.State != "failed" {
+	if got := checkUpdate(ctx, Build{Release: true}, true, false, noEnv, fixed("", false, errors.New("dns"))); got.State != "failed" {
 		t.Errorf("transport error: state %q", got.State)
 	}
-	got := checkUpdate(ctx, Build{Release: true, Version: "1.0.0"}, true, noEnv, fixed("1.1.0", true, nil))
+	got := checkUpdate(ctx, Build{Release: true, Version: "1.0.0"}, true, false, noEnv, fixed("1.1.0", true, nil))
 	if got.State != "available" || got.Fix != "quesma-shipper update" {
 		t.Errorf("available: %+v must name the command to run", got)
 	}
 	if !strings.Contains(got.Detail, "2026-08-18") {
 		t.Errorf("available: %q must date the release", got.Detail)
 	}
-	if got := checkUpdate(ctx, Build{Release: true}, true, noEnv, fixed("1.0.0", false, nil)); got.State != "current" {
+	managed := checkUpdate(ctx, Build{Release: true, Version: "1.0.0"}, true, true, noEnv, fixed("1.1.0", true, nil))
+	if managed.State != "available" || !strings.Contains(managed.Fix, "administrator") || strings.Contains(managed.Fix, "quesma-shipper update") {
+		t.Errorf("managed update must name package deployment: %+v", managed)
+	}
+	if got := checkUpdate(ctx, Build{Release: true}, true, false, noEnv, fixed("1.0.0", false, nil)); got.State != "current" {
 		t.Errorf("current: state %q", got.State)
 	}
 }

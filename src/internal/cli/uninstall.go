@@ -18,6 +18,9 @@ func uninstallCmd(b app.Build) *cobra.Command {
 		Short: "Remove the service and program, keeping local state",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := packaging.ValidateUserUninstall(); err != nil {
+				return err
+			}
 			w := cmd.OutOrStdout()
 			p := paletteFor(w)
 			st, err := app.CurrentStatus(b)
