@@ -317,6 +317,26 @@ func generateScrubVectors(t *testing.T) []byte {
 				"the name used to ship with it. Each word of a skipped run is still scored on its own: a " +
 				"slug's words are too short to clear, a secret's is not.",
 		},
+		{
+			"copilot cli tool output keeps its call id and loses the token", "copilot", true,
+			`{"type":"tool.execution_complete","data":{"toolCallId":"call_r4KeDgjw3zhljpnAV4CdlZT0","success":true,"result":{"content":"$ env\nGITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789\nHOME=/Users/jane"}},"id":"t2","timestamp":"2026-09-28T11:14:30.000Z","parentId":"t1"}` + "\n",
+			"The Copilot CLI and Copilot Chat share this event schema. The tool call id is the join " +
+				"between tool.execution_start, tool.execution_complete and assistant.message toolRequests, " +
+				"so it is structurally exempt; the result is scrubbed like any tool output.",
+		},
+		{
+			"copilot chat tool results keep their tool call id keys", "copilot", true,
+			`{"kind":1,"k":["requests",0,"result"],"v":{"metadata":{"toolCallRounds":[{"toolCalls":[{"id":"call_r4KeDgjw3zhljpnAV4CdlZT0","name":"run_in_terminal"}]}],"toolCallResults":{"call_r4KeDgjw3zhljpnAV4CdlZT0":{"content":[{"value":"AKIAIOSFODNN7EXAMPLE"}]}}}}}` + "\n",
+			"VS Code keys tool results by tool call id, and the key is the only join to the call. A " +
+				"toolCallResults.* entry keeps the keys of that map away from the entropy backstop; the " +
+				"values under them are scrubbed as usual.",
+		},
+		{
+			"a token used as a copilot map key is still redacted", "copilot", true,
+			`{"kind":1,"k":["requests",0,"result"],"v":{"metadata":{"toolCallResults":{"ghp_abcdefghijklmnopqrstuvwxyz0123456789":{"content":[]}}}}}` + "\n",
+			"A key exemption stands down only the entropy backstop: the pattern rules still run on every " +
+				"key, so a known token shape is removed even where ids are expected.",
+		},
 	}
 
 	out := scrubVectors{
