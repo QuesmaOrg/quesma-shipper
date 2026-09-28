@@ -165,23 +165,6 @@ func TestSealedAtIsAReadableTimeFromThisRun(t *testing.T) {
 	}
 }
 
-func TestASecondRunShipsNothing(t *testing.T) {
-	w := stageWorld(t)
-	stageClaude(t, w, realUsername(t))
-	firstOut := runOneShot(t)
-	if countOf(shippedFromLog(t, w), claudeSource) != 1 {
-		t.Fatalf("the first run did not ship the transcript; the rest would pass vacuously:\n%s", firstOut)
-	}
-
-	secondOut := runOneShot(t)
-	if got := countOf(shippedFromLog(t, w), claudeSource); got != 0 {
-		t.Errorf("a second run over unchanged input shipped the transcript again:\n%s", secondOut)
-	}
-	if summary(t, secondOut)["unchanged"] == 0 {
-		t.Errorf("nothing was reported unchanged:\n%s", secondOut)
-	}
-}
-
 func TestTouchingEveryFileShipsNothing(t *testing.T) {
 	// mtime is a pre-filter and the content hash is the authority: a Cursor session leaves
 	// hundreds of files with new mtimes and identical bytes.

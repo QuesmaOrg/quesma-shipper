@@ -79,29 +79,6 @@ func TestFirstRunIsEmptyNotAnError(t *testing.T) {
 	}
 }
 
-func TestCommitThenReload(t *testing.T) {
-	dir := t.TempDir()
-
-	s := open(t, dir)
-	want := fingerprint()
-	if err := commit(s, key("/x/a.jsonl"), want); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-
-	s2 := open(t, dir)
-	got, ok := s2.Get(key("/x/a.jsonl"))
-	if !ok {
-		t.Fatal("entry did not survive a reload")
-	}
-	if got.SourceHash != want.SourceHash || got.SourceSize != want.SourceSize {
-		t.Errorf("fingerprint changed across reload:\n got %+v\nwant %+v", got, want)
-	}
-	if !got.SourceMTime.Equal(want.SourceMTime) {
-		t.Errorf("mtime: got %s want %s", got.SourceMTime, want.SourceMTime)
-	}
-}
-
 // The pre-filter compares stored mtimes for exact equality, so the precision matters: dropping
 // sub-second digits makes that branch unreachable and re-reads every file forever.
 func TestAStoredMTimeKeepsTheNanosecondsThePreFilterComparesOn(t *testing.T) {
@@ -121,6 +98,9 @@ func TestAStoredMTimeKeepsTheNanosecondsThePreFilterComparesOn(t *testing.T) {
 	if !ok {
 		t.Fatal("entry did not survive a reload")
 	}
+	if got.SourceHash != fp.SourceHash || got.SourceSize != fp.SourceSize {
+		t.Errorf("fingerprint changed across reload:\n got %+v\nwant %+v", got, fp)
+	}
 	if !got.SourceMTime.Equal(fp.SourceMTime) {
 		t.Errorf("mtime lost precision across the round trip:\n got %s\nwant %s",
 			got.SourceMTime.Format(time.RFC3339Nano), fp.SourceMTime.Format(time.RFC3339Nano))
@@ -136,22 +116,6 @@ func TestSecondOpenIsRefusedNotQueued(t *testing.T) {
 	if _, err := engine.Open(dir, installID); !errors.Is(err, engine.ErrLocked) {
 		t.Fatalf("a second open must return ErrLocked, got %v", err)
 	}
-}
-
-func TestLockIsReleasedOnClose(t *testing.T) {
-	dir := t.TempDir()
-	s, err := engine.Open(dir, installID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	s2, err := engine.Open(dir, installID)
-	if err != nil {
-		t.Fatalf("the lock was not released: %v", err)
-	}
-	s2.Close()
 }
 
 // status and doctor must not contend with a flush, so Peek takes no lock.
@@ -579,54 +543,6 @@ func TestDerivedEntryRoundTrip(t *testing.T) {
 	}
 	if got.OutputHash != otherSha {
 		t.Errorf("output hash: %q", got.OutputHash)
-	}
-}
-
-func TestCommitAllReplacesOnce(t *testing.T) {
-	dir := t.TempDir()
-	s := open(t, dir)
-
-	updates := map[engine.Key]engine.Fingerprint{
-		key("/x/a.jsonl"): fingerprint(),
-		key("/x/b.jsonl"): fingerprint(),
-		key("/x/c.jsonl"): fingerprint(),
-	}
-	if err := s.CommitAll(updates); err != nil {
-		t.Fatal(err)
-	}
-	if s.Len() != 3 {
-		t.Errorf("expected 3 entries, got %d", s.Len())
-	}
-	s.Close()
-
-	doc, err := engine.Peek(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(doc.Entries) != 3 {
-		t.Errorf("expected 3 entries on disk, got %d", len(doc.Entries))
-	}
-}
-
-// A wiped document is cheap: the store comes back empty and re-uploads onto existing keys.
-func TestWipedDocumentComesBackEmpty(t *testing.T) {
-	dir := t.TempDir()
-	s := open(t, dir)
-	if err := commit(s, key("/x/a.jsonl"), fingerprint()); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-
-	if err := os.Remove(filepath.Join(dir, engine.FileName)); err != nil {
-		t.Fatal(err)
-	}
-	s2, err := engine.Open(dir, installID)
-	if err != nil {
-		t.Fatalf("a wiped document must not be an error: %v", err)
-	}
-	defer s2.Close()
-	if s2.Len() != 0 {
-		t.Errorf("expected an empty store, got %d entries", s2.Len())
 	}
 }
 

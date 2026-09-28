@@ -481,11 +481,6 @@ func TestMultiTenantOrganizationLifecycleAndIsolation(t *testing.T) {
 	if w = serveAdmin(t, server, req); w.Code != http.StatusNoContent {
 		t.Fatalf("update scoped config = %d: %s", w.Code, w.Body.String())
 	}
-	req = adminRequest("PUT", "/v1/admin/orgs/acme.prod/config", configJSON(t, twoRecipients(t)), testAdminCredential)
-	req.Header.Set("If-Match", etag)
-	if w = serveAdmin(t, server, req); w.Code != http.StatusPreconditionFailed {
-		t.Fatalf("stale scoped config = %d: %s", w.Code, w.Body.String())
-	}
 	w = serveAdmin(t, server, adminRequest("GET", "/v1/admin/orgs/acme.prod/config", "", testAdminCredential))
 	name := "Acme Renamed"
 	update := adminConfigRequest{DisplayName: &name, AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true}

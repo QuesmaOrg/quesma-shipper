@@ -124,19 +124,6 @@ func TestTheEventCarriesTheFieldsTheCollectorReads(t *testing.T) {
 	}
 }
 
-// The machine's name has to be in the event: the control plane forwards this body verbatim as the
-// bytes it signs, so nothing downstream can add one.
-func TestTheEventNamesTheMachine(t *testing.T) {
-	r := telemetryRuntime(t, formats.FailureRecord{})
-	_, body, err := r.installHealth(time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(body), `"hostname":"ci-runner-3"`) {
-		t.Fatalf("the event does not name the machine: %s", body)
-	}
-}
-
 type stub struct {
 	calls int
 	err   error

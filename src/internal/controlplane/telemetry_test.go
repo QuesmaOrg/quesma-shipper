@@ -87,6 +87,9 @@ func TestTelemetrySignatureCoversThePrefixAndTheExactBody(t *testing.T) {
 		batchID, time.Now().UTC(), payload(t)); err != nil {
 		t.Fatalf("submit: %v", err)
 	}
+	if got.path != "/v1/telemetry" {
+		t.Errorf("posted to %q, want the served path", got.path)
+	}
 
 	want := "Shipper-Device org=acme, install=" + fixtureInstallID + ", sig="
 	if !strings.HasPrefix(got.authorization, want) {
@@ -135,21 +138,6 @@ func TestTelemetryEnvelopeIsExactlyTheContract(t *testing.T) {
 	}
 	if string(fields["issued_at"]) != `"2026-09-18T12:00:00Z"` {
 		t.Errorf("issued_at = %s, want the caller's stamp in RFC3339", fields["issued_at"])
-	}
-}
-
-// The path is where a submission goes and what the signature covers, and it comes from served
-// configuration. It is used as given.
-func TestTelemetryUsesTheServedPath(t *testing.T) {
-	server, got := controlPlane(t, http.StatusNoContent, "")
-	c, _ := client(t, server.URL)
-
-	if err := c.SubmitTelemetry(context.Background(), "/v1/telemetry",
-		batchID, time.Now().UTC(), payload(t)); err != nil {
-		t.Fatal(err)
-	}
-	if got.path != "/v1/telemetry" {
-		t.Errorf("posted to %q", got.path)
 	}
 }
 

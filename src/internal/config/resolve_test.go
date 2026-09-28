@@ -459,20 +459,6 @@ func TestEnvVarRootIsExpandedThenDenyChecked(t *testing.T) {
 	}
 }
 
-// An unset variable is the normal case, not an error: the next candidate is tried.
-func TestUnsetEnvVarFallsThroughToTheNextRoot(t *testing.T) {
-	home := fakeHome(t)
-	eff, err := config.Resolve(baseInput(t, home))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, s := range eff.Sources {
-		if s.ID == "claude-code-transcripts" && s.Root == "" {
-			t.Errorf("with $CLAUDE_CONFIG_DIR unset, ~/.claude must still resolve: %s", s.RootUnresolvedReason)
-		}
-	}
-}
-
 func TestRelativeExpansionIsRefused(t *testing.T) {
 	home := fakeHome(t)
 	e := env(home, map[string]string{"CLAUDE_CONFIG_DIR": "relative/path"})

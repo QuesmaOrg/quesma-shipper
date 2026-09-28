@@ -43,17 +43,11 @@ func TestPlistIsWellFormedAndKeepsTheAgentAlive(t *testing.T) {
 	}
 	for _, want := range []string{"<key>RunAtLoad</key>\n\t<true/>", "<key>KeepAlive</key>\n\t<true/>",
 		"<string>" + bundleIdentifier + "</string>", "<string>/usr/local/bin/quesma-shipper</string>",
-		"<key>HOME</key>", "XDG_STATE_HOME", "StandardOutPath", "StandardErrorPath"} {
+		"<key>HOME</key>", "XDG_STATE_HOME", "StandardOutPath", "StandardErrorPath",
+		"<key>AssociatedBundleIdentifiers</key>\n\t<array>\n\t\t<string>" + bundleIdentifier + "</string>"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("plist is missing %q:\n%s", want, got)
 		}
-	}
-}
-
-func TestPlistAssociatesTheInstalledApp(t *testing.T) {
-	want := "<key>AssociatedBundleIdentifiers</key>\n\t<array>\n\t\t<string>" + bundleIdentifier + "</string>"
-	if got := renderPlist(testSpec()); !strings.Contains(got, want) {
-		t.Errorf("the app-installed agent lacks its bundle association:\n%s", got)
 	}
 }
 

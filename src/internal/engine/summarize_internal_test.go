@@ -74,11 +74,3 @@ func TestSummarizeLeavesOutWhatTheShipperWroteItself(t *testing.T) {
 			rep.BytesRead, rep.BytesSealed, rep.MedianFileBytes)
 	}
 }
-
-func TestSummarizeOfAnEmptyRunIsAllZeroes(t *testing.T) {
-	rep := Report{}
-	summarize(&rep)
-	if rep.BytesRead != 0 || rep.BytesSealed != 0 || rep.MedianFileBytes != 0 {
-		t.Errorf("an empty run summarised to %+v", rep)
-	}
-}

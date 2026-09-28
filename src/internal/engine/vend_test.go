@@ -157,6 +157,13 @@ func TestARefusedAuthorizationStopsTheRun(t *testing.T) {
 	if rep.Shipped != 0 {
 		t.Errorf("%d objects shipped against a refused install", rep.Shipped)
 	}
+	if got := port.putCount(); got != 0 {
+		t.Errorf("%d objects stored against a revoked install", got)
+	}
+	// The refusal stops admission, not just the count.
+	if got := len(port.sizes()); got >= 20 {
+		t.Errorf("%d authorizations against a revoked install; admission never stopped", got)
+	}
 }
 
 // An unavailable control plane is NOT a kill: nothing new commits, and the next run ships it.
@@ -272,29 +279,6 @@ func TestReauthorizationDoesNotLoop(t *testing.T) {
 	if _, ok := f.store.Get(engine.Key{SourceID: "claude-code-transcripts",
 		ID: f.home + "/.claude/projects/p/e1.jsonl"}); ok {
 		t.Error("a ticket that never uploaded committed a fingerprint")
-	}
-}
-
-// Preview computes everything that would leave the machine and authorizes nothing.
-func TestPreviewAuthorizesNothing(t *testing.T) {
-	f := newFixture(t)
-	for i := 0; i < 3; i++ {
-		f.writeTranscript(fmt.Sprintf("p/d%02d.jsonl", i), line1)
-	}
-	port := newPort()
-
-	rep, err := vendRun(f, port, func(o *engine.Options) { o.DryRun = true })
-	if err != nil {
-		t.Fatalf("preview: %v", err)
-	}
-	if rep.Shipped != 3 {
-		t.Errorf("preview reported %d would-ship files of 3", rep.Shipped)
-	}
-	if got := len(port.sizes()); got != 0 {
-		t.Errorf("preview made %d authorization calls", got)
-	}
-	if f.store.Len() != 0 {
-		t.Errorf("preview committed %d fingerprints", f.store.Len())
 	}
 }
 

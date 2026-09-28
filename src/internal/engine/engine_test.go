@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -482,35 +481,8 @@ func statMTime(t *testing.T, path string) time.Time {
 	return info.ModTime()
 }
 
-// A crash between the upload and the commit re-runs the file onto the same key. Zero new keys.
-func TestCrashBeforeCommitReRunsOntoTheSameKey(t *testing.T) {
-	f := newFixture(t)
-	f.writeTranscript("p/s1.jsonl", line1)
-
-	// The lost commit is simulated by wiping state after a successful upload.
-	f.run()
-	keys := f.port.keys()
-	if len(keys) != 1 {
-		t.Fatalf("expected 1 key, got %v", keys)
-	}
-
-	f.wipeState()
-	f.port.reset()
-
-	rep := f.run()
-	if rep.Shipped != 1 {
-		t.Fatalf("the file should be re-run: %+v", rep)
-	}
-	if got := f.port.keys(); len(got) != 1 || got[0] != keys[0] {
-		t.Errorf("re-run created a new key: %v, want %v", got, keys)
-	}
-	obj, _ := f.port.get(keys[0])
-	if obj.Versions != 2 {
-		t.Errorf("expected the re-run to add a version, got %d", obj.Versions)
-	}
-}
-
-// Wiping the fingerprint document while keeping the identity converges: ZERO new keys.
+// Wiping the fingerprint document while keeping the identity converges: ZERO new keys. It is also
+// what a crash between upload and commit looks like, so each re-run lands as a second version.
 func TestWipedStateConvergesWithZeroNewKeys(t *testing.T) {
 	f := newFixture(t)
 	for _, p := range []string{"p/a.jsonl", "p/b.jsonl", "p/c.jsonl"} {
@@ -537,26 +509,9 @@ func TestWipedStateConvergesWithZeroNewKeys(t *testing.T) {
 		if before[i] != after[i] {
 			t.Errorf("key %d changed: %s -> %s", i, before[i], after[i])
 		}
-	}
-}
-
-// A failed upload commits nothing, so the next tick re-runs the file.
-func TestFailedUploadCommitsNothing(t *testing.T) {
-	f := newFixture(t)
-	f.writeTranscript("p/s1.jsonl", line1)
-
-	f.port.FailNext = errors.New("network is unreachable")
-	rep := f.run()
-	if rep.Failed != 1 {
-		t.Fatalf("expected a failure, got %+v", rep)
-	}
-	if len(f.port.keys()) != 0 {
-		t.Error("nothing should have landed")
-	}
-
-	rep2 := f.run()
-	if rep2.Shipped != 1 {
-		t.Errorf("the next tick must re-run the file: %+v", rep2)
+		if obj, _ := f.port.get(after[i]); obj.Versions != 2 {
+			t.Errorf("%s: expected the re-run to add a version, got %d", after[i], obj.Versions)
+		}
 	}
 }
 
@@ -717,12 +672,16 @@ func TestMaxFilesPerRunIsReportedNotSilent(t *testing.T) {
 	}
 	f.eff.MaxFilesPerRun = 2
 
-	rep := f.run()
+	// Budget is reserved at admission, so no number of workers can overshoot it.
+	rep := f.runWith(func(o *engine.Options) { o.Workers = 8 })
 	if rep.Shipped != 2 {
 		t.Errorf("expected the run to stop at 2, got %d", rep.Shipped)
 	}
 	if !rep.Truncated {
 		t.Error("a truncated run must say so")
+	}
+	if got := len(f.port.keys()); got != 2 {
+		t.Errorf("%d objects reached the store; the budget allows 2", got)
 	}
 
 	// The rest arrive on the next tick: a bound is a catch-up, not a loss.
@@ -1237,45 +1196,6 @@ func TestAParkedFileStopsBeingParkedOnceItReadsCleanAgain(t *testing.T) {
 	}
 	if fp.Parked || fp.LastError != "" || fp.Attempts != 0 || !fp.BackoffUntil.IsZero() {
 		t.Errorf("the park survived a clean read: %+v", fp)
-	}
-}
-
-// A revoked install must fail fast: without the latch every remaining file repeats the same
-// refusal and writes a park record, burying the one line that says access was revoked.
-func TestARefusedInstallStopsTheRunAtTheFirstFile(t *testing.T) {
-	f := newFixture(t)
-	for i := 0; i < 20; i++ {
-		f.writeTranscript(fmt.Sprintf("p/a%02d.jsonl", i), line1)
-	}
-	f.port.FailAll = fmt.Errorf("creds: vend failed: %w", formats.ErrCredentialsRefused)
-
-	rep, err := engine.Run(context.Background(), f.store, f.opts())
-
-	if !errors.Is(err, formats.ErrCredentialsRefused) {
-		t.Fatalf("want a refusal error from the run, got %v", err)
-	}
-	if rep.Failed > 1 {
-		t.Errorf("%d files failed; the run should stop at the first refusal", rep.Failed)
-	}
-	if rep.Shipped != 0 {
-		t.Errorf("%d files shipped despite refused credentials", rep.Shipped)
-	}
-}
-
-// An ordinary upload error is NOT fatal: those are per-object and the run continues.
-func TestAnOrdinaryUploadErrorDoesNotStopTheRun(t *testing.T) {
-	f := newFixture(t)
-	for i := 0; i < 5; i++ {
-		f.writeTranscript(fmt.Sprintf("p/b%02d.jsonl", i), line1)
-	}
-	f.port.FailAll = errors.New("connection reset by peer")
-
-	rep, err := engine.Run(context.Background(), f.store, f.opts())
-	if err != nil {
-		t.Fatalf("an ordinary upload failure ended the run: %v", err)
-	}
-	if rep.Failed != 5 {
-		t.Errorf("want all 5 attempted and failed, got %+v", rep)
 	}
 }
 

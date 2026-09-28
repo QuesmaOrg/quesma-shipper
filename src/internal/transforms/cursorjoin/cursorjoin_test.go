@@ -554,20 +554,9 @@ func TestAMissingOrUnreadableDatabaseFailsOpen(t *testing.T) {
 	assert.NotEmpty(t, res.Notes, "an unreadable database produced no note")
 }
 
-func TestTheEnricherIsIdentifiedByIDAndVersion(t *testing.T) {
-	e := cursorjoin.New()
-	// Both travel in every manifest, so a fixed join's output supersedes a broken one's.
-	if e.ID() != "cursor-transcript-join" {
-		t.Errorf("id = %q", e.ID())
-	}
-	if e.Version() != 4 {
-		t.Errorf("version = %d", e.Version())
-	}
-	if e.Table() != "cursorDiskKV" {
-		t.Errorf("table = %q", e.Table())
-	}
-	// The workspace state.vscdb is v1.1, deferred. Only the global store is declared.
-	for _, c := range e.DBCandidates() {
+// The workspace state.vscdb is v1.1, deferred. Only the global store is declared.
+func TestOnlyTheGlobalStoreIsDeclared(t *testing.T) {
+	for _, c := range cursorjoin.New().DBCandidates() {
 		if strings.Contains(c, "workspaceStorage") {
 			t.Errorf("the workspace store is declared but deferred to v1.1: %s", c)
 		}

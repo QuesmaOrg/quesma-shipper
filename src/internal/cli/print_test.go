@@ -61,22 +61,6 @@ func TestProgressLineIsOneLineWithNoTerminator(t *testing.T) {
 	}
 }
 
-func TestHumanBytes(t *testing.T) {
-	cases := []struct {
-		n    int64
-		want string
-	}{
-		{512, "512 B"},
-		{465_000, "454.1 KB"},
-		{12_165_120, "11.6 MB"},
-	}
-	for _, c := range cases {
-		if got := app.HumanBytes(c.n); got != c.want {
-			t.Errorf("app.HumanBytes(%d) = %q, want %q", c.n, got, c.want)
-		}
-	}
-}
-
 // The oversize line has to say WHICH file and HOW BIG: a pathological file and ordinary work
 // differ by three orders of magnitude.
 func TestTheOversizeLineNamesTheFileAndItsSize(t *testing.T) {

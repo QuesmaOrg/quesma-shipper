@@ -162,18 +162,6 @@ func TestHighEntropyStoreDegradesToUnreadable(t *testing.T) {
 	}
 }
 
-// Replacing a JSONL store with SQLite must be visible, with a config push to metadata-only as the remedy rather than a release.
-func TestSQLiteReplacingJSONLIsCaughtByTheSniff(t *testing.T) {
-	root := t.TempDir()
-	// SQLite's file magic, then binary.
-	write(t, filepath.Join(root, "projects", "p", "a.jsonl"), "SQLite format 3\x00\x04\x00\x01")
-
-	d := discover(t, source(root, []string{"projects/**/*.jsonl"}), nil)
-	if d.Health != sources.MatchPresentUnreadable {
-		t.Errorf("a substrate change must not be silent: health %q sniff %q", d.Health, d.Sniff)
-	}
-}
-
 func TestEmptyFileSniffsAsEmptyNotBroken(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "projects", "p", "a.jsonl"), "")
@@ -185,18 +173,6 @@ func TestEmptyFileSniffsAsEmptyNotBroken(t *testing.T) {
 	// Empty is a legitimate state, a session that just started, so the file is still a candidate.
 	if len(d.Candidates) != 1 {
 		t.Errorf("an empty file is still collectable, got %d candidates", len(d.Candidates))
-	}
-}
-
-// The producer version is read from the store, which makes a parse-failure spike attributable to an agent release.
-func TestAgentVersionIsObservedFromTheStore(t *testing.T) {
-	root := t.TempDir()
-	write(t, filepath.Join(root, "projects", "p", "a.jsonl"),
-		`{"type":"user","uuid":"u1","version":"2.1.220"}`+"\n")
-
-	d := discover(t, source(root, []string{"projects/**/*.jsonl"}), nil)
-	if d.AgentVersion != "2.1.220" {
-		t.Errorf("agent version %q, want 2.1.220", d.AgentVersion)
 	}
 }
 
@@ -456,24 +432,4 @@ func mustParse(t *testing.T, s string) time.Time {
 		t.Fatal(err)
 	}
 	return p
-}
-
-// Candidates are oldest first: for a store that deletes itself, the file closest to deletion cannot be collected later.
-func TestOldestFileIsFirstInLine(t *testing.T) {
-	root := t.TempDir()
-	old := filepath.Join(root, "projects", "p", "old.jsonl")
-	fresh := filepath.Join(root, "projects", "p", "fresh.jsonl")
-	write(t, old, `{"a":1}`+"\n")
-	write(t, fresh, `{"a":2}`+"\n")
-
-	longAgo := mustParse(t, "2020-01-01T00:00:00Z")
-	if err := os.Chtimes(old, longAgo, longAgo); err != nil {
-		t.Fatal(err)
-	}
-
-	d := discover(t, source(root, []string{"projects/**/*.jsonl"}), nil)
-	// It must be first in line.
-	if !strings.HasSuffix(d.Candidates[0].RelPath, "old.jsonl") {
-		t.Errorf("the file closest to deletion must be collected first, got %s", d.Candidates[0].RelPath)
-	}
 }

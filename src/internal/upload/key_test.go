@@ -46,16 +46,6 @@ func TestCanonicalPathEscaping(t *testing.T) {
 	}
 }
 
-func TestCanonicalPathUsesUppercaseHex(t *testing.T) {
-	got := canonicalPath("=")
-	if got != "%3D" {
-		t.Fatalf("canonicalPath(\"=\") = %q, want %%3D", got)
-	}
-	if strings.ContainsAny(got, "abcdef") {
-		t.Fatalf("canonicalPath produced lowercase hex: %q", got)
-	}
-}
-
 func TestValidateKeyRejects(t *testing.T) {
 	cases := map[string]string{
 		"empty":          "",

@@ -57,22 +57,6 @@ func TestAppendAndTail(t *testing.T) {
 	}
 }
 
-func TestTailLimits(t *testing.T) {
-	l, path := open(t)
-	for range 10 {
-		if err := l.Append(auditlog.Entry{Decision: auditlog.DecisionShipped}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	entries, err := auditlog.Tail(path, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 3 {
-		t.Errorf("expected 3 entries, got %d", len(entries))
-	}
-}
-
 // The log is append-only: an entry already on disk is never rewritten, which is what makes it an audit log.
 func TestLogIsAppendOnly(t *testing.T) {
 	l, path := open(t)

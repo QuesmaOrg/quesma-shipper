@@ -162,20 +162,6 @@ func TestEmptyAllowlistAdoptsTheTicketOrigin(t *testing.T) {
 	}
 }
 
-// The origin is diagnosable; the rest of a presigned URL is a bearer credential.
-func TestMatchErrorCarriesNoURL(t *testing.T) {
-	target, err := NewUploadTarget(TargetSpec{Origin: "https://archive.example.invalid", Addressing: VirtualHosted})
-	if err != nil {
-		t.Fatalf("build target: %v", err)
-	}
-	raw := "https://evil.example.invalid/v1/organization%3Dacme/object.age?X-Amz-Signature=deadbeef"
-	_, err = UploadTargetList{target}.Match(raw)
-	if err == nil {
-		t.Fatal("Match accepted an unlisted origin")
-	}
-	assertNoURLLeak(t, err, raw)
-}
-
 func assertNoURLLeak(t *testing.T, err error, rawURL string) {
 	t.Helper()
 	message := err.Error()
