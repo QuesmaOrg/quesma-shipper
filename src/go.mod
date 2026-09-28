@@ -9,8 +9,8 @@ require (
 	github.com/Shopify/toxiproxy/v2 v2.12.0
 	github.com/aws/aws-sdk-go-v2 v1.47.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.5
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.1
-	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.2
+	github.com/bmatcuk/doublestar/v4 v4.10.2
 	github.com/creativeprojects/go-selfupdate v1.6.0
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.20.0
