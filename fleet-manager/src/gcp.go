@@ -110,6 +110,23 @@ func (s *gcsStore) List(ctx context.Context, prefix string) ([]ObjectInfo, error
 	}
 }
 
+func (s *gcsStore) ListPrefixes(ctx context.Context, prefix, delimiter string) ([]string, error) {
+	it := s.bucket.Objects(ctx, &storage.Query{Prefix: prefix, Delimiter: delimiter})
+	var out []string
+	for {
+		attrs, err := it.Next()
+		if err == iterator.Done {
+			return out, nil
+		}
+		if err != nil {
+			return nil, mapGCSError(err)
+		}
+		if attrs.Prefix != "" {
+			out = append(out, attrs.Prefix)
+		}
+	}
+}
+
 func (s *gcsStore) SourceHash(ctx context.Context, key string) (string, error) {
 	attrs, err := s.bucket.Object(key).Attrs(ctx)
 	if err != nil {
