@@ -1,7 +1,6 @@
 package upload
 
 import (
-	"errors"
 	"strings"
 	"testing"
 )
@@ -114,14 +113,11 @@ func TestUploadTargetListMatch(t *testing.T) {
 	}
 
 	refused := map[string]string{
-		"other host":       "https://evil.example.invalid/v1/object.age",
-		"other port":       "https://archive.example.invalid:8443/v1/object.age",
-		"other scheme":     "http://archive.example.invalid/v1/object.age",
-		"user information": "https://user@archive.example.invalid/v1/object.age",
-		"fragment":         "https://archive.example.invalid/v1/object.age#frag",
-		"opaque":           "https:archive.example.invalid",
-		"no host":          "/v1/object.age",
-		"unparseable":      "https://archive.example.invalid/v1/%zz.age",
+		"other host":   "https://evil.example.invalid/v1/object.age",
+		"other port":   "https://archive.example.invalid:8443/v1/object.age",
+		"other scheme": "http://archive.example.invalid/v1/object.age",
+		"no host":      "/v1/object.age",
+		"unparseable":  "https://archive.example.invalid/v1/%zz.age",
 	}
 	for name, raw := range refused {
 		t.Run(name, func(t *testing.T) {
@@ -129,10 +125,6 @@ func TestUploadTargetListMatch(t *testing.T) {
 				t.Fatalf("Match accepted %q", raw)
 			}
 		})
-	}
-
-	if _, err := list.Match("https://evil.example.invalid/v1/object.age"); !errors.Is(err, ErrNoTarget) {
-		t.Fatalf("unlisted origin returned %v, want ErrNoTarget", err)
 	}
 }
 

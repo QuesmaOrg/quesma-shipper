@@ -73,6 +73,10 @@ func TestTheOversizeLineNamesTheFileAndItsSize(t *testing.T) {
 			OversizeLargest: 412 << 20,
 			OversizeLimit:   256 << 20,
 			OversizeExample: "sessions/2026/08/01/rollout-2026-08-01-abc.jsonl",
+		}, {
+			SourceID: "claude-code-transcripts", Health: formats.Collected,
+			Oversize: 3, OversizeLargest: 900 << 20, OversizeLimit: 128 << 20,
+			OversizeExample: "projects/x/big.jsonl",
 		}},
 	}, false)
 
@@ -83,6 +87,7 @@ func TestTheOversizeLineNamesTheFileAndItsSize(t *testing.T) {
 		"256.0 MB",                     // the cap it exceeded
 		"412.0 MB",                     // how big it actually is
 		"rollout-2026-08-01-abc.jsonl", // and which one
+		"3 files over the",             // plural for the second source
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the summary does not mention %q:\n%s", want, out)
@@ -265,19 +270,5 @@ func TestInfosAloneRaiseNoBanner(t *testing.T) {
 	}
 	if !strings.Contains(out, "carried native-only") {
 		t.Errorf("the info line is missing:\n%s", out)
-	}
-}
-
-func TestTheOversizeLinePluralises(t *testing.T) {
-	var buf bytes.Buffer
-	printRunSummary(&buf, formats.Report{
-		Sources: []formats.SourceOutcome{{
-			SourceID: "claude-code-transcripts", Health: formats.Collected,
-			Oversize: 3, OversizeLargest: 900 << 20, OversizeLimit: 256 << 20,
-			OversizeExample: "projects/x/big.jsonl",
-		}},
-	}, false)
-	if !strings.Contains(buf.String(), "3 files over the") {
-		t.Errorf("plural form missing:\n%s", buf.String())
 	}
 }

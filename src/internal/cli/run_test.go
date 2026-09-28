@@ -36,27 +36,27 @@ func TestRecycleRetriesAFailedSupervisionProbe(t *testing.T) {
 	}
 }
 
-// A truncated run left backlog on disk, so the loop comes back after the catch-up delay
-// rather than the full interval.
-func TestTruncatedRunEarnsTheCatchUpDelay(t *testing.T) {
-	// Shipped is part of the condition: a run that collected nothing has no backlog to chase.
-	if got := app.NextDelay(formats.Report{Truncated: true, Shipped: 64}, nil, config.DefaultTick); got != app.CatchUpDelay {
-		t.Fatalf("truncated run: next delay = %v, want %v", got, app.CatchUpDelay)
-	}
-}
-
-func TestCompleteRunWaitsTheFullInterval(t *testing.T) {
-	if got := app.NextDelay(formats.Report{}, nil, config.DefaultTick); got != config.DefaultTick {
-		t.Fatalf("complete run: next delay = %v, want %v", got, config.DefaultTick)
-	}
-}
-
-// An errored run keeps the full interval: re-ticking fast would make one failure a hot loop.
-// A panic is the same case: recoverFlush always surfaces it as an error.
-func TestErroredRunNeverEarnsTheCatchUpDelay(t *testing.T) {
-	rep := formats.Report{Truncated: true}
-	if got := app.NextDelay(rep, errors.New("sink unreachable"), config.DefaultTick); got != config.DefaultTick {
-		t.Fatalf("errored run: next delay = %v, want %v", got, config.DefaultTick)
+// Only a clean run that shipped and was truncated left backlog on disk, so only it comes back
+// after the catch-up delay rather than the full interval.
+func TestNextDelay(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		rep  formats.Report
+		err  error
+		want time.Duration
+	}{
+		{"truncated run", formats.Report{Truncated: true, Shipped: 64}, nil, app.CatchUpDelay},
+		{"complete run", formats.Report{}, nil, config.DefaultTick},
+		// Re-ticking fast would make one failure a hot loop. A panic is the same case: recoverFlush
+		// always surfaces it as an error.
+		{"errored run", formats.Report{Truncated: true}, errors.New("sink unreachable"), config.DefaultTick},
+		// Nothing shipped means no backlog worth chasing, whatever Truncated says; per-file
+		// failures return no error.
+		{"all-failures run", formats.Report{Truncated: true, Failed: 64, Shipped: 0}, nil, config.DefaultTick},
+	} {
+		if got := app.NextDelay(c.rep, c.err, config.DefaultTick); got != c.want {
+			t.Errorf("%s: next delay = %v, want %v", c.name, got, c.want)
+		}
 	}
 }
 
@@ -105,14 +105,5 @@ func TestACleanTickIsUntouched(t *testing.T) {
 	}
 	if errOut.String() != "" {
 		t.Errorf("a clean tick wrote to stderr: %q", errOut.String())
-	}
-}
-
-// A run that shipped nothing has no backlog worth chasing, whatever Truncated says; per-file
-// failures return no error.
-func TestARunThatShippedNothingWaitsTheFullInterval(t *testing.T) {
-	rep := formats.Report{Truncated: true, Failed: 64, Shipped: 0}
-	if got := app.NextDelay(rep, nil, config.DefaultTick); got != config.DefaultTick {
-		t.Fatalf("all-failures run: next delay = %v, want %v", got, config.DefaultTick)
 	}
 }
