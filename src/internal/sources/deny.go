@@ -50,6 +50,24 @@ var CompiledDeny = []string{
 	"~/.codex/auth.json",
 	"~/.config/opencode/auth.json",
 	"~/.local/share/opencode/auth.json",
+
+	// Copilot CLI: config.json can hold the OAuth token (storeTokenPlaintext), the MCP files hold
+	// server secrets and OAuth grants, and each ide/*.lock carries the IDE bridge's Authorization header.
+	"~/.copilot/config.json",
+	"~/.copilot/mcp-config*",
+	"~/.copilot/mcp-config*/**",
+	"~/.copilot/mcp-oauth-config*",
+	"~/.copilot/mcp-oauth-config*/**",
+	"~/.copilot/ide/**",
+	"$COPILOT_HOME/config.json",
+	"$COPILOT_HOME/mcp-config*",
+	"$COPILOT_HOME/mcp-config*/**",
+	"$COPILOT_HOME/mcp-oauth-config*",
+	"$COPILOT_HOME/mcp-oauth-config*/**",
+	"$COPILOT_HOME/ide/**",
+
+	// VS Code secret storage, which holds the GitHub session Copilot Chat signs in with.
+	"**/Code/User/globalStorage/state.vscdb*",
 }
 
 type List struct {

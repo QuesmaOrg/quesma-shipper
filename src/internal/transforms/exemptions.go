@@ -41,6 +41,38 @@ func CompiledExemptions() map[string][]string {
 			// opaque payload, keyed on the nested path.
 			"content[].image.hex",
 		},
+		"copilot": {
+			// The event spine and the tool-call and model-call joins of the CLI and VS Code
+			// transcripts (call_… and toolu_… ids trip the backstop).
+			"id", "parentId",
+			"data.toolCallId", "data.toolRequests[].toolCallId",
+			"data.permissionRequest.toolCallId", "data.promptRequest.toolCallId",
+			"data.apiCallId", "data.message.apiCallId", "data.messages[].apiCallId",
+			"data.modelCall.api_id", "data.responseChunk.id",
+			"data.toolTelemetry.properties.hashedUrl",
+			"data.context.cwd",
+			// Provider-encrypted reasoning: opaque ciphertext the backstop would shred.
+			"data.encryptedContent", "data.reasoningOpaque",
+			"data.reasoningBlocks.blocks[].encrypted_content", "data.reasoningBlocks.blocks[].id",
+			// VS Code's chatSessions log puts one value at v under three paths: the snapshot
+			// (v.requests[]), a set (v) and a splice (v[]).
+			"v.requests[].requestId", "v[].requestId",
+			"v.requests[].responseId", "v[].responseId",
+			"v.requests[].response[].id", "v[].response[].id", "v[].id",
+			"v.requests[].response[].toolCallId", "v[].response[].toolCallId", "v[].toolCallId",
+			"v.metadata.toolCallRounds[].toolCalls[].id",
+			"v.metadata.toolCallRounds[].thinking.id",
+			"v.metadata.toolCallRounds[].thinking.encrypted",
+			"v.metadata.toolCallRounds[].statefulMarker",
+			"v[].result.metadata.toolCallRounds[].toolCalls[].id",
+			"v[].result.metadata.toolCallRounds[].thinking.id",
+			"v[].result.metadata.toolCallRounds[].thinking.encrypted",
+			"v[].result.metadata.toolCallRounds[].statefulMarker",
+			"v.requests[].result.metadata.toolCallRounds[].toolCalls[].id",
+			"v.requests[].result.metadata.toolCallRounds[].thinking.id",
+			"v.requests[].result.metadata.toolCallRounds[].thinking.encrypted",
+			"v.requests[].result.metadata.toolCallRounds[].statefulMarker",
+		},
 		"*": {"timestamp", "version"},
 	}
 }

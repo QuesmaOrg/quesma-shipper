@@ -23,9 +23,9 @@ func Root(b app.Build, out, errOut io.Writer) *cobra.Command {
 	root := &cobra.Command{
 		Use:   app.Name,
 		Short: "Collects your AI-agent sessions, scrubs secrets, encrypts them and sends them to your organisation",
-		Long: app.Name + " collects the sessions your coding agents (Claude Code, Codex, Cursor)\n" +
-			"leave on this machine, scrubs secrets, encrypts every file and sends it to your\n" +
-			"organisation. It runs in the background.",
+		Long: app.Name + " collects the sessions your coding agents (Claude Code, Codex, Cursor,\n" +
+			"GitHub Copilot) leave on this machine, scrubs secrets, encrypts every file and sends it to\n" +
+			"your organisation. It runs in the background.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {

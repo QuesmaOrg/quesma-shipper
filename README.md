@@ -29,7 +29,7 @@ same bucket, and needs no database and no local disk. Only the holders of the or
 [age](https://age-encryption.org/) keys can read what was uploaded; an operator with full access to
 the bucket sees object names, sizes and timestamps, but no contents.
 
-Supported agents: Claude Code, Codex, Cursor.
+Supported agents: Claude Code, Codex, Cursor, GitHub Copilot (the Copilot CLI and Copilot Chat in VS Code).
 
 Supported platforms: macOS 13 or newer (app bundle, launchd service), Linux (systemd user
 service), Windows 10 1809 or newer (per-user installer, scheduled task).
@@ -394,6 +394,7 @@ The shipper collects more than chat transcripts. Per agent, from the agent's own
 | Claude Code | Session and subagent transcripts, spilled tool results | Per-project memory files, plans, todos, file-history checkpoint metadata, the user-level `CLAUDE.md`, `settings.json` |
 | Codex | Sessions, one object each whether live, archived or zstd-compressed (decompressed and scrubbed like the rest), the session index | None |
 | Cursor | Agent transcripts, enriched with conversation text, tool calls, and model names read from Cursor's database | Spilled tool output, terminal captures, agent scratchpad notes |
+| GitHub Copilot | Copilot CLI session event logs; Copilot Chat transcripts and VS Code's chat session log, which holds tool results and token counts, including chats opened with no folder | CLI session plans, checkpoints, research reports, session files and rewind snapshots; VS Code chat editing checkpoints and file baselines |
 
 One more record is produced by the shipper itself:
 
@@ -405,7 +406,8 @@ All other files above pass through the scrub stage before encryption. The contro
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.
 
 Never uploaded as files: credential stores such as Claude Code's `.credentials.json` and
-`~/.claude.json`, Codex's `auth.json`, and Cursor's `state.vscdb`. A compiled deny list blocks
+`~/.claude.json`, Codex's `auth.json`, Cursor's `state.vscdb`, the Copilot CLI's `config.json`, MCP
+configuration and IDE lock files, and VS Code's global `state.vscdb`. A compiled deny list blocks
 these paths even when a configured glob would match them. Collectors and enrichers read only
 the data they need from these stores:
 
