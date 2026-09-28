@@ -40,7 +40,7 @@ testable against an in-memory store and what makes a fourth provider a new file 
 change to the service.
 
 **The service never reads a trajectory.** It has no decrypt path, and it holds no identity that
-could decrypt one. The single object it reads below `install=` is `tags.json`, the human name for
+could decrypt one. The single object it reads below `install=` is `tags.json`, the human name and administrator-managed metadata for
 an install, and the templates grant read on that one object name rather than on the prefix —
 because the prefix is every sealed payload in the bucket.
 
@@ -56,8 +56,8 @@ organization cannot be created in a bucket without object versioning.
 **Disposable records are unconditional, and never fail a request.** `seen/` uses `Put`, is tagged
 `lifecycle=ephemeral` so its superseded versions can be expired, and collapses repeated check-ins
 within a minute into one write. A failed write is logged and dropped. The hot path must never
-rewrite a security record. `tags.json`, the install's name, is off the hot path but written like a
-control record: conditionally, and an admin sees a failed write.
+rewrite a security record. Administrator-managed `tags.json` uses conditional writes and retries
+against the latest record so renaming and metadata edits preserve each other.
 
 **The ticket contract is closed.** A presigned upload ticket may carry `x-amz-tagging` and
 `x-amz-meta-*` and nothing else; `s3TicketHeaders` in `src/aws.go` refuses any other signed header

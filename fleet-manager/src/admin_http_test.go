@@ -141,6 +141,7 @@ func TestEveryAdminRouteRequiresAuthentication(t *testing.T) {
 		{"GET", "/v1/admin/orgs/acme/invites"}, {"POST", "/v1/admin/orgs/acme/invites"}, {"POST", "/v1/admin/orgs/acme/invites/id/revoke"},
 		{"POST", "/v1/admin/orgs/acme/invites/id/release"}, {"GET", "/v1/admin/orgs/acme/installs"}, {"POST", "/v1/admin/orgs/acme/installs/id/revoke"},
 		{"GET", "/v1/admin/orgs/acme/installs/seen"}, {"GET", "/v1/admin/orgs/acme/installs/tags"}, {"PUT", "/v1/admin/orgs/acme/installs/id/tags"},
+		{"PATCH", "/v1/admin/orgs/acme/installs/id/metadata"}, {"POST", "/v1/admin/orgs/acme/installs/metadata/import"},
 		{"GET", "/v1/admin/not-a-route"},
 	}
 	for _, route := range routes {

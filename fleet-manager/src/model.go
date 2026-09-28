@@ -148,10 +148,11 @@ type SeenRecord struct {
 // from InstallRecord for the reason SeenRecord is: renaming a machine must not rewrite the record
 // that carries its device key and revocation status.
 type TagsRecord struct {
-	Schema    int       `json:"schema"`
-	InstallID string    `json:"install_id"`
-	Name      string    `json:"name,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Schema    int               `json:"schema"`
+	InstallID string            `json:"install_id"`
+	Name      string            `json:"name,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+	UpdatedAt time.Time         `json:"updated_at"`
 }
 
 type GrantRecord struct {

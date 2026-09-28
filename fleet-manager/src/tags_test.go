@@ -87,8 +87,8 @@ func TestSetTagRenamesAndClears(t *testing.T) {
 	if code := setTag(t, server, installID, `{"name":""}`); code != http.StatusNoContent {
 		t.Fatalf("clear = %d", code)
 	}
-	if records := listTags(t, server); len(records) != 0 {
-		t.Fatalf("cleared name still listed: %+v", records)
+	if records := listTags(t, server); len(records) != 1 || records[0].Name != "" {
+		t.Fatalf("cleared tags record: %+v", records)
 	}
 }
 

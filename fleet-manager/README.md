@@ -154,24 +154,76 @@ Deployment runbooks:
 ## Install names
 
 An install id is a UUID baked into every object key, and nothing a shipper uploads says who holds
-the machine. The administration UI therefore carries a name per install, stored as
+the machine. The administration UI carries a name and optional administrator-managed metadata per install, stored as
 
 ```
 v1/organization=<org>/install=<install-id>/tags.json
 ```
 
 ```json
-{"schema": 1, "install_id": "…", "name": "Rafal's laptop", "updated_at": "…"}
+{"schema": 1, "install_id": "…", "name": "Rafal's laptop", "metadata": {"email": "rafal@example.com", "mdm": "jamf"}, "updated_at": "…"}
 ```
 
 It sits in the install's own root, beside the objects it names, so a tool walking the bucket can
 resolve an id without asking this service or holding a database credential. That is the whole
 reason it is not another record under `control/`.
 
-`GET /v1/admin/orgs/{org}/installs/tags` returns the fleet's names, read the way the seen records
+`GET /v1/admin/orgs/{org}/installs/tags` returns existing tags records, including records without names, read the way the seen records
 are: one request, fanned out over the installs list, off the critical path so the table renders
 first. `PUT /v1/admin/orgs/{org}/installs/{id}/tags` sets one, and an empty name clears it back to
-the id. A revoked install can still be named — the objects it already wrote still want a label.
+the id. Send `{"name":"Rafal's laptop","if_missing":true}` to fill a missing name while preserving a
+custom name atomically. A revoked install can still be named — the objects it already wrote still want a label.
+
+### Metadata and MDM inventory
+
+Use **Installs → Metadata** to add, edit, or remove fields. Only administrator credentials may
+write these fields; shipper and reporter credentials cannot. Metadata has at most 16 keys matching
+`^[a-z][a-z0-9_]{0,31}$`; values are strings of at most 256 Unicode characters without control
+characters. `email`, `department`, and `mdm` are useful conventions, not reserved fields.
+
+`PATCH /v1/admin/orgs/{org}/installs/{id}/metadata` accepts a partial update:
+
+```json
+{"metadata":{"email":"rafal@example.com","department":"Engineering","old_field":null}}
+```
+
+A string sets one key and `null` removes it; omitted keys stay intact. Naming and metadata updates
+use conditional writes with retries, preserving concurrent changes to other fields. Conflicting
+edits to the same field follow the order of successful writes. Clearing all fields retains the
+existing tags record. Identity records and shipper protocol messages remain separate.
+
+Use **Import MDM inventory** to upload or paste CSV, with `hostname` first and metadata keys as the
+remaining headers. Up to 1000 rows and 1 MiB are accepted. Quote CSV fields containing commas:
+
+```csv
+hostname,email,department,mdm
+Rafal-MacBook,rafal@example.com,Engineering,jamf
+```
+
+The API equivalent is `POST /v1/admin/orgs/{org}/installs/metadata/import`:
+
+```json
+{"rows":[{"hostname":"Rafal-MacBook","metadata":{"email":"rafal@example.com","department":"Engineering","mdm":"jamf"}}]}
+```
+
+Imports merge the supplied keys. The hostname is an exact, case-sensitive lookup within the selected
+organization. A row imports automatically only when exactly one install matches and the inventory
+contains one row for that hostname. Pending and revoked identities count as matches, so a replaced
+install or several users sharing a hostname cannot silently select an identity. The response contains
+`results`, each with its one-based `row`, `hostname`, `status` (`imported`, `unmatched`, `ambiguous`, or
+`error`), and optional `install_id`, matching `candidates`, and `message`.
+
+The UI reports each result and provides install selectors for unresolved rows. Choose distinct
+installs and click **Apply selected rows**, or leave a row unselected to skip it. The API supports the
+same manual choice by including `install_id` in a resubmitted row; that ID must belong to the
+organization. Multiple rows targeting the same install in a request are reported as ambiguous.
+Imported names and unrelated metadata are retained. An import is not a transaction across installs:
+only retry rows that did not succeed. Invalid row data is rejected before any writes; storage errors
+are reported per row.
+
+Existing tags without metadata remain valid. Older fleet-manager releases use a strict tags decoder
+and cannot read records containing metadata; upgrade all replicas before importing and keep this in
+mind when rolling back.
 
 The read costs one narrow grant. The runtime identity is otherwise write-only below `install=`, and
 the templates hold it to the single object name (`InstallNamesRead` on AWS, the `names` role on
