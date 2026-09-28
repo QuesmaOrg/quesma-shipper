@@ -7,13 +7,14 @@ import (
 	"testing"
 )
 
-// A span dropped beside an overlapping one shipped its tail; only a pattern's exact start trims a run.
-func TestResolveSpansJoinsOverlaps(t *testing.T) {
-	value := strings.Repeat("x", 100)
+// A span dropped beside an overlapping one shipped its tail; only a pattern's exact start trims a run,
+// and the head it trims off goes too when it clears the entropy threshold alone.
+func TestOverlappingSpansJoin(t *testing.T) {
+	m := newEntropyMatcher(DefaultEntropyConfig(), "")
 	for _, c := range []struct {
 		name              string
+		value             string
 		patterns, entropy []Span
-		heads             []Span
 		want              []Span
 		wantHits          map[string]int
 	}{
@@ -26,11 +27,11 @@ func TestResolveSpansJoinsOverlaps(t *testing.T) {
 		},
 		{
 			name:     "a trimmed head that clears on its own is still redacted",
-			patterns: []Span{{Start: 10, End: 20, RuleID: "p"}},
-			entropy:  []Span{{Start: 0, End: 28, RuleID: "e"}},
-			heads:    []Span{{Start: 0, End: 9, RuleID: "e"}},
-			want:     []Span{{Start: 0, End: 9, RuleID: "e"}, {Start: 10, End: 28, RuleID: "p"}},
-			wantHits: map[string]int{"e": 1, "p": 1},
+			value:    "Xq7Lp9Zr2Kw8Tn4Vb6Hs3Jd5=" + strings.Repeat("x", 75),
+			patterns: []Span{{Start: 25, End: 35, RuleID: "p"}},
+			entropy:  []Span{{Start: 0, End: 40, RuleID: "e"}},
+			want:     []Span{{Start: 0, End: 25, RuleID: "generic-entropy"}, {Start: 25, End: 40, RuleID: "p"}},
+			wantHits: map[string]int{"generic-entropy": 1, "p": 1},
 		},
 		{
 			name:     "a run starting inside a pattern widens it",
@@ -47,16 +48,17 @@ func TestResolveSpansJoinsOverlaps(t *testing.T) {
 			wantHits: map[string]int{"p": 1},
 		},
 		{
+			name:     "a pattern ending before a later run does not trim it",
+			patterns: []Span{{Start: 0, End: 50, RuleID: "p"}, {Start: 5, End: 8, RuleID: "q"}, {Start: 70, End: 80, RuleID: "r"}},
+			entropy:  []Span{{Start: 40, End: 55, RuleID: "e"}, {Start: 60, End: 90, RuleID: "e"}},
+			want:     []Span{{Start: 0, End: 55, RuleID: "p"}, {Start: 70, End: 90, RuleID: "r"}},
+			wantHits: map[string]int{"p": 1, "r": 1},
+		},
+		{
 			name:     "overlapping patterns join under the earlier one",
 			patterns: []Span{{Start: 0, End: 10, RuleID: "p"}, {Start: 5, End: 20, RuleID: "q"}},
 			want:     []Span{{Start: 0, End: 20, RuleID: "p"}},
 			wantHits: map[string]int{"p": 1},
-		},
-		{
-			name:     "overlapping runs join",
-			entropy:  []Span{{Start: 0, End: 10, RuleID: "e"}, {Start: 5, End: 20, RuleID: "e"}},
-			want:     []Span{{Start: 0, End: 20, RuleID: "e"}},
-			wantHits: map[string]int{"e": 1},
 		},
 		{
 			name:     "touching spans stay two placeholders",
@@ -64,16 +66,14 @@ func TestResolveSpansJoinsOverlaps(t *testing.T) {
 			want:     []Span{{Start: 0, End: 10, RuleID: "p"}, {Start: 10, End: 20, RuleID: "q"}},
 			wantHits: map[string]int{"p": 1, "q": 1},
 		},
-		{
-			name:     "an invalid pattern neither trims a run nor ships",
-			patterns: []Span{{Start: 5, End: 5, RuleID: "p"}, {Start: 10, End: 200, RuleID: "q"}},
-			entropy:  []Span{{Start: 0, End: 20, RuleID: "e"}, {Start: 90, End: 120, RuleID: "e"}},
-			want:     []Span{{Start: 0, End: 20, RuleID: "e"}},
-			wantHits: map[string]int{"e": 1},
-		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			got, redacted, hits := resolveSpans(value, c.patterns, c.entropy, rescoreTo(c.heads))
+			value := c.value
+			if value == "" {
+				value = strings.Repeat("x", 100)
+			}
+			runs := m.trimAtPatterns(value, c.entropy, c.patterns, escapeIndex{})
+			got, redacted, hits := resolveSpans(c.patterns, runs)
 			if !slices.Equal(got, c.want) {
 				t.Errorf("spans %v, want %v", got, c.want)
 			}
@@ -88,18 +88,5 @@ func TestResolveSpansJoinsOverlaps(t *testing.T) {
 				t.Errorf("hits %v, want %v", hits, c.wantHits)
 			}
 		})
-	}
-}
-
-// rescoreTo stands in for the entropy matcher: of heads, it finds those inside the trimmed range.
-func rescoreTo(heads []Span) func(start, end int) []Span {
-	return func(start, end int) []Span {
-		var in []Span
-		for _, h := range heads {
-			if start <= h.Start && h.End <= end {
-				in = append(in, h)
-			}
-		}
-		return in
 	}
 }

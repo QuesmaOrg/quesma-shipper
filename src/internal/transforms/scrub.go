@@ -460,19 +460,10 @@ func (s *Scrubber) planValueWith(
 		}
 	}
 
-	var rescore func(start, end int) []Span
-	if entropy != nil {
-		rescore = func(start, end int) []Span {
-			spans := entropy.Match(value[start:end])
-			for i := range spans {
-				spans[i].Start += start
-				spans[i].End += start
-			}
-			escapes.snapAll(spans)
-			return spans
-		}
+	if len(patternSpans) > 0 && len(heuristicSpans) > 0 {
+		heuristicSpans = entropy.trimAtPatterns(value, heuristicSpans, patternSpans, escapes)
 	}
-	resolved, redacted, hits := resolveSpans(value, patternSpans, heuristicSpans, rescore)
+	resolved, redacted, hits := resolveSpans(patternSpans, heuristicSpans)
 	plan := valuePlan{redacted: redacted, hits: hits}
 	for _, span := range resolved {
 		plan.spans = append(plan.spans, replacementSpan{
