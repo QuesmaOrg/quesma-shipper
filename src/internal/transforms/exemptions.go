@@ -1,8 +1,9 @@
 package transforms
 
 // CompiledExemptions is the compiled baseline: an entry must be an exact field path naming
-// a field that structurally cannot carry a user secret. Detector-scoped, so the pattern
-// packs still scan these fields. The copy is fresh, since callers merge served additions in.
+// a field that structurally cannot carry a user secret, or "<path>.*" for the keys of a map
+// keyed by ids. Detector-scoped, so the pattern packs still scan these fields and keys. The
+// copy is fresh, since callers merge served additions in.
 func CompiledExemptions() map[string][]string {
 	return map[string][]string{
 		"claude-code": {
@@ -25,10 +26,14 @@ func CompiledExemptions() map[string][]string {
 			// A filesystem path by construction, and the source of the per-repository
 			// dimension downstream (repo is its basename).
 			"cwd",
+			// Maps keyed by the tool_use id (toolu_…): the key is the join to the tool_use block.
+			"wireToolInputs.*", "wireIngestContext.*",
 		},
 		"codex": {
 			// The rollout's tool-call join id (call_…): codex's tool_use_id.
 			"payload.call_id",
+			// A patch's changed files, keyed by path: a hash-named directory must not tear the path.
+			"payload.item.changes.*",
 		},
 		"cursor": {
 			"composerId", "bubbleId", "checkpointId", "requestId",

@@ -87,6 +87,12 @@ func (e *ExemptionSet) Exempt(family string, field FieldPath) bool {
 	return e.byFamily[family][field]
 }
 
+// ExemptKeys reports whether a "<parent>.*" entry covers the keys of the object at parent:
+// a map keyed by ids has no fixed path to name. It covers the keys only, never their values.
+func (e *ExemptionSet) ExemptKeys(family string, parent FieldPath) bool {
+	return e.Exempt(family, FieldPath(joinFieldPath(string(parent), "*")))
+}
+
 // prioritizedSpan carries the matcher class alongside the span, so overlapping
 // matches resolve by confidence rather than alphabetically.
 type prioritizedSpan struct {
