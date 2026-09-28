@@ -34,10 +34,10 @@ type UpdateStatus struct {
 	Latest    string
 	Published time.Time
 	Detail    string
-	Fix       string // the exact command, rendered as an arrow line under the header
+	Fix       string // remedy rendered as an arrow line under the header
 }
 
-func checkUpdate(ctx context.Context, build Build, autoupdate bool, getenv func(string) string,
+func checkUpdate(ctx context.Context, build Build, autoupdate, systemManaged bool, getenv func(string) string,
 	check func(context.Context, packaging.UpdateOptions) (string, time.Time, bool, error)) UpdateStatus {
 	if getenv(NoSelfUpdateEnv) != "" {
 		return UpdateStatus{State: "disabled", Detail: "check disabled by " + NoSelfUpdateEnv}
@@ -59,9 +59,13 @@ func checkUpdate(ctx context.Context, build Build, autoupdate bool, getenv func(
 	case err != nil:
 		return UpdateStatus{State: "failed", Detail: fmt.Sprintf("check failed - %v", err)}
 	case available:
+		fix := "quesma-shipper update"
+		if systemManaged {
+			fix = "ask an administrator to deploy the newer macOS package through MDM"
+		}
 		return UpdateStatus{State: "available", Latest: latest, Published: published,
 			Detail: fmt.Sprintf("%s available (%s)", latest, published.Format("2006-01-02")),
-			Fix:    "quesma-shipper update"}
+			Fix:    fix}
 	default:
 		return UpdateStatus{State: "current", Latest: latest, Published: published,
 			Detail: fmt.Sprintf("up to date (newest release is %s%s)", latest, when)}
@@ -392,10 +396,14 @@ func enricherIssues(name string, src config.ResolvedSource) []Row {
 	for _, p := range probeEnrichers(src) {
 		switch {
 		case p.err != nil:
+			fix := "`quesma-shipper update` may carry it"
+			if packaging.SystemManaged() {
+				fix = "a newer macOS package deployed by your administrator may carry it"
+			}
 			rows = append(rows, Row{Sev: SevWarn, Sub: true, Label: "  database",
 				Brief:  name + ": enricher missing from this build",
 				Detail: "tool results and timestamps are not captured - enricher " + p.id + " is not in this build",
-				Fix:    "`quesma-shipper update` may carry it"})
+				Fix:    fix})
 		case !p.on:
 			rows = append(rows, Row{Sev: SevDim, Label: "  database",
 				Detail: "enrichment disabled - no tool results, call ids or timestamps"})
