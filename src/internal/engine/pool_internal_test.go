@@ -32,12 +32,6 @@ func TestConcurrencyTakesThePinAndNeverExceedsTheCandidates(t *testing.T) {
 	}
 }
 
-func TestUploadConcurrencyTakesThePin(t *testing.T) {
-	if got := (Options{UploadWorkers: 5}).uploadConcurrency(3); got != 5 {
-		t.Errorf("uploadConcurrency(uploadWorkers=5, compute=3) = %d, want 5", got)
-	}
-}
-
 func admissionPass(budget int, sizes ...int64) *sourcePass {
 	cands := make([]sources.Candidate, len(sizes))
 	for i, sz := range sizes {

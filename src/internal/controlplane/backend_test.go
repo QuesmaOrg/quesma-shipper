@@ -150,8 +150,11 @@ func (p *fakePlane) client(t *testing.T, endpoint, install string) *controlplane
 
 const installID = "0f5a6b3c-1d2e-4f60-8a9b-1c2d3e4f5061"
 
-func TestEnrollStoresWhatTheServerAssigns(t *testing.T) {
+// Organization is server-assigned: an answer without one must not leave an install that
+// later places itself in some org's subtree.
+func TestEnrollRefusesAnAnswerWithoutAnOrganization(t *testing.T) {
 	p := newPlane(t)
+	p.enrollOrg = ""
 	srv := p.start()
 
 	c, err := controlplane.New(controlplane.Options{Endpoint: srv.URL})
@@ -163,12 +166,8 @@ func TestEnrollStoresWhatTheServerAssigns(t *testing.T) {
 		DevicePublicKey: "device-pub",
 		AgeRecipient:    "age1recipient",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Organization is server-assigned: an install must not place itself in another org's subtree.
-	if resp.Organization != "acme" {
-		t.Errorf("organization = %q, want acme", resp.Organization)
+	if err == nil {
+		t.Fatalf("accepted an enrollment with no organization: %+v", resp)
 	}
 }
 

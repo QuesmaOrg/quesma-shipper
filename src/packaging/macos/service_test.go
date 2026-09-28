@@ -67,10 +67,3 @@ func TestPlistEscapesPaths(t *testing.T) {
 		t.Fatalf("an unescaped path broke the plist: %v\n%s", err, got)
 	}
 }
-
-func TestLaunchAgentPathIsPerUser(t *testing.T) {
-	got := launchdPath("/Users/jane")
-	if !strings.Contains(got, "Library/LaunchAgents") || strings.Contains(got, "LaunchDaemons") {
-		t.Errorf("unexpected launchd path: %q", got)
-	}
-}

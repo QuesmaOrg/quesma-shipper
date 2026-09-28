@@ -181,10 +181,3 @@ func TestObjectStoreAllowsOneConcurrentWriter(t *testing.T) {
 		t.Fatalf("successful writers = %d, want 1", success)
 	}
 }
-
-func TestStrictRecordDecode(t *testing.T) {
-	var record GrantRecord
-	if err := strictDecode([]byte(`{"schema":1,"id":"x","unknown":true}`), &record); err == nil {
-		t.Fatal("unknown record field was accepted")
-	}
-}

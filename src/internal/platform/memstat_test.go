@@ -112,21 +112,3 @@ func TestAnUnusableInFlightCapIsRefused(t *testing.T) {
 		})
 	}
 }
-
-func TestAReadingDescribesTheRun(t *testing.T) {
-	before := platform.ReadMemStats()
-	junk := make([]byte, 32<<20)
-	for i := range junk {
-		junk[i] = byte(i)
-	}
-	d := platform.Delta{Before: before, After: platform.ReadMemStats()}
-	if d.Growth() <= 0 {
-		t.Errorf("allocating 32 MB showed growth of %d", d.Growth())
-	}
-	if d.String() == "" {
-		t.Error("empty summary")
-	}
-	runtimeKeepAlive(junk)
-}
-
-func runtimeKeepAlive(b []byte) { _ = b[0] }

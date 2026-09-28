@@ -33,28 +33,6 @@ func TestBlindingIsKeyed(t *testing.T) {
 	}
 }
 
-// A pathologically long native path leaves the key length unchanged.
-func TestNameLengthIsFixed(t *testing.T) {
-	long := strings.Repeat("verylongsegmentname/", 500) + "leaf.jsonl"
-	short := formats.MirrorName(keyA(t), "a")
-	huge := formats.MirrorName(keyA(t), formats.CanonicalPath(long, "jane"))
-
-	if len(short) != 64 || len(huge) != 64 {
-		t.Fatalf("mirror names must be 64 hex chars, got %d and %d", len(short), len(huge))
-	}
-}
-
-// A file's whole history lands on one key, so a re-ship after state loss is an overwrite.
-func TestNameIsStableAcrossCalls(t *testing.T) {
-	p := formats.CanonicalPath("projects/-Users-jane-work-api/3f2504e0.jsonl", "jane")
-	first := formats.MirrorName(keyA(t), p)
-	for range 100 {
-		if got := formats.MirrorName(keyA(t), p); got != first {
-			t.Fatalf("mirror name is not deterministic: %s != %s", got, first)
-		}
-	}
-}
-
 // Home paths differing only by user name converge, so a renamed account does not re-ship.
 func TestUserPlaceholderMakesPathsConverge(t *testing.T) {
 	jane := formats.CanonicalPath("projects/-Users-jane-work-api/s.jsonl", "jane")

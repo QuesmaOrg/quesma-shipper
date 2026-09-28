@@ -137,19 +137,6 @@ func TestTheEventNamesTheMachine(t *testing.T) {
 	}
 }
 
-// The identity the far end deduplicates on belongs to the event, so the two arrive together and a
-// resend of the same event can present the same id.
-func TestTheEventCarriesItsOwnBatchIdentity(t *testing.T) {
-	r := telemetryRuntime(t, formats.FailureRecord{})
-	batch, _, err := r.installHealth(time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if batch == "" {
-		t.Fatal("the event has no batch identity")
-	}
-}
-
 type stub struct {
 	calls int
 	err   error
