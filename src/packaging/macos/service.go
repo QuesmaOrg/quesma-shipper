@@ -101,7 +101,7 @@ func renderPlist(spec Spec) string {
 `, bundleIdentifier, bundleIdentifier, argXML.String(), envXML.String(), sessionXML, stop, logXML)
 }
 
-const launchctl = "/bin/launchctl"
+var launchctl = "/bin/launchctl"
 
 func guiDomain() string  { return fmt.Sprintf("gui/%d", os.Getuid()) }
 func guiService() string { return guiDomain() + "/" + bundleIdentifier }
@@ -216,35 +216,59 @@ func waitForServiceGone(target string, within time.Duration) error {
 }
 
 func UninstallService() error {
-	if SystemManaged() {
+	exe, err := common.CurrentExecutable()
+	if err != nil {
+		return err
+	}
+	if systemExecutable(exe) {
 		return errSystemManaged
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
+	return uninstallPersonalService(exe, home)
+}
+
+func uninstallPersonalService(exe, home string) error {
 	path := launchdPath(home)
-	if exe, err := common.CurrentExecutable(); err != nil {
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return err
-	} else if root := common.HomebrewCaskRoot(exe); root != "" {
-		if owned, err := ownsHomebrewService(exe, path); err != nil || !owned {
-			return err
-		}
+	}
+	if program := common.ServiceProgram(Status{Path: path}); program != exe {
+		return fmt.Errorf("another installation owns the background service (%s)", program)
 	}
 	target := guiService()
 
-	// Unload BEFORE removing the file, or a running agent survives with no plist to stop it.
-	if out, err := exec.Command(launchctl, "bootout", target).CombinedOutput(); err != nil {
-		trimmed := strings.TrimSpace(string(out))
-		// "No such process" means it was not loaded, which is the state we want anyway.
-		if !strings.Contains(trimmed, "No such process") && !strings.Contains(trimmed, "not find") {
-			return fmt.Errorf("supervise: launchctl bootout: %w: %s", err, trimmed)
+	// A system agent can own the same label while a dormant personal plist remains.
+	if out, err := exec.Command(launchctl, "print", target).CombinedOutput(); err == nil {
+		loadedPath := launchdServicePath(string(out))
+		if loadedPath == "" {
+			return fmt.Errorf("supervise: cannot determine which LaunchAgent owns %s", target)
 		}
+		if loadedPath == path {
+			if out, err := exec.Command(launchctl, "bootout", target).CombinedOutput(); err != nil {
+				return fmt.Errorf("supervise: launchctl bootout: %w: %s", err, strings.TrimSpace(string(out)))
+			}
+		}
+	} else if !strings.Contains(string(out), "Could not find service") && !strings.Contains(string(out), "not find") {
+		return fmt.Errorf("supervise: launchctl print: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("supervise: remove %s: %w", path, err)
 	}
 	return nil
+}
+
+func launchdServicePath(out string) string {
+	for _, line := range strings.Split(out, "\n") {
+		if path, ok := strings.CutPrefix(strings.TrimSpace(line), "path = "); ok {
+			return path
+		}
+	}
+	return ""
 }
 
 // An old cask must not stop a replacement installation during cleanup or rollback.
@@ -269,7 +293,7 @@ func ServiceState(ctx context.Context) Status {
 		return st
 	}
 	st.Path = launchdPath(home)
-	if SystemManaged() {
+	if exe, err := common.CurrentExecutable(); err == nil && systemExecutable(exe) {
 		st.Path = systemAgentPath
 	}
 	if _, err := os.Stat(st.Path); err == nil {
@@ -285,6 +309,10 @@ func ServiceState(ctx context.Context) Status {
 		default:
 			st.Detail = "no agent installed; `quesma-shipper run` works in the foreground"
 		}
+		return st
+	}
+	if loadedPath := launchdServicePath(string(out)); loadedPath != "" && loadedPath != st.Path {
+		st.Detail = "another installation owns the loaded LaunchAgent: " + loadedPath
 		return st
 	}
 	st.Loaded = true

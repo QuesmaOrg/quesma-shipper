@@ -3,6 +3,7 @@
 package macos
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -43,8 +44,8 @@ func TestPersonalUninstallRemainsAvailableWhenSystemAgentExists(t *testing.T) {
 	if err := ValidateUserUninstall(); err != nil {
 		t.Fatalf("personal executable could not uninstall: %v", err)
 	}
-	if err := UninstallService(); !errors.Is(err, errSystemManaged) {
-		t.Fatalf("direct service removal could stop the system agent: %v", err)
+	if got := ServiceState(context.Background()).Path; got == systemAgentPath {
+		t.Fatalf("personal executable selected the system service: %s", got)
 	}
 }
 
