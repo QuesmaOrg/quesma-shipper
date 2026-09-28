@@ -40,6 +40,7 @@
       "parentId",
       "data.toolCallId",
       "data.toolRequests[].toolCallId",
+      "data.parentToolCallId",
       "data.permissionRequest.toolCallId",
       "data.promptRequest.toolCallId",
       "data.apiCallId",
@@ -83,7 +84,18 @@
       "v[].response[].invocationMessage.uris.*",
       "v[].response[].pastTenseMessage.uris.*",
       "v.requests[].response[].invocationMessage.uris.*",
-      "v.requests[].response[].pastTenseMessage.uris.*"
+      "v.requests[].response[].pastTenseMessage.uris.*",
+      "requests[].requestId",
+      "requests[].responseId",
+      "requests[].response[].id",
+      "requests[].response[].toolCallId",
+      "requests[].result.metadata.toolCallRounds[].toolCalls[].id",
+      "requests[].result.metadata.toolCallRounds[].thinking.id",
+      "requests[].result.metadata.toolCallRounds[].thinking.encrypted",
+      "requests[].result.metadata.toolCallRounds[].statefulMarker",
+      "requests[].result.metadata.toolCallResults.*",
+      "requests[].response[].invocationMessage.uris.*",
+      "requests[].response[].pastTenseMessage.uris.*"
     ],
     "cursor": [
       "composerId",
