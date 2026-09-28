@@ -2,8 +2,8 @@
 # landscape: a uniform {timestamp, type, payload} envelope on every line, and the
 # only surveyed agent that natively records the git remote.
 #
-# Scope is v1 row: rollout JSONL including compressed and archived
-# rollouts, plus the name index. Deferred to v1.1: the index databases
+# Scope is v1 row: rollout JSONL including compressed (decoded on load) and
+# archived rollouts, plus the name index. Deferred to v1.1: the index databases
 # (state_5 / memories_1 / goals_1) — capturing a database is enricher work.
 #
 # No TTL deletion of rollouts, unlike Claude Code's 30-day reaper.
@@ -17,7 +17,9 @@ sources:
       Live rollouts under sessions/<YYYY>/<MM>/<DD>/ plus the flat archived_sessions/
       tree. Append-only with per-item flush; the writer repairs a truncated last
       line on reopen, which is a drift signal here and never a reason to fix a tail
-      client-side.
+      client-side. A background worker zstd-compresses rollouts older than about a
+      week to .jsonl.zst, replacing the plaintext; the loader decodes them, so they
+      are scrubbed and shipped as plaintext JSONL under the same session identity.
     gather: file_glob
     artifact_class: trajectory
     roots:
@@ -37,35 +39,23 @@ sources:
     # gigabytes in flight, which is why the daemon's soft memory limit moved with it. A family
     # that can legitimately produce files this size is the argument for streaming the read,
     # hash, redact and seal path instead of buffering it — the cap is what keeps the daemon
-    # alive until that exists.
+    # alive until that exists. For a .jsonl.zst rollout the cap applies to the decoded size.
     max_file_bytes: 536870912
     include:
       - "sessions/**/*.jsonl"
+      - "sessions/**/*.jsonl.zst"
       - "archived_sessions/**/*.jsonl"
+      - "archived_sessions/**/*.jsonl.zst"
       - "session_index.jsonl"
+    # One object per session, whatever form it is in: the session UUID in the file name is the
+    # identity, so archiving or compressing a rollout overwrites its object rather than adding one.
+    # session_index.jsonl does not match and keeps its path identity.
+    identity:
+      match: '(?:^|/)rollout-[^/]*-([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})\.jsonl(?:\.zst)?$'
+      key: 'codex-session/$1'
     sniff:
       kind: jsonl
       max_scan_bytes: 65536
-
-  - id: codex-rollouts-compressed
-    description: >-
-      Cold rollouts: a background worker zstd-compresses rollouts older than about
-      a week, so the same session can exist as .jsonl and later only as .jsonl.zst.
-      Shipped once by whole-file hash; a moved path with an identical hash is
-      dedupe, not a re-ship. Treat compression replacing a plaintext rollout as
-      rename-plus-replace, never deletion.
-    gather: compressed_file
-    artifact_class: trajectory
-    roots:
-      - $CODEX_HOME
-      - ~/.codex
-    require_subdir: sessions
-    include:
-      - "sessions/**/*.jsonl.zst"
-      - "archived_sessions/**/*.jsonl.zst"
-    sniff:
-      kind: magic
-      magic_hex: "28b52ffd"
 
   - id: codex-account
     description: Account and raw provider usage snapshots each collection interval.

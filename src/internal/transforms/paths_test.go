@@ -53,7 +53,7 @@ func TestOrdinaryPathsSurviveTheEntropyBackstop(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			res := scrubJSONL(t, s, "claude-code", c.line+"\n")
-			out := string(res.Out)
+			out := string(res.Out.Bytes())
 
 			if res.RuleHits["generic-entropy"] != 0 {
 				t.Errorf("the entropy backstop fired on a path: %v\n%s", res.RuleHits, out)
@@ -76,8 +76,8 @@ func TestUserPlaceholderNeverTripsTheEntropyBackstop(t *testing.T) {
 		`"message":{"content":[{"type":"text","text":"logs under ~/.claude/projects/-Users-__USER__-Work2026-SampleOrg-blink-UI/f00.jsonl"}]}}` + "\n"
 
 	res := scrubJSONL(t, s, "claude-code", payload)
-	if string(res.Out) != payload {
-		t.Errorf("already-placeholdered content changed:\n got %s\nwant %s", res.Out, payload)
+	if string(res.Out.Bytes()) != payload {
+		t.Errorf("already-placeholdered content changed:\n got %s\nwant %s", res.Out.Bytes(), payload)
 	}
 	if len(res.RuleHits) != 0 {
 		t.Errorf("no rule should fire on already-scrubbed shapes: %v", res.RuleHits)
@@ -94,8 +94,8 @@ func TestSentinelGlueNeverTripsTheEntropyBackstop(t *testing.T) {
 	payload := `{"type":"user","uuid":"u1","message":{"content":[{"type":"text","text":"https://www.linkedin.com/posts/john-doe-1234567_acme-fastest-software-company-to-100m-in-activity-__REDACTED:card-pan__-KzYA"}]}}` + "\n"
 
 	res := scrubJSONL(t, s, "claude-code", payload)
-	if string(res.Out) != payload {
-		t.Errorf("a second pass rewrote a sentinel-bearing value:\n got %s\nwant %s", res.Out, payload)
+	if string(res.Out.Bytes()) != payload {
+		t.Errorf("a second pass rewrote a sentinel-bearing value:\n got %s\nwant %s", res.Out.Bytes(), payload)
 	}
 	if res.RuleHits["generic-entropy"] != 0 {
 		t.Errorf("the backstop fired on its own sentinel's surroundings: %v", res.RuleHits)
@@ -134,8 +134,8 @@ func TestLabeledSecretsWithSlashesAreStillCaught(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			line := `{"type":"user","uuid":"u1","toolUseResult":{"stdout":"` + c.text + `"}}`
 			res := scrubJSONL(t, s, "claude-code", line+"\n")
-			if strings.Contains(string(res.Out), c.secret) {
-				t.Errorf("a labeled slash-bearing secret survived:\n%s", res.Out)
+			if strings.Contains(string(res.Out.Bytes()), c.secret) {
+				t.Errorf("a labeled slash-bearing secret survived:\n%s", res.Out.Bytes())
 			}
 		})
 	}
@@ -152,7 +152,7 @@ func TestBareBase64WithSlashIsAKnownEscape(t *testing.T) {
 	line := `{"type":"user","uuid":"u1","message":{"content":[{"type":"text","text":"deploy with ` + bare + ` for now"}]}}`
 
 	res := scrubJSONL(t, s, "claude-code", line+"\n")
-	if !strings.Contains(string(res.Out), bare) {
+	if !strings.Contains(string(res.Out.Bytes()), bare) {
 		t.Error("the backstop now catches bare slash-bearing base64 — the trade-off moved; update this note")
 	}
 }

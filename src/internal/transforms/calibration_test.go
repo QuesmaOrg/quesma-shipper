@@ -26,10 +26,10 @@ func TestSeededCorpusCalibration(t *testing.T) {
 	for i, line := range benign {
 		res := scrubJSONL(t, s, "claude-code", line+"\n")
 		if res.RuleHits["generic-entropy"] != 0 {
-			t.Errorf("benign line %d drew an entropy hit:\n in %s\nout %s", i, line, res.Out)
+			t.Errorf("benign line %d drew an entropy hit:\n in %s\nout %s", i, line, res.Out.Bytes())
 		}
-		if strings.Contains(string(res.Out), "__REDACTED:") {
-			t.Errorf("benign line %d was redacted by %v:\n in %s\nout %s", i, res.RuleHits, line, res.Out)
+		if strings.Contains(string(res.Out.Bytes()), "__REDACTED:") {
+			t.Errorf("benign line %d was redacted by %v:\n in %s\nout %s", i, res.RuleHits, line, res.Out.Bytes())
 		}
 	}
 
@@ -79,8 +79,8 @@ func TestSeededCorpusCalibration(t *testing.T) {
 			line := `{"type":"user","uuid":"p1","toolUseResult":{"stdout":"` + p.text + `"}}`
 			corpus = append(corpus, line)
 			res := scrubJSONL(t, s, "claude-code", line+"\n")
-			if strings.Contains(string(res.Out), secret) {
-				t.Errorf("planted secret survived:\n in %s\nout %s", line, res.Out)
+			if strings.Contains(string(res.Out.Bytes()), secret) {
+				t.Errorf("planted secret survived:\n in %s\nout %s", line, res.Out.Bytes())
 			}
 			if p.rule != "" && res.RuleHits[p.rule] == 0 {
 				t.Errorf("expected %q to claim the hit, ledger was %v", p.rule, res.RuleHits)

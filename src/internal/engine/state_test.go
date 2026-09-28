@@ -36,10 +36,7 @@ func seedForeignDoc(t *testing.T, dir string, entries int) {
 }
 
 func key(path string) engine.Key {
-	return engine.Key{
-		SourceID:   "claude-code-transcripts",
-		NativePath: path,
-	}
+	return engine.Key{SourceID: "claude-code-transcripts", ID: path}
 }
 
 // fixedMTime keeps the fixture deterministic. The nanoseconds are not decoration: a whole-second
@@ -275,7 +272,7 @@ func TestMissingFieldsLoadAsZeroValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a well-formed document must load: %v", err)
 	}
-	k := engine.Key{SourceID: "claude-code-transcripts", NativePath: "/x/a.jsonl"}
+	k := engine.Key{SourceID: "claude-code-transcripts", ID: "/x/a.jsonl"}
 	fp, ok := loaded.Entries[k]
 	if !ok {
 		t.Fatalf("entry missing; document loaded as %+v", loaded.Entries)
@@ -299,7 +296,7 @@ func TestALegacySinkETagLoadsAndIsDropped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a document carrying sink_etag must still load: %v", err)
 	}
-	k := engine.Key{SourceID: "claude-code-transcripts", NativePath: "/x/a.jsonl"}
+	k := engine.Key{SourceID: "claude-code-transcripts", ID: "/x/a.jsonl"}
 	fp, ok := loaded.Entries[k]
 	if !ok {
 		t.Fatalf("entry missing; document loaded as %+v", loaded.Entries)
@@ -322,6 +319,115 @@ func TestALegacySinkETagLoadsAndIsDropped(t *testing.T) {
 	}
 }
 
+// A document an earlier binary wrote, checksum included, loads with its path as the key: logical
+// identity is additive, so no install loses its fingerprints to the upgrade.
+func TestAPreIdentityDocumentLoadsKeyedByPath(t *testing.T) {
+	dir := t.TempDir()
+	doc := `{"state_schema": 1, "install_id": "` + installID + `", "updated_at": "2026-09-01T00:00:00Z",
+  "source_specs": {"claude-code-transcripts": "` + sha + `"},
+  "checksum": "438d9b39765294da524980b655a90f70d63d63407fc32b1fe2a883212b35410c",
+  "entries": [{"source_id": "claude-code-transcripts", "native_path": "/x/a.jsonl", "source_size": 4096,
+    "source_mtime": "2026-07-30T10:00:00.987654321Z", "source_hash": "` + sha + `"}]}`
+	if err := os.WriteFile(filepath.Join(dir, engine.FileName), []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := engine.Peek(dir)
+	if err != nil {
+		t.Fatalf("a pre-identity document must load: %v", err)
+	}
+	fp, ok := loaded.Entries[key("/x/a.jsonl")]
+	if !ok {
+		t.Fatalf("entry is not keyed by its path; document loaded as %+v", loaded.Entries)
+	}
+	if fp.SourceHash != sha || fp.NativePath != "" {
+		t.Errorf("a path-keyed entry loaded as %+v", fp)
+	}
+}
+
+// An older binary drops the identity field it does not know, so an entry it could read must not
+// carry one: path-keyed entries keep their exact pre-identity bytes.
+func TestAPathKeyedEntryWritesNoIdentity(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	fp := fingerprint()
+	fp.NativePath = "/x/a.jsonl"
+	if err := commit(s, key("/x/a.jsonl"), fp); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, engine.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"identity"`) {
+		t.Errorf("a path-keyed entry carries an identity:\n%s", raw)
+	}
+}
+
+// A logical identity survives a reload with the path it was last seen at, which is what Prune tests.
+func TestAnIdentityEntryRoundTripsWithItsObservedPath(t *testing.T) {
+	dir := t.TempDir()
+	path := "/h/.codex/archived_sessions/rollout-2026-09-01T10-00-00-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b.jsonl"
+	k := engine.Key{SourceID: "codex-rollouts", ID: "codex-session/0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"}
+	fp := fingerprint()
+	fp.NativePath = path
+
+	s := open(t, dir)
+	if err := commit(s, k, fp); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	raw, err := os.ReadFile(filepath.Join(dir, engine.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"native_path": "` + path + `"`, `"identity": "` + k.ID + `"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("document lacks %s:\n%s", want, raw)
+		}
+	}
+
+	got, ok := open(t, dir).Get(k)
+	if !ok {
+		t.Fatal("an identity entry did not survive a reload")
+	}
+	if got.NativePath != path || got.SourceHash != sha {
+		t.Errorf("identity entry reloaded as %+v", got)
+	}
+}
+
+// Prune tests the last observed path of an identity entry, never its identity, which is not a path.
+func TestPruneTestsTheObservedPathOfAnIdentityEntry(t *testing.T) {
+	dir := t.TempDir()
+	present := filepath.Join(t.TempDir(), "rollout-a.jsonl.zst")
+	if err := os.WriteFile(present, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	alive := engine.Key{SourceID: "codex-rollouts", ID: "codex-session/a"}
+	gone := engine.Key{SourceID: "codex-rollouts", ID: "codex-session/b"}
+	aliveFP, goneFP := fingerprint(), fingerprint()
+	aliveFP.NativePath = present
+	goneFP.NativePath = filepath.Join(filepath.Dir(present), "rollout-b.jsonl")
+
+	s := open(t, dir)
+	if err := s.CommitAll(map[engine.Key]engine.Fingerprint{alive: aliveFP, gone: goneFP}); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	removed, kept, err := engine.Prune(dir, installID, false)
+	if err != nil || removed != 1 || kept != 1 {
+		t.Fatalf("prune: removed=%d kept=%d err=%v, want 1 and 1", removed, kept, err)
+	}
+	doc, err := engine.Peek(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc.Entries[alive]; !ok {
+		t.Error("prune dropped an identity entry whose file exists")
+	}
+}
+
 // The schema is enforced on the way out, so a bad commit fails and the old document stays.
 func TestCommitOfAnUnserializableEntryFails(t *testing.T) {
 	dir := t.TempDir()
@@ -334,11 +440,7 @@ func TestCommitOfAnUnserializableEntryFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bad := engine.Key{
-		SourceID:   "claude-code-transcripts",
-		NativePath: "",
-	}
-	if err := commit(s, bad, fingerprint()); err == nil {
+	if err := commit(s, key(""), fingerprint()); err == nil {
 		t.Fatal("a document that would not satisfy its own schema must not be written")
 	}
 
@@ -426,9 +528,9 @@ func TestEnsureSpecDropsOnlyTheChangedSource(t *testing.T) {
 		}
 	}
 	entries := []engine.Key{
-		{SourceID: "claude-code-transcripts", NativePath: "/x/a.jsonl"},
-		{SourceID: "claude-code-transcripts", NativePath: "/x/b.jsonl"},
-		{SourceID: "codex-rollouts", NativePath: "/y/r.jsonl"},
+		{SourceID: "claude-code-transcripts", ID: "/x/a.jsonl"},
+		{SourceID: "claude-code-transcripts", ID: "/x/b.jsonl"},
+		{SourceID: "codex-rollouts", ID: "/y/r.jsonl"},
 	}
 	for _, k := range entries {
 		if err := commit(s, k, fingerprint()); err != nil {
@@ -456,8 +558,8 @@ func TestDerivedEntryRoundTrip(t *testing.T) {
 	s := open(t, dir)
 
 	k := engine.Key{
-		SourceID:   "cursor-transcripts",
-		NativePath: "/c/c8cbeb0b.jsonl.enriched.jsonl",
+		SourceID: "cursor-transcripts",
+		ID:       "/c/c8cbeb0b.jsonl.enriched.jsonl",
 	}
 	fp := fingerprint()
 	fp.Enricher = &engine.EnricherRef{ID: "cursor-transcript-join", Version: 1}

@@ -89,7 +89,7 @@ func pendingFile(doc engine.Document, src config.ResolvedSource, c sources.Candi
 	if stored, known := doc.SourceSpecs[src.ID]; known && stored != src.SpecFingerprint {
 		return true
 	}
-	fp, seen := doc.Entries[engine.Key{SourceID: src.ID, NativePath: c.Path}]
+	fp, seen := doc.Entries[engine.KeyOf(src.ID, c)]
 	return !seen || fp.SourceSize != c.Size || fp.SourceMTime.UnixNano() != c.MTime.UnixNano()
 }
 

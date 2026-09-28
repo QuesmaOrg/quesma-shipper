@@ -77,14 +77,14 @@ func TestRepresentativeLeaksAreRedacted(t *testing.T) {
 			line := `{"type":"user","message":{"content":[{"type":"text","text":"the key is ` + c.secret + ` ok"}]}}`
 			res := scrubJSONL(t, s, "claude-code", line+"\n")
 
-			if strings.Contains(string(res.Out), c.secret) {
-				t.Errorf("secret survived:\n%s", res.Out)
+			if strings.Contains(string(res.Out.Bytes()), c.secret) {
+				t.Errorf("secret survived:\n%s", res.Out.Bytes())
 			}
 			if res.RuleHits[c.ruleID] == 0 {
 				t.Errorf("expected rule %q to fire, hits were %v", c.ruleID, res.RuleHits)
 			}
-			if !strings.Contains(string(res.Out), "__REDACTED:") {
-				t.Errorf("no sentinel in output:\n%s", res.Out)
+			if !strings.Contains(string(res.Out.Bytes()), "__REDACTED:") {
+				t.Errorf("no sentinel in output:\n%s", res.Out.Bytes())
 			}
 		})
 	}
@@ -112,7 +112,7 @@ func TestAWSCliCredentialOutputIsFullyRedacted(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			line := `{"type":"user","message":{"content":[{"type":"tool_result","content":"` + c.text + `"}]}}`
 			res := scrubJSONL(t, s, "claude-code", line+"\n")
-			out := string(res.Out)
+			out := string(res.Out.Bytes())
 			if strings.Contains(out, secret) {
 				t.Errorf("secret survived:\n%s", out)
 			}
@@ -137,8 +137,8 @@ func TestPrivateKeyBlockIsRedacted(t *testing.T) {
 	line := `{"type":"user","message":{"content":[{"type":"text","text":"` + pem + `"}]}}`
 
 	res := scrubJSONL(t, s, "claude-code", line+"\n")
-	if strings.Contains(string(res.Out), "MIIEowIBAAKCAQEA3x2n") {
-		t.Errorf("key body survived:\n%s", res.Out)
+	if strings.Contains(string(res.Out.Bytes()), "MIIEowIBAAKCAQEA3x2n") {
+		t.Errorf("key body survived:\n%s", res.Out.Bytes())
 	}
 	if res.RuleHits["private-key-block"] == 0 {
 		t.Errorf("private-key-block did not fire: %v", res.RuleHits)
@@ -161,7 +161,7 @@ func TestKeyNameRulesCatchShapelessValues(t *testing.T) {
 		t.Run(env, func(t *testing.T) {
 			line := `{"type":"user","toolUseResult":{"stdout":"` + env + `"}}`
 			res := scrubJSONL(t, s, "claude-code", line+"\n")
-			out := string(res.Out)
+			out := string(res.Out.Bytes())
 
 			name := env[:strings.IndexAny(env, "=:")]
 			name = strings.TrimSpace(name)
@@ -194,8 +194,8 @@ func TestPlantedSecretInEveryExemptFieldIsStillCaught(t *testing.T) {
 				}
 				res := scrubJSONL(t, s, fam, line+"\n")
 
-				if strings.Contains(string(res.Out), planted) {
-					t.Errorf("a planted secret survived in exempt field %q:\n%s", path, res.Out)
+				if strings.Contains(string(res.Out.Bytes()), planted) {
+					t.Errorf("a planted secret survived in exempt field %q:\n%s", path, res.Out.Bytes())
 				}
 			})
 		}
@@ -215,7 +215,7 @@ func TestExemptIdentifiersSurvive(t *testing.T) {
 		`"message":{"id":"msg_01ABcdEfGhIjKlMnOpQrStUv","content":[{"type":"text","text":"hello"}]}}`
 
 	res := scrubJSONL(t, s, "claude-code", line+"\n")
-	out := string(res.Out)
+	out := string(res.Out.Bytes())
 
 	for _, id := range []string{
 		"9f2c4e10-3b7a-4c19-8f2e-1a2b3c4d5e6f",
@@ -248,13 +248,13 @@ func TestGraphReassemblesAfterScrub(t *testing.T) {
 	}, "\n") + "\n"
 
 	res := scrubJSONL(t, s, "claude-code", payload)
-	if strings.Contains(string(res.Out), "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY") {
-		t.Fatalf("secret survived:\n%s", res.Out)
+	if strings.Contains(string(res.Out.Bytes()), "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY") {
+		t.Fatalf("secret survived:\n%s", res.Out.Bytes())
 	}
 
 	// Walk the redacted output the way a downstream parser would.
 	byUUID := map[string]map[string]any{}
-	for _, line := range strings.Split(strings.TrimSpace(string(res.Out)), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(string(res.Out.Bytes())), "\n") {
 		var rec map[string]any
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			t.Fatalf("scrubbed output is not valid JSON: %v\n%s", err, line)
@@ -286,7 +286,7 @@ func TestSubagentMetaJoinKeySurvives(t *testing.T) {
 
 	res := scrubJSONL(t, s, "claude-code", payload)
 	var meta map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(string(res.Out))), &meta); err != nil {
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(res.Out.Bytes()))), &meta); err != nil {
 		t.Fatalf("scrubbed meta.json is not valid JSON: %v", err)
 	}
 	if meta["toolUseId"] != "toolu_0183yENGzL6di289E8QTzyxi" {
@@ -307,14 +307,14 @@ func TestDeclaredOpaqueBinaryPayloadSurvivesTheEntropyBackstop(t *testing.T) {
 	line := `{"composerId":"c8cbeb0b","content":[{"type":"image","image":{"hex":"` + imageHex + `"}}]}`
 
 	res := scrubJSONL(t, s, "cursor", line+"\n")
-	if !strings.Contains(string(res.Out), imageHex) {
+	if !strings.Contains(string(res.Out.Bytes()), imageHex) {
 		t.Error("the declared opaque payload was redacted; the entropy exemption did not apply")
 	}
 
 	// The same bytes in a field that is NOT declared opaque are fair game.
 	other := `{"composerId":"c8cbeb0b","content":[{"type":"text","text":"` + imageHex + `"}]}`
 	res2 := scrubJSONL(t, s, "cursor", other+"\n")
-	if strings.Contains(string(res2.Out), imageHex) {
+	if strings.Contains(string(res2.Out.Bytes()), imageHex) {
 		t.Error("a high-entropy blob in an undeclared field should hit the backstop")
 	}
 }
@@ -327,7 +327,7 @@ func TestEntropyBackstopIsBlindToRepeatingStructure(t *testing.T) {
 
 	res := scrubJSONL(t, s, "claude-code",
 		`{"type":"user","message":{"content":[{"type":"text","text":"`+repeating+`"}]}}`+"\n")
-	if !strings.Contains(string(res.Out), repeating) {
+	if !strings.Contains(string(res.Out.Bytes()), repeating) {
 		t.Error("thresholds were retuned; update this note with the new behaviour")
 	}
 }
@@ -357,7 +357,7 @@ func TestPathUserRewritesEverywhereIncludingExemptFields(t *testing.T) {
 		`"timestamp":"/Users/jane/x","message":{"content":[{"type":"text","text":"see /Users/jane/work/api/db.go"}]}}`
 
 	res := scrubJSONL(t, s, "claude-code", line+"\n")
-	out := string(res.Out)
+	out := string(res.Out.Bytes())
 
 	if strings.Contains(out, "/Users/jane") {
 		t.Errorf("username survived in a path:\n%s", out)
@@ -384,7 +384,7 @@ func TestTornTailIsRawScannedAndShips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a torn tail must not be an engine error: %v", err)
 	}
-	out := string(res.Out)
+	out := string(res.Out.Bytes())
 
 	if strings.Contains(out, "ghp_abcdefghijklmnopqrstuvwxyz0123456789") {
 		t.Error("the pattern packs must still scan a torn line")
@@ -410,7 +410,7 @@ func TestNonJSONPayloadIsRawScanned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := string(res.Out)
+	out := string(res.Out.Bytes())
 	if strings.Contains(out, "ghp_abcdefghijklmnopqrstuvwxyz0123456789") {
 		t.Errorf("secret survived a raw-text scan:\n%s", out)
 	}
@@ -435,8 +435,8 @@ func TestOneLevelOfBase64IsDecodedAndScanned(t *testing.T) {
 
 	res := scrubJSONL(t, s, "claude-code",
 		`{"type":"user","message":{"content":[{"type":"text","text":"`+once+`"}]}}`+"\n")
-	if strings.Contains(string(res.Out), once) {
-		t.Errorf("a base64-wrapped secret must be caught:\n%s", res.Out)
+	if strings.Contains(string(res.Out.Bytes()), once) {
+		t.Errorf("a base64-wrapped secret must be caught:\n%s", res.Out.Bytes())
 	}
 
 	// Double encoding is out of scope by design; pinning it documents the boundary.
@@ -456,8 +456,8 @@ func TestUntouchedRecordsAreByteIdentical(t *testing.T) {
 		`"big":1234567890123456789,"float":1.5,"esc":"tab\there \"quoted\" <html>","nil":null,"arr":[3,2,1]}` + "\n"
 
 	res := scrubJSONL(t, s, "claude-code", payload)
-	if string(res.Out) != payload {
-		t.Errorf("an untouched record was rewritten:\n got %s\nwant %s", res.Out, payload)
+	if string(res.Out.Bytes()) != payload {
+		t.Errorf("an untouched record was rewritten:\n got %s\nwant %s", res.Out.Bytes(), payload)
 	}
 	if res.BytesRedacted != 0 {
 		t.Errorf("nothing should have been redacted, got %d bytes", res.BytesRedacted)
@@ -471,7 +471,7 @@ func TestModifiedRecordsPreserveKeyOrderAndNumbers(t *testing.T) {
 
 	payload := `{"zeta":1,"alpha":"ghp_abcdefghijklmnopqrstuvwxyz0123456789","mid":1234567890123456789,"beta":true}` + "\n"
 	res := scrubJSONL(t, s, "claude-code", payload)
-	out := string(res.Out)
+	out := string(res.Out.Bytes())
 
 	if strings.Index(out, `"zeta"`) > strings.Index(out, `"alpha"`) {
 		t.Errorf("key order was not preserved:\n%s", out)
@@ -493,7 +493,7 @@ func TestKnownOverRedactionInConnectionStrings(t *testing.T) {
 	line := `{"type":"user","toolUseResult":{"stdout":"psql postgres://app:hunter2@db.internal:5432/prod"}}`
 
 	res := scrubJSONL(t, s, "claude-code", line+"\n")
-	out := string(res.Out)
+	out := string(res.Out.Bytes())
 
 	if strings.Contains(out, "hunter2") {
 		t.Error("the password must not survive")
@@ -538,15 +538,15 @@ func TestSentinelLeaksNeitherLengthNorValue(t *testing.T) {
 	outShort := scrubJSONL(t, s, "claude-code", `{"t":"`+short+`"}`+"\n")
 	outLong := scrubJSONL(t, s, "claude-code", `{"t":"`+long+`"}`+"\n")
 
-	if len(outShort.Out) != len(outLong.Out) {
+	if len(outShort.Out.Bytes()) != len(outLong.Out.Bytes()) {
 		t.Errorf("sentinel width tracks the secret length: %d vs %d bytes",
-			len(outShort.Out), len(outLong.Out))
+			len(outShort.Out.Bytes()), len(outLong.Out.Bytes()))
 	}
-	if !strings.Contains(string(outShort.Out), transforms.Sentinel("github-pat")) {
-		t.Errorf("sentinel should carry the rule id: %s", outShort.Out)
+	if !strings.Contains(string(outShort.Out.Bytes()), transforms.Sentinel("github-pat")) {
+		t.Errorf("sentinel should carry the rule id: %s", outShort.Out.Bytes())
 	}
 	for _, frag := range []string{"aaaa", "bbbb"} {
-		if strings.Contains(string(outShort.Out), frag) || strings.Contains(string(outLong.Out), frag) {
+		if strings.Contains(string(outShort.Out.Bytes()), frag) || strings.Contains(string(outLong.Out.Bytes()), frag) {
 			t.Error("a fragment of the secret survived in the placeholder")
 		}
 	}
@@ -561,10 +561,10 @@ func TestScrubIsIdempotent(t *testing.T) {
 	payload := `{"type":"user","cwd":"/Users/jane/Work2026/SampleOrg/blink-UI","message":{"content":[{"type":"text","text":"ghp_abcdefghijklmnopqrstuvwxyz0123456789 in ~/.claude/projects/-Users-jane-Work2026-SampleOrg-blink-UI/f00.jsonl"}]}}` + "\n"
 
 	first := scrubJSONL(t, s, "claude-code", payload)
-	second := scrubJSONL(t, s, "claude-code", string(first.Out))
+	second := scrubJSONL(t, s, "claude-code", string(first.Out.Bytes()))
 
-	if string(second.Out) != string(first.Out) {
-		t.Errorf("second pass changed the output:\n first %s\nsecond %s", first.Out, second.Out)
+	if string(second.Out.Bytes()) != string(first.Out.Bytes()) {
+		t.Errorf("second pass changed the output:\n first %s\nsecond %s", first.Out.Bytes(), second.Out.Bytes())
 	}
 }
 
@@ -628,9 +628,9 @@ func TestTheCompiledDefaultProtectsTheIdentifierSpine(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(res.Out) != in {
+		if string(res.Out.Bytes()) != in {
 			t.Errorf("%s was redacted by the compiled default:\n got %s\nwant %s",
-				field, res.Out, in)
+				field, res.Out.Bytes(), in)
 		}
 	}
 
@@ -640,8 +640,8 @@ func TestTheCompiledDefaultProtectsTheIdentifierSpine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(res.Out), "AKIAIOSFODNN7EXAMPLE") {
-		t.Errorf("a credential in an exempt field survived: %s", res.Out)
+	if strings.Contains(string(res.Out.Bytes()), "AKIAIOSFODNN7EXAMPLE") {
+		t.Errorf("a credential in an exempt field survived: %s", res.Out.Bytes())
 	}
 
 	// And a field nobody exempted is still scanned, or the test above proves nothing.
@@ -650,8 +650,8 @@ func TestTheCompiledDefaultProtectsTheIdentifierSpine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(res.Out), "__REDACTED:") {
-		t.Errorf("an unexempted high-entropy value was not redacted: %s", res.Out)
+	if !strings.Contains(string(res.Out.Bytes()), "__REDACTED:") {
+		t.Errorf("an unexempted high-entropy value was not redacted: %s", res.Out.Bytes())
 	}
 }
 

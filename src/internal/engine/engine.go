@@ -328,7 +328,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 		if !o.DryRun && out.Health == sources.Collected && len(disc.Candidates) > 0 && out.Remaining == 0 {
 			live := make(map[string]bool, len(disc.Candidates))
 			for _, c := range disc.Candidates {
-				live[c.Path] = true
+				live[KeyOf(src.ID, c).ID] = true
 			}
 			// Derived entries never appear among candidates, so they are kept by adding them here.
 			for _, f := range out.Files {

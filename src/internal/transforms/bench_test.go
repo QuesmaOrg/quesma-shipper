@@ -43,7 +43,7 @@ func BenchmarkScrubSynthetic(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				if len(res.Out) == 0 {
+				if len(res.Out.Bytes()) == 0 {
 					b.Fatal("empty output")
 				}
 			}
@@ -175,12 +175,14 @@ func randUUID(rng *rand.Rand) string {
 
 const tokenAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 
-func randToken(rng *rand.Rand, n int) string {
-	var sb strings.Builder
-	for i := 0; i < n; i++ {
-		sb.WriteByte(tokenAlphabet[rng.Intn(len(tokenAlphabet))])
+func randToken(rng *rand.Rand, n int) string { return randFrom(rng, tokenAlphabet, n) }
+
+func randFrom(rng *rand.Rand, alphabet string, n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = alphabet[rng.Intn(len(alphabet))]
 	}
-	return sb.String()
+	return string(b)
 }
 
 var proseWords = strings.Fields(`the scrubber walks every decoded string value and applies
@@ -228,13 +230,7 @@ func randCommandOutput(rng *rand.Rand, n int) string {
 	return sb.String()
 }
 
-func randHex(rng *rand.Rand, n int) string {
-	var sb strings.Builder
-	for i := 0; i < n; i++ {
-		sb.WriteByte(hexDigits[rng.Intn(16)])
-	}
-	return sb.String()
-}
+func randHex(rng *rand.Rand, n int) string { return randFrom(rng, hexDigits, n) }
 
 // benchRealDataCap bounds how much of the tree one iteration scrubs: enough to dominate any
 // fixed cost, small enough to keep a run coffee-length.

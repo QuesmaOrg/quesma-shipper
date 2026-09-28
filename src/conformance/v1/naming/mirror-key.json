@@ -38,10 +38,10 @@
       "mirror_name": "3c2eac55962b355a8a8105b44b3b26fefa9a8c5ba5b3ef7efe309ddf09dcb630"
     },
     {
-      "name": "codex cold rollout is a different file from its plaintext form",
+      "name": "codex session is one object across its live, archived and cold forms",
       "key": "key_a",
-      "canonical_path": "sessions/2026/07/30/rollout-2026-07-30T10-00-00-0199.jsonl.zst",
-      "mirror_name": "e327b3a3c4aecb460f90e4ddc62cc4b735655e7552265ece1317b64c14d89a9e"
+      "canonical_path": "codex-session/0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+      "mirror_name": "68ceac7f3e02aef76275f0fe7a9f82698e26fff2025d014f910e59727fa149f8"
     },
     {
       "name": "cursor transcript",

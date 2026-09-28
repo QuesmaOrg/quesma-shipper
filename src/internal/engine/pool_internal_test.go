@@ -3,9 +3,13 @@ package engine
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
@@ -40,7 +44,7 @@ func admissionPass(budget int, sizes ...int64) *sourcePass {
 		cands[i] = sources.Candidate{Size: sz}
 	}
 	b := budget
-	return &sourcePass{budget: &b, disc: sources.Discovery{Candidates: cands}}
+	return &sourcePass{budget: &b, disc: sources.Discovery{Candidates: cands}, store: newCommitBuffer(&Store{}, 0)}
 }
 
 // Each gate alone: the admission predicate is the whole budget-and-safety policy of the pass.
@@ -125,7 +129,66 @@ func TestAdmissionGates(t *testing.T) {
 		if p.canAdmit(ctx, 1, 1, &stopped) {
 			t.Error("two files admitted together past the overridden cap")
 		}
+
+		// A few hundred compressed bytes that decode to the whole gate hold the gate, not their stat size.
+		enc, err := zstd.NewWriter(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		frame := enc.EncodeAll(make([]byte, small), nil)
+		// A small first frame declares only itself; the frame after it decodes too.
+		twoFrames := append(enc.EncodeAll(make([]byte, 4000), nil), frame...)
+		enc.Close()
+		for name, body := range map[string][]byte{"one frame": frame, "two frames": twoFrames} {
+			zst := filepath.Join(t.TempDir(), "rollout.jsonl.zst")
+			if err := os.WriteFile(zst, body, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			p = admissionPass(10, int64(len(body)), 1)
+			p.disc.Candidates[0].Path = zst
+			p.src.MaxFileBytes = 64 << 20
+			if !p.canAdmit(ctx, 0, 0, &stopped) {
+				t.Fatalf("%s: the .zst refused on an empty gate", name)
+			}
+			p.inFlightBytes += p.charge(0)
+			if p.canAdmit(ctx, 1, 1, &stopped) {
+				t.Errorf("%s: a %d-byte .zst decoding past the %d-byte gate let another file in beside it", name, len(body), small)
+			}
+		}
 	})
+}
+
+// A .zst the pre-filter will skip is charged its stat size without being opened.
+func TestUnchangedZstdIsChargedWithoutOpening(t *testing.T) {
+	now := time.Now()
+	cand := sources.Candidate{Path: filepath.Join(t.TempDir(), "gone.jsonl.zst"), Size: 100, MTime: now.Add(-48 * time.Hour)}
+	shipped := Fingerprint{SourceSize: cand.Size, SourceMTime: cand.MTime, SourceHash: "shipped"}
+	for _, tc := range []struct {
+		name    string
+		fp      *Fingerprint
+		mtime   time.Time
+		staging bool
+		want    int64
+	}{
+		{"unchanged", &shipped, cand.MTime, false, cand.Size},
+		{"never shipped", nil, cand.MTime, false, 1 << 20},
+		{"mtime moved", &shipped, cand.MTime.Add(time.Second), false, 1 << 20},
+		{"staged inside the recompute window", &Fingerprint{SourceSize: cand.Size, SourceMTime: now, SourceHash: "shipped"}, now, true, 1 << 20},
+	} {
+		p := admissionPass(1, cand.Size)
+		p.disc.Candidates[0] = cand
+		p.disc.Candidates[0].MTime = tc.mtime
+		p.src.MaxFileBytes = 1 << 20
+		p.o.Now = func() time.Time { return now }
+		p.staging = tc.staging
+		if tc.fp != nil {
+			_ = p.store.Commit(KeyOf(p.src.ID, p.disc.Candidates[0]), *tc.fp)
+		}
+		// The path does not exist, so opening it would charge the whole cap.
+		if got := p.charge(0); got != tc.want {
+			t.Errorf("%s: charged %d, want %d", tc.name, got, tc.want)
+		}
+	}
 }
 
 func TestGeneratedFileChecksUploadStateBeforeLoading(t *testing.T) {

@@ -52,7 +52,7 @@
     },
 
     "source_hash": {
-      "description": "sha256 of the raw pre-redaction bytes. Change detection, fingerprint identity, ETL dedupe key with the path, and enricher derived_from all key on this.",
+      "description": "sha256 of the raw pre-redaction bytes, decoded first for a compressed source file. Change detection, fingerprint identity, ETL dedupe key with the path, and enricher derived_from all key on this.",
       "$ref": "#/$defs/sha256"
     },
     "shipped_hash": {

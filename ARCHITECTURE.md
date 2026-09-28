@@ -109,8 +109,9 @@ These are checked by tests or held in review, because no directory layout can ex
   os-level write functions; everything else routes through safeio. The shipper never writes
   inside an agent's store.
 - **Third-party confinement**: an SDK stops in the package that owns it — sqlite never
-  past sqliteread. No AWS, Azure or Google client is linked into the shipped binary
-  (the `-tags perf` harness in `src/perf` is the sole importer of the S3 SDK, as a test
+  past sqliteread, zstd only in transforms (seal) and sources (2026-09-23: the loader decodes
+  cold `.zst` files so they are scrubbed like plaintext). No AWS, Azure or Google client is
+  linked into the shipped binary (the `-tags perf` harness in `src/perf` is the sole importer of the S3 SDK, as a test
   peer): the only route to object storage is a presigned ticket spent over `net/http`,
   and a credential this binary never holds cannot be misdirected. `go list -deps
   ./cmd/quesma-shipper` is the check that nothing from the harness reaches the binary.

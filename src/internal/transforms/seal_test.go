@@ -48,7 +48,7 @@ func TestSealOpenRoundTrip(t *testing.T) {
 	id := identity(t)
 	payload := []byte("{\"type\":\"user\"}\n{\"type\":\"assistant\"}\n")
 
-	obj, _, err := transforms.Seal(manifest(), payload, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(manifest(), transforms.Unscrubbed(payload, "test fixture"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestSealOpenRoundTrip(t *testing.T) {
 // A payload of zero bytes is a real case and must round-trip, not be special-cased.
 func TestSealEmptyPayload(t *testing.T) {
 	id := identity(t)
-	obj, _, err := transforms.Seal(manifest(), nil, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(manifest(), transforms.Unscrubbed(nil, "test fixture"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestSealEmptyPayload(t *testing.T) {
 // assert the order at the tar layer directly.
 func TestManifestIsTheFirstTarEntry(t *testing.T) {
 	id := identity(t)
-	obj, _, err := transforms.Seal(manifest(), bytes.Repeat([]byte("x"), 4096), []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(manifest(), transforms.Unscrubbed(bytes.Repeat([]byte("x"), 4096), "test fixture"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestReadManifestPrefixOnMultiMegabyteObject(t *testing.T) {
 	if _, err := rng.Read(payload); err != nil {
 		t.Fatal(err)
 	}
-	obj, _, err := transforms.Seal(manifest(), payload, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(manifest(), transforms.Unscrubbed(payload, "test fixture"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestReadManifestPrefixReportsTooShort(t *testing.T) {
 	id := identity(t)
 	big := make([]byte, 1<<20)
 	rand.New(rand.NewSource(2)).Read(big)
-	obj, _, err := transforms.Seal(manifest(), big, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(manifest(), transforms.Unscrubbed(big, "test fixture"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestPrefixDoublingConverges(t *testing.T) {
 	id := identity(t)
 	big := make([]byte, 2<<20)
 	rand.New(rand.NewSource(3)).Read(big)
-	obj, _, err := transforms.Seal(manifest(), big, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(manifest(), transforms.Unscrubbed(big, "test fixture"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestObjectIsOpaqueWithoutTheIdentity(t *testing.T) {
 	m.NativePath = secretPath
 	payload := []byte(`{"text":"a distinctive sentence that must not appear in ciphertext"}`)
 
-	obj, _, err := transforms.Seal(m, payload, []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(m, transforms.Unscrubbed(payload, "test fixture"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,11 +261,11 @@ func TestRecipientSetsDecideWhoCanRead(t *testing.T) {
 	analysis := identity(t)
 	payload := []byte(`{"a":1}`)
 
-	archivalOnly, _, err := transforms.Seal(manifest(), payload, []age.Recipient{archival.Recipient()})
+	archivalOnly, _, err := transforms.Seal(manifest(), transforms.Unscrubbed(payload, "test fixture"), []age.Recipient{archival.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	both, _, err := transforms.Seal(manifest(), payload,
+	both, _, err := transforms.Seal(manifest(), transforms.Unscrubbed(payload, "test fixture"),
 		[]age.Recipient{archival.Recipient(), analysis.Recipient()})
 	if err != nil {
 		t.Fatal(err)
@@ -299,8 +299,21 @@ func TestRecipientSetsDecideWhoCanRead(t *testing.T) {
 }
 
 func TestSealRefusesWithNoRecipients(t *testing.T) {
-	if _, _, err := transforms.Seal(manifest(), []byte("x"), nil); err == nil {
+	if _, _, err := transforms.Seal(manifest(), transforms.Unscrubbed([]byte("x"), "test fixture"), nil); err == nil {
 		t.Fatal("sealing with no recipients must fail: encryption is not optional")
+	}
+}
+
+// Seal takes only what the scrubber produced or a named Unscrubbed decision.
+func TestSealRefusesAPayloadNobodyVouchedFor(t *testing.T) {
+	id := identity(t)
+	for name, p := range map[string]transforms.Scrubbed{
+		"zero value":      {},
+		"no reason given": transforms.Unscrubbed([]byte("x"), ""),
+	} {
+		if _, _, err := transforms.Seal(manifest(), p, []age.Recipient{id.Recipient()}); err == nil {
+			t.Errorf("%s: sealed a payload that skipped the scrubber without a reason", name)
+		}
 	}
 }
 
@@ -310,25 +323,25 @@ func TestSealValidatesTheManifestAgainstItsSchema(t *testing.T) {
 
 	bad := manifest()
 	bad.ArtifactClass = "whatever"
-	if _, _, err := transforms.Seal(bad, []byte("x"), []age.Recipient{id.Recipient()}); err == nil {
+	if _, _, err := transforms.Seal(bad, transforms.Unscrubbed([]byte("x"), "test fixture"), []age.Recipient{id.Recipient()}); err == nil {
 		t.Error("an artifact_class outside the enum must be refused")
 	}
 
 	bad = manifest()
 	bad.ShapeSniff = "probably-fine"
-	if _, _, err := transforms.Seal(bad, []byte("x"), []age.Recipient{id.Recipient()}); err == nil {
+	if _, _, err := transforms.Seal(bad, transforms.Unscrubbed([]byte("x"), "test fixture"), []age.Recipient{id.Recipient()}); err == nil {
 		t.Error("a shape_sniff outside the closed enum must be refused")
 	}
 
 	bad = manifest()
 	bad.SourceHash = "deadbeef"
-	if _, _, err := transforms.Seal(bad, []byte("x"), []age.Recipient{id.Recipient()}); err == nil {
+	if _, _, err := transforms.Seal(bad, transforms.Unscrubbed([]byte("x"), "test fixture"), []age.Recipient{id.Recipient()}); err == nil {
 		t.Error("a malformed source_hash must be refused")
 	}
 
 	bad = manifest()
 	bad.Derived = true
-	if _, _, err := transforms.Seal(bad, []byte("x"), []age.Recipient{id.Recipient()}); err == nil {
+	if _, _, err := transforms.Seal(bad, transforms.Unscrubbed([]byte("x"), "test fixture"), []age.Recipient{id.Recipient()}); err == nil {
 		t.Error("derived without enricher provenance must be refused")
 	}
 }
@@ -416,7 +429,7 @@ func TestShippedHashReachesObjectMetadata(t *testing.T) {
 	id := identity(t)
 	payload := []byte(`{"line":"one"}` + "\n")
 
-	obj, sealedM, err := transforms.Seal(manifest(), payload, []age.Recipient{id.Recipient()})
+	obj, sealedM, err := transforms.Seal(manifest(), transforms.Unscrubbed(payload, "test fixture"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +470,7 @@ func TestTheManifestRecordsWhichBuildSealedTheObject(t *testing.T) {
 		Arch:      "amd64",
 	}
 
-	sealed, _, err := transforms.Seal(m, []byte("{}\n"), []age.Recipient{id.Recipient()})
+	sealed, _, err := transforms.Seal(m, transforms.Unscrubbed([]byte("{}\n"), "test fixture"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -487,7 +500,7 @@ func TestABuildWithNoStampSealsWithoutTheOptionalFields(t *testing.T) {
 	m := manifest()
 	m.Client = transforms.Client{Version: "unknown"}
 
-	sealed, _, err := transforms.Seal(m, []byte("{}\n"), []age.Recipient{id.Recipient()})
+	sealed, _, err := transforms.Seal(m, transforms.Unscrubbed([]byte("{}\n"), "test fixture"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatalf("a manifest from an unstamped build did not seal: %v", err)
 	}

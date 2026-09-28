@@ -19,6 +19,7 @@ import (
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
+	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
@@ -42,14 +43,27 @@ var (
 	ErrSchemaMismatch = errors.New("state: document schema mismatch")
 )
 
-// Key identifies one fingerprint.
+// Key identifies one fingerprint. ID is the candidate's logical identity when its source declares
+// one, else its absolute native path, so every path-keyed entry stays valid.
 type Key struct {
-	SourceID   string
-	NativePath string
+	SourceID string
+	ID       string
 }
+
+// KeyOf is the state key a discovered candidate is recorded under.
+func KeyOf(sourceID string, c sources.Candidate) Key {
+	return Key{SourceID: sourceID, ID: cmp.Or(c.Identity, c.Path)}
+}
+
+// observedPath is where the file behind k was last seen.
+func observedPath(k Key, fp Fingerprint) string { return cmp.Or(fp.NativePath, k.ID) }
 
 // Fingerprint is what the store remembers about one file.
 type Fingerprint struct {
+	// NativePath is where the file was last observed. Only a logical-identity key needs it, as its
+	// ID is not a path Prune could test; empty means the key ID is the path.
+	NativePath string
+
 	// Size and mtime are the cheap pre-filter; the content hash is the authority. SourceHash also
 	// marks a completed ship: only the post-verified-PUT commit may write it, never a failure path.
 	SourceSize  int64
@@ -175,8 +189,8 @@ func editStore(stateDir, installID string, dryRun bool, edit func(*Store) int) (
 func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err error) {
 	removed, err = editStore(stateDir, installID, dryRun, func(s *Store) int {
 		gone := 0
-		for k := range s.entries {
-			if _, statErr := os.Lstat(k.NativePath); statErr == nil {
+		for k, fp := range s.entries {
+			if _, statErr := os.Lstat(observedPath(k, fp)); statErr == nil {
 				kept++
 				continue
 			}
@@ -252,15 +266,15 @@ func (s *Store) EnsureSpec(sourceID, specFP string) (dropped int, err error) {
 	return dropped, s.flush()
 }
 
-// DropVanished forgets this source's entries whose file discovery no longer sees, keyed by native
-// path. Only a source that collected AND returned candidates proves absence: err on kept-too-long.
+// DropVanished forgets this source's entries whose file discovery no longer sees, keyed by key ID.
+// Only a source that collected AND returned candidates proves absence: err on kept-too-long.
 func (s *Store) DropVanished(sourceID string, live map[string]bool) (int, error) {
 	dropped := 0
 	for k := range s.entries {
 		if k.SourceID != sourceID {
 			continue
 		}
-		if live[k.NativePath] {
+		if live[k.ID] {
 			continue
 		}
 		delete(s.entries, k)
@@ -311,6 +325,7 @@ func checksumOf(doc wireDoc) (string, error) {
 type wireEntry struct {
 	SourceID     string       `json:"source_id"`
 	NativePath   string       `json:"native_path"`
+	Identity     string       `json:"identity,omitempty"`
 	SourceSize   int64        `json:"source_size,omitempty"`
 	SourceMTime  string       `json:"source_mtime,omitempty"`
 	Attempts     int          `json:"attempts,omitempty"`
@@ -331,14 +346,14 @@ func encode(installID string, updatedAt time.Time, specs map[string]string, entr
 	}
 
 	keys := slices.SortedFunc(maps.Keys(entries), func(a, b Key) int {
-		return cmp.Or(strings.Compare(a.SourceID, b.SourceID), strings.Compare(a.NativePath, b.NativePath))
+		return cmp.Or(strings.Compare(a.SourceID, b.SourceID), strings.Compare(a.ID, b.ID))
 	})
 
 	for _, k := range keys {
 		fp := entries[k]
 		e := wireEntry{
 			SourceID:   k.SourceID,
-			NativePath: k.NativePath,
+			NativePath: observedPath(k, fp),
 			SourceSize: fp.SourceSize,
 			SourceHash: fp.SourceHash,
 			OutputHash: fp.OutputHash,
@@ -346,6 +361,11 @@ func encode(installID string, updatedAt time.Time, specs map[string]string, entr
 			Parked:     fp.Parked,
 			LastError:  fp.LastError,
 			Enricher:   fp.Enricher,
+		}
+		// Only for a logical identity, so path-keyed entries keep their old bytes. Not additive for a rollback: an older
+		// binary fails the checksum on it and discards the store once (re-hash, uploads already_present, Codex keys revert).
+		if e.NativePath != k.ID {
+			e.Identity = k.ID
 		}
 		if !fp.SourceMTime.IsZero() {
 			// RFC3339Nano, not RFC3339: the pre-filter compares this against the file's mtime for
@@ -452,10 +472,11 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 				fp.BackoffUntil = t
 			}
 		}
-		out.Entries[Key{
-			SourceID:   e.SourceID,
-			NativePath: e.NativePath,
-		}] = fp
+		// A path-keyed entry leaves NativePath empty: its key ID is the path.
+		if e.Identity != "" {
+			fp.NativePath = e.NativePath
+		}
+		out.Entries[Key{SourceID: e.SourceID, ID: cmp.Or(e.Identity, e.NativePath)}] = fp
 	}
 	return out, nil
 }

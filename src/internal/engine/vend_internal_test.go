@@ -30,10 +30,9 @@ func (p *sizePort) AuthorizeAndUpload(_ context.Context, batch []PreparedObject)
 // stagedFor is one sealed object of a given size.
 func stagedFor(idx, size int) fileResult {
 	return fileResult{
-		idx:   idx,
-		bytes: int64(size),
+		idx: idx,
 		pending: &pendingPut{
-			key:       Key{SourceID: "s", NativePath: fmt.Sprintf("/f%d", idx)},
+			key:       Key{SourceID: "s", ID: fmt.Sprintf("/f%d", idx)},
 			objectKey: fmt.Sprintf("v1/o/%d.age", idx),
 			obj:       make([]byte, size),
 			md:        map[string]string{"source-hash": "deadbeef"},

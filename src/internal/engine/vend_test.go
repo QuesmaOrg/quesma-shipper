@@ -46,7 +46,7 @@ func TestTheUploadPathShipsOneGroupForASmallRun(t *testing.T) {
 	}
 	port.storedOnce(t)
 	for _, fo := range rep.Sources[0].Files {
-		if _, ok := f.store.Get(engine.Key{SourceID: fo.SourceID, NativePath: fo.NativePath}); !ok {
+		if _, ok := f.store.Get(engine.Key{SourceID: fo.SourceID, ID: fo.NativePath}); !ok {
 			t.Fatalf("%s committed no fingerprint", fo.RelPath)
 		}
 	}
@@ -270,7 +270,7 @@ func TestReauthorizationDoesNotLoop(t *testing.T) {
 		t.Errorf("%d authorizations for a permanently expired ticket, want exactly 2", got)
 	}
 	if _, ok := f.store.Get(engine.Key{SourceID: "claude-code-transcripts",
-		NativePath: f.home + "/.claude/projects/p/e1.jsonl"}); ok {
+		ID: f.home + "/.claude/projects/p/e1.jsonl"}); ok {
 		t.Error("a ticket that never uploaded committed a fingerprint")
 	}
 }

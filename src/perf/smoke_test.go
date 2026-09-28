@@ -93,6 +93,7 @@ func TestSmokeTier(t *testing.T) {
 	smokeBigFile(t)
 	smokeInFlightCap(t)
 	smokeScrubGuard(t)
+	smokeCodexScrubGuard(t)
 	smokeSingleLine(t)
 	smokeSingleLineSecrets(t)
 }
