@@ -287,6 +287,40 @@ sources:
 	}
 }
 
+// A compiled glob over names the agent chooses must not let one of them reject the config: the
+// agent wrote plans/.env, and every other source still resolves. Discovery skips the file itself.
+func TestACompiledIncludeReachingADeniedNameIsNotRejected(t *testing.T) {
+	home := fakeHome(t)
+	mustWrite(t, filepath.Join(home, ".claude", "plans", ".env"), "DB_PASSWORD=x\n")
+
+	eff, err := config.Resolve(baseInput(t, home))
+	if err != nil {
+		t.Fatalf("a denied name under a compiled glob rejected the config: %v", err)
+	}
+	for _, s := range eff.Sources {
+		if s.ID == "claude-code-context" && s.Root == "" {
+			t.Errorf("claude-code-context did not resolve: %s", s.RootUnresolvedReason)
+		}
+	}
+}
+
+// A layer that keeps the compiled globs and adds a wide one is still checked, on the one it added.
+func TestALayerGlobBesideTheCompiledOnesIsStillChecked(t *testing.T) {
+	home := fakeHome(t)
+	mustWrite(t, filepath.Join(home, ".claude", ".credentials.json"), `{"accessToken":"secret"}`)
+
+	_, err := config.Resolve(baseInput(t, home,
+		config.LayeredDocument{Layer: config.LayerRemote, Doc: doc(t, `
+sources:
+  - id: claude-code-context
+    include: ["plans/**", "todos/**", "**"]
+`)},
+	))
+	if err == nil || !strings.Contains(err.Error(), `"**"`) {
+		t.Fatalf("the added glob reaching .credentials.json must be rejected by name, got: %v", err)
+	}
+}
+
 func TestDenyListMatchesCredentialShapes(t *testing.T) {
 	home := t.TempDir()
 	d := sources.New(home)

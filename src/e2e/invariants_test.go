@@ -398,3 +398,25 @@ func TestThePauseSwitchStopsCollection(t *testing.T) {
 		t.Error("resumed, and nothing was collected")
 	}
 }
+
+// An agent names its plans and notes, so a file called .env can land under a catalog glob. It must
+// not ship, and it must not stop the sync: the transcript beside it still ships.
+func TestAnAgentNamedDeniedFileDoesNotStopTheSync(t *testing.T) {
+	w := stageWorld(t)
+	stageClaude(t, w, realUsername(t))
+	const planted = "DB_PASSWORD=plantedvalue42"
+	for _, rel := range []string{".claude/plans/.env", ".cursor/projects/api/agent-notes/server.key"} {
+		stageFile(t, w, rel, planted+"\n")
+	}
+	runOneShot(t)
+
+	objects := collect(t, w)
+	if len(bySourceID(mirrorObjects(objects), claudeSource)) == 0 {
+		t.Fatal("the transcript beside the denied files did not ship")
+	}
+	for _, o := range objects {
+		if strings.Contains(string(o.Payload), planted) || strings.HasSuffix(o.Manifest.NativePath, ".env") || strings.HasSuffix(o.Manifest.NativePath, ".key") {
+			t.Errorf("%s: a denied file shipped (%s)", o.Key, o.Manifest.NativePath)
+		}
+	}
+}
