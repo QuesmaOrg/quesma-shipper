@@ -127,7 +127,17 @@ function configBody(form) {
     authored_yaml: String(data.get('yaml') || '')
   };
   if (form.elements.display_name) body.display_name = String(data.get('display_name') || '').trim();
+  const collector = form.elements.telemetry_collector_url;
+  const value = form.elements['telemetry-enabled'].checked ? collector.value.trim() : '';
+  if (value !== collector.dataset.initialValue) body.telemetry_collector_url = value;
   return body;
+}
+
+function syncTelemetry(form) {
+  const enabled = form.elements['telemetry-enabled'].checked;
+  const collector = form.elements.telemetry_collector_url;
+  collector.disabled = !enabled;
+  collector.required = enabled;
 }
 
 // The create form starts from the deployment's defaults, not from a state written into the page, so
@@ -137,6 +147,11 @@ function resetOrganizationForm() {
   form.reset();
   setRecipients(form, []);
   form.elements['quesma-etl'].checked = deploymentDefaults.allow_quesma_etl !== false;
+  const collector = form.elements.telemetry_collector_url;
+  collector.value = deploymentDefaults.telemetry_collector_url || '';
+  collector.dataset.initialValue = collector.value;
+  form.elements['telemetry-enabled'].checked = collector.value !== '';
+  syncTelemetry(form);
   syncQuesmaRecipient(form);
 }
 
@@ -150,6 +165,11 @@ function fillConfig(config) {
   setRecipients(form, config.age_recipients);
   form.elements['quesma-etl'].checked = config.allow_quesma_etl !== false;
   syncQuesmaRecipient(form);
+  const collector = form.elements.telemetry_collector_url;
+  collector.value = config.telemetry_collector_url || '';
+  collector.dataset.initialValue = collector.value;
+  form.elements['telemetry-enabled'].checked = collector.value !== '';
+  syncTelemetry(form);
   form.elements.yaml.value = config.authored_yaml || '';
   $('#config-time').textContent = config.updated_at ? `Updated ${new Date(config.updated_at).toLocaleString()}` : '';
   lockConfig(true);
@@ -162,6 +182,7 @@ function lockConfig(locked) {
   form.classList.toggle('locked', locked);
   all('input[type="text"],input:not([type]),textarea', form).forEach((field) => { field.readOnly = locked; });
   form.elements['quesma-etl'].disabled = locked;
+  form.elements['telemetry-enabled'].disabled = locked;
   all('.add-recipient,.remove-recipient', form).forEach((button) => { button.disabled = locked; });
   if (!locked) updateRecipientButtons(form.querySelector('[data-recipient-list]'));
   $('#edit-config').classList.toggle('hidden', !locked);
@@ -463,6 +484,10 @@ all('input[name="quesma-etl"]').forEach((checkbox) => checkbox.addEventListener(
   }
   checkbox.checked = true;
   requestQuesmaDisable(checkbox);
+}));
+all('input[name="telemetry-enabled"]').forEach((checkbox) => checkbox.addEventListener('change', () => {
+  syncTelemetry(checkbox.form);
+  if (checkbox.checked) checkbox.form.elements.telemetry_collector_url.focus();
 }));
 $('#keep-quesma-etl').addEventListener('click', () => { pendingQuesmaDisable = null; $('#disable-quesma-dialog').close(); });
 $('#confirm-disable-quesma').addEventListener('click', () => {

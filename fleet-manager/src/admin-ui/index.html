@@ -36,9 +36,15 @@
         <label>Organization slug<input name="slug" required pattern="[a-z0-9][a-z0-9._-]{0,63}" placeholder="acme-production"></label>
         <label>Display name<input name="display_name" required maxlength="100" placeholder="Acme Production"></label>
         <fieldset class="recipient-fieldset" data-quesma-etl-recipient="age1ge6plfgzzhzagl7qkp8k74qa90zxh4qvp84sgsw3up2zxrp5mq6qvex69a"><legend>Public age recipients</legend><p>Add at least two independently held customer recipients. Quesma's recipient appears here while Quesma ETL is enabled.</p><p class="recipient-help">For each custodian, run this command. It creates the private key file and prints its public recipient:</p><div class="keygen-commands"><pre><code>age-keygen -o custodian.agekey</code></pre><button type="button" class="quiet copy-icon" data-copy-keygen aria-label="Copy key generation command" title="Copy command"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="1"></rect><path d="M16 8V5H5v11h3"></path></svg></button></div><p class="recipient-help">Make sure to store the private <code>.agekey</code> file in a secure location.</p><div class="recipient-list" data-recipient-list></div><button type="button" class="quiet add-recipient" data-add-recipient>Add recipient</button></fieldset>
-        <fieldset class="etl-fieldset">
+        <fieldset class="setting-fieldset">
           <legend id="organization-etl-title">Encrypt uploads with the Quesma ETL public key</legend>
           <label class="check"><input name="quesma-etl" type="checkbox" checked aria-labelledby="organization-etl-title" aria-describedby="organization-etl-help"><span id="organization-etl-help">This enables Quesma ETL to process future uploads for dashboards, analytics, and other Quesma features. Quesma cannot access your bucket unless you separately provide bucket access.</span></label>
+        </fieldset>
+        <fieldset class="setting-fieldset">
+          <legend id="organization-telemetry-title">Shipper health telemetry</legend>
+          <label class="check"><input name="telemetry-enabled" type="checkbox" aria-labelledby="organization-telemetry-title" aria-describedby="organization-telemetry-help"><span id="organization-telemetry-help">Enable forwarding of this organization's shipper health events through Fleet Manager to the collector below.</span></label>
+          <label class="telemetry-collector">Collector URL<input name="telemetry_collector_url" type="text" autocomplete="off" spellcheck="false" placeholder="collector.example" pattern=".*\S.*" aria-describedby="organization-collector-help"></label>
+          <p id="organization-collector-help" class="telemetry-help">Enter a hostname or HTTPS URL. Turn off telemetry to stop forwarding.</p>
         </fieldset>
         <label>Authored fleet YAML <span>(optional)</span><textarea name="yaml" class="code" placeholder="mode: daemon"></textarea></label>
         <div class="actions"><button type="button" id="cancel-org" class="quiet hidden">Cancel</button><button>Create organization</button></div>
@@ -53,9 +59,15 @@
         <form id="config-form" class="config-form locked">
           <label>Display name<input name="display_name" required maxlength="100"></label>
           <fieldset class="recipient-fieldset" data-quesma-etl-recipient="age1ge6plfgzzhzagl7qkp8k74qa90zxh4qvp84sgsw3up2zxrp5mq6qvex69a"><legend>Public age recipients</legend><p>Add at least two independently held customer recipients. Quesma's recipient appears here while Quesma ETL is enabled.</p><p class="recipient-help">For each custodian, run this command. It creates the private key file and prints its public recipient:</p><div class="keygen-commands"><pre><code>age-keygen -o custodian.agekey</code></pre><button type="button" class="quiet copy-icon" data-copy-keygen aria-label="Copy key generation command" title="Copy command"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="1"></rect><path d="M16 8V5H5v11h3"></path></svg></button></div><p class="recipient-help">Make sure to store the private <code>.agekey</code> file in a secure location.</p><div class="recipient-list" data-recipient-list></div><button type="button" class="quiet add-recipient" data-add-recipient>Add recipient</button></fieldset>
-          <fieldset class="etl-fieldset">
+          <fieldset class="setting-fieldset">
             <legend id="config-etl-title">Encrypt uploads with the Quesma ETL public key</legend>
             <label class="check"><input name="quesma-etl" type="checkbox" checked aria-labelledby="config-etl-title" aria-describedby="config-etl-help"><span id="config-etl-help">This enables Quesma ETL to process future uploads for dashboards, analytics, and other Quesma features. Quesma cannot access your bucket unless you separately provide bucket access.</span></label>
+          </fieldset>
+          <fieldset class="setting-fieldset">
+            <legend id="config-telemetry-title">Shipper health telemetry</legend>
+            <label class="check"><input name="telemetry-enabled" type="checkbox" aria-labelledby="config-telemetry-title" aria-describedby="config-telemetry-help"><span id="config-telemetry-help">Enable forwarding of this organization's shipper health events through Fleet Manager to the collector below.</span></label>
+            <label class="telemetry-collector">Collector URL<input name="telemetry_collector_url" type="text" autocomplete="off" spellcheck="false" placeholder="collector.example" pattern=".*\S.*" aria-describedby="config-collector-help"></label>
+            <p id="config-collector-help" class="telemetry-help">Effective collector for this organization. Enter a hostname or HTTPS URL. Turn off telemetry to stop forwarding.</p>
           </fieldset>
           <label>Authored fleet YAML<textarea name="yaml" class="code"></textarea></label>
           <p class="edit-warning">Apply replaces this organization's stored configuration. Recipients you add only cover uploads made from then on; a recipient you remove cannot decrypt anything uploaded after that.</p>
