@@ -134,6 +134,7 @@ func plantedValues() []string {
 		"hunter2",
 		"jane",
 		"Qz8Kp2Lm9Xw4Rv7Tn",
+		"Xq7Lp9Zr2Kw8Tn4Vb6Hs3Jd5",
 	}
 }
 
@@ -301,6 +302,13 @@ func generateScrubVectors(t *testing.T) []byte {
 				"used to win whole and the run's reach past it shipped in the clear; overlapping spans " +
 				"now join into one placeholder, which still starts where the pattern does, so the key " +
 				"name survives.",
+		},
+		{
+			"a secret glued before a provider key is redacted too", "claude-code", true,
+			`{"type":"user","uuid":"u1","toolUseResult":{"stdout":"Xq7Lp9Zr2Kw8Tn4Vb6Hs3Jd5=ghp_abcdefghijklmnopqrstuvwxyz0123456789"}}` + "\n",
+			"The mirror of the tail case: the pattern's start trims the entropy run, and the head it " +
+				"releases used to ship. The head is scored again on its own; a key name falls below the " +
+				"threshold and stays, a high-entropy head clears it and goes.",
 		},
 	}
 

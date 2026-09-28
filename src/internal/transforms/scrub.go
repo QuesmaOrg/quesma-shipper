@@ -437,8 +437,10 @@ func (s *Scrubber) planValueWith(
 	if entropy != nil {
 		heuristicSpans = entropy.Match(value)
 	}
+	var escapes escapeIndex
 	if strings.IndexByte(value, '\\') >= 0 {
-		if shadow, escapes := escapeShadow(value); !escapes.empty() {
+		var shadow []byte
+		if shadow, escapes = escapeShadow(value); !escapes.empty() {
 			patternSpans = s.unionEscapeShadow(value, string(shadow), escapes, patternSpans, scan)
 			// A run can start at the `n` of `\n`; the lone `\` left behind would break encoded JSON.
 			escapes.snapAll(heuristicSpans)
@@ -458,7 +460,19 @@ func (s *Scrubber) planValueWith(
 		}
 	}
 
-	resolved, redacted, hits := resolveSpans(value, patternSpans, heuristicSpans)
+	var rescore func(start, end int) []Span
+	if entropy != nil {
+		rescore = func(start, end int) []Span {
+			spans := entropy.Match(value[start:end])
+			for i := range spans {
+				spans[i].Start += start
+				spans[i].End += start
+			}
+			escapes.snapAll(spans)
+			return spans
+		}
+	}
+	resolved, redacted, hits := resolveSpans(value, patternSpans, heuristicSpans, rescore)
 	plan := valuePlan{redacted: redacted, hits: hits}
 	for _, span := range resolved {
 		plan.spans = append(plan.spans, replacementSpan{

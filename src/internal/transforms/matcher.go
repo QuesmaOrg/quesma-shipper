@@ -103,10 +103,11 @@ type prioritizedSpan struct {
 
 // resolveSpans joins overlapping spans into one placeholder rather than nesting them or keeping
 // one: a kept span beside a dropped overlapping one ships the dropped one's tail in the clear.
+// rescore, nil without a heuristic detector, rescans the head a pattern's start trims off a run.
 // The region's attribution is the HIGHEST-CONFIDENCE rule covering it: the entropy backstop fires
 // on nearly every provider key too, so any other tie-break turns the ledger into "something
 // high-entropy happened".
-func resolveSpans(value string, patternSpans, heuristicSpans []Span) ([]Span, int, map[string]int) {
+func resolveSpans(value string, patternSpans, heuristicSpans []Span, rescore func(start, end int) []Span) ([]Span, int, map[string]int) {
 	valid := func(s Span) bool { return s.Start >= 0 && s.End <= len(value) && s.Start < s.End }
 	spans := make([]prioritizedSpan, 0, len(patternSpans)+len(heuristicSpans))
 	for _, s := range patternSpans {
@@ -116,10 +117,22 @@ func resolveSpans(value string, patternSpans, heuristicSpans []Span) ([]Span, in
 	}
 	patterns := spans
 	for _, s := range heuristicSpans {
-		if valid(s) {
-			s.Start = max(s.Start, firstPatternStart(s, patterns))
-			spans = append(spans, prioritizedSpan{Span: s, priority: 1})
+		if !valid(s) {
+			continue
 		}
+		if first := firstPatternStart(s, patterns); first > s.Start {
+			// The head is text the pattern left out: a key name, or a secret of its own glued
+			// on by '-', '=' or '+'. Only a head that clears the heuristic by itself goes.
+			if rescore != nil {
+				for _, h := range rescore(s.Start, first) {
+					if valid(h) {
+						spans = append(spans, prioritizedSpan{Span: h, priority: 1})
+					}
+				}
+			}
+			s.Start = first
+		}
+		spans = append(spans, prioritizedSpan{Span: s, priority: 1})
 	}
 	if len(spans) == 0 {
 		return nil, 0, nil

@@ -13,6 +13,7 @@ func TestResolveSpansJoinsOverlaps(t *testing.T) {
 	for _, c := range []struct {
 		name              string
 		patterns, entropy []Span
+		heads             []Span
 		want              []Span
 		wantHits          map[string]int
 	}{
@@ -22,6 +23,14 @@ func TestResolveSpansJoinsOverlaps(t *testing.T) {
 			entropy:  []Span{{Start: 0, End: 28, RuleID: "e"}},
 			want:     []Span{{Start: 10, End: 28, RuleID: "p"}},
 			wantHits: map[string]int{"p": 1},
+		},
+		{
+			name:     "a trimmed head that clears on its own is still redacted",
+			patterns: []Span{{Start: 10, End: 20, RuleID: "p"}},
+			entropy:  []Span{{Start: 0, End: 28, RuleID: "e"}},
+			heads:    []Span{{Start: 0, End: 9, RuleID: "e"}},
+			want:     []Span{{Start: 0, End: 9, RuleID: "e"}, {Start: 10, End: 28, RuleID: "p"}},
+			wantHits: map[string]int{"e": 1, "p": 1},
 		},
 		{
 			name:     "a run starting inside a pattern widens it",
@@ -64,7 +73,7 @@ func TestResolveSpansJoinsOverlaps(t *testing.T) {
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			got, redacted, hits := resolveSpans(value, c.patterns, c.entropy)
+			got, redacted, hits := resolveSpans(value, c.patterns, c.entropy, rescoreTo(c.heads))
 			if !slices.Equal(got, c.want) {
 				t.Errorf("spans %v, want %v", got, c.want)
 			}
@@ -79,5 +88,18 @@ func TestResolveSpansJoinsOverlaps(t *testing.T) {
 				t.Errorf("hits %v, want %v", hits, c.wantHits)
 			}
 		})
+	}
+}
+
+// rescoreTo stands in for the entropy matcher: of heads, it finds those inside the trimmed range.
+func rescoreTo(heads []Span) func(start, end int) []Span {
+	return func(start, end int) []Span {
+		var in []Span
+		for _, h := range heads {
+			if start <= h.Start && h.End <= end {
+				in = append(in, h)
+			}
+		}
+		return in
 	}
 }
