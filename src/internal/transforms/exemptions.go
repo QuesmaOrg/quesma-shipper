@@ -72,6 +72,14 @@ func CompiledExemptions() map[string][]string {
 			"v.requests[].result.metadata.toolCallRounds[].thinking.id",
 			"v.requests[].result.metadata.toolCallRounds[].thinking.encrypted",
 			"v.requests[].result.metadata.toolCallRounds[].statefulMarker",
+			// Tool results keyed by tool call id: the key is the only join to the call.
+			"v.metadata.toolCallResults.*",
+			"v[].result.metadata.toolCallResults.*",
+			"v.requests[].result.metadata.toolCallResults.*",
+			// File URIs keyed by themselves: the workspace-storage hash must not tear the path.
+			"v[].invocationMessage.uris.*", "v[].pastTenseMessage.uris.*",
+			"v[].response[].invocationMessage.uris.*", "v[].response[].pastTenseMessage.uris.*",
+			"v.requests[].response[].invocationMessage.uris.*", "v.requests[].response[].pastTenseMessage.uris.*",
 		},
 		"*": {"timestamp", "version"},
 	}

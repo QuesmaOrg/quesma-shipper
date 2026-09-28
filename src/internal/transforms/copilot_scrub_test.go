@@ -57,3 +57,29 @@ func TestCopilotPathsLoseTheUsername(t *testing.T) {
 		t.Errorf("username survived: %s", out)
 	}
 }
+
+// toolCallResults is keyed by the tool call id and uris by the file URI; both keys survive in
+// every shape VS Code writes them, while a token used as a key is still removed.
+func TestCopilotIDKeyedMapsKeepTheirKeys(t *testing.T) {
+	call := "call_r4KeDgjw3zhljpnAV4CdlZT0"
+	uri := "file:///Users/__USER__/Library/Application%20Support/Code/User/workspaceStorage/e7f61a270e86b41cc7bc4f2d7d4f3938/GitHub.copilot-chat/debug-logs/models.json"
+	results := `{"toolCallResults":{"` + call + `":{"$mid":20,"content":[{"$mid":21,"value":"ok"}]}}}`
+	uris := `"uris":{"` + uri + `":{"$mid":1,"scheme":"file"}}`
+	lines := []string{
+		`{"kind":1,"k":["requests",0,"result"],"v":{"metadata":` + results + `}}`,
+		`{"kind":2,"k":["requests"],"v":[{"requestId":"request_1","result":{"metadata":` + results + `},"response":[{"invocationMessage":{"value":"Read",` + uris + `}}]}]}`,
+		`{"kind":0,"v":{"requests":[{"result":{"metadata":` + results + `},"response":[{"pastTenseMessage":{"value":"Read",` + uris + `}}]}]}}`,
+		`{"kind":2,"k":["requests",0,"response"],"v":[{"invocationMessage":{"value":"Read",` + uris + `},"pastTenseMessage":{"value":"Read",` + uris + `}}]}`,
+	}
+	payload := strings.Join(lines, "\n") + "\n"
+	res := scrubJSONL(t, newScrubber(t), "copilot", payload)
+	if got := string(res.Out.Bytes()); got != payload {
+		t.Errorf("id-keyed copilot maps changed (hits %v)\n got %s\nwant %s", res.RuleHits, got, payload)
+	}
+
+	pat := "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+	res = scrubJSONL(t, newScrubber(t), "copilot", `{"kind":1,"k":["requests",0,"result"],"v":{"metadata":{"toolCallResults":{"`+pat+`":{}}}}}`+"\n")
+	if strings.Contains(string(res.Out.Bytes()), pat) {
+		t.Errorf("token survived as a toolCallResults key: %s", res.Out.Bytes())
+	}
+}
