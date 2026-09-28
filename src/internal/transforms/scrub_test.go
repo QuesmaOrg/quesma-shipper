@@ -393,18 +393,12 @@ func TestOneLevelOfBase64IsDecodedAndScanned(t *testing.T) {
 
 	inner := "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
 	once := base64.StdEncoding.EncodeToString([]byte(inner))
-	twice := base64.StdEncoding.EncodeToString([]byte(once))
 
 	res := scrubJSONL(t, s, "claude-code",
 		`{"type":"user","message":{"content":[{"type":"text","text":"`+once+`"}]}}`+"\n")
 	if strings.Contains(string(res.Out.Bytes()), once) {
 		t.Errorf("a base64-wrapped secret must be caught:\n%s", res.Out.Bytes())
 	}
-
-	// Double encoding is out of scope by design; pinning it documents the boundary.
-	res2 := scrubJSONL(t, s, "claude-code",
-		`{"type":"user","message":{"content":[{"type":"text","text":"`+twice+`"}]}}`+"\n")
-	_ = res2 // no assertion on catching it; the entropy backstop may or may not fire
 }
 
 // --- fidelity ---------------------------------------------------------------

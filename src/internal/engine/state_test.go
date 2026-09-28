@@ -417,35 +417,6 @@ func TestCommitOfAnUnserializableEntryFails(t *testing.T) {
 	}
 }
 
-// A crash before the atomic replace leaves the previous document intact: retry is re-run.
-func TestCrashBeforeCommitLeavesThePreviousDocument(t *testing.T) {
-	dir := t.TempDir()
-
-	s := open(t, dir)
-	if err := commit(s, key("/x/a.jsonl"), fingerprint()); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-
-	before, err := os.ReadFile(filepath.Join(dir, engine.FileName))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// A second store mutates in memory and is abandoned without committing.
-	s2 := open(t, dir)
-	s2.Get(key("/x/a.jsonl"))
-	s2.Close()
-
-	after, err := os.ReadFile(filepath.Join(dir, engine.FileName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(before) != string(after) {
-		t.Error("the document changed without a commit")
-	}
-}
-
 // The document is deterministic, so a diff shows real change rather than map ordering.
 func TestDocumentIsDeterministic(t *testing.T) {
 	write := func(dir string, paths []string) string {

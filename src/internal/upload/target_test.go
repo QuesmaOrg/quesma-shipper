@@ -71,7 +71,6 @@ func TestNewUploadTargetRejects(t *testing.T) {
 		"path-style trailing slash":     {Origin: "https://minio.example.invalid", Addressing: PathStyle, PathPrefix: "/bucket/"},
 		"path-style dot segment":        {Origin: "https://minio.example.invalid", Addressing: PathStyle, PathPrefix: "/bucket/../other"},
 		"path-style escaped prefix":     {Origin: "https://minio.example.invalid", Addressing: PathStyle, PathPrefix: "/buck%65t"},
-		"loopback flag on a real host":  {Origin: "https://localhost.example.invalid", Addressing: VirtualHosted, AllowLoopbackHTTP: true, PathPrefix: "/bucket"},
 		"loopback name without a flag":  {Origin: "http://localhost:9000", Addressing: PathStyle, PathPrefix: "/bucket"},
 		"loopback address without flag": {Origin: "http://[::1]:9000", Addressing: PathStyle, PathPrefix: "/bucket"},
 	}

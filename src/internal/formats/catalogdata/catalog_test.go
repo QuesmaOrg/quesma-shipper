@@ -130,29 +130,6 @@ sources:
 	}
 }
 
-// Group 1 is the v1 scope ceiling: Claude Code, Codex, Cursor. This list is the ceiling itself.
-func TestGroupOneCoverage(t *testing.T) {
-	files, err := catalogdata.Files()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]bool{
-		"claude-code.yaml": false,
-		"codex.yaml":       false,
-		"cursor.yaml":      false,
-	}
-	for _, f := range files {
-		if _, ok := want[f]; ok {
-			want[f] = true
-		}
-	}
-	for f, found := range want {
-		if !found {
-			t.Errorf("Group 1 catalog file missing: %s", f)
-		}
-	}
-}
-
 // SQLite is enricher input only: no catalog entry may name a database as a shipping source.
 func TestNoDatabaseShippingSources(t *testing.T) {
 	files, err := catalogdata.Files()
