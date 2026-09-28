@@ -53,16 +53,17 @@ func served(t *testing.T, y string) config.LayeredDocument {
 	return config.LayeredDocument{Layer: config.LayerRemote, Doc: servedDoc(t, y)}
 }
 
-func mustReject(t *testing.T, err error, context string) {
+func mustReject(t *testing.T, err error, context string) *config.RejectionError {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("%s: resolved cleanly, want a rejection", context)
-		return
+		return nil
 	}
 	var rej *config.RejectionError
 	if !errors.As(err, &rej) {
 		t.Fatalf("%s: failed with %v, want a *RejectionError", context, err)
 	}
+	return rej
 }
 
 func sourceByID(t *testing.T, eff *config.Effective, id string) *config.ResolvedSource {
@@ -132,9 +133,13 @@ func rulebookProbes(t *testing.T) map[string]rulebookProbe {
 			reject: "drain_deadline: -5m\n",
 		},
 
-		"state_dir": {
-			reject: "state_dir: /var/lib/shipper\n",
-		},
+		// A served config that could move the state directory would silently defeat a pause.
+		"state_dir": {custom: func(t *testing.T) {
+			_, err := resolveLayers(t, served(t, "state_dir: /var/lib/shipper\n"))
+			if rej := mustReject(t, err, "served state_dir"); rej.Field != "state_dir" {
+				t.Errorf("rejected the wrong field: %s", rej.Field)
+			}
+		}},
 
 		"upload_targets": {
 			reject: "upload_targets:\n  - origin: https://evil.example.com\n    addressing: virtual-hosted\n",

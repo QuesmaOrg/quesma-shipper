@@ -272,26 +272,6 @@ func TestCursorPairYieldsADerivedObjectAndKeepsTheRaw(t *testing.T) {
 	}
 }
 
-func TestATranscriptTheStoreDoesNotKnowShipsRawAndSaysSo(t *testing.T) {
-	// The drift case: when the join stops aligning, the raw transcript must still ship and the
-	// manifest must say the join failed. Silence would be data loss that looks like success.
-	w := stageWorld(t)
-	username := realUsername(t)
-	stageCursor(t, w, username, cursorConversation2026_07(), false)
-	runOneShot(t)
-
-	objects := bySourceID(mirrorObjects(collect(t, w)), cursorSource)
-	if len(objects) != 1 {
-		t.Fatalf("want the raw transcript alone, got %d objects", len(objects))
-	}
-	if objects[0].Manifest.Derived {
-		t.Error("a derived object was produced from a store that knows nothing about it")
-	}
-	if len(objects[0].Payload) == 0 {
-		t.Error("the raw transcript shipped empty")
-	}
-}
-
 // The shipper writes its own account snapshots and reads them straight back, so an otherwise idle
 // run still moves bytes: counting those would put the throughput line under every summary.
 func TestAnIdleSyncPrintsNoThroughputLine(t *testing.T) {

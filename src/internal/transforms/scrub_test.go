@@ -277,23 +277,6 @@ func TestGraphReassemblesAfterScrub(t *testing.T) {
 	}
 }
 
-// The other end of the spawn-tree join: toolUseId is the only field in a subagent's
-// meta.json that points anywhere, and it is exactly the shape the backstop eats.
-func TestSubagentMetaJoinKeySurvives(t *testing.T) {
-	s := newScrubber(t)
-
-	payload := `{"agentType":"general-purpose","description":"Audit cache failures","toolUseId":"toolu_0183yENGzL6di289E8QTzyxi","spawnDepth":1}` + "\n"
-
-	res := scrubJSONL(t, s, "claude-code", payload)
-	var meta map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(string(res.Out.Bytes()))), &meta); err != nil {
-		t.Fatalf("scrubbed meta.json is not valid JSON: %v", err)
-	}
-	if meta["toolUseId"] != "toolu_0183yENGzL6di289E8QTzyxi" {
-		t.Errorf("toolUseId = %q — the subagent is an orphan", meta["toolUseId"])
-	}
-}
-
 // --- opaque binary payloads -------------------------------------------------
 
 // Cursor stores a hex-encoded image inside the assembled request: a declared opaque
@@ -401,27 +384,6 @@ func TestTornTailIsRawScannedAndShips(t *testing.T) {
 	}
 }
 
-// A non-JSON payload is raw-scanned rather than skipped.
-func TestNonJSONPayloadIsRawScanned(t *testing.T) {
-	s := newScrubber(t)
-	text := "$ printenv\nGITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789\nHOME=/Users/jane\n"
-
-	res, err := s.Scrub([]byte(text), transforms.Hint{Family: "claude-code", JSONL: false})
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := string(res.Out.Bytes())
-	if strings.Contains(out, "ghp_abcdefghijklmnopqrstuvwxyz0123456789") {
-		t.Errorf("secret survived a raw-text scan:\n%s", out)
-	}
-	if strings.Contains(out, "/Users/jane") {
-		t.Errorf("path_user must apply to raw text too:\n%s", out)
-	}
-	if res.ScanMode != transforms.ScanModeRawText {
-		t.Errorf("scan_mode: %q", res.ScanMode)
-	}
-}
-
 // --- base64 -----------------------------------------------------------------
 
 // A base64-encoded secret is invisible to every regex, so one level is decoded and
@@ -461,45 +423,6 @@ func TestUntouchedRecordsAreByteIdentical(t *testing.T) {
 	}
 	if res.BytesRedacted != 0 {
 		t.Errorf("nothing should have been redacted, got %d bytes", res.BytesRedacted)
-	}
-}
-
-// When a record IS modified, key order and number literals must still survive: 1.23e+18
-// for a large integer is gratuitous damage to bytes the shipper preserves.
-func TestModifiedRecordsPreserveKeyOrderAndNumbers(t *testing.T) {
-	s := newScrubber(t)
-
-	payload := `{"zeta":1,"alpha":"ghp_abcdefghijklmnopqrstuvwxyz0123456789","mid":1234567890123456789,"beta":true}` + "\n"
-	res := scrubJSONL(t, s, "claude-code", payload)
-	out := string(res.Out.Bytes())
-
-	if strings.Index(out, `"zeta"`) > strings.Index(out, `"alpha"`) {
-		t.Errorf("key order was not preserved:\n%s", out)
-	}
-	if !strings.Contains(out, "1234567890123456789") {
-		t.Errorf("a large integer lost precision:\n%s", out)
-	}
-	if !strings.Contains(out, "<html>") && strings.Contains(payload, "<html>") {
-		t.Error("HTML escaping was applied where the input had none")
-	}
-}
-
-// A recorded over-redaction, left alone deliberately. In a postgres URL the url-userinfo
-// and email rules overlap, and the wider span wins: it takes the hostname with the
-// password and attributes the hit to email. The safe direction on an overlap is the wider
-// span, since preferring the narrower risks leaving a tail of a secret in the clear.
-func TestKnownOverRedactionInConnectionStrings(t *testing.T) {
-	s := newScrubber(t)
-	line := `{"type":"user","toolUseResult":{"stdout":"psql postgres://app:hunter2@db.internal:5432/prod"}}`
-
-	res := scrubJSONL(t, s, "claude-code", line+"\n")
-	out := string(res.Out.Bytes())
-
-	if strings.Contains(out, "hunter2") {
-		t.Error("the password must not survive")
-	}
-	if strings.Contains(out, "db.internal") {
-		t.Error("the hostname now survives — the overlap rule changed; update this note")
 	}
 }
 

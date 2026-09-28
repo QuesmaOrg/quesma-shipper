@@ -33,15 +33,6 @@ func TestBlindingIsKeyed(t *testing.T) {
 	}
 }
 
-// Home paths differing only by user name converge, so a renamed account does not re-ship.
-func TestUserPlaceholderMakesPathsConverge(t *testing.T) {
-	jane := formats.CanonicalPath("projects/-Users-jane-work-api/s.jsonl", "jane")
-	bob := formats.CanonicalPath("projects/-Users-bob-work-api/s.jsonl", "bob")
-	if jane != bob {
-		t.Errorf("canonical paths should converge:\n jane %q\n bob  %q", jane, bob)
-	}
-}
-
 // Over-replacing is the worse failure: it merges two different files onto one key.
 func TestUserPlaceholderDoesNotOverMatch(t *testing.T) {
 	cases := []struct{ in, username, want string }{

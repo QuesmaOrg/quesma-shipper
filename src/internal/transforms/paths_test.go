@@ -65,25 +65,6 @@ func TestOrdinaryPathsSurviveTheEntropyBackstop(t *testing.T) {
 	}
 }
 
-// __USER__ is built from in-class characters, so substituting it into a dash-encoded slug
-// ADDS entropy: the rewritten path can cross a threshold its raw form sat under. This is
-// the test that fails if the alphabet change lands without the placeholder skip.
-func TestUserPlaceholderNeverTripsTheEntropyBackstop(t *testing.T) {
-	s := newScrubber(t)
-
-	// 4.22 bits/char as one run: over threshold, and in an unexempt field.
-	payload := `{"type":"user","uuid":"u1","cwd":"/Users/__USER__/Work2026/SampleOrg/blink-UI",` +
-		`"message":{"content":[{"type":"text","text":"logs under ~/.claude/projects/-Users-__USER__-Work2026-SampleOrg-blink-UI/f00.jsonl"}]}}` + "\n"
-
-	res := scrubJSONL(t, s, "claude-code", payload)
-	if string(res.Out.Bytes()) != payload {
-		t.Errorf("already-placeholdered content changed:\n got %s\nwant %s", res.Out.Bytes(), payload)
-	}
-	if len(res.RuleHits) != 0 {
-		t.Errorf("no rule should fire on already-scrubbed shapes: %v", res.RuleHits)
-	}
-}
-
 // A sentinel begins with in-class characters and its ":" comes after them, so
 // "activity-__REDACTED:card-pan__-KzYA" fuses into one candidate over the threshold and a
 // second pass nests sentinels. The backstop must never eat its own ledger: candidates

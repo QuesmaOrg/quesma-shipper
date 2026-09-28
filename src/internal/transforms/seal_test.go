@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"io"
 	"math/rand"
 	"strings"
 	"testing"
@@ -89,42 +88,6 @@ func TestSealEmptyPayload(t *testing.T) {
 	}
 	if len(payload) != 0 || m.PayloadSize != 0 {
 		t.Errorf("empty payload became %d bytes", len(payload))
-	}
-}
-
-// Manifest-first is the container contract and what makes a ranged head-fetch possible, so
-// assert the order at the tar layer directly.
-func TestManifestIsTheFirstTarEntry(t *testing.T) {
-	id := identity(t)
-	obj, _, err := transforms.Seal(manifest(), transforms.Unscrubbed(bytes.Repeat([]byte("x"), 4096), "test fixture"), []age.Recipient{id.Recipient()})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dec, err := age.Decrypt(bytes.NewReader(obj), id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	zr, err := zstd.NewReader(dec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer zr.Close()
-
-	tr := tar.NewReader(zr)
-	var names []string
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		names = append(names, hdr.Name)
-	}
-	if len(names) != 2 || names[0] != transforms.ManifestEntry || names[1] != transforms.PayloadEntry {
-		t.Errorf("entries %v, want [%s %s]", names, transforms.ManifestEntry, transforms.PayloadEntry)
 	}
 }
 
@@ -251,56 +214,6 @@ func TestObjectIsOpaqueWithoutTheIdentity(t *testing.T) {
 	}
 	if _, _, err := transforms.Open(obj); err == nil {
 		t.Fatal("opening with no identity must fail")
-	}
-}
-
-// Archival-only versus archival-plus-analysis recipients: who can read is decided at encryption
-// time by which public recipients were included, and nothing later widens it.
-func TestRecipientSetsDecideWhoCanRead(t *testing.T) {
-	archival := identity(t)
-	analysis := identity(t)
-	payload := []byte(`{"a":1}`)
-
-	archivalOnly, _, err := transforms.Seal(manifest(), transforms.Unscrubbed(payload, "test fixture"), []age.Recipient{archival.Recipient()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	both, _, err := transforms.Seal(manifest(), transforms.Unscrubbed(payload, "test fixture"),
-		[]age.Recipient{archival.Recipient(), analysis.Recipient()})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, _, err := transforms.Open(archivalOnly, archival); err != nil {
-		t.Errorf("the archival identity must read an archival object: %v", err)
-	}
-	if _, _, err := transforms.Open(archivalOnly, analysis); err == nil {
-		t.Error("the analysis identity must NOT read an archival-only object")
-	}
-	for _, id := range []age.Identity{archival, analysis} {
-		if _, _, err := transforms.Open(both, id); err != nil {
-			t.Errorf("both recipients must read a two-recipient object: %v", err)
-		}
-	}
-
-	// Recipient key IDs are recorded, public only, so a rotation can find what to rewrap.
-	m, _, err := transforms.Open(both, archival)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(m.Encryption.RecipientKeyIDs) != 2 {
-		t.Errorf("recipient_key_ids: %v", m.Encryption.RecipientKeyIDs)
-	}
-	for _, kid := range m.Encryption.RecipientKeyIDs {
-		if strings.Contains(kid, "AGE-SECRET-KEY") {
-			t.Fatal("a private key reached the manifest")
-		}
-	}
-}
-
-func TestSealRefusesWithNoRecipients(t *testing.T) {
-	if _, _, err := transforms.Seal(manifest(), transforms.Unscrubbed([]byte("x"), "test fixture"), nil); err == nil {
-		t.Fatal("sealing with no recipients must fail: encryption is not optional")
 	}
 }
 

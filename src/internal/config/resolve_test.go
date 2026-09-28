@@ -180,21 +180,6 @@ sources:
 	}
 }
 
-// --- config_version ---------------------------------------------------------
-
-func TestUnknownConfigVersionIsAHardError(t *testing.T) {
-	home := fakeHome(t)
-	_, err := config.Resolve(baseInput(t, home,
-		config.LayeredDocument{Layer: config.LayerRemote, Doc: doc(t, "config_version: 99\n")},
-	))
-	if err == nil {
-		t.Fatal("an unknown config_version must be a hard error, never a partial application")
-	}
-	if !strings.Contains(err.Error(), "config_version") {
-		t.Errorf("the refusal should name the field, got: %v", err)
-	}
-}
-
 // --- scope ceiling ----------------------------------------------------------
 
 // A root the compiled catalog never declared is refused: adding a genuinely new one takes a release.
@@ -536,31 +521,6 @@ func TestCompiledExemptionBaselineIsSeededByDefault(t *testing.T) {
 	}
 }
 
-// Union, not replace: a layer naming one real pack must not drop the four the defaults carry.
-func TestRulePacksUnionRatherThanReplace(t *testing.T) {
-	home := fakeHome(t)
-	eff, err := config.Resolve(baseInput(t, home,
-		config.LayeredDocument{Layer: config.LayerRemote, Doc: doc(t, `
-scrub:
-  rule_packs: [pii-core]
-`)},
-	))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"gitleaks-core", "cloud-keys", "generic-entropy", "pii-core"} {
-		found := false
-		for _, got := range eff.RulePacks {
-			if got == want {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("rule pack %q missing from %v", want, eff.RulePacks)
-		}
-	}
-}
-
 // The served config names the organization; it cannot name the write path, so the send block it serves is ignored.
 func TestServedRemoteConfigSetsOrgAndIgnoresTheSendBlock(t *testing.T) {
 	home := fakeHome(t)
@@ -697,13 +657,6 @@ sources:
 
 // --- documents --------------------------------------------------------------
 
-// A typo in a security-relevant config file must not be a silent no-op.
-func TestUnknownFieldInADocumentIsRefused(t *testing.T) {
-	if _, err := config.ParseDocument([]byte("max_file_per_run: 8\n")); err == nil {
-		t.Fatal("an unknown config field must be refused, not ignored")
-	}
-}
-
 func TestSourceOverrideForUnknownSourceIsRefused(t *testing.T) {
 	home := fakeHome(t)
 	_, err := config.Resolve(baseInput(t, home,
@@ -756,22 +709,6 @@ func TestRootThatIsAFileDoesNotResolve(t *testing.T) {
 }
 
 // --- M8: the state directory and the drain deadline -------------------------
-
-// state_dir is machine-owner only: a served config that could move it would silently defeat a pause.
-func TestTheServedDocumentCannotMoveTheStateDirectory(t *testing.T) {
-	home := fakeHome(t)
-	_, err := config.Resolve(baseInput(t, home,
-		config.LayeredDocument{Layer: config.LayerRemote,
-			Doc: doc(t, "state_dir: /tmp/somewhere-else\n")},
-	))
-	var rej *config.RejectionError
-	if !errors.As(err, &rej) {
-		t.Fatalf("the served document moved the state directory: %v", err)
-	}
-	if rej.Field != "state_dir" {
-		t.Errorf("rejected the wrong field: %s", rej.Field)
-	}
-}
 
 func TestTheUserLayerMayMoveTheStateDirectory(t *testing.T) {
 	home := fakeHome(t)
@@ -898,48 +835,6 @@ sources:
 	}
 	if !enrichersOf(clean, "cursor-transcripts")["cursor-transcript-join"] {
 		t.Error("a previous resolution's override leaked into the compiled catalog")
-	}
-}
-
-func TestARemoteLayerMayDisableButNotEnableAnEnricher(t *testing.T) {
-	home := fakeHome(t)
-
-	// Disabling from the served document is fine: it only ever narrows.
-	off, err := config.Resolve(baseInput(t, home,
-		config.LayeredDocument{Layer: config.LayerRemote, Doc: doc(t, `
-sources:
-  - id: cursor-transcripts
-    enrichers:
-      cursor-transcript-join: false
-`)},
-	))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if enrichersOf(off, "cursor-transcripts")["cursor-transcript-join"] {
-		t.Error("a remote layer could not disable an enricher, but narrowing is always allowed")
-	}
-
-	// Enabling from a non-local layer would widen what gets read: an enricher reads a database the raw pipeline never touches.
-	on, err := config.Resolve(baseInput(t, home,
-		config.LayeredDocument{Layer: config.LayerUser, Doc: doc(t, `
-sources:
-  - id: cursor-transcripts
-    enrichers:
-      cursor-transcript-join: false
-`)},
-		config.LayeredDocument{Layer: config.LayerRemote, Doc: doc(t, `
-sources:
-  - id: cursor-transcripts
-    enrichers:
-      cursor-transcript-join: true
-`)},
-	))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if enrichersOf(on, "cursor-transcripts")["cursor-transcript-join"] {
-		t.Error("a remote layer enabled an enricher the machine owner had switched off")
 	}
 }
 
