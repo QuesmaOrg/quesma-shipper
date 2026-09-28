@@ -120,7 +120,7 @@ func (w *jsonWalker) walkObject(depth int, path string) error {
 		}
 
 		field := joinFieldPath(path, key)
-		plan := w.s.planValue(key, false, FieldPath(field), w.family, w.scan)
+		plan := w.s.planKey(key, FieldPath(path), w.family, w.scan)
 		w.addPlan(raw, rawStart, key, plan)
 		if len(plan.spans) > 0 {
 			field = joinFieldPath(path, plan.apply(key))

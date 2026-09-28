@@ -406,6 +406,16 @@ func (s *Scrubber) planValue(value string, secretKey bool, field FieldPath, fami
 	return s.planValueWith(value, entropy, secretKey, field, scan)
 }
 
+// planKey is planValue for an object key under parent.
+func (s *Scrubber) planKey(key string, parent FieldPath, family string, scan *packs.ValueScan) valuePlan {
+	field := FieldPath(joinFieldPath(string(parent), key))
+	entropy := s.entropy
+	if s.exempt.Exempt(family, field) || s.exempt.ExemptKeys(family, parent) {
+		entropy = nil
+	}
+	return s.planValueWith(key, entropy, false, field, scan)
+}
+
 func (s *Scrubber) planValueWith(
 	value string,
 	entropy *entropyMatcher,
