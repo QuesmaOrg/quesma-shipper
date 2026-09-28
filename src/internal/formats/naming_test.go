@@ -40,6 +40,7 @@ func TestUserPlaceholderDoesNotOverMatch(t *testing.T) {
 		{"notes/mariajane.txt", "jane", "notes/mariajane.txt"},
 		{"jane/x.txt", "jane", "__USER__/x.txt"},
 		{"-Users-jane-work", "jane", "-Users-__USER__-work"},
+		{"-Users-bob-work", "bob", "-Users-__USER__-work"},
 		{"a/b.txt", "a", "a/b.txt"},
 		{"projects/x.jsonl", "", "projects/x.jsonl"},
 	}

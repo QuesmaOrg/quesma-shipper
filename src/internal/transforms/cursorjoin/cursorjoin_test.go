@@ -556,6 +556,9 @@ func TestAMissingOrUnreadableDatabaseFailsOpen(t *testing.T) {
 
 // The workspace state.vscdb is v1.1, deferred. Only the global store is declared.
 func TestOnlyTheGlobalStoreIsDeclared(t *testing.T) {
+	if got := cursorjoin.New().Table(); got != "cursorDiskKV" {
+		t.Errorf("declared table %q, want cursorDiskKV", got)
+	}
 	for _, c := range cursorjoin.New().DBCandidates() {
 		if strings.Contains(c, "workspaceStorage") {
 			t.Errorf("the workspace store is declared but deferred to v1.1: %s", c)

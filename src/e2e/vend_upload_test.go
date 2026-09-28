@@ -74,6 +74,9 @@ func TestVendPathShipsAuthorizedObjectsToTheStore(t *testing.T) {
 	if _, _, err := seal.Open(beats[0].Body, v.Identity); err != nil {
 		t.Errorf("the heartbeat is not a sealed object: %v", err)
 	}
+	if out := run(t, "status"); !strings.Contains(out, v.store.server.URL) {
+		t.Errorf("status after a sync did not resolve the staged config:\n%s", out)
+	}
 }
 
 // Progress lives in the local fingerprint document and nowhere else: a second run with nothing

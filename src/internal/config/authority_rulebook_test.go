@@ -102,7 +102,12 @@ func rulebookProbes(t *testing.T) map[string]rulebookProbe {
 					t.Errorf("served config_version attributed to %s, want the remote layer", got.Layer)
 				}
 			},
-			reject: "config_version: 99\n",
+			custom: func(t *testing.T) {
+				_, err := resolveLayers(t, served(t, "config_version: 99\n"))
+				if rej := mustReject(t, err, "unknown config_version"); rej.Field != "config_version" {
+					t.Errorf("rejected the wrong field: %s", rej.Field)
+				}
+			},
 		},
 
 		"mode.schedule": {

@@ -53,6 +53,30 @@ func refClears(cfg EntropyConfig, candidate string) bool {
 	return refShannonBits(candidate) >= threshold
 }
 
+func TestEntropyClassTableMatchesTheByteTests(t *testing.T) {
+	rank := 0
+	for c := 0; c < 256; c++ {
+		b := byte(c)
+		got := entropyClass[c]
+		if !isCandidateByte(b) {
+			if got != 0 {
+				t.Fatalf("byte %d out of class but tabulated as %d", c, got)
+			}
+			continue
+		}
+		rank++
+		if int(got&^entropyHexBit) != rank {
+			t.Fatalf("byte %d: rank %d, want %d", c, got&^entropyHexBit, rank)
+		}
+		if (got&entropyHexBit != 0) != isHexByte(b) {
+			t.Fatalf("byte %d: hex bit %v, want %v", c, got&entropyHexBit != 0, isHexByte(b))
+		}
+	}
+	if rank != entropySymbols {
+		t.Fatalf("alphabet has %d symbols, entropySymbols is %d", rank, entropySymbols)
+	}
+}
+
 // The score must be bit-identical, not merely close: a last-ulp difference at the threshold is
 // a redaction that appears or disappears.
 func TestEntropyScoreIsBitIdenticalToTheWideHistogram(t *testing.T) {

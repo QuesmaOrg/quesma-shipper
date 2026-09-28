@@ -112,3 +112,20 @@ func TestAnUnusableInFlightCapIsRefused(t *testing.T) {
 		})
 	}
 }
+
+func TestADeltaReportsSignedGrowth(t *testing.T) {
+	d := platform.Delta{Before: platform.Sample{HeapInuse: 1 << 20}, After: platform.Sample{HeapInuse: 3 << 20}}
+	if got := d.Growth(); got != 2<<20 {
+		t.Errorf("growth %d, want %d", got, 2<<20)
+	}
+	if !strings.Contains(d.String(), "(2 MB)") {
+		t.Errorf("summary does not show the growth: %s", d)
+	}
+	shrink := platform.Delta{Before: d.After, After: d.Before}
+	if got := shrink.Growth(); got != -2<<20 {
+		t.Errorf("shrink %d, want %d", got, -2<<20)
+	}
+	if !strings.Contains(shrink.String(), "(-2 MB)") {
+		t.Errorf("summary does not show the shrink: %s", shrink)
+	}
+}

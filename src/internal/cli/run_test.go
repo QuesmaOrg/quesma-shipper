@@ -49,7 +49,7 @@ func TestNextDelay(t *testing.T) {
 		{"complete run", formats.Report{}, nil, config.DefaultTick},
 		// Re-ticking fast would make one failure a hot loop. A panic is the same case: recoverFlush
 		// always surfaces it as an error.
-		{"errored run", formats.Report{Truncated: true}, errors.New("sink unreachable"), config.DefaultTick},
+		{"errored run", formats.Report{Truncated: true, Shipped: 64}, errors.New("sink unreachable"), config.DefaultTick},
 		// Nothing shipped means no backlog worth chasing, whatever Truncated says; per-file
 		// failures return no error.
 		{"all-failures run", formats.Report{Truncated: true, Failed: 64, Shipped: 0}, nil, config.DefaultTick},
