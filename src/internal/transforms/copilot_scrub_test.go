@@ -28,6 +28,12 @@ func TestCopilotJoinIdsAndCiphertextSurvive(t *testing.T) {
 		`{"kind":2,"k":["requests",0,"response"],"v":[{"kind":"toolInvocationSerialized","toolCallId":"` + call + `"}]}`,
 		`{"kind":0,"v":{"requests":[{"requestId":"request_` + call + `","result":{"metadata":{"toolCallRounds":[{"thinking":{"encrypted":"` + blob + `"}}]}}}]}}`,
 	}
+	// A subagent's events name the tool call that spawned it; the flat <id>.json store is the
+	// snapshot without the v wrapper.
+	lines = append(lines,
+		`{"type":"assistant.message","data":{"messageId":"m2","parentToolCallId":"`+call+`"},"id":"a2","parentId":"a1"}`,
+		`{"version":3,"requests":[{"requestId":"request_`+call+`","response":[{"toolCallId":"`+call+`","invocationMessage":{"uris":{"file:///work/`+blob[:40]+`/x.json":{}}}}],"result":{"metadata":{"toolCallRounds":[{"toolCalls":[{"id":"`+call+`"}],"thinking":{"id":"`+blob[:64]+`","encrypted":"`+blob+`"},"statefulMarker":"`+blob[:120]+`"}],"toolCallResults":{"`+call+`":{"content":[]}}}}}]}`,
+	)
 	payload := strings.Join(lines, "\n") + "\n"
 	res := scrubJSONL(t, newScrubber(t), "copilot", payload)
 	if got := string(res.Out.Bytes()); got != payload {

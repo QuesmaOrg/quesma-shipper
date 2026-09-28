@@ -2,7 +2,6 @@ package sources
 
 import (
 	"encoding/json"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -33,7 +32,10 @@ type RepoFilter struct {
 	cwds   map[string]string
 	scopes map[string]gitScope
 
-	anchors map[string]sessionAnchor
+	// anchors names the Copilot sources whose files take their folders from one anchor file per
+	// directory, and anchored caches those folders; see anchor.go.
+	anchors  map[string]sessionAnchor
+	anchored map[string][]string
 }
 
 // gitScope is the checkout containing a working directory and the repository's main
@@ -69,29 +71,7 @@ func (c *Compiled) RepoFilter() *RepoFilter {
 }
 
 func newRepoFilter(probe *CWDProbe, git *GitRead, home string) *RepoFilter {
-	return &RepoFilter{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}}
-}
-
-// sessionAnchor names the one file in a per-session (or per-workspace) directory that states
-// the cwd for every file under it, so a sidecar with no cwd of its own follows its session.
-type sessionAnchor struct {
-	depth int // leading RelPath segments naming the directory
-	file  string
-	read  func(path string) (string, bool)
-}
-
-// copilotAnchors: a CLI session directory's events.jsonl opens with session.start, and a
-// VS Code workspace-storage directory's workspace.json names the folder that was open.
-func copilotAnchors(probe *CWDProbe) map[string]sessionAnchor {
-	events := sessionAnchor{depth: 2, file: "events.jsonl", read: func(p string) (string, bool) { return probeCWD(p, probe) }}
-	workspace := sessionAnchor{depth: 1, file: "workspace.json", read: workspaceFolder}
-	return map[string]sessionAnchor{
-		"copilot-cli-sessions":         events,
-		"copilot-cli-context":          events,
-		"copilot-vscode-transcripts":   workspace,
-		"copilot-vscode-chat-sessions": workspace,
-		"copilot-vscode-editing":       workspace,
-	}
+	return &RepoFilter{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}, anchored: map[string][]string{}}
 }
 
 // CWD is the working directory a candidate's session ran in, or "" when none was found,
@@ -101,7 +81,11 @@ func (f *RepoFilter) CWD(src Resolved, c Candidate) string {
 		return ""
 	}
 	if a, ok := f.anchors[src.ID]; ok {
-		return f.anchoredCWD(src, c, a)
+		// A multi-root workspace has no single working directory.
+		if dirs := f.anchoredDirs(src, c, a); len(dirs) == 1 {
+			return dirs[0]
+		}
+		return ""
 	}
 	if f.probe == nil || !slices.Contains(f.probe.From, src.ID) {
 		return ""
@@ -125,52 +109,6 @@ func (f *RepoFilter) CWD(src Resolved, c Candidate) string {
 	}
 	f.cwds[c.Path] = cwd
 	return cwd
-}
-
-// anchoredCWD caches hits only: the anchor may not be written yet when a sidecar is first seen.
-func (f *RepoFilter) anchoredCWD(src Resolved, c Candidate, a sessionAnchor) string {
-	parts := strings.Split(filepath.ToSlash(c.RelPath), "/")
-	if len(parts) <= a.depth || slices.Contains(parts[:a.depth], "..") {
-		return ""
-	}
-	dir := filepath.Join(src.Root, filepath.Join(parts[:a.depth]...))
-	key := src.Root + "\x00" + dir
-	if cwd, hit := f.cwds[key]; hit {
-		return cwd
-	}
-	cwd := ""
-	if p, ok := a.read(filepath.Join(dir, a.file)); ok {
-		cwd = cleanCWD(p)
-	}
-	if cwd != "" {
-		f.cwds[key] = cwd
-	}
-	return cwd
-}
-
-// workspaceFolder reads VS Code's workspace.json. Only a local single folder names a cwd: a
-// multi-root workspace has no single one, and a vscode-remote folder is on another machine.
-func workspaceFolder(path string) (string, bool) {
-	body, _, err := platform.ReadWhole(path, 64<<10)
-	if err != nil {
-		return "", false
-	}
-	var ws struct {
-		Folder string `json:"folder"`
-	}
-	if json.Unmarshal(body, &ws) != nil {
-		return "", false
-	}
-	u, err := url.Parse(ws.Folder)
-	if err != nil || u.Scheme != "file" || u.Path == "" {
-		return "", false
-	}
-	p := u.Path
-	// file:///c%3A/Users/... decodes to /c:/Users/...; the drive letter needs no leading slash.
-	if len(p) >= 3 && p[0] == '/' && p[2] == ':' {
-		p = p[1:]
-	}
-	return p, true
 }
 
 func cleanCWD(cwd string) string {
@@ -262,8 +200,16 @@ func (f *RepoFilter) Match(src Resolved, c Candidate) bool {
 	if f == nil {
 		return false
 	}
-	_, marked := f.Marker(f.CWD(src, c))
-	return marked
+	dirs := []string{f.CWD(src, c)}
+	if a, ok := f.anchors[src.ID]; ok {
+		dirs = f.anchoredDirs(src, c, a)
+	}
+	for _, dir := range dirs {
+		if _, marked := f.Marker(dir); marked {
+			return true
+		}
+	}
+	return false
 }
 
 // Untrack drops a marker in dir; Track removes dir's own marker. Both are idempotent, and

@@ -45,7 +45,7 @@ func CompiledExemptions() map[string][]string {
 			// The event spine and the tool-call and model-call joins of the CLI and VS Code
 			// transcripts (call_… and toolu_… ids trip the backstop).
 			"id", "parentId",
-			"data.toolCallId", "data.toolRequests[].toolCallId",
+			"data.toolCallId", "data.toolRequests[].toolCallId", "data.parentToolCallId",
 			"data.permissionRequest.toolCallId", "data.promptRequest.toolCallId",
 			"data.apiCallId", "data.message.apiCallId", "data.messages[].apiCallId",
 			"data.modelCall.api_id", "data.responseChunk.id",
@@ -80,6 +80,16 @@ func CompiledExemptions() map[string][]string {
 			"v[].invocationMessage.uris.*", "v[].pastTenseMessage.uris.*",
 			"v[].response[].invocationMessage.uris.*", "v[].response[].pastTenseMessage.uris.*",
 			"v.requests[].response[].invocationMessage.uris.*", "v.requests[].response[].pastTenseMessage.uris.*",
+			// The flat <id>.json store (chat.useLogSessionStorage off, transferred sessions) is the
+			// same snapshot without the v wrapper.
+			"requests[].requestId", "requests[].responseId",
+			"requests[].response[].id", "requests[].response[].toolCallId",
+			"requests[].result.metadata.toolCallRounds[].toolCalls[].id",
+			"requests[].result.metadata.toolCallRounds[].thinking.id",
+			"requests[].result.metadata.toolCallRounds[].thinking.encrypted",
+			"requests[].result.metadata.toolCallRounds[].statefulMarker",
+			"requests[].result.metadata.toolCallResults.*",
+			"requests[].response[].invocationMessage.uris.*", "requests[].response[].pastTenseMessage.uris.*",
 		},
 		"*": {"timestamp", "version"},
 	}

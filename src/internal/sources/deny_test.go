@@ -147,6 +147,8 @@ func TestMatchReportsTheFirstPatternInListOrder(t *testing.T) {
 		{"~/.copilot/mcp-config/servers.json", "~/.copilot/mcp-config*/**"},
 		{"~/.copilot/mcp-oauth-config.json", "~/.copilot/mcp-oauth-config*"},
 		{"~/.copilot/mcp-oauth-config/github.json", "~/.copilot/mcp-oauth-config*/**"},
+		{"~/.copilot/mcp-secrets/github/token", "~/.copilot/mcp-secrets/**"},
+		{"~/.copilot/mcp-secrets", "~/.copilot/mcp-secrets/**"},
 		{"~/.copilot/ide/20d3f075-702b-4422-ac5a-55509cf3d337.lock", "~/.copilot/ide/**"},
 		{"~/.copilot/session-state/s1/events.jsonl", ""},
 		{"~/.copilot/session-state/s1/files/config.json", ""},

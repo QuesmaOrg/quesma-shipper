@@ -49,7 +49,11 @@ func TestCopilotCLIRootYieldsOnlySessionFiles(t *testing.T) {
 		"config.json",
 		"mcp-config.json",
 		"mcp-oauth-config/github.json",
+		"mcp-secrets/github/token",
 		"ide/20d3f075.lock",
+		"copilot-instructions.md",
+		"instructions/go.instructions.md",
+		"instructions/notes.md",
 		"command-history-state.json",
 		"session-store.db",
 		"logs/process-1.log",
@@ -72,6 +76,10 @@ func TestCopilotCLIRootYieldsOnlySessionFiles(t *testing.T) {
 	if got := collected(t, "copilot-cli-context", root, deny); !slices.Equal(got, want) {
 		t.Errorf("context collected %v, want %v", got, want)
 	}
+	want = []string{"copilot-instructions.md", "instructions/go.instructions.md"}
+	if got := collected(t, "copilot-cli-instructions", root, deny); !slices.Equal(got, want) {
+		t.Errorf("instructions collected %v, want %v", got, want)
+	}
 }
 
 func TestVSCodeWorkspaceStorageYieldsOnlyChatFiles(t *testing.T) {
@@ -80,6 +88,8 @@ func TestVSCodeWorkspaceStorageYieldsOnlyChatFiles(t *testing.T) {
 		"h1/workspace.json",
 		"h1/state.vscdb",
 		"h1/chatSessions/s1.jsonl",
+		"h1/chatSessions/s2.json",
+		"no-workspace/chatSessions/s3.json",
 		"h1/GitHub.copilot-chat/transcripts/s1.jsonl",
 		"h1/GitHub.copilot-chat/debug-logs/s1/main.jsonl",
 		"h1/chatEditingSessions/s1/state.json",
@@ -91,12 +101,32 @@ func TestVSCodeWorkspaceStorageYieldsOnlyChatFiles(t *testing.T) {
 	}
 	for id, want := range map[string][]string{
 		"copilot-vscode-transcripts":   {"h1/GitHub.copilot-chat/transcripts/s1.jsonl"},
-		"copilot-vscode-chat-sessions": {"h1/chatSessions/s1.jsonl"},
+		"copilot-vscode-chat-sessions": {"h1/chatSessions/s1.jsonl", "h1/chatSessions/s2.json", "no-workspace/chatSessions/s3.json"},
 		"copilot-vscode-editing":       {"h1/chatEditingSessions/s1/contents/a1b2", "h1/chatEditingSessions/s1/state.json"},
 	} {
 		if got := collected(t, id, root, nil); !slices.Equal(got, want) {
 			t.Errorf("%s collected %v, want %v", id, got, want)
 		}
+	}
+}
+
+func TestVSCodeGlobalStorageYieldsOnlyChatFiles(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "Library", "Application Support", "Code", "User", "globalStorage")
+	for _, rel := range []string{
+		"emptyWindowChatSessions/s1.jsonl",
+		"emptyWindowChatSessions/s2.json",
+		"transferredChatSessions/s3.json",
+		"state.vscdb",
+		"state.vscdb.backup",
+		"github.copilot-chat/session-store.db",
+		"storage.json",
+	} {
+		write(t, filepath.Join(root, rel), `{"a":1}`+"\n")
+	}
+	want := []string{"emptyWindowChatSessions/s1.jsonl", "emptyWindowChatSessions/s2.json", "transferredChatSessions/s3.json"}
+	if got := collected(t, "copilot-vscode-global-sessions", root, sources.New(home)); !slices.Equal(got, want) {
+		t.Errorf("collected %v, want %v", got, want)
 	}
 }
 

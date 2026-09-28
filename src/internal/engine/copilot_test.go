@@ -62,6 +62,17 @@ func vscodeChatSession() string {
 	return b.String()
 }
 
+// vscodeFlatSession is the flat <id>.json store: the kind 0 snapshot alone, on one line.
+func vscodeFlatSession() string {
+	var reqs []string
+	for i, l := range canaryLines() {
+		q := jsonString(l)
+		call := `call_r4KeDgjw3zhljpnAV4CdlZT` + string(rune('a'+i))
+		reqs = append(reqs, `{"requestId":"request_1","message":{"text":`+q+`},"response":[{"kind":"toolInvocationSerialized","toolCallId":"`+call+`","invocationMessage":{"value":`+q+`}}],"result":{"metadata":{"toolCallRounds":[{"toolCalls":[{"id":"`+call+`"}],"thinking":{"encrypted":`+q+`}}],"toolCallResults":{"`+call+`":{"content":[{"value":`+q+`}]}}}}}`)
+	}
+	return `{"version":3,"sessionId":"` + copilotSession + `","requests":[` + strings.Join(reqs, ",") + `]}`
+}
+
 func writeCopilotCLICanary(t *testing.T, home string) {
 	t.Helper()
 	context := `,"context":{"cwd":` + jsonString(filepath.Join(home, "work", "api")) + `,"repository":"acme/api","branch":"main"}`
@@ -91,12 +102,22 @@ func init() {
 		writeVSCodeWorkspace(t, home)
 		writeFile(t, filepath.Join(vscodeWorkspaceDir(home), "GitHub.copilot-chat", "transcripts", copilotSession+".jsonl"), []byte(copilotEvents("")))
 	}
+	canaryFixtures["copilot-cli-instructions"] = func(t *testing.T, home string) {
+		root := filepath.Join(home, ".copilot")
+		writeFile(t, filepath.Join(root, "copilot-instructions.md"), []byte("# Me\n\n"+canaryText()))
+		writeFile(t, filepath.Join(root, "instructions", "go.instructions.md"), []byte(canaryText()))
+	}
 	canaryFixtures["copilot-vscode-chat-sessions"] = func(t *testing.T, home string) {
 		writeVSCodeWorkspace(t, home)
-		writeFile(t, filepath.Join(vscodeWorkspaceDir(home), "chatSessions", copilotSession+".jsonl"), []byte(vscodeChatSession()))
+		dir := filepath.Join(vscodeWorkspaceDir(home), "chatSessions")
+		writeFile(t, filepath.Join(dir, copilotSession+".jsonl"), []byte(vscodeChatSession()))
+		writeFile(t, filepath.Join(dir, "1ccc434c-2df3-481c-b8dc-7f1fd288c892.json"), []byte(vscodeFlatSession()))
 	}
-	canaryFixtures["copilot-vscode-empty-window-sessions"] = func(t *testing.T, home string) {
-		writeFile(t, filepath.Join(vscodeUserDir(home), "globalStorage", "emptyWindowChatSessions", copilotSession+".jsonl"), []byte(vscodeChatSession()))
+	canaryFixtures["copilot-vscode-global-sessions"] = func(t *testing.T, home string) {
+		global := filepath.Join(vscodeUserDir(home), "globalStorage")
+		writeFile(t, filepath.Join(global, "emptyWindowChatSessions", copilotSession+".jsonl"), []byte(vscodeChatSession()))
+		writeFile(t, filepath.Join(global, "emptyWindowChatSessions", "aa824e47-b06b-4c2e-a9a4-b8b5cc1379d3.json"), []byte(vscodeFlatSession()))
+		writeFile(t, filepath.Join(global, "transferredChatSessions", "3910e0b5-ce2d-4626-9001-7b7505958c58.json"), []byte(vscodeFlatSession()))
 	}
 	canaryFixtures["copilot-vscode-editing"] = func(t *testing.T, home string) {
 		writeVSCodeWorkspace(t, home)

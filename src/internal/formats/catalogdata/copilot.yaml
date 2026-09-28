@@ -6,10 +6,11 @@
 # succeeded, while chatSessions/ is VS Code's mutation log (kind 0 snapshot, 1 set, 2 splice)
 # and the only carrier of tool results, rendered prompts and usage. Both ship.
 #
-# Credentials sit in the same roots (the CLI's config.json and mcp-oauth-config, the IDE
-# bridge's lock files, VS Code's secret storage), so includes name session files only and the
-# compiled deny list backs them up. Deferred: session-store.db (an index of these same files),
-# VS Code Insiders and the remote server's ~/.vscode-server, both separate roots.
+# Credentials sit in the same roots (the CLI's config.json, mcp-oauth-config and mcp-secrets,
+# the IDE bridge's lock files, VS Code's secret storage), so includes name session files only and
+# the compiled deny list backs them up. config.json is also where CLI settings live, so they are
+# not collected. Deferred: session-store.db (an index of these same files), VS Code Insiders and
+# the remote server's ~/.vscode-server, both separate roots.
 spec_version: 1
 family: copilot
 display_name: GitHub Copilot
@@ -62,6 +63,24 @@ sources:
     sniff:
       kind: none
 
+  - id: copilot-cli-instructions
+    description: >-
+      Personal custom instructions the CLI loads into every session:
+      copilot-instructions.md and the instructions/ tree. Repository instruction files sit
+      outside these roots.
+    gather: file_glob
+    artifact_class: context
+    roots:
+      - $COPILOT_HOME
+      - ~/.copilot
+    # Hand-written markdown; the cap only bounds what an accident here can make the pipeline hold.
+    max_file_bytes: 8388608
+    include:
+      - "copilot-instructions.md"
+      - "instructions/**/*.instructions.md"
+    sniff:
+      kind: none
+
   - id: copilot-vscode-transcripts
     description: >-
       Copilot Chat agent transcripts, one per chat session, in the CLI's event schema.
@@ -85,7 +104,9 @@ sources:
       VS Code's chat session store: an operation log replayed onto the kind 0 snapshot,
       where k is the path a value lands at. Holds the rendered prompt, tool results keyed
       by tool call id, the model and token counts. Mutated by the editor, so it re-ships
-      whole when it changes.
+      whole when it changes. With chat.useLogSessionStorage off, and for sessions written
+      before the log existed, the store is a flat <id>.json: the same snapshot on one line.
+      no-workspace/chatSessions is the older empty-window location.
     gather: file_glob
     artifact_class: trajectory
     roots:
@@ -97,13 +118,15 @@ sources:
     max_file_bytes: 268435456
     include:
       - "*/chatSessions/*.jsonl"
+      - "*/chatSessions/*.json"
     sniff:
       kind: jsonl
       max_scan_bytes: 1048576
 
-  - id: copilot-vscode-empty-window-sessions
+  - id: copilot-vscode-global-sessions
     description: >-
-      The same chat session store for chats opened with no folder. No workspace, so no
+      The same chat session store kept in global storage: chats opened with no folder, and
+      sessions transferred between workspaces (flat <id>.json). No workspace, so no
       repository attribution.
     gather: file_glob
     artifact_class: trajectory
@@ -112,10 +135,11 @@ sources:
       - $APPDATA/Code/User/globalStorage
       - $XDG_CONFIG_HOME/Code/User/globalStorage
       - ~/.config/Code/User/globalStorage
-    require_subdir: emptyWindowChatSessions
     max_file_bytes: 268435456
     include:
       - "emptyWindowChatSessions/*.jsonl"
+      - "emptyWindowChatSessions/*.json"
+      - "transferredChatSessions/*.json"
     sniff:
       kind: jsonl
       max_scan_bytes: 1048576
