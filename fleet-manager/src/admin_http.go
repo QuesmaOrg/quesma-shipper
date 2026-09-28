@@ -545,7 +545,7 @@ func (s *Server) writeAdminList(w http.ResponseWriter, operation string, records
 
 func (s *Server) handleAdminListTags(w http.ResponseWriter, r *http.Request) {
 	manager, _ := s.adminManager(r)
-	records, err := manager.ListTags(r.Context())
+	records, err := manager.ListTags(r.Context(), s.logger)
 	s.writeAdminList(w, "list install tags", records, err)
 }
 

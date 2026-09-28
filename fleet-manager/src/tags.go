@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"maps"
 
 	"golang.org/x/sync/errgroup"
@@ -71,6 +72,11 @@ func (m *Manager) updateTags(ctx context.Context, installID string, update func(
 		if !missing && rec.Name == current.Name && maps.Equal(rec.Metadata, current.Metadata) {
 			return nil
 		}
+		// This is the one object the service writes outside control/; an update that leaves nothing
+		// to say does not create it.
+		if missing && rec.Name == "" && len(rec.Metadata) == 0 {
+			return nil
+		}
 		rec.UpdatedAt = m.time()
 		if missing {
 			err = createRecord(ctx, m.store, key, rec)
@@ -84,8 +90,10 @@ func (m *Manager) updateTags(ctx context.Context, installID string, update func(
 	return ErrConflict
 }
 
-// ListTags skips unusable records while retaining existing tags with no name.
-func (m *Manager) ListTags(ctx context.Context) ([]TagsRecord, error) {
+// ListTags returns every install's tags record, named or not. A record whose metadata this version
+// cannot vouch for -- one a later version wrote, say -- keeps its name and loses the metadata, and
+// the log says so: a name must not vanish from the table because a field beside it did.
+func (m *Manager) ListTags(ctx context.Context, logger *log.Logger) ([]TagsRecord, error) {
 	installs, err := m.ListInstalls(ctx)
 	if err != nil {
 		return nil, err
@@ -97,8 +105,12 @@ func (m *Manager) ListTags(ctx context.Context) ([]TagsRecord, error) {
 	for i, install := range installs {
 		group.Go(func() error {
 			rec, _, err := getRecord[TagsRecord](ctx, m.store, tagsKey(m.org, install.InstallID))
-			if err != nil || rec.InstallID != install.InstallID || rec.Schema != schemaVersion || validateMetadata(rec.Metadata) != nil {
+			if err != nil || rec.InstallID != install.InstallID || rec.Schema != schemaVersion {
 				return nil
+			}
+			if err := validateMetadata(rec.Metadata); err != nil {
+				logger.Printf("tags for install %s carry unusable metadata, listed without it: %v", install.InstallID, err)
+				rec.Metadata = nil
 			}
 			records[i], found[i] = rec, true
 			return nil

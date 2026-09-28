@@ -40,9 +40,14 @@ testable against an in-memory store and what makes a fourth provider a new file 
 change to the service.
 
 **The service never reads a trajectory.** It has no decrypt path, and it holds no identity that
-could decrypt one. The single object it reads below `install=` is `tags.json`, the human name and administrator-managed metadata for
-an install, and the templates grant read on that one object name rather than on the prefix —
-because the prefix is every sealed payload in the bucket.
+could decrypt one. The single object it reads below `install=` is `tags.json`, and the templates
+grant read on that one object name rather than on the prefix — because the prefix is every sealed
+payload in the bucket. That object is no longer only a machine's name: it carries what an
+administrator says about the machine, inventory metadata such as an owner's email, so the grant
+that reads it now discloses personal data rather than a label. Everyone with that grant reads it,
+including Quesma where an organization has granted Quesma the read; ingest-etl copies the object
+into the lake verbatim. Widening what `tags.json` holds is widening what that grant exposes, and
+gets the same confirmation a grant change does.
 
 **There is no delete.** No route deletes an object, and no organization can be removed. GCS is
 granted `storage.objects.delete` only because replacing object bytes there requires

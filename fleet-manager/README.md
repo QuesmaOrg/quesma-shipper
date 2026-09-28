@@ -168,11 +168,14 @@ It sits in the install's own root, beside the objects it names, so a tool walkin
 resolve an id without asking this service or holding a database credential. That is the whole
 reason it is not another record under `control/`.
 
-`GET /v1/admin/orgs/{org}/installs/tags` returns existing tags records, including records without names, read the way the seen records
-are: one request, fanned out over the installs list, off the critical path so the table renders
-first. `PUT /v1/admin/orgs/{org}/installs/{id}/tags` sets one, and an empty name clears it back to
-the id. Send `{"name":"Rafal's laptop","if_missing":true}` to fill a missing name while preserving a
-custom name atomically. A revoked install can still be named — the objects it already wrote still want a label.
+`GET /v1/admin/orgs/{org}/installs/tags` returns every existing tags record, read the way the seen
+records are: one request, fanned out over the installs list, off the critical path so the table
+renders first. Before metadata, the list held only named installs; now a record may carry metadata
+and no name, so `name` is optional and a client must not assume a listed install has one.
+`PUT /v1/admin/orgs/{org}/installs/{id}/tags` sets one, and an empty name clears it back to the id.
+Send `{"name":"Rafal's laptop","if_missing":true}` to fill a missing name while preserving a custom
+name atomically. A revoked install can still be named — the objects it already wrote still want a
+label.
 
 ### Metadata and MDM inventory
 
@@ -206,11 +209,15 @@ The API equivalent is `POST /v1/admin/orgs/{org}/installs/metadata/import`:
 {"rows":[{"hostname":"Rafal-MacBook","metadata":{"email":"rafal@example.com","department":"Engineering","mdm":"jamf"}}]}
 ```
 
-Imports merge the supplied keys. The hostname is an exact, case-sensitive lookup within the selected
-organization. A row imports automatically only when exactly one install matches and the inventory
-contains one row for that hostname. Pending and revoked identities count as matches, so a replaced
-install or several users sharing a hostname cannot silently select an identity. The response contains
-`results`, each with its one-based `row`, `hostname`, `status` (`imported`, `unmatched`, `ambiguous`, or
+Imports merge the supplied keys. A row is matched to installs of the selected organization by
+hostname, compared case-insensitively on the first DNS label: a shipper enrolls with what
+`os.Hostname()` reports, which on a Mac is the Bonjour name (`Alices-MacBook.local`) and on a
+managed network can be a full DNS name, while an MDM export carries the computer name as the
+device manager kept it (`alices-macbook`). A row imports automatically only when exactly one install
+matches and the inventory contains one row for that hostname; two machines whose names fold to the
+same key are ambiguous, never guessed. Pending and revoked identities count as matches, so a
+replaced install or several users sharing a hostname cannot silently select an identity. The
+response contains `results`, each with its one-based `row`, `hostname`, `status` (`imported`, `unmatched`, `ambiguous`, or
 `error`), and optional `install_id`, matching `candidates`, and `message`.
 
 The UI reports each result and provides install selectors for unresolved rows. Choose distinct
@@ -227,7 +234,11 @@ mind when rolling back.
 
 The read costs one narrow grant. The runtime identity is otherwise write-only below `install=`, and
 the templates hold it to the single object name (`InstallNamesRead` on AWS, the `names` role on
-GCP) rather than the prefix, which would be read access to every sealed payload.
+GCP) rather than the prefix, which would be read access to every sealed payload. Narrow is about
+the object, not its contents: with metadata, `tags.json` carries personal data such as an owner's
+email, and whoever holds the read (an organization's own tooling, ingest-etl, and Quesma where an
+organization has granted it the read) reads that too. Put into metadata what you are content for
+every holder of that grant to see.
 
 ## Install telemetry
 

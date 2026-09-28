@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"testing"
@@ -60,17 +63,27 @@ func TestMetadataValidationAndNamePreservation(t *testing.T) {
 	}
 }
 
+// tagsInterleavingStore runs another writer between a tags read and its write, once.
 type tagsInterleavingStore struct {
 	ObjectStore
-	beforeReplace func()
+	beforeWrite func()
+}
+
+func (s *tagsInterleavingStore) interleave(key string) {
+	if strings.HasSuffix(key, "/tags.json") && s.beforeWrite != nil {
+		hook := s.beforeWrite
+		s.beforeWrite = nil
+		hook()
+	}
+}
+
+func (s *tagsInterleavingStore) Create(ctx context.Context, key string, raw []byte) error {
+	s.interleave(key)
+	return s.ObjectStore.Create(ctx, key, raw)
 }
 
 func (s *tagsInterleavingStore) Replace(ctx context.Context, key, version string, raw []byte) error {
-	if strings.HasSuffix(key, "/tags.json") && s.beforeReplace != nil {
-		hook := s.beforeReplace
-		s.beforeReplace = nil
-		hook()
-	}
+	s.interleave(key)
 	return s.ObjectStore.Replace(ctx, key, version, raw)
 }
 
@@ -80,12 +93,11 @@ func TestTagsRetryPreservesConcurrentMetadataAndCustomName(t *testing.T) {
 	plantInstall(t, server, store, id)
 	manager, _ := server.manager.ForOrganization("acme")
 	ctx := context.Background()
-	if err := manager.SetTag(ctx, id, ""); err != nil {
-		t.Fatal(err)
-	}
+	// No tags record yet: the first attempt is a Create that loses to the interleaved writer, and
+	// the retry is a Replace against what that writer left.
 	interleaved := &tagsInterleavingStore{ObjectStore: store}
 	manager.store = interleaved
-	interleaved.beforeReplace = func() {
+	interleaved.beforeWrite = func() {
 		other, _ := server.manager.ForOrganization("acme")
 		if err := other.PatchMetadata(ctx, id, map[string]*string{"email": ptr("alice@example.com")}); err != nil {
 			t.Fatal(err)
@@ -106,10 +118,11 @@ func TestTagsRetryPreservesConcurrentMetadataAndCustomName(t *testing.T) {
 func TestMetadataImportMatchesWithinOrganizationAndResolvesManually(t *testing.T) {
 	server, store := testAdminServer(t)
 	ids := []string{"11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "33333333-3333-3333-3333-333333333333"}
+	// What os.Hostname() reports: the Bonjour name on a Mac, a DNS name on a managed network.
 	for i, id := range ids {
 		plantInstall(t, server, store, id)
 		record, version, _ := getRecord[InstallRecord](context.Background(), store, installKey("acme", id))
-		record.Hostname = []string{"unique", "shared", "shared"}[i]
+		record.Hostname = []string{"Unique-MacBook.local", "shared", "SHARED.corp.example.com"}[i]
 		if err := replaceRecord(context.Background(), store, installKey("acme", id), version, record); err != nil {
 			t.Fatal(err)
 		}
@@ -128,11 +141,16 @@ func TestMetadataImportMatchesWithinOrganizationAndResolvesManually(t *testing.T
 		}
 		return result.Results
 	}
-	results := importRows(`{"rows":[{"hostname":"unique","metadata":{"email":"alice@example.com"}},{"hostname":"shared","metadata":{"email":"bob@example.com"}},{"hostname":"Unique","metadata":{"email":"c@example.com"}}]}`)
-	if results[0].Status != "imported" || results[1].Status != "ambiguous" || len(results[1].Candidates) != 2 || results[2].Status != "unmatched" {
+	// The inventory carries the computer name as the device manager kept it.
+	results := importRows(`{"rows":[{"hostname":"unique-macbook","metadata":{"email":"alice@example.com"}},{"hostname":"Shared","metadata":{"email":"bob@example.com"}},{"hostname":"nobody","metadata":{"email":"c@example.com"}}]}`)
+	if results[0].Status != "imported" || results[0].InstallID != ids[0] || results[1].Status != "ambiguous" || len(results[1].Candidates) != 2 || results[2].Status != "unmatched" {
 		t.Fatalf("matching results: %+v", results)
 	}
-	results = importRows(`{"rows":[{"hostname":"unique","metadata":{"email":"one@example.com"}},{"hostname":"unique","metadata":{"email":"two@example.com"}}]}`)
+	if record, _, err := acmeManager(t, server).LoadTags(context.Background(), ids[0]); err != nil || record.Metadata["email"] != "alice@example.com" {
+		t.Fatalf("imported metadata: %+v %v", record, err)
+	}
+	// Two rows that fold to one hostname are two rows for one machine, whatever their spelling.
+	results = importRows(`{"rows":[{"hostname":"unique-macbook","metadata":{"email":"one@example.com"}},{"hostname":"UNIQUE-MACBOOK.local","metadata":{"email":"two@example.com"}}]}`)
 	if results[0].Status != "ambiguous" || results[1].Status != "ambiguous" {
 		t.Fatalf("duplicate inventory rows: %+v", results)
 	}
@@ -144,8 +162,104 @@ func TestMetadataImportMatchesWithinOrganizationAndResolvesManually(t *testing.T
 	if results[0].Status != "ambiguous" || results[1].Status != "ambiguous" {
 		t.Fatalf("repeated targets: %+v", results)
 	}
-	w := serveAdmin(t, server, adminRequest("POST", "/v1/admin/orgs/acme/installs/metadata/import", `{"rows":[{"hostname":"unique","metadata":{"email":null}}]}`, testAdminCredential))
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("null import metadata = %d", w.Code)
+	for _, body := range []string{
+		`{"rows":[{"hostname":"unique-macbook","metadata":{"email":null}}]}`,
+		`{"rows":[{"hostname":" . ","metadata":{"email":"x@example.com"}}]}`,
+	} {
+		if w := serveAdmin(t, server, adminRequest("POST", "/v1/admin/orgs/acme/installs/metadata/import", body, testAdminCredential)); w.Code != http.StatusBadRequest {
+			t.Fatalf("invalid import %s = %d", body, w.Code)
+		}
+	}
+}
+
+func acmeManager(t *testing.T, server *Server) *Manager {
+	t.Helper()
+	manager, err := server.manager.ForOrganization("acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return manager
+}
+
+func TestHostnameMatchKey(t *testing.T) {
+	for input, want := range map[string]string{
+		"Alices-MacBook.local": "alices-macbook", "build-01.corp.example.com": "build-01",
+		"  Plain  ": "plain", "": "", ".local": "",
+	} {
+		if got := hostnameMatchKey(input); got != want {
+			t.Errorf("hostnameMatchKey(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+// The tags object is the one the service writes outside control/; nothing to say means no object.
+func TestEmptyTagsUpdateWritesNothing(t *testing.T) {
+	server, store := testAdminServer(t)
+	id := "11111111-1111-1111-1111-111111111111"
+	plantInstall(t, server, store, id)
+	for _, step := range []func() int{
+		func() int { return patchMetadata(t, server, id, `{"metadata":{}}`) },
+		func() int { return patchMetadata(t, server, id, `{"metadata":{"absent":null}}`) },
+		func() int { return setTag(t, server, id, `{"name":""}`) },
+	} {
+		if code := step(); code != http.StatusNoContent {
+			t.Fatalf("empty update = %d", code)
+		}
+	}
+	if _, _, err := store.Get(context.Background(), tagsKey("acme", id)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("empty update created tags.json: %v", err)
+	}
+	if records := listTags(t, server); len(records) != 0 {
+		t.Fatalf("listed a record that was never written: %+v", records)
+	}
+}
+
+func TestListTagsKeepsNameWhenMetadataIsUnusable(t *testing.T) {
+	server, store := testAdminServer(t)
+	id := "11111111-1111-1111-1111-111111111111"
+	plantInstall(t, server, store, id)
+	metadata := make(map[string]string)
+	for i := range 17 {
+		metadata[fmt.Sprintf("key_%d", i)] = "later version"
+	}
+	rec := TagsRecord{Schema: schemaVersion, InstallID: id, Name: "Kept", Metadata: metadata, UpdatedAt: server.manager.time()}
+	if err := createRecord(context.Background(), store, tagsKey("acme", id), rec); err != nil {
+		t.Fatal(err)
+	}
+	var logged bytes.Buffer
+	server.logger = log.New(&logged, "", 0)
+	records := listTags(t, server)
+	if len(records) != 1 || records[0].Name != "Kept" || records[0].Metadata != nil {
+		t.Fatalf("unusable metadata: %+v", records)
+	}
+	if !strings.Contains(logged.String(), "unusable metadata") {
+		t.Fatalf("nothing logged: %q", logged.String())
+	}
+}
+
+type failingTagsStore struct {
+	ObjectStore
+}
+
+func (s failingTagsStore) Create(ctx context.Context, key string, raw []byte) error {
+	if strings.HasSuffix(key, "/tags.json") {
+		return errors.New("bucket on fire")
+	}
+	return s.ObjectStore.Create(ctx, key, raw)
+}
+
+func TestMetadataImportLogsStorageFailures(t *testing.T) {
+	server, store := testAdminServer(t)
+	id := "11111111-1111-1111-1111-111111111111"
+	plantInstall(t, server, store, id)
+	manager := acmeManager(t, server)
+	manager.store = failingTagsStore{store}
+	var logged bytes.Buffer
+	results, err := manager.ImportMetadata(context.Background(), []metadataImportRow{{Hostname: "any", InstallID: id, Metadata: map[string]*string{"email": ptr("a@example.com")}}}, log.New(&logged, "", 0))
+	if err != nil || results[0].Status != "error" || strings.Contains(results[0].Message, "fire") {
+		t.Fatalf("storage failure result: %+v %v", results, err)
+	}
+	if !strings.Contains(logged.String(), "bucket on fire") || !strings.Contains(logged.String(), id) {
+		t.Fatalf("failure not logged: %q", logged.String())
 	}
 }
