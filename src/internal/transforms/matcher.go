@@ -107,21 +107,20 @@ type prioritizedSpan struct {
 // on nearly every provider key too, so any other tie-break turns the ledger into "something
 // high-entropy happened".
 func resolveSpans(value string, patternSpans, heuristicSpans []Span) ([]Span, int, map[string]int) {
-	if len(patternSpans) == 0 && len(heuristicSpans) == 0 {
-		return nil, 0, nil
-	}
-
+	valid := func(s Span) bool { return s.Start >= 0 && s.End <= len(value) && s.Start < s.End }
 	spans := make([]prioritizedSpan, 0, len(patternSpans)+len(heuristicSpans))
 	for _, s := range patternSpans {
-		spans = append(spans, prioritizedSpan{Span: s, priority: 0})
+		if valid(s) {
+			spans = append(spans, prioritizedSpan{Span: s, priority: 0})
+		}
 	}
+	patterns := spans
 	for _, s := range heuristicSpans {
-		s.Start = max(s.Start, firstPatternStart(s, patternSpans))
-		spans = append(spans, prioritizedSpan{Span: s, priority: 1})
+		if valid(s) {
+			s.Start = max(s.Start, firstPatternStart(s, patterns))
+			spans = append(spans, prioritizedSpan{Span: s, priority: 1})
+		}
 	}
-	spans = slices.DeleteFunc(spans, func(s prioritizedSpan) bool {
-		return s.Start < 0 || s.End > len(value) || s.Start >= s.End
-	})
 	if len(spans) == 0 {
 		return nil, 0, nil
 	}
@@ -139,7 +138,9 @@ func resolveSpans(value string, patternSpans, heuristicSpans []Span) ([]Span, in
 		return strings.Compare(a.RuleID, b.RuleID)
 	})
 
-	regions := []prioritizedSpan{spans[0]}
+	// Joined in place: the regions never outgrow the spans already read, and a large value
+	// carries thousands of spans.
+	regions := spans[:1]
 	for _, s := range spans[1:] {
 		r := &regions[len(regions)-1]
 		if s.Start >= r.End {
@@ -165,11 +166,13 @@ func resolveSpans(value string, patternSpans, heuristicSpans []Span) ([]Span, in
 
 // firstPatternStart is where the earliest pattern span overlapping h starts, or -1 if none does.
 // A pattern's start is exact (the key-name rule leaves the name visible), so an entropy run
-// reaching back before it keeps only what lies from that start on.
-func firstPatternStart(h Span, patternSpans []Span) int {
+// reaching back before it keeps only what lies from that start on. Heuristic spans must be
+// disjoint, as the entropy matcher's maximal runs are: two overlapping runs would each be trimmed
+// against the patterns alone, and the bytes between could ship.
+func firstPatternStart(h Span, patterns []prioritizedSpan) int {
 	first := -1
-	for _, p := range patternSpans {
-		if p.Start < h.End && h.Start < p.End && p.Start < p.End && (first < 0 || p.Start < first) {
+	for _, p := range patterns {
+		if p.Start < h.End && h.Start < p.End && (first < 0 || p.Start < first) {
 			first = p.Start
 		}
 	}

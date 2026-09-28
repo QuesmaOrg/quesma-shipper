@@ -533,7 +533,7 @@ func (s *Scrubber) unionEscapeShadow(value, shadow string, escapes escapeIndex, 
 }
 
 // unionSpan adds sp unless a span already covers it; spans it overlaps are folded into one
-// span under the earliest rule, since resolveSpans would drop an overlapping tail.
+// span under the earliest rule.
 func unionSpan(spans []Span, sp Span) []Span {
 	if slices.ContainsFunc(spans, func(o Span) bool { return o.Start <= sp.Start && sp.End <= o.End }) {
 		return spans

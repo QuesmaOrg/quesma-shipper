@@ -55,6 +55,13 @@ func TestResolveSpansJoinsOverlaps(t *testing.T) {
 			want:     []Span{{Start: 0, End: 10, RuleID: "p"}, {Start: 10, End: 20, RuleID: "q"}},
 			wantHits: map[string]int{"p": 1, "q": 1},
 		},
+		{
+			name:     "an invalid pattern neither trims a run nor ships",
+			patterns: []Span{{Start: 5, End: 5, RuleID: "p"}, {Start: 10, End: 200, RuleID: "q"}},
+			entropy:  []Span{{Start: 0, End: 20, RuleID: "e"}, {Start: 90, End: 120, RuleID: "e"}},
+			want:     []Span{{Start: 0, End: 20, RuleID: "e"}},
+			wantHits: map[string]int{"e": 1},
+		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got, redacted, hits := resolveSpans(value, c.patterns, c.entropy)
