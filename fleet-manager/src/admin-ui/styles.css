@@ -565,6 +565,13 @@ pre {
   max-width: 68ch;
 }
 
+.telemetry-help {
+  color: var(--graphite);
+  font-size: 0.85rem;
+  margin: -0.85rem 0 0;
+  max-width: 68ch;
+}
+
 .recipient-fieldset {
   position: relative;
   min-width: 0;

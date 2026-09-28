@@ -40,6 +40,8 @@
           <legend id="organization-etl-title">Encrypt uploads with the Quesma ETL public key</legend>
           <label class="check"><input name="quesma-etl" type="checkbox" checked aria-labelledby="organization-etl-title" aria-describedby="organization-etl-help"><span id="organization-etl-help">This enables Quesma ETL to process future uploads for dashboards, analytics, and other Quesma features. Quesma cannot access your bucket unless you separately provide bucket access.</span></label>
         </fieldset>
+        <label>Telemetry collector <span>(optional)</span><input name="telemetry_collector_url" type="text" autocomplete="off" spellcheck="false" placeholder="Disabled" aria-describedby="organization-telemetry-help"></label>
+        <p id="organization-telemetry-help" class="telemetry-help">Shipper health events are sent through Fleet Manager to this collector. Enter a hostname or HTTPS URL; leave empty to disable telemetry.</p>
         <label>Authored fleet YAML <span>(optional)</span><textarea name="yaml" class="code" placeholder="mode: daemon"></textarea></label>
         <div class="actions"><button type="button" id="cancel-org" class="quiet hidden">Cancel</button><button>Create organization</button></div>
       </form>
@@ -57,6 +59,8 @@
             <legend id="config-etl-title">Encrypt uploads with the Quesma ETL public key</legend>
             <label class="check"><input name="quesma-etl" type="checkbox" checked aria-labelledby="config-etl-title" aria-describedby="config-etl-help"><span id="config-etl-help">This enables Quesma ETL to process future uploads for dashboards, analytics, and other Quesma features. Quesma cannot access your bucket unless you separately provide bucket access.</span></label>
           </fieldset>
+          <label>Telemetry collector <span>(optional)</span><input name="telemetry_collector_url" type="text" autocomplete="off" spellcheck="false" placeholder="Disabled" aria-describedby="config-telemetry-help"></label>
+          <p id="config-telemetry-help" class="telemetry-help">Effective setting for this organization. Shipper health events are sent through Fleet Manager to this collector. Enter a hostname or HTTPS URL; clear to disable telemetry.</p>
           <label>Authored fleet YAML<textarea name="yaml" class="code"></textarea></label>
           <p class="edit-warning">Apply replaces this organization's stored configuration. Recipients you add only cover uploads made from then on; a recipient you remove cannot decrypt anything uploaded after that.</p>
           <div class="actions"><button type="button" id="cancel-config" class="quiet hidden">Cancel</button><button id="apply-config" class="hidden">Apply configuration</button></div>
