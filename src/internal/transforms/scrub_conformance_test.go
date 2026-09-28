@@ -133,6 +133,7 @@ func plantedValues() []string {
 		"4111 1111 1111 1111",
 		"hunter2",
 		"jane",
+		"Qz8Kp2Lm9Xw4Rv7Tn",
 	}
 }
 
@@ -292,6 +293,14 @@ func generateScrubVectors(t *testing.T) []byte {
 			"The decoded value is not JSON, so its escapes stay: the n of an escaped newline would glue " +
 				"onto the token after it and defeat every word-boundary rule. The rules also run over a " +
 				"same-length copy with each escape turned into non-word bytes.",
+		},
+		{
+			"an entropy run reaching past a provider key takes the tail with it", "claude-code", true,
+			`{"type":"user","uuid":"u1","toolUseResult":{"stdout":"mytoken=ghp_abcdefghijklmnopqrstuvwxyz0123456789-Qz8Kp2Lm9Xw4Rv7Tn"}}` + "\n",
+			"The entropy run starts at the key name and ends past the provider key. The pattern span " +
+				"used to win whole and the run's reach past it shipped in the clear; overlapping spans " +
+				"now join into one placeholder, which still starts where the pattern does, so the key " +
+				"name survives.",
 		},
 	}
 

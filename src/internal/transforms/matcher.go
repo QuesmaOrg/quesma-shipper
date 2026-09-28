@@ -101,10 +101,11 @@ type prioritizedSpan struct {
 	priority int
 }
 
-// resolveSpans merges overlapping spans into one placeholder rather than nesting them.
-// The surviving attribution must be the HIGHEST-CONFIDENCE rule covering the region: the
-// entropy backstop fires on nearly every provider key too, so any other tie-break turns
-// the ledger into "something high-entropy happened".
+// resolveSpans joins overlapping spans into one placeholder rather than nesting them or keeping
+// one: a kept span beside a dropped overlapping one ships the dropped one's tail in the clear.
+// The region's attribution is the HIGHEST-CONFIDENCE rule covering it: the entropy backstop fires
+// on nearly every provider key too, so any other tie-break turns the ledger into "something
+// high-entropy happened".
 func resolveSpans(value string, patternSpans, heuristicSpans []Span) ([]Span, int, map[string]int) {
 	if len(patternSpans) == 0 && len(heuristicSpans) == 0 {
 		return nil, 0, nil
@@ -115,7 +116,14 @@ func resolveSpans(value string, patternSpans, heuristicSpans []Span) ([]Span, in
 		spans = append(spans, prioritizedSpan{Span: s, priority: 0})
 	}
 	for _, s := range heuristicSpans {
+		s.Start = max(s.Start, firstPatternStart(s, patternSpans))
 		spans = append(spans, prioritizedSpan{Span: s, priority: 1})
+	}
+	spans = slices.DeleteFunc(spans, func(s prioritizedSpan) bool {
+		return s.Start < 0 || s.End > len(value) || s.Start >= s.End
+	})
+	if len(spans) == 0 {
+		return nil, 0, nil
 	}
 
 	slices.SortFunc(spans, func(a, b prioritizedSpan) int {
@@ -131,66 +139,39 @@ func resolveSpans(value string, patternSpans, heuristicSpans []Span) ([]Span, in
 		return strings.Compare(a.RuleID, b.RuleID)
 	})
 
-	// Keeping both would nest placeholders or split one secret across two.
-	spans = dropOverlappedHeuristics(spans)
+	regions := []prioritizedSpan{spans[0]}
+	for _, s := range spans[1:] {
+		r := &regions[len(regions)-1]
+		if s.Start >= r.End {
+			regions = append(regions, s)
+			continue
+		}
+		r.End = max(r.End, s.End)
+		if s.priority < r.priority {
+			r.RuleID, r.priority = s.RuleID, s.priority
+		}
+	}
 
-	resolved := make([]Span, 0, len(spans))
+	resolved := make([]Span, 0, len(regions))
 	hits := map[string]int{}
 	redacted := 0
-	cursor := 0
-
-	for _, s := range spans {
-		if s.Start < 0 || s.End > len(value) || s.Start >= s.End {
-			continue
-		}
-		if s.Start < cursor {
-			// Already inside a replaced region.
-			continue
-		}
-		resolved = append(resolved, s.Span)
-		hits[s.RuleID]++
-		redacted += s.End - s.Start
-		cursor = s.End
+	for _, r := range regions {
+		resolved = append(resolved, r.Span)
+		hits[r.RuleID]++
+		redacted += r.End - r.Start
 	}
 	return resolved, redacted, hits
 }
 
-// dropOverlappedHeuristics removes heuristic spans intersecting a pattern span and widens
-// that span over any reach past it, so one secret yields one confidently attributed
-// placeholder.
-func dropOverlappedHeuristics(spans []prioritizedSpan) []prioritizedSpan {
-	var patterns []prioritizedSpan
-	for _, s := range spans {
-		if s.priority == 0 {
-			patterns = append(patterns, s)
+// firstPatternStart is where the earliest pattern span overlapping h starts, or -1 if none does.
+// A pattern's start is exact (the key-name rule leaves the name visible), so an entropy run
+// reaching back before it keeps only what lies from that start on.
+func firstPatternStart(h Span, patternSpans []Span) int {
+	first := -1
+	for _, p := range patternSpans {
+		if p.Start < h.End && h.Start < p.End && p.Start < p.End && (first < 0 || p.Start < first) {
+			first = p.Start
 		}
 	}
-
-	out := make([]prioritizedSpan, 0, len(spans))
-	for _, s := range spans {
-		if s.priority == 0 {
-			out = append(out, s)
-			continue
-		}
-		overlapped := false
-		for i, p := range patterns {
-			if s.Start < p.End && p.Start < s.End {
-				// Extend the confident span so no tail of the secret escapes.
-				if s.End > patterns[i].End {
-					patterns[i].End = s.End
-					for j := range out {
-						if out[j].priority == 0 && out[j].Start == p.Start && out[j].RuleID == p.RuleID {
-							out[j].End = s.End
-						}
-					}
-				}
-				overlapped = true
-				break
-			}
-		}
-		if !overlapped {
-			out = append(out, s)
-		}
-	}
-	return out
+	return first
 }
