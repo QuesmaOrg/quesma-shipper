@@ -28,7 +28,8 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Its reviewers approve each push of `latest`; the Docker Hub secrets live there, not in the repo.
+    # Docker Hub secrets stay in this environment. It has no required reviewers: a main push
+    # publishes after make check, independently of the Shipper release approval gate.
     environment: fleet-manager-publishing
     steps:
       - uses: actions/checkout@v7
