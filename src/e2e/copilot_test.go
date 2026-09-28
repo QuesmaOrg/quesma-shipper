@@ -15,6 +15,12 @@ import (
 
 const copilotSessionID = "06dd1d48-5049-4272-948f-b3d83041ba32"
 
+// The Copilot account view the client ships: the CLI records the quota on every model call, so no
+// GitHub token is read. Values as a paid plan reports them mid-month.
+const copilotQuota = `{"chat":{"isUnlimitedEntitlement":true,"entitlementRequests":0,"usedRequests":0,"usageAllowedWithExhaustedQuota":false,"overage":0,"overageAllowedWithExhaustedQuota":false,"remainingPercentage":100,"resetDate":"2026-10-01T00:00:00Z"},` +
+	`"completions":{"isUnlimitedEntitlement":true,"entitlementRequests":0,"usedRequests":0,"usageAllowedWithExhaustedQuota":false,"overage":0,"overageAllowedWithExhaustedQuota":false,"remainingPercentage":100,"resetDate":"2026-10-01T00:00:00Z"},` +
+	`"premium_interactions":{"isUnlimitedEntitlement":false,"entitlementRequests":300,"usedRequests":187,"usageAllowedWithExhaustedQuota":true,"overage":0,"overageAllowedWithExhaustedQuota":true,"remainingPercentage":37.666666666666664,"resetDate":"2026-10-01T00:00:00Z"}}`
+
 // vscodeUser is where VS Code keeps user data on this OS, under the staged environment.
 func vscodeUser(w *world) string {
 	switch runtime.GOOS {
@@ -49,6 +55,7 @@ func stageCopilot(t *testing.T, w *world, username string) {
 		`{"type":"user.message","data":{"content":"deploy the api"},"id":"u1","parentId":"e0"}`,
 		fmt.Sprintf(`{"type":"tool.execution_start","data":{"toolCallId":%q,"toolName":"db_connect","arguments":{"path":"%s/.env","password":%q}},"id":"t1","parentId":"u1"}`, call, cwd, seededShapelessSecret),
 		fmt.Sprintf(`{"type":"tool.execution_complete","data":{"toolCallId":%q,"success":true,"result":{"content":"GITHUB_TOKEN=%s\nAWS_ACCESS_KEY_ID=%s"}},"id":"t2","parentId":"t1"}`, call, seededGitHubToken, seededAWSKey),
+		`{"type":"model.model_call_success","data":{"kind":"model_call","turn":1,"callId":"c1","quotaSnapshots":` + copilotQuota + `},"id":"m1","parentId":"t2"}`,
 	}, "\n") + "\n"
 	session := filepath.ToSlash(filepath.Join(".copilot", "session-state", copilotSessionID))
 	stageFile(t, w, session+"/events.jsonl", events)
@@ -109,5 +116,26 @@ func TestNoCopilotByteCarriesTheOSUsername(t *testing.T) {
 		if strings.Contains(o.Manifest.NativePath, username) {
 			t.Errorf("%s (%s): the OS username survived in native_path: %s", o.Key, o.Manifest.SourceID, o.Manifest.NativePath)
 		}
+	}
+}
+
+// The quota is the account record for Copilot: a scrub rule that took a reset date or a request
+// count would erase it while the run looked healthy.
+func TestCopilotQuotaSurvivesRedaction(t *testing.T) {
+	w := stageWorld(t)
+	stageCopilot(t, w, realUsername(t))
+	runOneShot(t)
+
+	var seen bool
+	for _, o := range bySourceID(copilotObjects(t, w), "copilot-cli-sessions") {
+		switch {
+		case strings.Contains(string(o.Payload), `"quotaSnapshots":`+copilotQuota):
+			seen = true
+		case strings.Contains(string(o.Payload), "quotaSnapshots"):
+			t.Errorf("%s: the quota snapshot was altered", o.Key)
+		}
+	}
+	if !seen {
+		t.Fatal("no quota snapshot in any shipped payload; this test would pass vacuously")
 	}
 }
