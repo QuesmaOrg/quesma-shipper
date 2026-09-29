@@ -138,9 +138,10 @@ aws s3api put-bucket-lifecycle-configuration --bucket "$BUCKET" \
   --lifecycle-configuration file://lifecycle.json
 ```
 
-**The runtime policy.** Almost write-only below `install=`: no delete anywhere, and no read of a
-payload. The one read below `install=` is `tags.json`, granted as that single object name rather
-than the prefix, which would be read access to every sealed payload. The credential records are
+**The runtime policy.** No delete anywhere. Below `install=` it writes, tags and reads: the read
+serves install names and upload deduplication, which HEADs mirror objects, and S3 authorizes a
+HEAD as `s3:GetObject`. The runtime can fetch every sealed payload but holds no age identity to
+open one; the listing grant makes an absent object 404 rather than 403. The credential records are
 read-only: the service compares a presented credential with the stored digest and never writes one.
 Replace `BUCKET` throughout.
 
@@ -180,11 +181,11 @@ Replace `BUCKET` throughout.
       ]}}
     },
     {
-      "Sid": "InstallNamesAbsence",
+      "Sid": "InstallAbsence",
       "Effect": "Allow",
       "Action": "s3:ListBucket",
       "Resource": "arn:aws:s3:::BUCKET",
-      "Condition": {"StringLike": {"s3:prefix": "v1/organization=*/install=*/tags.json"}}
+      "Condition": {"StringLike": {"s3:prefix": "v1/organization=*/install=*"}}
     },
     {
       "Sid": "TrajectoryWriteAndTagOnly",
@@ -193,10 +194,10 @@ Replace `BUCKET` throughout.
       "Resource": "arn:aws:s3:::BUCKET/v1/organization=*/install=*"
     },
     {
-      "Sid": "InstallNamesRead",
+      "Sid": "InstallRead",
       "Effect": "Allow",
       "Action": "s3:GetObject",
-      "Resource": "arn:aws:s3:::BUCKET/v1/organization=*/install=*/tags.json"
+      "Resource": "arn:aws:s3:::BUCKET/v1/organization=*/install=*"
     },
     {
       "Sid": "VerifyBucketVersioning",

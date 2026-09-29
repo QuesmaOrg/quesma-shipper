@@ -40,9 +40,10 @@ testable against an in-memory store and what makes a fourth provider a new file 
 change to the service.
 
 **The service never reads a trajectory.** It has no decrypt path, and it holds no identity that
-could decrypt one. The single object it reads below `install=` is `tags.json`, the human name for
-an install, and the templates grant read on that one object name rather than on the prefix —
-because the prefix is every sealed payload in the bucket.
+could decrypt one. Below `install=` it reads `tags.json`, the human name for an install, and the
+metadata of mirror objects, which the upload deduplication probe HEADs for their `source-hash`.
+S3 and GCS authorize that HEAD as a full read, so the templates grant read on the whole prefix:
+the runtime can fetch every sealed payload, and still cannot open one.
 
 **There is no delete.** No route deletes an object, and no organization can be removed. GCS is
 granted `storage.objects.delete` only because replacing object bytes there requires

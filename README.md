@@ -330,7 +330,8 @@ terraform apply \
 ```
 
 Add `-var='default_allow_quesma_etl=false'` here if decision 2 calls for it. This creates a
-private, versioned bucket; a runtime role that is almost write-only below `install=`; a lifecycle
+private, versioned bucket; a runtime role that writes below `install=` and reads there only to name
+installs and deduplicate uploads (it can fetch ciphertext, never decrypt it); a lifecycle
 rule for superseded check-in records; a 30-day log group; and a public HTTPS service. Then:
 
 ```sh
