@@ -22,26 +22,26 @@ You need:
 
 ## 1. Authenticate and select the deployment
 
-`AWS_PROFILE` below names a profile that must already exist in `~/.aws/config`. If you have none
-for this account, make one first. With IAM Identity Center, once:
-
-```sh
-aws configure sso --profile acme-dev
-```
-
-It asks for your organisation's access portal URL and the region Identity Center runs in, opens a
-browser, then lets you pick the account and the permission set. Answer the default client Region
-with the Region you are deploying into, which is a separate setting from the Identity Center one.
-With long-lived access keys instead, `aws configure --profile acme-dev` asks for the key, the
-secret and the Region.
-
-Set these deployment values. The S3 bucket name must be globally unique.
+Set these deployment values first. The S3 bucket name must be globally unique.
 
 ```sh
 export AWS_PROFILE='your-aws-profile'
 export AWS_REGION='eu-central-1'
 export TRAJECTORIES_BUCKET='globally-unique-acme-trajectories'
 ```
+
+`AWS_PROFILE` names a profile in `~/.aws/config`. If you have none for this account, create one.
+With IAM Identity Center, run once:
+
+```sh
+aws configure sso --profile "$AWS_PROFILE"
+```
+
+It asks for your organisation's access portal URL and the region Identity Center runs in, opens a
+browser, then lets you pick the account and the permission set. Answer the default client Region
+with `$AWS_REGION`, which is a separate setting from the Identity Center Region. With long-lived
+access keys instead, `aws configure --profile "$AWS_PROFILE"` asks for the key, the secret and the
+Region.
 
 If the profile uses IAM Identity Center, authenticate before continuing. A session lasts hours,
 so this is the one command you repeat; `aws configure sso` is not:
