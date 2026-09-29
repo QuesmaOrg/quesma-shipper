@@ -420,6 +420,23 @@ func TestUntouchedRecordsAreByteIdentical(t *testing.T) {
 	}
 }
 
+// When a record IS modified, key order and number literals must still survive: 1.23e+18
+// for a large integer is gratuitous damage to bytes the shipper preserves.
+func TestModifiedRecordsPreserveKeyOrderAndNumbers(t *testing.T) {
+	s := newScrubber(t)
+
+	payload := `{"zeta":1,"alpha":"ghp_abcdefghijklmnopqrstuvwxyz0123456789","mid":1234567890123456789,"beta":true}` + "\n"
+	res := scrubJSONL(t, s, "claude-code", payload)
+	out := string(res.Out.Bytes())
+
+	if strings.Index(out, `"zeta"`) > strings.Index(out, `"alpha"`) {
+		t.Errorf("key order was not preserved:\n%s", out)
+	}
+	if !strings.Contains(out, "1234567890123456789") {
+		t.Errorf("a large integer lost precision:\n%s", out)
+	}
+}
+
 // --- the ledger -------------------------------------------------------------
 
 func TestDensityAndRuleHitLedger(t *testing.T) {

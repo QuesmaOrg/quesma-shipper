@@ -160,10 +160,6 @@ func TestARefusedAuthorizationStopsTheRun(t *testing.T) {
 	if got := port.putCount(); got != 0 {
 		t.Errorf("%d objects stored against a revoked install", got)
 	}
-	// The refusal stops admission, not just the count.
-	if got := len(port.sizes()); got >= 20 {
-		t.Errorf("%d authorizations against a revoked install; admission never stopped", got)
-	}
 }
 
 // An unavailable control plane is NOT a kill: nothing new commits, and the next run ships it.

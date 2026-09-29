@@ -65,6 +65,13 @@ func TestPlistEscapesPaths(t *testing.T) {
 	}
 }
 
+func TestLaunchAgentPathIsPerUser(t *testing.T) {
+	got := launchdPath("/Users/jane")
+	if !strings.Contains(got, "Library/LaunchAgents") || strings.Contains(got, "LaunchDaemons") {
+		t.Errorf("unexpected launchd path: %q", got)
+	}
+}
+
 func TestMixedInstallRemovesOnlyPersonalFiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

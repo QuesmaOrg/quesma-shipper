@@ -129,3 +129,13 @@ func TestADeltaReportsSignedGrowth(t *testing.T) {
 		t.Errorf("summary does not show the shrink: %s", shrink)
 	}
 }
+
+func TestAReadingSeesTheLiveHeap(t *testing.T) {
+	junk := make([]byte, 32<<20)
+	if got := platform.ReadMemStats().HeapInuse; got < 32<<20 {
+		t.Errorf("heap in use is %d while holding 32 MB", got)
+	}
+	runtimeKeepAlive(junk)
+}
+
+func runtimeKeepAlive(b []byte) { _ = b[0] }
