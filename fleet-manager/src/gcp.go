@@ -127,14 +127,6 @@ func (s *gcsStore) ListPrefixes(ctx context.Context, prefix, delimiter string) (
 	}
 }
 
-func (s *gcsStore) SourceHash(ctx context.Context, key string) (string, error) {
-	attrs, err := s.bucket.Object(key).Attrs(ctx)
-	if err != nil {
-		return "", mapGCSError(err)
-	}
-	return attrs.Metadata["source-hash"], nil
-}
-
 func (s *gcsStore) VersioningEnabled(ctx context.Context) (bool, error) {
 	attrs, err := s.bucket.Attrs(ctx)
 	if err != nil {

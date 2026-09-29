@@ -24,8 +24,6 @@ type memoryStore struct {
 	failGetIn  string
 	delayGetIn string
 	getDelay   time.Duration
-	hashes     map[string]string
-	hashReads  int
 }
 
 func (s *memoryStore) versionOf(key string) int {
@@ -35,7 +33,7 @@ func (s *memoryStore) versionOf(key string) int {
 }
 
 func newMemoryStore() *memoryStore {
-	return &memoryStore{objects: map[string]memoryObject{}, versioning: true, hashes: map[string]string{}}
+	return &memoryStore{objects: map[string]memoryObject{}, versioning: true}
 }
 func (s *memoryStore) Get(ctx context.Context, key string) ([]byte, string, error) {
 	if s.getDelay > 0 && (s.delayGetIn == "" || strings.Contains(key, s.delayGetIn)) {
@@ -125,23 +123,6 @@ func (s *memoryStore) ListPrefixes(_ context.Context, prefix, delimiter string) 
 	return out, nil
 }
 func (s *memoryStore) VersioningEnabled(context.Context) (bool, error) { return s.versioning, nil }
-
-// setSourceHash stands in for a shipper's direct presigned PUT, which this store never sees.
-func (s *memoryStore) setSourceHash(key, hash string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.hashes[key] = hash
-}
-func (s *memoryStore) SourceHash(_ context.Context, key string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.hashReads++
-	hash, ok := s.hashes[key]
-	if !ok {
-		return "", ErrNotFound
-	}
-	return hash, nil
-}
 
 func TestObjectStoreConformance(t *testing.T) {
 	ctx, store := context.Background(), newMemoryStore()

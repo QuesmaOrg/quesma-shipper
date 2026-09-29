@@ -17,9 +17,6 @@ type ObjectStore interface {
 	List(context.Context, string) ([]ObjectInfo, error)
 	ListPrefixes(context.Context, string, string) ([]string, error)
 	VersioningEnabled(context.Context) (bool, error)
-	// SourceHash reads the stored object's source-hash metadata without its body; ErrNotFound
-	// when the key is absent, empty when the object carries none.
-	SourceHash(context.Context, string) (string, error)
 }
 
 type ObjectInfo struct {
