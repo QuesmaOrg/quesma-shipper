@@ -1,8 +1,10 @@
 package transforms
 
 import (
+	"cmp"
 	"math"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
@@ -173,6 +175,32 @@ func (m *entropyMatcher) Match(value string) []Span {
 		out = append(out, Span{Start: start, End: i, RuleID: m.RuleID()})
 	}
 	return out
+}
+
+// trimAtPatterns cuts each run back to the first pattern span it overlaps: a pattern's start is
+// exact, so the key-name rule leaves the name visible. The head a cut releases is scored again on
+// its own, since a secret glued on by '-', '=' or '+' clears where a key name does not. One pass
+// over the patterns relies on runs being Match's output: disjoint and in order.
+func (m *entropyMatcher) trimAtPatterns(value string, runs, patterns []Span, escapes escapeIndex) []Span {
+	slices.SortFunc(patterns, func(a, b Span) int { return cmp.Compare(a.Start, b.Start) })
+	var heads []Span
+	p := 0
+	for i, run := range runs {
+		for p < len(patterns) && patterns[p].End <= run.Start {
+			p++
+		}
+		// patterns[p] is the earliest that can still overlap this run or any later one.
+		if p == len(patterns) || patterns[p].Start <= run.Start || patterns[p].Start >= run.End {
+			continue
+		}
+		first := patterns[p].Start
+		for _, h := range m.Match(value[run.Start:first]) {
+			h.Start, h.End = escapes.snap(run.Start+h.Start, run.Start+h.End)
+			heads = append(heads, h)
+		}
+		runs[i].Start = first
+	}
+	return append(runs, heads...)
 }
 
 func (m *entropyMatcher) skipsCandidate(candidate string) bool {
