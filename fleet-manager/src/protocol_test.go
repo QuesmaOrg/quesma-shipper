@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -296,40 +297,6 @@ func TestUploadAuthorizationReturnsOneExactTicket(t *testing.T) {
 	}
 }
 
-// The runtime identity cannot read below install=, so every mirror object is ticketed, even one
-// whose bytes the archive may already hold.
-func TestUploadAuthorizationTicketsEveryMirrorObject(t *testing.T) {
-	server, _, key, installID := enrolledServer(t)
-	hash := strings.Repeat("a", 64)
-	var objects []uploadObject
-	for _, c := range []string{"b", "c"} {
-		objects = append(objects, uploadObject{ObjectID: c, Key: "v1/organization=acme/install=" + installID + "/mirror/source=claude/" + strings.Repeat(c, 64) + ".age",
-			Size: 10, SourceHash: hash, Metadata: map[string]string{"manifest-version": "1", "source-id": "claude", "shipped-hash": strings.Repeat("d", 64), "artifact-class": "trajectory"}})
-	}
-	body, _ := json.Marshal(uploadAuthorizeRequest{WriterID: uuid.NewString(), IssuedAt: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC), Objects: objects})
-	recorder := httptest.NewRecorder()
-	server.Handler().ServeHTTP(recorder, signedRequest(http.MethodPost, "/v2/uploads/authorize", body, installID, key, uploadAuthorizePreamble))
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("authorize: %d %s", recorder.Code, recorder.Body.String())
-	}
-	if strings.Contains(recorder.Body.String(), "already_present") {
-		t.Fatalf("answered already_present: %s", recorder.Body.String())
-	}
-	var response uploadAuthorizeResponse
-	if err := strictDecode(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatal(err)
-	}
-	byID := map[string]uploadTicket{}
-	for _, ticket := range response.Tickets {
-		byID[ticket.ObjectID] = ticket
-	}
-	for _, object := range objects {
-		if ticket := byID[object.ObjectID]; ticket.Method != http.MethodPut || !strings.Contains(ticket.URL, "/"+object.Key+"?") {
-			t.Fatalf("object %s: %#v", object.ObjectID, ticket)
-		}
-	}
-}
-
 type serverAuthFixture struct {
 	Organization    string               `json:"organization"`
 	InstallID       string               `json:"install_id"`
@@ -411,6 +378,110 @@ func TestServerConsumesAuthorizationHeaderGoldens(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestUploadAuthorizationAnswersAlreadyPresent(t *testing.T) {
+	server, manager, key, installID := enrolledServer(t)
+	store := manager.store.(*memoryStore)
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	hash := strings.Repeat("a", 64)
+	mirrorKey := func(c string) string {
+		return "v1/organization=acme/install=" + installID + "/mirror/source=claude/" + strings.Repeat(c, 64) + ".age"
+	}
+	object := func(id, objectKey string) uploadObject {
+		return uploadObject{ObjectID: id, Key: objectKey, Size: 10, SourceHash: hash, Metadata: map[string]string{
+			"manifest-version": "1", "source-id": "claude", "shipped-hash": strings.Repeat("d", 64), "artifact-class": "trajectory"}}
+	}
+	store.setSourceHash(mirrorKey("b"), hash)
+	store.setSourceHash(mirrorKey("e"), strings.Repeat("f", 64))
+
+	authorize := func(req uploadAuthorizeRequest) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(req)
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, signedRequest(http.MethodPost, "/v2/uploads/authorize", body, installID, key, uploadAuthorizePreamble))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("authorize: %d %s", recorder.Code, recorder.Body.String())
+		}
+		return recorder
+	}
+
+	// Only an exact source-hash match settles; a grown file under the same key re-uploads.
+	recorder := authorize(uploadAuthorizeRequest{WriterID: uuid.NewString(), IssuedAt: now,
+		Objects: []uploadObject{object("stored", mirrorKey("b")), object("fresh", mirrorKey("c")), object("grown", mirrorKey("e"))}})
+	var response uploadAuthorizeResponse
+	if err := strictDecode(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]uploadTicket{}
+	for _, ticket := range response.Tickets {
+		byID[ticket.ObjectID] = ticket
+	}
+	if len(byID) != 3 || !byID["stored"].AlreadyPresent || byID["fresh"].AlreadyPresent || byID["grown"].AlreadyPresent {
+		t.Fatalf("tickets: %#v", response.Tickets)
+	}
+	if byID["fresh"].URL == "" || byID["grown"].URL == "" {
+		t.Fatalf("unsettled objects carry no ticket: %#v", response.Tickets)
+	}
+	var raw struct {
+		Tickets []map[string]any `json:"tickets"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range raw.Tickets {
+		if entry["object_id"] == "stored" && len(entry) != 3 {
+			t.Fatalf("the already-present answer carries more than its closed shape: %v", entry)
+		}
+	}
+
+	// A batch the store already holds whole answers without the signer.
+	whole := authorize(uploadAuthorizeRequest{WriterID: uuid.NewString(), IssuedAt: now,
+		Objects: []uploadObject{object("stored", mirrorKey("b"))}})
+	if err := strictDecode(whole.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Tickets) != 1 || !response.Tickets[0].AlreadyPresent {
+		t.Fatalf("whole batch: %#v", response.Tickets)
+	}
+
+	// A state object is never asked about, even one the store holds under the offered hash: the
+	// heartbeat is rewritten every tick, so the answer is a plain ticket and the store sees nothing.
+	heartbeatKey := "v1/organization=acme/install=" + installID + "/state/heartbeat.json.age"
+	store.setSourceHash(heartbeatKey, hash)
+	store.mu.Lock()
+	store.hashReads = 0
+	store.mu.Unlock()
+	beat := authorize(uploadAuthorizeRequest{WriterID: uuid.NewString(), IssuedAt: now,
+		Objects: []uploadObject{{ObjectID: "heartbeat", Key: heartbeatKey, Size: 10, SourceHash: hash, Metadata: map[string]string{"kind": "heartbeat"}}}})
+	var plain uploadAuthorizeResponse
+	if err := strictDecode(beat.Body.Bytes(), &plain); err != nil {
+		t.Fatal(err)
+	}
+	if len(plain.Tickets) != 1 || plain.Tickets[0].AlreadyPresent || plain.Tickets[0].URL == "" {
+		t.Fatalf("the heartbeat was not handed a plain ticket: %#v", plain.Tickets)
+	}
+	if store.hashReads != 0 {
+		t.Fatalf("a heartbeat authorization probed the store %d times", store.hashReads)
+	}
+}
+
+type failingHashStore struct{ ObjectStore }
+
+func (failingHashStore) SourceHash(context.Context, string) (string, error) {
+	return "", errorsNew("store answered 500 for https://bucket.example/k?sig=secret")
+}
+
+// A probe failure is advisory (the object is authorized as new) and the log never carries URLs.
+func TestProbeFailureAuthorizesAsNewAndScrubsTheLog(t *testing.T) {
+	var buf bytes.Buffer
+	objects := []UploadObjectRequest{{ObjectID: "a", Key: "k", Mirror: true, Metadata: map[string]string{"source-hash": strings.Repeat("a", 64)}}}
+	needed, settled := splitAlreadyStored(context.Background(), failingHashStore{newMemoryStore()}, log.New(&buf, "", 0), "install", objects)
+	if len(needed) != 1 || settled != nil {
+		t.Fatalf("needed %d, settled %v", len(needed), settled)
+	}
+	if !strings.Contains(buf.String(), "1 of 1") || strings.Contains(buf.String(), "sig=") {
+		t.Fatalf("probe log: %s", buf.String())
 	}
 }
 

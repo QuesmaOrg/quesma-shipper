@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -34,6 +37,7 @@ type UploadObjectRequest struct {
 	Size                    int64
 	Metadata                map[string]string
 	Tagging                 string
+	Mirror                  bool
 }
 type TicketBatch struct{ Tickets []uploadTicket }
 
@@ -66,7 +70,7 @@ type uploadTicket struct {
 
 // The already-present answer is a distinct wire shape rather than a ticket with zeroed fields:
 // a client must not be able to read an expiry or a method out of an answer that carries no
-// capability. This service never sends it: the runtime identity cannot read what the archive holds.
+// capability.
 type alreadyPresentTicket struct {
 	TicketID       string `json:"ticket_id"`
 	ObjectID       string `json:"object_id"`
@@ -167,7 +171,7 @@ func validateUploadObject(obj uploadObject, rec InstallRecord) (UploadObjectRequ
 		if match[1] != rec.Organization || match[2] != canonical {
 			return UploadObjectRequest{}, fmt.Errorf("key is outside this install's root")
 		}
-		allowed, v.Tagging = uploadMirrorMetadata, "class=trajectory"
+		allowed, v.Tagging, v.Mirror = uploadMirrorMetadata, "class=trajectory", true
 		if obj.Metadata["source-id"] != match[3] {
 			return UploadObjectRequest{}, fmt.Errorf("key source does not equal metadata source-id")
 		}
@@ -209,6 +213,82 @@ func validateUploadMetadata(meta map[string]string, allowed map[string]uploadMet
 		}
 	}
 	return out, nil
+}
+
+// uploadProbeTimeout bounds the whole deduplication probe. A shipper is waiting on this
+// authorization, so a slow store costs one re-upload rather than a stalled request.
+const uploadProbeTimeout = 3 * time.Second
+
+// splitAlreadyStored partitions a minted batch into the objects that still need a PUT ticket and
+// the ones the store already holds under the same source hash. Any doubt keeps an object in the
+// first half: a missed match costs one upload, a wrong match loses the object. Only mirror
+// objects are asked about: a state object such as the heartbeat is rewritten every tick, so the
+// archive never holds the bytes on offer.
+func splitAlreadyStored(ctx context.Context, store ObjectStore, logger *log.Logger, installID string, objects []UploadObjectRequest) ([]UploadObjectRequest, []uploadTicket) {
+	var mirrors []UploadObjectRequest
+	for _, object := range objects {
+		if object.Mirror {
+			mirrors = append(mirrors, object)
+		}
+	}
+	if len(mirrors) == 0 {
+		return objects, nil
+	}
+	stored := map[string]bool{}
+	for i, held := range probeStored(ctx, store, logger, installID, mirrors) {
+		stored[mirrors[i].ObjectID] = held
+	}
+	needed := make([]UploadObjectRequest, 0, len(objects))
+	var settled []uploadTicket
+	for _, object := range objects {
+		if stored[object.ObjectID] {
+			settled = append(settled, uploadTicket{TicketID: object.TicketID, ObjectID: object.ObjectID, AlreadyPresent: true})
+			continue
+		}
+		needed = append(needed, object)
+	}
+	return needed, settled
+}
+
+// probeStored reads one key per object, all in flight at once: validation caps a batch at 32
+// members, and a serial walk pays the store's latency per object.
+func probeStored(ctx context.Context, store ObjectStore, logger *log.Logger, installID string, objects []UploadObjectRequest) []bool {
+	ctx, cancel := context.WithTimeout(ctx, uploadProbeTimeout)
+	defer cancel()
+
+	stored := make([]bool, len(objects))
+	errs := make([]error, len(objects))
+	var wg sync.WaitGroup
+	for i, object := range objects {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hash, err := store.SourceHash(ctx, object.Key)
+			switch {
+			case errors.Is(err, ErrNotFound):
+			case err != nil:
+				errs[i] = err
+			default:
+				stored[i] = hash == object.Metadata["source-hash"]
+			}
+		}()
+	}
+	wg.Wait()
+
+	failed, detail := 0, ""
+	for _, err := range errs {
+		if err != nil {
+			failed++
+			if detail == "" {
+				detail = scrubURLs(err.Error())
+			}
+		}
+	}
+	if failed > 0 {
+		logger.Printf("deduplication probe for install %s: %d of %d reads failed (%s); those objects are authorized as new",
+			installID, failed, len(objects), detail)
+	}
+	return stored
 }
 
 func scrubURLs(message string) string {

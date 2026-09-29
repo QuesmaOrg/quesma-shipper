@@ -97,6 +97,15 @@ func (s *s3Store) ListPrefixes(ctx context.Context, prefix, delimiter string) ([
 	return out, nil
 }
 
+func (s *s3Store) SourceHash(ctx context.Context, key string) (string, error) {
+	head, err := s.client.HeadObject(ctx, &awss3.HeadObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)})
+	if err != nil {
+		return "", mapS3Error(err)
+	}
+	// The SDK lowercases metadata names and strips the x-amz-meta- prefix.
+	return head.Metadata["source-hash"], nil
+}
+
 func (s *s3Store) VersioningEnabled(ctx context.Context) (bool, error) {
 	out, err := s.client.GetBucketVersioning(ctx, &awss3.GetBucketVersioningInput{Bucket: aws.String(s.bucket)})
 	if err != nil {

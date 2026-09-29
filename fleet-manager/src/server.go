@@ -303,19 +303,26 @@ func (s *Server) handleUploadAuthorize(w http.ResponseWriter, r *http.Request, r
 		objects[i].Metadata["ticket-id"] = objects[i].TicketID
 	}
 	batch := UploadBatch{IssuedAt: now, ExpiresAt: now.Add(uploadTicketLifetime), Objects: objects}
-	tickets, err := s.signer.Authorize(r.Context(), InstallScope{Organization: rec.Organization, InstallID: rec.InstallID}, batch)
-	if err != nil {
-		s.logger.Printf("upload authorization failed for install %s: %s", rec.InstallID, scrubURLs(err.Error()))
-		http.Error(w, "upload authorization failed", http.StatusInternalServerError)
-		return
-	}
-	if err := validateTicketBatch(batch, tickets); err != nil {
-		s.logger.Printf("upload signer returned invalid tickets for install %s: %s", rec.InstallID, scrubURLs(err.Error()))
-		http.Error(w, "upload authorization failed", http.StatusInternalServerError)
-		return
+	var settled []uploadTicket
+	batch.Objects, settled = splitAlreadyStored(r.Context(), s.manager.store, s.logger, rec.InstallID, batch.Objects)
+	// A batch the store already holds whole leaves nothing to sign.
+	var tickets TicketBatch
+	if len(batch.Objects) > 0 {
+		var err error
+		tickets, err = s.signer.Authorize(r.Context(), InstallScope{Organization: rec.Organization, InstallID: rec.InstallID}, batch)
+		if err != nil {
+			s.logger.Printf("upload authorization failed for install %s: %s", rec.InstallID, scrubURLs(err.Error()))
+			http.Error(w, "upload authorization failed", http.StatusInternalServerError)
+			return
+		}
+		if err := validateTicketBatch(batch, tickets); err != nil {
+			s.logger.Printf("upload signer returned invalid tickets for install %s: %s", rec.InstallID, scrubURLs(err.Error()))
+			http.Error(w, "upload authorization failed", http.StatusInternalServerError)
+			return
+		}
 	}
 	s.touch(r, rec, seenVend)
-	writeJSON(w, uploadAuthorizeResponse{Tickets: tickets.Tickets})
+	writeJSON(w, uploadAuthorizeResponse{Tickets: append(tickets.Tickets, settled...)})
 }
 
 func validateTicketBatch(batch UploadBatch, response TicketBatch) error {
