@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"maps"
@@ -542,6 +543,34 @@ func TestPayloadIsScrubbedAndTheGraphSurvives(t *testing.T) {
 	}
 	if m.Redaction.Density <= 0 {
 		t.Error("density should be recorded: it is the rule-drift alarm")
+	}
+}
+
+// Opaque payloads are dropped on the laptop and the drop is counted in the manifest's ledger.
+func TestOpaquePayloadsAreDroppedAndCounted(t *testing.T) {
+	f := newFixture(t)
+	var raw []byte
+	for i := byte(0); len(raw) < 3000; i++ {
+		sum := sha256.Sum256([]byte{i})
+		raw = append(raw, sum[:]...)
+	}
+	blob := base64.StdEncoding.EncodeToString(raw)
+	f.writeTranscript("p/s1.jsonl",
+		`{"type":"assistant","uuid":"a1","sessionId":"s1","message":{"content":[{"type":"thinking","thinking":"","signature":"`+blob+`"}]}}`+"\n"+
+			`{"type":"user","uuid":"u1","parentUuid":"a1","sessionId":"s1","toolUseResult":{"type":"image","file":{"base64":"`+blob+`","type":"image/png"}}}`+"\n")
+
+	f.run()
+	obj, _ := f.port.get(f.port.keys()[0])
+	m, payload, err := transforms.Open(obj.Body, f.unit.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), blob[:64]) {
+		t.Error("an opaque payload reached the sink")
+	}
+	if m.Redaction == nil || m.Redaction.RuleHits[transforms.DropBase64Media] != 1 ||
+		m.Redaction.RuleHits[transforms.DropEncryptedReasoning] != 1 {
+		t.Errorf("the ledger should count each drop: %+v", m.Redaction)
 	}
 }
 

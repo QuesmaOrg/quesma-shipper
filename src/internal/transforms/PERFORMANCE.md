@@ -76,6 +76,13 @@ child-path concatenation (about 41% of remaining allocations),
 `splitKeyWords` per-key allocations, memchr skip loops inside the DFA scan,
 and fusing the entropy candidate walk into the PII classification pass.
 
+(Amended 2026-09-29: compiled drops (`drops.go`) replace encrypted reasoning
+and base64 media with a sentinel before the ladder runs. One-binary A/B over
+whole local stores: Claude Code 2.54 GB 108-112 s to 96-98 s, Codex 192 MB
+21.8 s to 21.5 s. The `BenchmarkScrubRealData` sample is image-heavy and went from
+61 to 174 MiB/s, so it no longer compares with the stage table above;
+`BenchmarkScrubSyntheticMedia` is the A/B for drops.)
+
 ## Tried and refuted
 
 Do not re-propose these without new evidence.

@@ -43,6 +43,9 @@ type jsonWalker struct {
 
 	edits []replacementSpan
 
+	// The family's drop paths; nil when it has none.
+	drops map[FieldPath]string
+
 	redacted int
 	hits     map[string]int
 
@@ -60,6 +63,7 @@ func (w *jsonWalker) reset(s *Scrubber, family string, scan *packs.ValueScan, li
 	w.s = s
 	w.family = family
 	w.scan = scan
+	w.drops = s.drops[family]
 	w.edits = w.edits[:0]
 	w.redacted = 0
 	if w.hits == nil {
@@ -149,10 +153,15 @@ func (w *jsonWalker) walkArray(depth int, path string) error {
 }
 
 func (w *jsonWalker) walkString(depth int, key, path string) error {
-	raw, rawStart, text, err := w.readString()
+	raw, rawStart, err := w.readRaw()
 	if err != nil {
 		return err
 	}
+	// The length test is inline so the common short value pays no call.
+	if len(raw) >= dropMinLength+2 && w.drop(raw, rawStart, path) {
+		return nil
+	}
+	text := w.unquote(raw)
 	secretKey := w.s.keyNamesSecret(key, text)
 	// A document the inner walk completes on is scanned leaf by leaf, so the whole-value scan
 	// would read every byte twice; a secret-named key or a key-plus-value rule hit still takes it.
@@ -181,6 +190,22 @@ func (w *jsonWalker) walkString(depth int, key, path string) error {
 	w.replace(raw, rawStart, out)
 	w.addLedger(plan)
 	return nil
+}
+
+// drop works on the raw token so a multi-megabyte image is neither validated nor copied.
+func (w *jsonWalker) drop(raw []byte, rawStart int, path string) bool {
+	body := raw[1 : len(raw)-1]
+	if len(w.drops) == 0 {
+		return false
+	}
+	id, ok := w.drops[FieldPath(path)]
+	if !ok || !droppable(body) {
+		return false
+	}
+	w.replace(raw, rawStart, Sentinel(id))
+	w.redacted += len(body)
+	w.hits[id]++
+	return true
 }
 
 // walkNumber gives a number the ladder a string gets; a redacted one becomes a JSON string.
@@ -237,6 +262,7 @@ func looksLikeDocument(text string) bool {
 	return trimmed != "" && (trimmed[0] == '{' || trimmed[0] == '[')
 }
 
+// readString does not call readRaw: keys are the hottest read, and the extra hop cost 0.5%.
 func (w *jsonWalker) readString() (raw []byte, rawStart int, text string, err error) {
 	raw, err = w.dec.ReadValue()
 	if err != nil {
@@ -245,12 +271,28 @@ func (w *jsonWalker) readString() (raw []byte, rawStart int, text string, err er
 	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' {
 		return nil, 0, "", errStringToken
 	}
+	return raw, int(w.dec.InputOffset()) - len(raw), w.unquote(raw), nil
+}
+
+// readRaw reads one string token, quotes included, without decoding it.
+func (w *jsonWalker) readRaw() (raw []byte, rawStart int, err error) {
+	raw, err = w.dec.ReadValue()
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' {
+		return nil, 0, errStringToken
+	}
+	return raw, int(w.dec.InputOffset()) - len(raw), nil
+}
+
+func (w *jsonWalker) unquote(raw []byte) string {
 	body := raw[1 : len(raw)-1]
 	if bytes.IndexByte(body, '\\') < 0 && utf8.Valid(body) {
-		return raw, int(w.dec.InputOffset()) - len(raw), string(body), nil
+		return string(body)
 	}
 	w.unquoted, _ = jsontext.AppendUnquote(w.unquoted[:0], raw)
-	return raw, int(w.dec.InputOffset()) - len(raw), string(w.unquoted), nil
+	return string(w.unquoted)
 }
 
 func joinFieldPath(parent, child string) string {
