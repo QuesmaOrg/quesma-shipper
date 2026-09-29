@@ -22,12 +22,12 @@ You need:
 
 ## 1. Authenticate and select the deployment
 
-Set these deployment values first. The S3 bucket name must be globally unique.
+Set these deployment values first.
 
 ```sh
-export AWS_PROFILE='your-aws-profile'
-export AWS_REGION='eu-central-1'
-export TRAJECTORIES_BUCKET='globally-unique-acme-trajectories'
+export AWS_PROFILE='your-aws-profile-name'
+export AWS_REGION='your-aws-region-of-choice' # e.g. eu-central-1
+export TRAJECTORIES_BUCKET='your-aws-bucket-name' # S3 bucket names must be globally unique
 ```
 
 `AWS_PROFILE` names a profile in `~/.aws/config`. If you have none for this account, create one.

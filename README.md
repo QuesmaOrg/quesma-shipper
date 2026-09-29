@@ -290,9 +290,9 @@ availability zones, which ECS Express Mode requires; and `age-keygen` and `curl`
 git clone https://github.com/QuesmaOrg/quesma-shipper
 cd quesma-shipper/fleet-manager/terraform/aws
 
-export AWS_PROFILE='your-aws-profile'
-export AWS_REGION='eu-central-1'
-export TRAJECTORIES_BUCKET='globally-unique-acme-trajectories'
+export AWS_PROFILE='your-aws-profile-name'
+export AWS_REGION='your-aws-region-of-choice' # e.g. eu-central-1
+export TRAJECTORIES_BUCKET='your-aws-bucket-name' # S3 bucket names must be globally unique
 
 terraform init
 terraform apply \
