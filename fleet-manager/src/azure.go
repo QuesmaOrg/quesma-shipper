@@ -137,6 +137,26 @@ func (s *azureStore) List(ctx context.Context, prefix string) ([]ObjectInfo, err
 	return out, nil
 }
 
+func (s *azureStore) ListPrefixes(ctx context.Context, prefix, delimiter string) ([]string, error) {
+	pager := s.client.ServiceClient().NewContainerClient(s.container).NewListBlobsHierarchyPager(delimiter, &container.ListBlobsHierarchyOptions{Prefix: &prefix})
+	var out []string
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, mapAzureError(err)
+		}
+		if page.Segment == nil {
+			continue
+		}
+		for _, item := range page.Segment.BlobPrefixes {
+			if item.Name != nil {
+				out = append(out, *item.Name)
+			}
+		}
+	}
+	return out, nil
+}
+
 func (s *azureStore) SourceHash(ctx context.Context, key string) (string, error) {
 	props, err := s.client.ServiceClient().NewContainerClient(s.container).NewBlobClient(key).GetProperties(ctx, nil)
 	if err != nil {

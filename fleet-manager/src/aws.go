@@ -82,6 +82,21 @@ func (s *s3Store) List(ctx context.Context, prefix string) ([]ObjectInfo, error)
 	return out, nil
 }
 
+func (s *s3Store) ListPrefixes(ctx context.Context, prefix, delimiter string) ([]string, error) {
+	pager := awss3.NewListObjectsV2Paginator(s.client, &awss3.ListObjectsV2Input{Bucket: aws.String(s.bucket), Prefix: aws.String(prefix), Delimiter: aws.String(delimiter)})
+	var out []string
+	for pager.HasMorePages() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, mapS3Error(err)
+		}
+		for _, item := range page.CommonPrefixes {
+			out = append(out, aws.ToString(item.Prefix))
+		}
+	}
+	return out, nil
+}
+
 func (s *s3Store) SourceHash(ctx context.Context, key string) (string, error) {
 	head, err := s.client.HeadObject(ctx, &awss3.HeadObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)})
 	if err != nil {
