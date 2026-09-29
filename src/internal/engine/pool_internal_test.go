@@ -32,9 +32,12 @@ func TestConcurrencyTakesThePinAndNeverExceedsTheCandidates(t *testing.T) {
 	}
 }
 
-func TestUploadConcurrencyTakesThePin(t *testing.T) {
+func TestUploadConcurrencyTakesThePinOrEightTimesCompute(t *testing.T) {
 	if got := (Options{UploadWorkers: 5}).uploadConcurrency(3); got != 5 {
 		t.Errorf("uploadConcurrency(uploadWorkers=5, compute=3) = %d, want 5", got)
+	}
+	if got := (Options{}).uploadConcurrency(3); got != 24 {
+		t.Errorf("uploadConcurrency(unpinned, compute=3) = %d, want 24", got)
 	}
 }
 

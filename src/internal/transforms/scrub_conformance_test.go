@@ -177,8 +177,8 @@ func generateScrubVectors(t *testing.T) []byte {
 			"",
 		},
 		{
-			// Recorded as-is including its collateral damage: see
-			// TestKnownOverRedactionInConnectionStrings.
+			// A deliberate over-redaction: url-userinfo and email overlap and the wider span wins,
+			// taking the hostname too, since the narrower one risks leaving a secret's tail in the clear.
 			"connection string in a tool result (email rule over-reaches)", "claude-code", true,
 			`{"type":"user","uuid":"u1","toolUseResult":{"stdout":"psql postgres://app:hunter2@db.internal:5432/prod"}}` + "\n",
 			"",

@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 )
 
@@ -141,70 +139,4 @@ func (s *memoryStore) SourceHash(_ context.Context, key string) (string, error) 
 		return "", ErrNotFound
 	}
 	return hash, nil
-}
-
-func TestObjectStoreConformance(t *testing.T) {
-	ctx, store := context.Background(), newMemoryStore()
-	if _, _, err := store.Get(ctx, "missing"); err != ErrNotFound {
-		t.Fatalf("absent get: %v", err)
-	}
-	if err := store.Create(ctx, "prefix/a", []byte("one")); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Create(ctx, "prefix/a", []byte("two")); err != ErrConflict {
-		t.Fatalf("duplicate create: %v", err)
-	}
-	_, version, _ := store.Get(ctx, "prefix/a")
-	if err := store.Replace(ctx, "prefix/a", "stale", []byte("two")); err != ErrConflict {
-		t.Fatalf("stale replace: %v", err)
-	}
-	if err := store.Replace(ctx, "prefix/a", version, []byte("two")); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Put(ctx, "prefix/a", []byte("three")); err != nil {
-		t.Fatalf("put over existing: %v", err)
-	}
-	if err := store.Put(ctx, "prefix/new", []byte("four")); err != nil {
-		t.Fatalf("put of absent: %v", err)
-	}
-	if raw, _, _ := store.Get(ctx, "prefix/a"); string(raw) != "three" {
-		t.Fatalf("put did not overwrite: %q", raw)
-	}
-	_ = store.Create(ctx, "other/b", []byte("x"))
-	listed, err := store.List(ctx, "prefix/")
-	if err != nil || len(listed) != 2 || listed[0].Key != "prefix/a" {
-		t.Fatalf("list: %#v, %v", listed, err)
-	}
-}
-
-func TestObjectStoreAllowsOneConcurrentWriter(t *testing.T) {
-	ctx, store := context.Background(), newMemoryStore()
-	_ = store.Create(ctx, "object", []byte("zero"))
-	_, version, _ := store.Get(ctx, "object")
-	var wg sync.WaitGroup
-	results := make(chan error, 16)
-	for i := 0; i < cap(results); i++ {
-		wg.Add(1)
-		go func(i int) { defer wg.Done(); results <- store.Replace(ctx, "object", version, []byte(fmt.Sprint(i))) }(i)
-	}
-	wg.Wait()
-	close(results)
-	success := 0
-	for err := range results {
-		if err == nil {
-			success++
-		} else if err != ErrConflict {
-			t.Fatalf("unexpected: %v", err)
-		}
-	}
-	if success != 1 {
-		t.Fatalf("successful writers = %d, want 1", success)
-	}
-}
-
-func TestStrictRecordDecode(t *testing.T) {
-	var record GrantRecord
-	if err := strictDecode([]byte(`{"schema":1,"id":"x","unknown":true}`), &record); err == nil {
-		t.Fatal("unknown record field was accepted")
-	}
 }

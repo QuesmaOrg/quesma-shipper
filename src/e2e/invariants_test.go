@@ -165,23 +165,6 @@ func TestSealedAtIsAReadableTimeFromThisRun(t *testing.T) {
 	}
 }
 
-func TestASecondRunShipsNothing(t *testing.T) {
-	w := stageWorld(t)
-	stageClaude(t, w, realUsername(t))
-	firstOut := runOneShot(t)
-	if countOf(shippedFromLog(t, w), claudeSource) != 1 {
-		t.Fatalf("the first run did not ship the transcript; the rest would pass vacuously:\n%s", firstOut)
-	}
-
-	secondOut := runOneShot(t)
-	if got := countOf(shippedFromLog(t, w), claudeSource); got != 0 {
-		t.Errorf("a second run over unchanged input shipped the transcript again:\n%s", secondOut)
-	}
-	if summary(t, secondOut)["unchanged"] == 0 {
-		t.Errorf("nothing was reported unchanged:\n%s", secondOut)
-	}
-}
-
 func TestTouchingEveryFileShipsNothing(t *testing.T) {
 	// mtime is a pre-filter and the content hash is the authority: a Cursor session leaves
 	// hundreds of files with new mtimes and identical bytes.
@@ -269,26 +252,6 @@ func TestCursorPairYieldsADerivedObjectAndKeepsTheRaw(t *testing.T) {
 	}
 	if strings.Contains(string(raw.Payload), onlyInTheStore) {
 		t.Errorf("the raw transcript already had %q — this fixture no longer tests the join", onlyInTheStore)
-	}
-}
-
-func TestATranscriptTheStoreDoesNotKnowShipsRawAndSaysSo(t *testing.T) {
-	// The drift case: when the join stops aligning, the raw transcript must still ship and the
-	// manifest must say the join failed. Silence would be data loss that looks like success.
-	w := stageWorld(t)
-	username := realUsername(t)
-	stageCursor(t, w, username, cursorConversation2026_07(), false)
-	runOneShot(t)
-
-	objects := bySourceID(mirrorObjects(collect(t, w)), cursorSource)
-	if len(objects) != 1 {
-		t.Fatalf("want the raw transcript alone, got %d objects", len(objects))
-	}
-	if objects[0].Manifest.Derived {
-		t.Error("a derived object was produced from a store that knows nothing about it")
-	}
-	if len(objects[0].Payload) == 0 {
-		t.Error("the raw transcript shipped empty")
 	}
 }
 

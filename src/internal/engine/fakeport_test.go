@@ -39,9 +39,6 @@ type fakePort struct {
 
 	// FailAll fails every object, for conditions about the INSTALL rather than one object.
 	FailAll error
-
-	// FailNext fails the next object only, for the crash-before-commit and backoff paths.
-	FailNext error
 }
 
 func newPort() *fakePort { return &fakePort{objects: map[string]*fakeObject{}} }
@@ -89,12 +86,6 @@ func (p *fakePort) fate(call, idx int, o engine.PreparedObject) error {
 	if p.FailAll != nil {
 		p.mu.Unlock()
 		return p.FailAll
-	}
-	if p.FailNext != nil {
-		err := p.FailNext
-		p.FailNext = nil
-		p.mu.Unlock()
-		return err
 	}
 	p.mu.Unlock()
 	if p.verdict != nil {

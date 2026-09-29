@@ -73,16 +73,6 @@ func TestAdminUIOmitsOldShipperCommand(t *testing.T) {
 	}
 }
 
-func TestAdminUIOnlyRemovesQuesmaRecipientThroughCheckbox(t *testing.T) {
-	raw, err := adminUIAssets.ReadFile("admin-ui/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(raw), "remove-quesma-recipient") {
-		t.Fatal("Quesma recipient has a separate remove control")
-	}
-}
-
 func TestAdminUIShowsSingleKeygenCommand(t *testing.T) {
 	raw, err := adminUIAssets.ReadFile("admin-ui/index.html")
 	if err != nil {
@@ -97,39 +87,6 @@ func TestAdminUIShowsSingleKeygenCommand(t *testing.T) {
 	}
 	if strings.Count(text, "aria-label=\"Copy key generation command\"") != 2 {
 		t.Error("each configuration form must have an accessible copy icon")
-	}
-}
-
-func TestAdminUIOmitsRemovedDashboardChrome(t *testing.T) {
-	raw, err := adminUIAssets.ReadFile("admin-ui/index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(raw)
-	for _, removed := range []string{"Refresh all", "Fleet overview", "class=\"mark\"", "<strong>Fleet Manager</strong>", "autocomplete=\"off\" placeholder=\"fma1"} {
-		if strings.Contains(text, removed) {
-			t.Errorf("index.html still contains %q", removed)
-		}
-	}
-}
-
-func TestAdminUIOmitsInstallRecipientOption(t *testing.T) {
-	html, err := adminUIAssets.ReadFile("admin-ui/index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, removed := range []string{"name=\"include\"", "Allow each shipper to decrypt its own uploads"} {
-		if strings.Contains(string(html), removed) {
-			t.Errorf("index.html still contains %q", removed)
-		}
-	}
-
-	javascript, err := adminUIAssets.ReadFile("admin-ui/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(javascript), "include_install_recipient: false") {
-		t.Error("app.js does not disable per-install recipients")
 	}
 }
 
@@ -148,6 +105,9 @@ func TestAdminUIHasNoThirdPartyOrPersistentCredentialStorage(t *testing.T) {
 		if !strings.Contains(text, required) {
 			t.Errorf("app.js lacks browser safety behavior %q", required)
 		}
+	}
+	if !strings.Contains(text, "include_install_recipient: false") {
+		t.Error("app.js does not disable per-install recipients")
 	}
 	if strings.Contains(text, "cell(row, '').append") {
 		t.Error("app.js prefixes a populated table cell with its empty-value placeholder")

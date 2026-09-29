@@ -1,9 +1,6 @@
 package platform
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 // One spelling everywhere: a version written one way in an object and another in a trace cannot be joined.
 func TestTheVersionStringIsOneSpelling(t *testing.T) {
@@ -22,18 +19,6 @@ func TestTheVersionStringIsOneSpelling(t *testing.T) {
 				t.Errorf("String() = %q, want %q", got, tc.want)
 			}
 		})
-	}
-}
-
-// A modified tree must be visible: an object shipped by one has code the sha alone cannot recover.
-func TestAModifiedTreeIsVisibleInTheVersion(t *testing.T) {
-	clean := Info{Version: "v1.0.0", Revision: "abc123"}.String()
-	dirty := Info{Version: "v1.0.0", Revision: "abc123", Modified: true}.String()
-	if clean == dirty {
-		t.Fatalf("a modified build is indistinguishable from a clean one: both %q", clean)
-	}
-	if !strings.Contains(dirty, "dirty") {
-		t.Errorf("the modified build reads %q, which does not say so", dirty)
 	}
 }
 

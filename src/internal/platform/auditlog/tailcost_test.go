@@ -8,11 +8,12 @@ import (
 	"testing"
 )
 
-// Tailing must cost the answer, not the history: internal, because a whole-file read returns the same entries.
+// Tailing must work at any size and cost the answer, not the history: internal, because a whole-file read returns the same entries.
 func TestTailingALargeLogReadsOnlyTheEndOfIt(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, FileName)
 
+	// 40 MiB, well past anything worth loading to answer "what were the last three things".
 	f, err := os.Create(path)
 	if err != nil {
 		t.Fatal(err)
@@ -29,10 +30,21 @@ func TestTailingALargeLogReadsOnlyTheEndOfIt(t *testing.T) {
 	}
 
 	bytesRead.Store(0)
-	if _, err := Tail(path, 3); err != nil {
-		t.Fatal(err)
+	entries, err := Tail(path, 3)
+	if err != nil {
+		t.Fatalf("tailing a large log failed: %v", err)
 	}
 	read := bytesRead.Load()
+
+	if len(entries) != 3 {
+		t.Fatalf("want 3 entries, got %d", len(entries))
+	}
+	if entries[2].File != "f19999" {
+		t.Errorf("last entry is %q, want the newest line f19999", entries[2].File)
+	}
+	if entries[0].File != "f19997" {
+		t.Errorf("first of the three is %q, want f19997", entries[0].File)
+	}
 
 	if read > 1<<20 {
 		t.Errorf("tailing 3 lines from a %d byte log read %d bytes; it should read the end, "+

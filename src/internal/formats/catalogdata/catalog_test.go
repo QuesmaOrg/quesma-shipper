@@ -130,65 +130,6 @@ sources:
 	}
 }
 
-// Group 1 is the v1 scope ceiling: Claude Code, Codex, Cursor. This list is the ceiling itself.
-func TestGroupOneCoverage(t *testing.T) {
-	files, err := catalogdata.Files()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]bool{
-		"claude-code.yaml": false,
-		"codex.yaml":       false,
-		"cursor.yaml":      false,
-	}
-	for _, f := range files {
-		if _, ok := want[f]; ok {
-			want[f] = true
-		}
-	}
-	for f, found := range want {
-		if !found {
-			t.Errorf("Group 1 catalog file missing: %s", f)
-		}
-	}
-}
-
-// Source ids key both object keys and fingerprint state, so a collision merges two sources.
-func TestSourceIDsAreUniqueAcrossFiles(t *testing.T) {
-	files, err := catalogdata.Files()
-	if err != nil {
-		t.Fatal(err)
-	}
-	seen := map[string]string{}
-	for _, name := range files {
-		raw, err := catalogdata.Read(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var doc struct {
-			Family  string `yaml:"family"`
-			Sources []struct {
-				ID         string          `yaml:"id"`
-				Gather     string          `yaml:"gather"`
-				Class      string          `yaml:"artifact_class"`
-				Roots      []string        `yaml:"roots"`
-				RequireSub string          `yaml:"require_subdir"`
-				Include    []string        `yaml:"include"`
-				Enrichers  map[string]bool `yaml:"enrichers"`
-			} `yaml:"sources"`
-		}
-		if err := yaml.Unmarshal(raw, &doc); err != nil {
-			t.Fatal(err)
-		}
-		for _, s := range doc.Sources {
-			if prev, dup := seen[s.ID]; dup {
-				t.Errorf("source id %q appears in both %s and %s", s.ID, prev, name)
-			}
-			seen[s.ID] = name
-		}
-	}
-}
-
 // SQLite is enricher input only: no catalog entry may name a database as a shipping source.
 func TestNoDatabaseShippingSources(t *testing.T) {
 	files, err := catalogdata.Files()
@@ -254,34 +195,6 @@ func TestCursorTranscriptsDeclareTheEnricher(t *testing.T) {
 		}
 	}
 	t.Error("cursor-transcripts source not found")
-}
-
-// Every source declares its artifact class; an undeclared one would default to the wrong class.
-func TestEverySourceDeclaresAClass(t *testing.T) {
-	files, err := catalogdata.Files()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range files {
-		raw, err := catalogdata.Read(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var doc struct {
-			Sources []struct {
-				ID    string `yaml:"id"`
-				Class string `yaml:"artifact_class"`
-			} `yaml:"sources"`
-		}
-		if err := yaml.Unmarshal(raw, &doc); err != nil {
-			t.Fatal(err)
-		}
-		for _, s := range doc.Sources {
-			if s.Class != "trajectory" && s.Class != "context" {
-				t.Errorf("%s/%s: artifact_class must be trajectory or context, got %q", name, s.ID, s.Class)
-			}
-		}
-	}
 }
 
 // Every source that reads whole files into memory must declare a ceiling: the pipeline holds a

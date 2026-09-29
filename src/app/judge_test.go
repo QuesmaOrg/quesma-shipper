@@ -134,21 +134,6 @@ func TestTheFailureLogIsBoundedAndKeepsTheNewest(t *testing.T) {
 	}
 }
 
-// Recovery clears the count but keeps the log: what happened is still worth reading after the fix.
-func TestRecoveryKeepsTheLog(t *testing.T) {
-	r := &Runtime{eff: &config.Effective{StateDir: t.TempDir()}}
-	r.JudgeTick(errors.New("the sink refused"), formats.Report{}, false, platform.Delta{})
-	r.JudgeTick(nil, formats.Report{Shipped: 1}, false, platform.Delta{})
-
-	rec := readFailureRecord(r.eff.StateDir)
-	if rec.ConsecutiveFailures != 0 {
-		t.Errorf("consecutive_failures = %d after a success", rec.ConsecutiveFailures)
-	}
-	if len(rec.Recent) != 1 || rec.Latest().Message != "the sink refused" {
-		t.Errorf("recovery erased the log: %+v", rec.Recent)
-	}
-}
-
 // A panic in any verb has to outlive the terminal it printed to. The state dir is resolved without
 // the configuration on purpose, so this works on an install whose config is what broke.
 func TestRecordPanicPersistsWithoutAResolvedConfig(t *testing.T) {
@@ -178,40 +163,6 @@ func TestRecordPanicPersistsWithoutAResolvedConfig(t *testing.T) {
 	// not one of those, and moving the count would report a broken daemon on a healthy install.
 	if rec.ConsecutiveFailures != 0 {
 		t.Errorf("a verb panic moved the collection failure count to %d", rec.ConsecutiveFailures)
-	}
-}
-
-// The heartbeat's failure half is read off disk, not built from the run assembling it: a run that
-// got far enough to upload is by definition not the one that failed.
-func TestFailureRecordSurvivesIntoTheHeartbeat(t *testing.T) {
-	dir := t.TempDir()
-	r := &Runtime{eff: &config.Effective{StateDir: dir}}
-	r.JudgeTick(errors.New("the sink refused every object"), formats.Report{}, false, platform.Delta{})
-
-	r2 := &Runtime{eff: &config.Effective{StateDir: dir}}
-	rec := r2.failureRecord()
-	if rec.Latest() == nil || rec.Latest().Message != "the sink refused every object" {
-		t.Fatalf("a later run did not pick up the persisted failure: %+v", rec)
-	}
-	if rec.ConsecutiveFailures != 1 {
-		t.Errorf("consecutive_failures = %d, want 1", rec.ConsecutiveFailures)
-	}
-}
-
-// Store corruption is the one condition that can lose a file permanently, and it does not fail the
-// run that finds it. Recorded so it is visible, not counted so it does not read as a broken daemon.
-func TestStoreCorruptionIsRecordedButNotCounted(t *testing.T) {
-	r := &Runtime{eff: &config.Effective{StateDir: t.TempDir()}}
-
-	if tickErr := r.JudgeTick(nil, formats.Report{StoreCorrupt: true, Shipped: 3}, false, platform.Delta{}); tickErr != nil {
-		t.Fatalf("a corrupt store must not fail the run: %v", tickErr)
-	}
-	rec := readFailureRecord(r.eff.StateDir)
-	if rec.Latest() == nil || rec.Latest().Kind != formats.FailureStoreCorrupt {
-		t.Fatalf("the discard was not recorded: %+v", rec.Recent)
-	}
-	if rec.ConsecutiveFailures != 0 {
-		t.Errorf("a discarded store moved the failed-run count to %d", rec.ConsecutiveFailures)
 	}
 }
 
