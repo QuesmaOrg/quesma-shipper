@@ -184,6 +184,7 @@ Where Shipper is structurally different (checked against code):
   - Custodian keys on analyst machines widen exposure. Steer users to an ETL-only recipient.
 
 ### A4. Key the plaintext content hashes, and write the threat model
+- **Decided 2026-09-29: not a concern; no work planned.**
 - **Problem:**
   - Every object carries `source-hash` (an unkeyed SHA-256 of the pre-redaction bytes) and `shipped-hash` as plaintext metadata (`src/internal/transforms/manifest.go:31-34,154-163`).
   - FM also receives `source_hash` in every authorize request (`fleet-manager/src/upload.go:53,111,190`).
@@ -230,6 +231,7 @@ Where Shipper is structurally different (checked against code):
   - It is UNVERIFIED that Cursor transcripts carry a cwd (`ignore.go:17-21`), so Cursor may need its lossy workspace slug (`cursor.yaml:26-43`).
 
 ### A6. Let Fleet Manager serve data-only sources over compiled primitives
+- **Decided 2026-09-29: a documentation problem, not a code change.** The compiled root check stays; fix the wording so CONSTITUTION.md Art. 1 and `resolve.go` agree. Served new sources are not planned (see Q4).
 - **Problem:**
   - Adding a file agent needs a release, a TUF publication and a fleet rollout.
   - Config cannot create a source (`src/internal/config/resolve.go:180-185`). Compiled roots are still enforced: a served root outside the compiled set is rejected as "outside the compiled scope ceiling ... a new root requires a release" (`resolve.go:501-505`). Served layers can widen only `include`/`exclude` within compiled roots. shipper-protocol v0.1.0 pins both rules (PROTOCOL.md:363,366).
@@ -309,6 +311,7 @@ Where Shipper is structurally different (checked against code):
   - Public vs internal schema is Q9.
 
 ### A9. Customer-signed recipient policy
+- **Decided 2026-09-29: not now.** Deferred; Q13 still lists it as a prerequisite for a SaaS launch.
 - **Problem:**
   - Served config is authenticated only by TLS. `configResponse` is `{config, expires_at}` (`fleet-manager/src/server.go:91-94`), and the client verifies nothing (`src/internal/controlplane/backend.go:179-194`).
   - Whoever operates or compromises FM can add an age recipient.
@@ -1137,7 +1140,6 @@ Fleet Manager's own architecture adds a constraint on the ideas above: "A change
 
 **Next**
 - A5 catalog expressiveness, then F18 second-wave agents.
-- A4: keyed content hashes and `THREAT_MODEL.md`.
 - F11: private sessions, `pause --exclude` and in-content markers.
 - A7: repo attribution in the sealed manifest.
 - F9 volume ledger, then the A14 interim quiescence gate.
@@ -1146,7 +1148,7 @@ Fleet Manager's own architecture adds a constraint on the ideas above: "A change
 
 **Later**
 - A14 segment upload, chains required (Q2).
-- A9 customer-signed recipient policy, before any SaaS Fleet Manager.
+- A9 customer-signed recipient policy, before any SaaS Fleet Manager (deferred 2026-09-29: not now).
 - A10 labels and overlays.
 - A13 epoch keys, after a Constitution candidate.
 - A8 derive + F26 cost rollups.
