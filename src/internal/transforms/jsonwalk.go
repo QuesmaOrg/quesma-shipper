@@ -199,7 +199,8 @@ func (w *jsonWalker) drop(raw []byte, rawStart int, path string) bool {
 		return false
 	}
 	id, ok := w.drops[FieldPath(path)]
-	if !ok || !droppable(body) {
+	// A configured exemption asks for the value to ship, so it outranks the compiled drop.
+	if !ok || w.s.exempt.Exempt(w.family, FieldPath(path)) || !droppable(body) {
 		return false
 	}
 	w.replace(raw, rawStart, Sentinel(id))
@@ -262,7 +263,7 @@ func looksLikeDocument(text string) bool {
 	return trimmed != "" && (trimmed[0] == '{' || trimmed[0] == '[')
 }
 
-// readString does not call readRaw: keys are the hottest read, and the extra hop cost 0.5%.
+// readString does not call readRaw: keys are the hottest read.
 func (w *jsonWalker) readString() (raw []byte, rawStart int, text string, err error) {
 	raw, err = w.dec.ReadValue()
 	if err != nil {

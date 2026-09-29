@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// Drop rule ids: the sentinel a dropped value becomes, and its key in the ledger.
 const (
 	DropEncryptedReasoning = "dropped-encrypted-reasoning"
 	DropBase64Media        = "dropped-base64-media"
@@ -14,29 +13,32 @@ const (
 
 // CompiledDrops is the compiled baseline of opaque payloads replaced whole by a sentinel before
 // any detector runs: encrypted reasoning and inline base64 media, which the entropy backstop
-// shreds into undecodable fragments anyway. Exact field paths, as in CompiledExemptions.
+// almost always shreds into undecodable fragments. Exact field paths, as in CompiledExemptions.
 func CompiledDrops() map[string]map[string]string {
 	return map[string]map[string]string{
 		"claude-code": {
-			// A thinking block's signature, and a redacted_thinking block's data.
+			// thinking.signature and redacted_thinking.data.
 			"message.content[].signature": DropEncryptedReasoning,
 			"message.content[].data":      DropEncryptedReasoning,
-			// Image and document blocks, pasted or inside a tool_result, and the Read
-			// tool's copy of the same file.
+			// Image and document blocks; the Read tool stores its file twice.
 			"message.content[].source.data":           DropBase64Media,
 			"message.content[].content[].source.data": DropBase64Media,
 			"attachment.prompt[].source.data":         DropBase64Media,
 			"toolUseResult.file.base64":               DropBase64Media,
 		},
 		"codex": {
-			// Fernet tokens: the reasoning item, and its copies in compacted history.
+			// Fernet tokens, including their copies in compacted history.
 			"payload.encrypted_content":                                 DropEncryptedReasoning,
 			"payload.content[].encrypted_content":                       DropEncryptedReasoning,
 			"payload.replacement_history[].encrypted_content":           DropEncryptedReasoning,
 			"payload.replacement_history[].content[].encrypted_content": DropEncryptedReasoning,
 			"payload.guardian_history[].encrypted_content":              DropEncryptedReasoning,
 			"payload.guardian_history[].content[].encrypted_content":    DropEncryptedReasoning,
-			// input_image data URLs, image generation results and MCP image blocks.
+			"payload.output[].encrypted_content":                        DropEncryptedReasoning,
+			"payload.replacement_history[].output[].encrypted_content":  DropEncryptedReasoning,
+			"payload.guardian_history[].output[].encrypted_content":     DropEncryptedReasoning,
+			"payload.item.output[].encrypted_content":                   DropEncryptedReasoning,
+			// Image and audio data URLs, image generation results and MCP image blocks.
 			"payload.content[].image_url":                                DropBase64Media,
 			"payload.output[].image_url":                                 DropBase64Media,
 			"payload.replacement_history[].content[].image_url":          DropBase64Media,
@@ -50,11 +52,22 @@ func CompiledDrops() map[string]map[string]string {
 			"payload.item.result._meta.codex/toolSurface.screenshot.url": DropBase64Media,
 			"payload.result":                                             DropBase64Media,
 			"payload.result.Ok.content[].data":                           DropBase64Media,
+			"payload.item.output[].image_url":                            DropBase64Media,
+			"payload.content[].audio_url":                                DropBase64Media,
+			"payload.output[].audio_url":                                 DropBase64Media,
+			"payload.replacement_history[].content[].audio_url":          DropBase64Media,
+			"payload.replacement_history[].output[].audio_url":           DropBase64Media,
+			"payload.guardian_history[].content[].audio_url":             DropBase64Media,
+			"payload.guardian_history[].output[].audio_url":              DropBase64Media,
+			"payload.item.content[].audio_url":                           DropBase64Media,
+			"payload.item.output[].audio_url":                            DropBase64Media,
+			// A dynamic tool call item serializes its content items in camelCase.
+			"payload.item.content_items[].imageUrl": DropBase64Media,
+			"payload.item.content_items[].audioUrl": DropBase64Media,
 		},
 	}
 }
 
-// compileDrops fails on an entry that would be a silent no-op or an unqueryable ledger key.
 func compileDrops(spec map[string]map[string]string) (map[string]map[FieldPath]string, error) {
 	out := make(map[string]map[FieldPath]string, len(spec))
 	for family, paths := range spec {
@@ -73,12 +86,10 @@ func compileDrops(spec map[string]map[string]string) (map[string]map[FieldPath]s
 	return out, nil
 }
 
-// dropMinLength sits above a hex SHA-512 (128) and below the shortest opaque value seen in local
-// stores (184): a short value is scrubbed as before, so a generic path never drops an id or digest.
+// Above a hex SHA-512 (128), below the shortest opaque value seen locally (184).
 const dropMinLength = 160
 
-// droppable reports whether the raw JSON string body is an opaque blob: base64, or a base64 data
-// URL. Anything else at a drop path, a text document or an https URL, takes the full ladder.
+// droppable reports whether the raw JSON string body is base64 or a base64 data URL.
 func droppable(body []byte) bool {
 	if rest, ok := bytes.CutPrefix(body, []byte("data:")); ok {
 		const marker = ";base64,"
@@ -91,8 +102,7 @@ func droppable(body []byte) bool {
 	return base64Blob(body)
 }
 
-// base64Blob is the decoders' acceptance without decoding: one alphabet, trailing padding only.
-// A backslash fails it, so the raw body is also the decoded value.
+// base64Blob is the decoders' acceptance without decoding; a backslash fails it, so raw equals decoded.
 func base64Blob(v []byte) bool {
 	n := len(v)
 	if n < dropMinLength {

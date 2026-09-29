@@ -109,8 +109,8 @@ func TestEveryDropPathBecomesItsSentinel(t *testing.T) {
 	}
 }
 
-// The premise of every entry: without the drop the scrubber already destroys the value, so a
-// drop never removes anything that shipped intact before.
+// The premise of every entry: without the drop the scrubber already destroys a high-entropy
+// value. Low-entropy base64 that shipped intact before is now dropped on purpose.
 func TestEveryDropPathIsDestroyedWithoutTheDrop(t *testing.T) {
 	s := scrubberWith(t, nil)
 	for family, paths := range transforms.CompiledDrops() {
@@ -286,6 +286,28 @@ func TestDropsAreDisjointFromExemptions(t *testing.T) {
 	}
 	if len(transforms.CompiledDrops()["cursor"]) != 0 {
 		t.Error("cursor's opaque payload is exempt and survives intact; it must not be dropped")
+	}
+}
+
+// A served or owner structural_exempt entry keeps its meaning: the value ships intact.
+func TestAConfiguredExemptionOutranksADrop(t *testing.T) {
+	const path = "message.content[].source.data"
+	image := opaqueBlob(80, 30000, base64.StdEncoding)
+	line := buildRecordWithValueAt(t, path, image) + "\n"
+	for _, family := range []string{"claude-code", "*"} {
+		t.Run(family, func(t *testing.T) {
+			cfg := transforms.DefaultConfig()
+			cfg.Username = "jane"
+			cfg.Exemptions[family] = append(cfg.Exemptions[family], path)
+			s, err := transforms.New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res := scrubJSONL(t, s, "claude-code", line)
+			if string(res.Out.Bytes()) != line || len(res.RuleHits) != 0 {
+				t.Errorf("exempt value did not ship intact: %v", res.RuleHits)
+			}
+		})
 	}
 }
 
