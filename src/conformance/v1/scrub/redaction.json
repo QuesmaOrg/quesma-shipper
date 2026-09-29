@@ -314,6 +314,19 @@
       },
       "scan_mode": "decoded_json_values",
       "note": "The mirror of the tail case: the pattern's start trims the entropy run, and the head it releases used to ship. The head is scored again on its own; a key name falls below the threshold and stays, a high-entropy head clears it and goes."
+    },
+    {
+      "name": "a secret glued to the username is redacted, a slug beside it is not",
+      "family": "claude-code",
+      "jsonl": true,
+      "before": "{\"type\":\"user\",\"uuid\":\"u1\",\"toolUseResult\":{\"stdout\":\"jane-Xq7Lp9Zr2Kw8Tn4Vb6Hs3Jd5 in ~/.claude/projects/-Users-jane-Work2026-SampleOrg-blink-UI\"}}\n",
+      "after": "{\"type\":\"user\",\"uuid\":\"u1\",\"toolUseResult\":{\"stdout\":\"__USER__-__REDACTED:generic-entropy__ in ~/.claude/projects/-Users-__USER__-Work2026-SampleOrg-blink-UI\"}}\n",
+      "rule_hits": {
+        "generic-entropy": 1,
+        "path-user": 1
+      },
+      "scan_mode": "decoded_json_values",
+      "note": "A run holding the username is skipped so a project slug survives, and a secret glued to the name used to ship with it. Each word of a skipped run is still scored on its own: a slug's words are too short to clear, a secret's is not."
     }
   ]
 }
