@@ -67,13 +67,10 @@ the explicit `region` value below.
 terraform init
 terraform apply \
   -var="region=$AWS_REGION" \
-  -var="bucket=$TRAJECTORIES_BUCKET" \
-  -var="image_uri=$REGISTRY/fleet-manager@sha256:…"     # your image, by digest
+  -var="bucket=$TRAJECTORIES_BUCKET"
 ```
 
-Build and push the image first, as in
-[Build and push your image](../../../README.md#1-build-and-push-your-image). Without `image_uri`
-the service runs `docker.io/quesma/fleet-manager:latest`, a moving tag Quesma publishes.
+The service uses Quesma's published `docker.io/quesma/fleet-manager:latest` image by default.
 
 `tofu` works in place of `terraform` throughout. The committed `.terraform.lock.hcl` pins the
 providers as OpenTofu resolves them (`registry.opentofu.org`). Terraform resolves them from
