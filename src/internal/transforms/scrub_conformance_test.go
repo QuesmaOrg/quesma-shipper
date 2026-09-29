@@ -310,6 +310,13 @@ func generateScrubVectors(t *testing.T) []byte {
 				"releases used to ship. The head is scored again on its own; a key name falls below the " +
 				"threshold and stays, a high-entropy head clears it and goes.",
 		},
+		{
+			"a secret glued to the username is redacted, a slug beside it is not", "claude-code", true,
+			`{"type":"user","uuid":"u1","toolUseResult":{"stdout":"jane-Xq7Lp9Zr2Kw8Tn4Vb6Hs3Jd5 in ~/.claude/projects/-Users-jane-Work2026-SampleOrg-blink-UI"}}` + "\n",
+			"A run holding the username is skipped so a project slug survives, and a secret glued to " +
+				"the name used to ship with it. Each word of a skipped run is still scored on its own: a " +
+				"slug's words are too short to clear, a secret's is not.",
+		},
 	}
 
 	out := scrubVectors{
