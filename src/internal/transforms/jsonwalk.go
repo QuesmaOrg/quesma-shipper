@@ -43,8 +43,8 @@ type jsonWalker struct {
 
 	edits []replacementSpan
 
-	// The family's drop paths; nil when it has none.
-	drops map[FieldPath]string
+	// The family's drop paths; empty when it has none and inside an embedded document.
+	drops map[FieldPath]compiledDrop
 
 	redacted int
 	hits     map[string]int
@@ -157,8 +157,8 @@ func (w *jsonWalker) walkString(depth int, key, path string) error {
 	if err != nil {
 		return err
 	}
-	// The length test is inline so the common short value pays no call.
-	if len(raw) >= dropMinLength+2 && w.drop(raw, rawStart, path) {
+	// The tests are inline so a short value, or any value in a family without drops, pays no call.
+	if len(raw) >= dropMinLength+2 && len(w.drops) > 0 && w.drop(raw, rawStart, path) {
 		return nil
 	}
 	text := w.unquote(raw)
@@ -194,18 +194,17 @@ func (w *jsonWalker) walkString(depth int, key, path string) error {
 
 // drop works on the raw token so a multi-megabyte image is neither validated nor copied.
 func (w *jsonWalker) drop(raw []byte, rawStart int, path string) bool {
+	d, ok := w.drops[FieldPath(path)]
+	if !ok {
+		return false
+	}
 	body := raw[1 : len(raw)-1]
-	if len(w.drops) == 0 {
+	if !droppable(body) {
 		return false
 	}
-	id, ok := w.drops[FieldPath(path)]
-	// A configured exemption asks for the value to ship, so it outranks the compiled drop.
-	if !ok || w.s.exempt.Exempt(w.family, FieldPath(path)) || !droppable(body) {
-		return false
-	}
-	w.replace(raw, rawStart, Sentinel(id))
+	w.replace(raw, rawStart, d.sentinel)
 	w.redacted += len(body)
-	w.hits[id]++
+	w.hits[d.id]++
 	return true
 }
 
@@ -235,6 +234,8 @@ func (w *jsonWalker) walkEmbedded(depth int, path, text string) (out string, wal
 	in := w.inner
 	in.doc = append(in.doc[:0], text...)
 	in.reset(w.s, w.family, w.scan, in.doc)
+	// compileDrops rejects a path through embeddedSuffix, so no drop applies inside.
+	in.drops = nil
 	if err := in.walk(depth+1, "", path+embeddedSuffix); errors.Is(err, errEmbeddedEdit) {
 		return "", false, err
 	} else if err != nil {

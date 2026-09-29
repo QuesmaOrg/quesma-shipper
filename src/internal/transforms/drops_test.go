@@ -11,25 +11,16 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
-// opaqueBlob is deterministic random bytes in the given base64 alphabet: the shape the entropy
-// backstop shreds, unlike a repeated pattern it would leave intact.
+// opaqueBlob is random rather than repeated so the entropy backstop would shred it.
 func opaqueBlob(seed int64, n int, enc *base64.Encoding) string {
-	raw := make([]byte, n)
-	rand.New(rand.NewSource(seed)).Read(raw)
-	return enc.EncodeToString(raw)
+	return randBase64(rand.New(rand.NewSource(seed)), n, enc)
 }
 
-// fernetToken has a Fernet token's layout: version byte 0x80 and a timestamp, so it reads
-// "gAAAAA..." as OpenAI's encrypted reasoning does.
 func fernetToken(seed int64, n int) string {
-	raw := make([]byte, n)
-	rand.New(rand.NewSource(seed)).Read(raw)
-	copy(raw, []byte{0x80, 0, 0, 0, 0})
-	return base64.URLEncoding.EncodeToString(raw)
+	return randFernet(rand.New(rand.NewSource(seed)), n)
 }
 
-// dropShapes are the three value forms seen at drop paths: std base64 media, a data URL,
-// and a Fernet token (base64url).
+// dropShapes are the value forms seen at drop paths: std base64, a data URL and a Fernet token.
 func dropShapes() map[string]string {
 	return map[string]string{
 		"base64":   opaqueBlob(1, 4096, base64.StdEncoding),
@@ -38,11 +29,11 @@ func dropShapes() map[string]string {
 	}
 }
 
-func scrubberWith(t *testing.T, drops map[string]map[string]string) *transforms.Scrubber {
+func scrubberWith(t testing.TB, edit func(*transforms.Config)) *transforms.Scrubber {
 	t.Helper()
 	cfg := transforms.DefaultConfig()
 	cfg.Username = "jane"
-	cfg.Drops = drops
+	edit(&cfg)
 	s, err := transforms.New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -85,49 +76,58 @@ func assertNoFragment(t *testing.T, out []byte, original string) {
 	}
 }
 
-func TestEveryDropPathBecomesItsSentinel(t *testing.T) {
-	s := newScrubber(t)
+// dropHits counts every dropped-* rule hit.
+func dropHits(res transforms.Result) int {
+	n := 0
+	for id, count := range res.RuleHits {
+		if strings.HasPrefix(id, "dropped-") {
+			n += count
+		}
+	}
+	return n
+}
+
+func forEachDropCase(t *testing.T, f func(t *testing.T, family, path, id, value string)) {
+	shapes := dropShapes()
 	for family, paths := range transforms.CompiledDrops() {
 		for path, id := range paths {
-			for shape, value := range dropShapes() {
-				t.Run(family+"/"+path+"/"+shape, func(t *testing.T) {
-					res := scrubJSONL(t, s, family, buildRecordWithValueAt(t, path, value)+"\n")
-					out := res.Out.Bytes()
-					if got := valueAt(t, out, path); got != transforms.Sentinel(id) {
-						t.Fatalf("value at %s = %.60q, want %s", path, got, transforms.Sentinel(id))
-					}
-					if want := map[string]int{id: 1}; !maps.Equal(res.RuleHits, want) {
-						t.Errorf("rule hits = %v, want %v", res.RuleHits, want)
-					}
-					if res.BytesRedacted != len(value) {
-						t.Errorf("bytes redacted = %d, want the whole value, %d", res.BytesRedacted, len(value))
-					}
-					assertNoFragment(t, out, value)
-				})
+			for shape, value := range shapes {
+				t.Run(family+"/"+path+"/"+shape, func(t *testing.T) { f(t, family, path, id, value) })
 			}
 		}
 	}
 }
 
-// The premise of every entry: without the drop the scrubber already destroys a high-entropy
-// value. Low-entropy base64 that shipped intact before is now dropped on purpose.
-func TestEveryDropPathIsDestroyedWithoutTheDrop(t *testing.T) {
-	s := scrubberWith(t, nil)
-	for family, paths := range transforms.CompiledDrops() {
-		for path := range paths {
-			for shape, value := range dropShapes() {
-				t.Run(family+"/"+path+"/"+shape, func(t *testing.T) {
-					res := scrubJSONL(t, s, family, buildRecordWithValueAt(t, path, value)+"\n")
-					if strings.Contains(string(res.Out.Bytes()), value) {
-						t.Fatalf("the value ships intact without the drop; dropping it would lose data")
-					}
-					if res.RuleHits["generic-entropy"] == 0 {
-						t.Errorf("expected the entropy backstop to shred the value: %v", res.RuleHits)
-					}
-				})
-			}
+func TestEveryDropPathBecomesItsSentinel(t *testing.T) {
+	s := newScrubber(t)
+	forEachDropCase(t, func(t *testing.T, family, path, id, value string) {
+		res := scrubJSONL(t, s, family, buildRecordWithValueAt(t, path, value)+"\n")
+		out := res.Out.Bytes()
+		if got := valueAt(t, out, path); got != transforms.Sentinel(id) {
+			t.Fatalf("value at %s = %.60q, want %s", path, got, transforms.Sentinel(id))
 		}
-	}
+		if want := map[string]int{id: 1}; !maps.Equal(res.RuleHits, want) {
+			t.Errorf("rule hits = %v, want %v", res.RuleHits, want)
+		}
+		if res.BytesRedacted != len(value) {
+			t.Errorf("bytes redacted = %d, want the whole value, %d", res.BytesRedacted, len(value))
+		}
+		assertNoFragment(t, out, value)
+	})
+}
+
+// Every entry's premise: without the drop the entropy backstop already destroys the value.
+func TestEveryDropPathIsDestroyedWithoutTheDrop(t *testing.T) {
+	s := scrubberWith(t, func(cfg *transforms.Config) { cfg.Drops = nil })
+	forEachDropCase(t, func(t *testing.T, family, path, _, value string) {
+		res := scrubJSONL(t, s, family, buildRecordWithValueAt(t, path, value)+"\n")
+		if strings.Contains(string(res.Out.Bytes()), value) {
+			t.Fatalf("the value ships intact without the drop; dropping it would lose data")
+		}
+		if res.RuleHits["generic-entropy"] == 0 {
+			t.Errorf("expected the entropy backstop to shred the value: %v", res.RuleHits)
+		}
+	})
 }
 
 func TestClaudeCodeDropKeepsTheRestOfTheBlock(t *testing.T) {
@@ -229,10 +229,8 @@ func TestDropPathValueThatIsNotABlobIsScrubbedAsBefore(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			res := scrubJSONL(t, s, tc.family, tc.line+"\n")
-			for id := range res.RuleHits {
-				if strings.HasPrefix(id, "dropped-") {
-					t.Fatalf("dropped: %v\n%s", res.RuleHits, res.Out.Bytes())
-				}
+			if dropHits(res) != 0 {
+				t.Fatalf("dropped: %v\n%s", res.RuleHits, res.Out.Bytes())
 			}
 			if intact := string(res.Out.Bytes()) == tc.line+"\n"; intact != tc.intact {
 				t.Errorf("intact = %v, want %v:\n%s", intact, tc.intact, res.Out.Bytes())
@@ -259,31 +257,27 @@ func TestDropsAreScopedToTheirFamilyAndTheOuterRecord(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			res := scrubJSONL(t, s, tc.family, tc.line+"\n")
-			if res.RuleHits[transforms.DropBase64Media]+res.RuleHits[transforms.DropEncryptedReasoning] != 0 {
+			if dropHits(res) != 0 {
 				t.Errorf("dropped outside its scope: %v\n%s", res.RuleHits, res.Out.Bytes())
 			}
 		})
 	}
 }
 
-// Drops and exemptions pull opposite ways on the same value, so no path may be both; Cursor's
-// hex image stays exempt and intact (TestDeclaredOpaqueBinaryPayloadSurvivesTheEntropyBackstop).
+// Drops and exemptions pull opposite ways, so no compiled path may be both.
 func TestDropsAreDisjointFromExemptions(t *testing.T) {
-	exempt := transforms.CompiledExemptions()
+	exempt := transforms.NewExemptionSet(transforms.CompiledExemptions())
 	for family, paths := range transforms.CompiledDrops() {
 		for path, id := range paths {
-			for _, fam := range []string{family, "*"} {
-				for _, e := range exempt[fam] {
-					if e == path {
-						t.Errorf("%s %s is both dropped and exempt", family, path)
-					}
-				}
+			if exempt.Exempt(family, transforms.FieldPath(path)) {
+				t.Errorf("%s %s is both dropped and exempt", family, path)
 			}
 			if id != transforms.DropEncryptedReasoning && id != transforms.DropBase64Media {
 				t.Errorf("%s %s: unexpected rule id %q", family, path, id)
 			}
 		}
 	}
+	// Cursor's hex image stays exempt and intact (TestDeclaredOpaqueBinaryPayloadSurvivesTheEntropyBackstop).
 	if len(transforms.CompiledDrops()["cursor"]) != 0 {
 		t.Error("cursor's opaque payload is exempt and survives intact; it must not be dropped")
 	}
@@ -296,13 +290,9 @@ func TestAConfiguredExemptionOutranksADrop(t *testing.T) {
 	line := buildRecordWithValueAt(t, path, image) + "\n"
 	for _, family := range []string{"claude-code", "*"} {
 		t.Run(family, func(t *testing.T) {
-			cfg := transforms.DefaultConfig()
-			cfg.Username = "jane"
-			cfg.Exemptions[family] = append(cfg.Exemptions[family], path)
-			s, err := transforms.New(cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
+			s := scrubberWith(t, func(cfg *transforms.Config) {
+				cfg.Exemptions[family] = append(cfg.Exemptions[family], path)
+			})
 			res := scrubJSONL(t, s, "claude-code", line)
 			if string(res.Out.Bytes()) != line || len(res.RuleHits) != 0 {
 				t.Errorf("exempt value did not ship intact: %v", res.RuleHits)
@@ -364,6 +354,7 @@ func TestNewRejectsADropThatCannotApply(t *testing.T) {
 		"every family": {"*": {"data": transforms.DropBase64Media}},
 		"bad rule id":  {"codex": {"payload.result": "Dropped Media"}},
 		"empty path":   {"codex": {"": transforms.DropBase64Media}},
+		"embedded":     {"codex": {"payload#json.encrypted_content": transforms.DropEncryptedReasoning}},
 	} {
 		cfg := transforms.DefaultConfig()
 		cfg.Drops = drops

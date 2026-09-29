@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -110,7 +111,7 @@ type Scrubber struct {
 
 	keyNames *keyNameMatcher
 	exempt   *ExemptionSet
-	drops    map[string]map[FieldPath]string
+	drops    map[string]map[FieldPath]compiledDrop
 
 	// Answers every pattern matcher's keyword question in one pass; read-only once
 	// built, so a Scrubber stays safe to share.
@@ -184,6 +185,10 @@ func New(cfg Config) (*Scrubber, error) {
 	drops, err := compileDrops(cfg.Drops)
 	if err != nil {
 		return nil, err
+	}
+	// A configured exemption asks for the value to ship, so it outranks the compiled drop.
+	for family, byPath := range drops {
+		maps.DeleteFunc(byPath, func(path FieldPath, _ compiledDrop) bool { return s.exempt.Exempt(family, path) })
 	}
 	s.drops = drops
 

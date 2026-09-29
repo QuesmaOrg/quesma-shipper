@@ -10,10 +10,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
-// BenchmarkScrubSyntheticMedia A/Bs the compiled drops in one binary on transcripts carrying
-// thinking signatures, base64 images and Fernet reasoning, which the tracked corpora lack.
-// Opaque bytes are about 38% of the Claude payload and 24% of the Codex one, near the 43% and
-// 19% measured on local stores.
+// BenchmarkScrubSyntheticMedia A/Bs the compiled drops on signatures, images and Fernet tokens.
 func BenchmarkScrubSyntheticMedia(b *testing.B) {
 	cases := []struct {
 		name, family string
@@ -26,13 +23,10 @@ func BenchmarkScrubSyntheticMedia(b *testing.B) {
 		name  string
 		drops map[string]map[string]string
 	}{{"drop", transforms.CompiledDrops()}, {"nodrop", nil}} {
-		cfg := transforms.DefaultConfig()
-		cfg.Username = "devuser"
-		cfg.Drops = variant.drops
-		s, err := transforms.New(cfg)
-		if err != nil {
-			b.Fatal(err)
-		}
+		s := scrubberWith(b, func(cfg *transforms.Config) {
+			cfg.Username = "devuser"
+			cfg.Drops = variant.drops
+		})
 		for _, tc := range cases {
 			b.Run(tc.name+"/"+variant.name, func(b *testing.B) {
 				b.SetBytes(int64(len(tc.payload)))
@@ -56,6 +50,14 @@ func randBase64(rng *rand.Rand, n int, enc *base64.Encoding) string {
 	raw := make([]byte, n)
 	rng.Read(raw)
 	return enc.EncodeToString(raw)
+}
+
+// randFernet has a Fernet token's layout (version 0x80, then a timestamp), so it reads "gAAAAA...".
+func randFernet(rng *rand.Rand, n int) string {
+	raw := make([]byte, n)
+	rng.Read(raw)
+	copy(raw, []byte{0x80, 0, 0, 0, 0})
+	return base64.URLEncoding.EncodeToString(raw)
 }
 
 func syntheticClaudeMedia(size int) []byte {
@@ -111,11 +113,7 @@ func syntheticCodexMedia(size int) []byte {
 				"output": []any{map[string]any{"type": "input_image",
 					"image_url": "data:image/png;base64," + randBase64(rng, 24<<10, base64.StdEncoding)}}}
 		case i%10 == 0:
-			fernet := make([]byte, 1200)
-			rng.Read(fernet)
-			copy(fernet, []byte{0x80, 0, 0, 0, 0})
-			payload = map[string]any{"type": "reasoning", "summary": []any{},
-				"encrypted_content": base64.URLEncoding.EncodeToString(fernet)}
+			payload = map[string]any{"type": "reasoning", "summary": []any{}, "encrypted_content": randFernet(rng, 1200)}
 		default:
 			payload = map[string]any{"type": "function_call_output", "call_id": "call_" + randToken(rng, 24),
 				"output": randCommandOutput(rng, 300+rng.Intn(900))}

@@ -81,7 +81,9 @@ and base64 media with a sentinel before the ladder runs. One-binary A/B over
 whole local stores: Claude Code 2.54 GB 108-112 s to 96-98 s, Codex 192 MB
 21.8 s to 21.5 s. The `BenchmarkScrubRealData` sample is image-heavy and went from
 61 to 174 MiB/s, so it no longer compares with the stage table above;
-`BenchmarkScrubSyntheticMedia` is the A/B for drops.)
+`BenchmarkScrubSyntheticMedia` is the A/B for drops: opaque bytes are about 38%
+of its Claude payload and 24% of its Codex one, near the 43% and 19% measured on
+local stores.)
 
 ## Tried and refuted
 

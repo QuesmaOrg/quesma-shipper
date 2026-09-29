@@ -68,18 +68,27 @@ func CompiledDrops() map[string]map[string]string {
 	}
 }
 
-func compileDrops(spec map[string]map[string]string) (map[string]map[FieldPath]string, error) {
-	out := make(map[string]map[FieldPath]string, len(spec))
+// compiledDrop carries the sentinel so the walk never builds it per value.
+type compiledDrop struct {
+	id, sentinel string
+}
+
+func compileDrops(spec map[string]map[string]string) (map[string]map[FieldPath]compiledDrop, error) {
+	out := make(map[string]map[FieldPath]compiledDrop, len(spec))
 	for family, paths := range spec {
 		if family == "*" || family == "" {
 			return nil, fmt.Errorf("scrub: drops need a source family, got %q", family)
 		}
-		byPath := make(map[FieldPath]string, len(paths))
+		byPath := make(map[FieldPath]compiledDrop, len(paths))
 		for path, id := range paths {
-			if path == "" || !isSentinel(Sentinel(id)) {
+			sentinel := Sentinel(id)
+			if path == "" || !isSentinel(sentinel) {
 				return nil, fmt.Errorf("scrub: drop %s %q -> %q needs a field path and a valid rule id", family, path, id)
 			}
-			byPath[FieldPath(path)] = id
+			if strings.Contains(path, embeddedSuffix) {
+				return nil, fmt.Errorf("scrub: drop %s %q cannot apply inside an embedded JSON document", family, path)
+			}
+			byPath[FieldPath(path)] = compiledDrop{id: id, sentinel: sentinel}
 		}
 		out[family] = byPath
 	}
