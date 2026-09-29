@@ -87,6 +87,12 @@ func (e *ExemptionSet) Exempt(family string, field FieldPath) bool {
 	return e.byFamily[family][field]
 }
 
+// ExemptKeys reports whether a "<parent>.*" entry covers the keys of the object at parent:
+// a map keyed by ids has no fixed path to name. It covers the keys only, never their values.
+func (e *ExemptionSet) ExemptKeys(family string, parent FieldPath) bool {
+	return e.Exempt(family, FieldPath(joinFieldPath(string(parent), "*")))
+}
+
 // prioritizedSpan carries the matcher class alongside the span, so overlapping
 // matches resolve by confidence rather than alphabetically.
 type prioritizedSpan struct {
@@ -95,11 +101,11 @@ type prioritizedSpan struct {
 	priority int
 }
 
-// resolveSpans merges overlapping spans into one placeholder rather than nesting them.
-// The surviving attribution must be the HIGHEST-CONFIDENCE rule covering the region: the
-// entropy backstop fires on nearly every provider key too, so any other tie-break turns
-// the ledger into "something high-entropy happened".
-func resolveSpans(value string, patternSpans, heuristicSpans []Span) ([]Span, int, map[string]int) {
+// resolveSpans joins overlapping spans into one placeholder rather than nesting them or keeping one,
+// which shipped the dropped one's tail. A region takes the rule it starts with, a pattern before a
+// heuristic: the entropy backstop fires on nearly every provider key too, so any other tie-break
+// turns the ledger into "something high-entropy happened".
+func resolveSpans(patternSpans, heuristicSpans []Span) ([]Span, int, map[string]int) {
 	if len(patternSpans) == 0 && len(heuristicSpans) == 0 {
 		return nil, 0, nil
 	}
@@ -125,66 +131,20 @@ func resolveSpans(value string, patternSpans, heuristicSpans []Span) ([]Span, in
 		return strings.Compare(a.RuleID, b.RuleID)
 	})
 
-	// Keeping both would nest placeholders or split one secret across two.
-	spans = dropOverlappedHeuristics(spans)
-
 	resolved := make([]Span, 0, len(spans))
 	hits := map[string]int{}
 	redacted := 0
-	cursor := 0
-
 	for _, s := range spans {
-		if s.Start < 0 || s.End > len(value) || s.Start >= s.End {
-			continue
-		}
-		if s.Start < cursor {
-			// Already inside a replaced region.
+		if n := len(resolved); n > 0 && s.Start < resolved[n-1].End {
+			if last := &resolved[n-1]; s.End > last.End {
+				redacted += s.End - last.End
+				last.End = s.End
+			}
 			continue
 		}
 		resolved = append(resolved, s.Span)
 		hits[s.RuleID]++
 		redacted += s.End - s.Start
-		cursor = s.End
 	}
 	return resolved, redacted, hits
-}
-
-// dropOverlappedHeuristics removes heuristic spans intersecting a pattern span and widens
-// that span over any reach past it, so one secret yields one confidently attributed
-// placeholder.
-func dropOverlappedHeuristics(spans []prioritizedSpan) []prioritizedSpan {
-	var patterns []prioritizedSpan
-	for _, s := range spans {
-		if s.priority == 0 {
-			patterns = append(patterns, s)
-		}
-	}
-
-	out := make([]prioritizedSpan, 0, len(spans))
-	for _, s := range spans {
-		if s.priority == 0 {
-			out = append(out, s)
-			continue
-		}
-		overlapped := false
-		for i, p := range patterns {
-			if s.Start < p.End && p.Start < s.End {
-				// Extend the confident span so no tail of the secret escapes.
-				if s.End > patterns[i].End {
-					patterns[i].End = s.End
-					for j := range out {
-						if out[j].priority == 0 && out[j].Start == p.Start && out[j].RuleID == p.RuleID {
-							out[j].End = s.End
-						}
-					}
-				}
-				overlapped = true
-				break
-			}
-		}
-		if !overlapped {
-			out = append(out, s)
-		}
-	}
-	return out
 }

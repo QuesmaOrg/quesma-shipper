@@ -148,6 +148,10 @@ func selfUpdateGate(build app.Build, getenv func(string) string, persistedHop st
 // maybeSelfUpdate replaces a released binary at daemon start; autoupdate is the resolved
 // autoupdate.enabled, true when the config did not resolve.
 func maybeSelfUpdate(ctx context.Context, build app.Build, autoupdate bool, errOut io.Writer) {
+	if packaging.SystemManaged() {
+		fmt.Fprintln(errOut, "self-update: managed by an administrator through the macOS package")
+		return
+	}
 	stateDir, stateErr := app.StateDirWithoutConfig()
 	persistedHop := ""
 	if stateErr == nil {

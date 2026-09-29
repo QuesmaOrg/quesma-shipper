@@ -533,35 +533,53 @@ pre {
   margin: 0;
 }
 
-.etl-fieldset {
+.setting-fieldset {
   min-width: 0;
   border: 0;
   margin: 0;
   padding: 0;
 }
 
-.etl-fieldset legend {
+.setting-fieldset legend {
   padding: 0;
   font-size: 0.95rem;
   font-weight: 650;
   letter-spacing: normal;
 }
 
-.etl-fieldset .check {
+.setting-fieldset .check {
   align-items: flex-start;
   max-width: calc(68ch + 1.75rem);
   margin-top: 0.45rem;
   font-size: 0.85rem;
 }
 
-.etl-fieldset .check input {
+.setting-fieldset .check input {
   margin-top: 0.1rem;
+}
+
+.telemetry-collector {
+  margin: 1rem 0 0 1.75rem;
+  max-width: 68ch;
+}
+
+.telemetry-collector input:disabled {
+  border-color: var(--hairline);
+  background: var(--paper-deep);
+  color: var(--graphite);
 }
 
 .field-note {
   color: var(--graphite);
   font-size: 0.85rem;
   margin: -0.85rem 0 0 1.75rem;
+  max-width: 68ch;
+}
+
+.telemetry-help {
+  color: var(--graphite);
+  font-size: 0.85rem;
+  margin: 0.4rem 0 0 1.75rem;
   max-width: 68ch;
 }
 

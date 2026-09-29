@@ -406,6 +406,16 @@ func (s *Scrubber) planValue(value string, secretKey bool, field FieldPath, fami
 	return s.planValueWith(value, entropy, secretKey, field, scan)
 }
 
+// planKey is planValue for an object key under parent.
+func (s *Scrubber) planKey(key string, parent FieldPath, family string, scan *packs.ValueScan) valuePlan {
+	field := FieldPath(joinFieldPath(string(parent), key))
+	entropy := s.entropy
+	if s.exempt.Exempt(family, field) || s.exempt.ExemptKeys(family, parent) {
+		entropy = nil
+	}
+	return s.planValueWith(key, entropy, false, field, scan)
+}
+
 func (s *Scrubber) planValueWith(
 	value string,
 	entropy *entropyMatcher,
@@ -427,8 +437,10 @@ func (s *Scrubber) planValueWith(
 	if entropy != nil {
 		heuristicSpans = entropy.Match(value)
 	}
+	var escapes escapeIndex
 	if strings.IndexByte(value, '\\') >= 0 {
-		if shadow, escapes := escapeShadow(value); !escapes.empty() {
+		var shadow []byte
+		if shadow, escapes = escapeShadow(value); !escapes.empty() {
 			patternSpans = s.unionEscapeShadow(value, string(shadow), escapes, patternSpans, scan)
 			// A run can start at the `n` of `\n`; the lone `\` left behind would break encoded JSON.
 			escapes.snapAll(heuristicSpans)
@@ -448,7 +460,10 @@ func (s *Scrubber) planValueWith(
 		}
 	}
 
-	resolved, redacted, hits := resolveSpans(value, patternSpans, heuristicSpans)
+	if len(patternSpans) > 0 && len(heuristicSpans) > 0 {
+		heuristicSpans = entropy.trimAtPatterns(value, heuristicSpans, patternSpans, escapes)
+	}
+	resolved, redacted, hits := resolveSpans(patternSpans, heuristicSpans)
 	plan := valuePlan{redacted: redacted, hits: hits}
 	for _, span := range resolved {
 		plan.spans = append(plan.spans, replacementSpan{
@@ -523,7 +538,7 @@ func (s *Scrubber) unionEscapeShadow(value, shadow string, escapes escapeIndex, 
 }
 
 // unionSpan adds sp unless a span already covers it; spans it overlaps are folded into one
-// span under the earliest rule, since resolveSpans would drop an overlapping tail.
+// span under the earliest rule.
 func unionSpan(spans []Span, sp Span) []Span {
 	if slices.ContainsFunc(spans, func(o Span) bool { return o.Start <= sp.Start && sp.End <= o.End }) {
 		return spans

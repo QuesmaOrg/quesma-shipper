@@ -7,6 +7,8 @@ import (
 	"path"
 	"slices"
 	"strings"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type OrganizationSummary struct {
@@ -15,29 +17,48 @@ type OrganizationSummary struct {
 }
 
 func (m *Manager) ListOrganizations(ctx context.Context) ([]OrganizationSummary, error) {
-	objects, err := m.store.List(ctx, "v1/organization=")
+	const prefix = "v1/organization="
+	organizations, err := m.store.ListPrefixes(ctx, prefix, "/")
 	if err != nil {
 		return nil, err
 	}
-	out := make([]OrganizationSummary, 0)
-	for _, object := range objects {
-		const suffix = "/control/config.json"
-		if !strings.HasSuffix(object.Key, suffix) {
+	out := make([]OrganizationSummary, len(organizations))
+	found := make([]bool, len(organizations))
+	group, ctx := errgroup.WithContext(ctx)
+	group.SetLimit(16)
+	for i, organization := range organizations {
+		slug := strings.TrimSuffix(strings.TrimPrefix(organization, prefix), "/")
+		if organization != prefix+slug+"/" {
 			continue
 		}
-		slug := strings.TrimSuffix(strings.TrimPrefix(object.Key, "v1/organization="), suffix)
 		if !orgPattern.MatchString(slug) {
 			continue
 		}
 		scoped, _ := m.ForOrganization(slug)
-		cfg, _, err := scoped.LoadConfig(ctx)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, OrganizationSummary{Slug: slug, DisplayName: cfg.DisplayName})
+		group.Go(func() error {
+			cfg, _, err := scoped.LoadConfig(ctx)
+			if errors.Is(err, ErrNotFound) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			out[i] = OrganizationSummary{Slug: slug, DisplayName: cfg.DisplayName}
+			found[i] = true
+			return nil
+		})
 	}
-	slices.SortFunc(out, func(a, b OrganizationSummary) int { return strings.Compare(a.Slug, b.Slug) })
-	return out, nil
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	summaries := make([]OrganizationSummary, 0, len(organizations))
+	for i, ok := range found {
+		if ok {
+			summaries = append(summaries, out[i])
+		}
+	}
+	slices.SortFunc(summaries, func(a, b OrganizationSummary) int { return strings.Compare(a.Slug, b.Slug) })
+	return summaries, nil
 }
 
 func (m *Manager) ListGrants(ctx context.Context) ([]GrantRecord, error) {

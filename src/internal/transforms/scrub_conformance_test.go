@@ -133,6 +133,8 @@ func plantedValues() []string {
 		"4111 1111 1111 1111",
 		"hunter2",
 		"jane",
+		"Qz8Kp2Lm9Xw4Rv7Tn",
+		"Xq7Lp9Zr2Kw8Tn4Vb6Hs3Jd5",
 	}
 }
 
@@ -292,6 +294,28 @@ func generateScrubVectors(t *testing.T) []byte {
 			"The decoded value is not JSON, so its escapes stay: the n of an escaped newline would glue " +
 				"onto the token after it and defeat every word-boundary rule. The rules also run over a " +
 				"same-length copy with each escape turned into non-word bytes.",
+		},
+		{
+			"an entropy run reaching past a provider key takes the tail with it", "claude-code", true,
+			`{"type":"user","uuid":"u1","toolUseResult":{"stdout":"mytoken=ghp_abcdefghijklmnopqrstuvwxyz0123456789-Qz8Kp2Lm9Xw4Rv7Tn"}}` + "\n",
+			"The entropy run starts at the key name and ends past the provider key. The pattern span " +
+				"used to win whole and the run's reach past it shipped in the clear; overlapping spans " +
+				"now join into one placeholder, which still starts where the pattern does, so the key " +
+				"name survives.",
+		},
+		{
+			"a secret glued before a provider key is redacted too", "claude-code", true,
+			`{"type":"user","uuid":"u1","toolUseResult":{"stdout":"Xq7Lp9Zr2Kw8Tn4Vb6Hs3Jd5=ghp_abcdefghijklmnopqrstuvwxyz0123456789"}}` + "\n",
+			"The mirror of the tail case: the pattern's start trims the entropy run, and the head it " +
+				"releases used to ship. The head is scored again on its own; a key name falls below the " +
+				"threshold and stays, a high-entropy head clears it and goes.",
+		},
+		{
+			"a secret glued to the username is redacted, a slug beside it is not", "claude-code", true,
+			`{"type":"user","uuid":"u1","toolUseResult":{"stdout":"jane-Xq7Lp9Zr2Kw8Tn4Vb6Hs3Jd5 in ~/.claude/projects/-Users-jane-Work2026-SampleOrg-blink-UI"}}` + "\n",
+			"A run holding the username is skipped so a project slug survives, and a secret glued to " +
+				"the name used to ship with it. Each word of a skipped run is still scored on its own: a " +
+				"slug's words are too short to clear, a secret's is not.",
 		},
 	}
 

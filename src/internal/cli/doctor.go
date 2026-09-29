@@ -63,7 +63,11 @@ func updateLines(build app.Build, upd app.UpdateStatus, p palette, verbose bool)
 	if upd.State == "available" {
 		lines = append(lines, styled(p.yellow+p.bold, "Update", p.reset)+" "+upd.Detail)
 		if upd.Fix != "" {
-			lines = append(lines, "  → "+p.names("`"+upd.Fix+"`", ""))
+			fix := upd.Fix
+			if fix == "quesma-shipper update" {
+				fix = "`" + fix + "`"
+			}
+			lines = append(lines, "  → "+p.names(fix, ""))
 		}
 	} else if verbose {
 		lines = append(lines, styled(p.dim, "Update "+upd.Detail, p.reset))

@@ -2,7 +2,7 @@
 <installer-gui-script minSpecVersion="2">
 	<title>Quesma Shipper</title>
 	<options customize="never" hostArchitectures="arm64,x86_64"/>
-	<domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="false"/>
+	<domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="true"/>
 	<allowed-os-versions>
 		<os-version min="13.0"/>
 	</allowed-os-versions>

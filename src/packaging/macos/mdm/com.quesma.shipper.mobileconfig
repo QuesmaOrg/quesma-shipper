@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadType</key><string>Configuration</string>
+    <key>PayloadVersion</key><integer>1</integer>
+    <key>PayloadIdentifier</key><string>com.quesma.shipper.enrollment</string>
+    <key>PayloadUUID</key><string>F101632D-362C-4F99-8393-05DECB9FD5D7</string>
+    <key>PayloadDisplayName</key><string>Quesma Shipper enrollment</string>
+    <key>PayloadDescription</key><string>Enroll each macOS user's Quesma Shipper with the organization's fleet manager.</string>
+    <key>PayloadScope</key><string>System</string>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>PayloadType</key><string>com.apple.ManagedClient.preferences</string>
+            <key>PayloadVersion</key><integer>1</integer>
+            <key>PayloadIdentifier</key><string>com.quesma.shipper.enrollment.preferences</string>
+            <key>PayloadUUID</key><string>9231B01B-40BE-47CE-B0FD-C125215FD5D7</string>
+            <key>PayloadDisplayName</key><string>Quesma Shipper managed preferences</string>
+            <key>PayloadContent</key>
+            <dict>
+                <key>com.quesma.shipper</key>
+                <dict>
+                    <key>Forced</key>
+                    <array>
+                        <dict>
+                            <key>mcx_preference_settings</key>
+                            <dict>
+                                <key>Server</key><string>https://FLEET-MANAGER.example.com</string>
+                                <key>Grant</key><string>REPLACE-WITH-ENROLLMENT-GRANT</string>
+                            </dict>
+                        </dict>
+                    </array>
+                </dict>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>

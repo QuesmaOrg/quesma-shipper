@@ -102,6 +102,26 @@ func (s *memoryStore) List(_ context.Context, prefix string) ([]ObjectInfo, erro
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out, nil
 }
+func (s *memoryStore) ListPrefixes(_ context.Context, prefix, delimiter string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	seen := make(map[string]bool)
+	for key := range s.objects {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(key, prefix)
+		if end := strings.Index(rest, delimiter); end >= 0 {
+			seen[prefix+rest[:end+len(delimiter)]] = true
+		}
+	}
+	var out []string
+	for key := range seen {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out, nil
+}
 func (s *memoryStore) VersioningEnabled(context.Context) (bool, error) { return s.versioning, nil }
 
 // setSourceHash stands in for a shipper's direct presigned PUT, which this store never sees.

@@ -150,6 +150,15 @@ func OpenTruncating(path string, perm os.FileMode) (*os.File, error) {
 	return f, nil
 }
 
+// RemoveFile removes a state artifact, including a symlink at the final path.
+func RemoveFile(path string) error {
+	err := os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
 // WriteAtomic writes data to path via a temp file, fsync, and rename. The rename is the commit
 // point. The temp name is random, never derived from the pid: a temp stranded by a crash is inert
 // garbage next to its document and can never collide with a later write. CreateTemp's O_EXCL

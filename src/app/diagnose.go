@@ -33,7 +33,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 	}
 	updCh := make(chan UpdateStatus, 1)
 	go func() {
-		updCh <- checkUpdate(ctx, build, eff.AutoupdateEnabled, os.Getenv, packaging.CheckUpdate)
+		updCh <- checkUpdate(ctx, build, eff.AutoupdateEnabled, packaging.SystemManaged(), os.Getenv, packaging.CheckUpdate)
 	}()
 
 	username, installID := "", ""
