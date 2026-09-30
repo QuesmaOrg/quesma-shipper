@@ -1,10 +1,14 @@
 package sources
 
 import (
+	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/sources/sqliteread"
 )
 
 func TestSessionDatabaseDiscoveryScope(t *testing.T) {
@@ -100,5 +104,109 @@ func TestSessionDatabaseLiteralSymlinkPrefix(t *testing.T) {
 	got, bad, err := sessionDatabases(src, nil)
 	if err != nil || bad.count != 0 || len(got) != 0 {
 		t.Fatalf("literal-prefix symlink escaped scope: %v %+v %v", got, bad, err)
+	}
+}
+
+func writeSessionStore(t *testing.T, dir, body string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(dir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`CREATE TABLE sessions(id TEXT,parent_session_id TEXT,source TEXT,model TEXT,cwd TEXT,started_at REAL,ended_at REAL,title TEXT,input_tokens INTEGER,output_tokens INTEGER,cache_read_tokens INTEGER,cache_write_tokens INTEGER);
+CREATE TABLE messages(id INTEGER,session_id TEXT,role TEXT,content TEXT,tool_call_id TEXT,tool_calls TEXT,tool_name TEXT,timestamp REAL,finish_reason TEXT);
+INSERT INTO sessions VALUES ('same',NULL,'cli','model','/work/api',1,NULL,'test',5,2,0,0);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`INSERT INTO messages VALUES (1,'same','user',?,NULL,NULL,NULL,1,NULL)`, body); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSessionSnapshotReservesItsReadCap(t *testing.T) {
+	for _, cap := range []int64{0, 4096, 64 << 20} {
+		root := t.TempDir()
+		writeSessionStore(t, root, "inside")
+		src := Resolved{Source: Source{ID: "hermes-sessions", Include: []string{"state.db"}, MaxFileBytes: cap}, Root: root}
+		d, err := discoverSessions(Request{Source: src}, sqliteread.HermesSessions{})
+		if err != nil || len(d.Candidates) != 1 {
+			t.Fatalf("discovery: %+v %v", d, err)
+		}
+		want := cap
+		if want == 0 {
+			want = sqliteread.DefaultSessionMaxBytes
+		}
+		c := d.Candidates[0]
+		payload, err := c.Load(context.Background())
+		if err != nil || len(payload.Bytes) == 0 {
+			t.Fatalf("load: %v", err)
+		}
+		if c.Size != want {
+			t.Fatalf("cap %d: admission charge %d, want %d", cap, c.Size, want)
+		}
+	}
+}
+
+func TestSessionLoadRechecksProfilePath(t *testing.T) {
+	for _, change := range []string{"unchanged", "profile symlink", "database symlink", "denied after discovery", "root symlink retargeted"} {
+		t.Run(change, func(t *testing.T) {
+			root, outside := t.TempDir(), t.TempDir()
+			profile := filepath.Join(root, "profiles", "work")
+			writeSessionStore(t, profile, "INSIDE-CONTENT")
+			writeSessionStore(t, outside, "OUTSIDE-CONTENT")
+			namedRoot := root
+			if change == "root symlink retargeted" {
+				namedRoot = filepath.Join(t.TempDir(), "root")
+				if err := os.Symlink(root, namedRoot); err != nil {
+					t.Fatal(err)
+				}
+			}
+			src := Resolved{Source: Source{ID: "hermes-sessions", Include: []string{"profiles/*/state.db"}, MaxFileBytes: 64 << 20}, Root: namedRoot}
+			deny := &List{}
+			d, err := discoverSessions(Request{Source: src, Deny: deny}, sqliteread.HermesSessions{})
+			if err != nil || len(d.Candidates) != 1 {
+				t.Fatalf("discovery: %+v %v", d, err)
+			}
+			switch change {
+			case "profile symlink", "database symlink":
+				from, to := profile, outside
+				if change == "database symlink" {
+					from, to = filepath.Join(from, "state.db"), filepath.Join(to, "state.db")
+				}
+				if err := os.Rename(from, from+"-old"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(to, from); err != nil {
+					t.Fatal(err)
+				}
+			case "denied after discovery":
+				resolved, err := filepath.EvalSymlinks(profile)
+				if err != nil {
+					t.Fatal(err)
+				}
+				deny.patterns = []string{normalize(resolved) + "/**"}
+			case "root symlink retargeted":
+				writeSessionStore(t, filepath.Join(outside, "profiles", "work"), "OUTSIDE-CONTENT")
+				if err := os.Remove(namedRoot); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(outside, namedRoot); err != nil {
+					t.Fatal(err)
+				}
+			}
+			payload, err := d.Candidates[0].Load(context.Background())
+			if change == "unchanged" || change == "root symlink retargeted" {
+				if err != nil || !strings.Contains(string(payload.Bytes), "INSIDE-CONTENT") || strings.Contains(string(payload.Bytes), "OUTSIDE-CONTENT") {
+					t.Fatalf("must read the original resolved root: %s %v", payload.Bytes, err)
+				}
+			} else if err == nil || len(payload.Bytes) != 0 {
+				t.Fatalf("changed path must return an error without bytes: %s %v", payload.Bytes, err)
+			}
+		})
 	}
 }

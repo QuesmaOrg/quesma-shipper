@@ -19,7 +19,11 @@ Agent-specific table/column queries run in one read-only transaction per
 session, including committed WAL records. A failed, malformed or oversized read
 produces no partial upload. The default snapshot cap is 64 MiB per session; discovery
 refuses more than 100,000 sessions per database. Nested database/profile symlinks
-are not followed. Agent credentials, model configuration and arbitrary database
+are rejected during discovery and rechecked before each database read. Reads use the
+root resolved during discovery. SQLite opens by pathname, so these checks do not
+prevent a concurrent path replacement between validation and opening. Snapshot
+candidates reserve their full size cap against the engine’s in-flight memory limit.
+Agent credentials, model configuration and arbitrary database
 columns are excluded.
 
 Each derived JSONL line has `format_version: 1`, `type`, `session_id` and a stable

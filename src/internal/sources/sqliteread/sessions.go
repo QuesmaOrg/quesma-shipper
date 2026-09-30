@@ -12,6 +12,9 @@ import (
 	"strings"
 )
 
+// DefaultSessionMaxBytes bounds snapshots when no positive cap is supplied.
+const DefaultSessionMaxBytes = 64 << 20
+
 // Session stores only routing metadata; transcript bytes are loaded one session at a time.
 type Session struct{ ID, CWD string }
 
@@ -67,7 +70,7 @@ func readSession(ctx context.Context, path, family, id string, maxBytes int64, c
 	}
 	defer tx.Rollback()
 	if maxBytes <= 0 {
-		maxBytes = 64 << 20
+		maxBytes = DefaultSessionMaxBytes
 	}
 	var out bytes.Buffer
 	emit := func(kind, query string) error {

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -228,5 +229,37 @@ func TestSpentBudgetDoesNotLoadCandidates(t *testing.T) {
 	}
 	if err := p.run(context.Background()); err != nil || !p.rep.Truncated || p.out.Remaining != 1 {
 		t.Fatalf("budget: %+v, %v", p.out, err)
+	}
+}
+
+func TestSessionSnapshotAdmissionRespectsMemoryLimit(t *testing.T) {
+	root := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE sessions(id TEXT, cwd TEXT, started_at REAL);
+INSERT INTO sessions VALUES ('one', '/work', 1), ('two', '/work', 2);`); err != nil {
+		t.Fatal(err)
+	}
+	primitive, err := sources.NewRegistry().For("sidecar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := sources.Resolved{Source: sources.Source{ID: "hermes-sessions", Emit: "hermes_sessions", Include: []string{"state.db"}, MaxFileBytes: platform.MaxInFlightBytes()}, Root: root}
+	disc, err := primitive.Discover(sources.Request{Source: src})
+	if err != nil || len(disc.Candidates) != 2 {
+		t.Fatalf("discovery: %+v %v", disc, err)
+	}
+	p := admissionPass(2)
+	p.src, p.disc = src, disc
+	var stopped error
+	if !p.canAdmit(context.Background(), 0, 0, &stopped) {
+		t.Fatal("first session refused")
+	}
+	p.inFlightBytes += p.charge(0)
+	if p.canAdmit(context.Background(), 1, 1, &stopped) {
+		t.Fatal("admitted two snapshots exceeding the memory limit")
 	}
 }

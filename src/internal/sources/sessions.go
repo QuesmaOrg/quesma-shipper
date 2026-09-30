@@ -3,6 +3,7 @@ package sources
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,6 +45,9 @@ func (sessionDispatch) Discover(req Request) (Discovery, error) {
 
 func discoverSessions(req Request, reader sessionReader) (Discovery, error) {
 	src := req.Source
+	if src.MaxFileBytes <= 0 {
+		src.MaxFileBytes = sqliteread.DefaultSessionMaxBytes
+	}
 	d := Discovery{Health: AgentAbsent, Sniff: SniffOK}
 	if src.Root == "" {
 		d.Reason = src.RootUnresolvedReason
@@ -63,7 +67,11 @@ func discoverSessions(req Request, reader sessionReader) (Discovery, error) {
 		now = req.Now()
 	}
 	for _, db := range dbs {
-		sessions, err := reader.List(ctx, db.Path)
+		path, err := db.checkedPath(req.Deny)
+		var sessions []sqliteread.Session
+		if err == nil {
+			sessions, err = reader.List(ctx, path)
+		}
 		if err != nil {
 			d.Unreadable++
 			d.UnreadableExample = db.Path
@@ -73,23 +81,16 @@ func discoverSessions(req Request, reader sessionReader) (Discovery, error) {
 		for _, session := range sessions {
 			// Keep arbitrary IDs out of virtual paths; raw identifiers remain inside records.
 			name := fmt.Sprintf("%x.jsonl", sha256.Sum256([]byte(session.ID)))
-			cand := Candidate{Path: filepath.Join(db.Path, "sessions", name), RelPath: filepath.ToSlash(filepath.Join(db.RelPath, "sessions", name)), CWD: session.CWD, MTime: now, AlwaysLoad: true}
+			cand := Candidate{Path: filepath.Join(db.Path, "sessions", name), RelPath: filepath.ToSlash(filepath.Join(db.RelPath, "sessions", name)), CWD: session.CWD, Size: src.MaxFileBytes, MTime: now, AlwaysLoad: true}
 			if req.Ignore.Match(src, cand) {
 				d.Ignored = true
 				continue
 			}
-			path, id := db.Path, session.ID
+			id := session.ID
 			cand.Load = func(ctx context.Context) (Payload, error) {
-				// Recheck the path floor at load time as well as discovery.
-				if info, err := os.Lstat(path); err != nil {
+				path, err := db.checkedPath(req.Deny)
+				if err != nil {
 					return Payload{}, err
-				} else if !info.Mode().IsRegular() {
-					return Payload{}, fmt.Errorf("session database is not a regular file")
-				}
-				if req.Deny != nil {
-					if denied, _ := req.Deny.Match(path); denied {
-						return Payload{}, fmt.Errorf("session database denied")
-					}
 				}
 				raw, err := reader.Read(ctx, path, id, src.MaxFileBytes)
 				return Payload{Bytes: raw, MTime: now}, err
@@ -114,8 +115,8 @@ func discoverSessions(req Request, reader sessionReader) (Discovery, error) {
 }
 
 // Expand declared patterns without walking unrelated dependency and model caches.
-func sessionDatabases(src Resolved, deny *List) ([]Candidate, unreadable, error) {
-	var out []Candidate
+func sessionDatabases(src Resolved, deny *List) ([]sessionDatabase, unreadable, error) {
+	var out []sessionDatabase
 	var bad unreadable
 	note := func(path string, err error) {
 		bad.count++
@@ -150,47 +151,59 @@ func sessionDatabases(src Resolved, deny *List) ([]Candidate, unreadable, error)
 		}
 	}
 	for _, rel := range names {
-		path, named := filepath.Join(root, rel), filepath.Join(src.Root, rel)
-		// Glob's literal prefix can follow symlinks even with WithNoFollow.
-		nestedLink := false
-		parent := root
-		for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
-			parent = filepath.Join(parent, part)
-			info, err := os.Lstat(parent)
-			if err != nil {
-				note(parent, err)
-				nestedLink = true
-				break
-			}
-			if info.Mode()&os.ModeSymlink != 0 {
-				nestedLink = true
-				break
-			}
-		}
-		if nestedLink {
-			continue
-		}
-
-		if deny != nil {
-			if denied, _ := deny.MatchPair(named, path); denied {
-				continue
-			}
-		}
 		if matchesAny(filepath.ToSlash(rel), normalizeGlobs(src.Exclude)) {
 			continue
 		}
-		info, err := os.Lstat(path)
-		if os.IsNotExist(err) {
+		db := sessionDatabase{Path: filepath.Join(src.Root, rel), RelPath: filepath.ToSlash(rel), root: root}
+		if _, err := db.checkedPath(deny); err != nil {
+			if !errors.Is(err, errSessionPathRejected) && !os.IsNotExist(err) {
+				note(db.Path, err)
+			}
 			continue
 		}
-		if err != nil {
-			note(path, err)
-			continue
-		}
-		if !info.Mode().IsRegular() {
-			continue
-		}
-		out = append(out, Candidate{Path: named, RelPath: filepath.ToSlash(rel)})
+		out = append(out, db)
 	}
 	return out, bad, nil
+}
+
+var errSessionPathRejected = errors.New("session database path rejected")
+
+type sessionDatabase struct {
+	Path, RelPath string
+	root          string
+}
+
+// SQLite opens by name, so this rechecks scope before each read but cannot make validation and opening atomic.
+func (db sessionDatabase) checkedPath(deny *List) (string, error) {
+	root, err := filepath.EvalSymlinks(db.root)
+	if err != nil {
+		return "", err
+	}
+	if root != db.root || !filepath.IsLocal(filepath.FromSlash(db.RelPath)) {
+		return "", fmt.Errorf("%w: resolved root changed or path is not local", errSessionPathRejected)
+	}
+	path := root
+	for _, part := range strings.Split(db.RelPath, "/") {
+		path = filepath.Join(path, part)
+		info, err := os.Lstat(path)
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("%w: symlink at %s", errSessionPathRejected, path)
+		}
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("%w: not a regular file", errSessionPathRejected)
+	}
+	if deny != nil {
+		if denied, pattern := deny.MatchPair(db.Path, path); denied {
+			return "", fmt.Errorf("%w: deny list refuses %s (%s)", errSessionPathRejected, path, pattern)
+		}
+	}
+	return path, nil
 }
