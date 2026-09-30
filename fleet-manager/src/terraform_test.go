@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestTerraformPinsVersioningAndWriteOnlyDataPermissions(t *testing.T) {
+func TestTerraformPinsVersioningAndDataPermissions(t *testing.T) {
 	cases := []struct {
 		file                string
 		required, forbidden []string
@@ -234,7 +234,7 @@ func TestTerraformCreatesAdministratorCredential(t *testing.T) {
 	}
 }
 
-func TestTerraformScopesMultiTenantControlAndWriteOnlyData(t *testing.T) {
+func TestTerraformScopesMultiTenantControlAndData(t *testing.T) {
 	awsRaw, _ := os.ReadFile("../terraform/aws/main.tf")
 	aws := string(awsRaw)
 	for _, required := range []string{`v1/organization=*/control/`, `v1/organization=*/install=`, `v1/control/admin/credential.json`} {
@@ -245,17 +245,14 @@ func TestTerraformScopesMultiTenantControlAndWriteOnlyData(t *testing.T) {
 	if strings.Contains(aws, `Resource = "${aws_s3_bucket.fleet.arn}/*"`) {
 		t.Fatal("AWS runtime can access every object")
 	}
-	// The install root is write-only apart from the one name, so the read grant must end at it.
-	if !strings.Contains(aws, `Resource = "${aws_s3_bucket.fleet.arn}/${local.data_prefix}*/tags.json"`) {
-		t.Error("AWS policy does not read install names from the one object name")
-	}
-	// Without a listing of that key S3 reports an absent name as 403, and the first naming fails.
-	if !strings.Contains(aws, `Condition = { StringLike = { "s3:prefix" = "${local.data_prefix}*/tags.json" } }`) {
-		t.Error("AWS policy cannot tell an absent install name from a denied one")
-	}
-	if strings.Contains(aws, `"s3:GetObject"`) && strings.Contains(aws, `Action   = "s3:GetObject"
+	// Install names and the deduplication probe both read below the install root; S3 authorizes HEAD as GetObject.
+	if !strings.Contains(aws, `Action   = "s3:GetObject"
         Resource = "${aws_s3_bucket.fleet.arn}/${local.data_prefix}*"`) {
-		t.Fatal("AWS runtime can read every trajectory object")
+		t.Error("AWS runtime cannot read the install root the deduplication probe stats")
+	}
+	// Without a listing of the key S3 reports an absent object as 403, and the probe fails instead of uploading.
+	if !strings.Contains(aws, `Condition = { StringLike = { "s3:prefix" = "${local.data_prefix}*" } }`) {
+		t.Error("AWS policy cannot tell an absent object from a denied one")
 	}
 
 	gcpRaw, _ := os.ReadFile("../terraform/gcp/main.tf")
@@ -268,11 +265,8 @@ func TestTerraformScopesMultiTenantControlAndWriteOnlyData(t *testing.T) {
 	if strings.Contains(gcp, `resource.name.startsWith(local.object_root)`) {
 		t.Fatal("GCP runtime can access every object")
 	}
-	if !strings.Contains(gcp, `/install=[0-9a-f-]{36}/tags\\.json$`) {
-		t.Error("GCP condition does not read install names from the one object name")
-	}
-	if strings.Contains(gcp, `permissions = ["storage.objects.create", "storage.objects.delete", "storage.objects.get"]`) {
-		t.Fatal("GCP data role can read every trajectory object")
+	if !strings.Contains(gcp, `permissions = ["storage.objects.create", "storage.objects.delete", "storage.objects.get"]`) {
+		t.Error("GCP data role cannot read the install root the deduplication probe stats")
 	}
 
 	for _, file := range []string{"../terraform/aws/main.tf", "../terraform/gcp/main.tf"} {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -147,10 +148,12 @@ func mapGCSError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if err == storage.ErrObjectNotExist {
+	// The client wraps a 404 as ErrObjectNotExist around the googleapi error, so neither compares equal.
+	if errors.Is(err, storage.ErrObjectNotExist) {
 		return ErrNotFound
 	}
-	if api, ok := err.(*googleapi.Error); ok {
+	var api *googleapi.Error
+	if errors.As(err, &api) {
 		if api.Code == http.StatusNotFound {
 			return ErrNotFound
 		}

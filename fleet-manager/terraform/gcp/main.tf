@@ -92,18 +92,13 @@ resource "google_project_iam_custom_role" "control" {
   permissions = ["storage.objects.get", "storage.objects.list", "storage.objects.create", "storage.objects.update", "storage.objects.delete"]
 }
 
+# `get` reads install names and the source-hash the deduplication probe stats. GCS has no
+# metadata-only permission, so the runtime can fetch every sealed payload; it holds no age identity to
+# open one.
 resource "google_project_iam_custom_role" "data" {
   role_id     = "${replace(var.name, "-", "_")}_data"
-  title       = "Fleet manager trajectory writes"
-  permissions = ["storage.objects.create", "storage.objects.delete"]
-}
-
-# Separate from the data role rather than a `get` added to it: that role covers every object under
-# an install's root, and this one may only ever read the name.
-resource "google_project_iam_custom_role" "names" {
-  role_id     = "${replace(var.name, "-", "_")}_names"
-  title       = "Fleet manager install names"
-  permissions = ["storage.objects.get"]
+  title       = "Fleet manager trajectory writes and reads"
+  permissions = ["storage.objects.create", "storage.objects.delete", "storage.objects.get"]
 }
 
 # Read, never write: this Terraform provisions both credential records, and the service only
@@ -136,18 +131,8 @@ resource "google_storage_bucket_iam_member" "data" {
   role   = google_project_iam_custom_role.data.name
   member = "serviceAccount:${google_service_account.fleet_manager.email}"
   condition {
-    title      = "install-prefix-write-only"
+    title      = "install-prefix"
     expression = "resource.name.matches('^${local.object_root}v1/organization=[a-z0-9][a-z0-9._-]{0,63}/install=[0-9a-f-]{36}/.*$')"
-  }
-}
-
-resource "google_storage_bucket_iam_member" "names" {
-  bucket = google_storage_bucket.fleet.name
-  role   = google_project_iam_custom_role.names.name
-  member = "serviceAccount:${google_service_account.fleet_manager.email}"
-  condition {
-    title      = "install-names-only"
-    expression = "resource.name.matches('^${local.object_root}v1/organization=[a-z0-9][a-z0-9._-]{0,63}/install=[0-9a-f-]{36}/tags\\.json$')"
   }
 }
 
