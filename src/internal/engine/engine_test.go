@@ -568,8 +568,7 @@ func TestOpaquePayloadsAreDroppedAndCounted(t *testing.T) {
 	if strings.Contains(string(payload), blob[:64]) {
 		t.Error("an opaque payload reached the sink")
 	}
-	if m.Redaction == nil || m.Redaction.RuleHits[transforms.DropBase64Media] != 1 ||
-		m.Redaction.RuleHits[transforms.DropEncryptedReasoning] != 1 {
+	if m.Redaction == nil || m.Redaction.RuleHits[transforms.Dropped] != 2 {
 		t.Errorf("the ledger should count each drop: %+v", m.Redaction)
 	}
 }

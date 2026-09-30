@@ -76,23 +76,14 @@ func assertNoFragment(t *testing.T, out []byte, original string) {
 	}
 }
 
-// dropHits counts every dropped-* rule hit.
-func dropHits(res transforms.Result) int {
-	n := 0
-	for id, count := range res.RuleHits {
-		if strings.HasPrefix(id, "dropped-") {
-			n += count
-		}
-	}
-	return n
-}
+var droppedSentinel = transforms.Sentinel(transforms.Dropped)
 
-func forEachDropCase(t *testing.T, f func(t *testing.T, family, path, id, value string)) {
+func forEachDropCase(t *testing.T, f func(t *testing.T, family, path, value string)) {
 	shapes := dropShapes()
 	for family, paths := range transforms.CompiledDrops() {
-		for path, id := range paths {
+		for _, path := range paths {
 			for shape, value := range shapes {
-				t.Run(family+"/"+path+"/"+shape, func(t *testing.T) { f(t, family, path, id, value) })
+				t.Run(family+"/"+path+"/"+shape, func(t *testing.T) { f(t, family, path, value) })
 			}
 		}
 	}
@@ -100,13 +91,13 @@ func forEachDropCase(t *testing.T, f func(t *testing.T, family, path, id, value 
 
 func TestEveryDropPathBecomesItsSentinel(t *testing.T) {
 	s := newScrubber(t)
-	forEachDropCase(t, func(t *testing.T, family, path, id, value string) {
+	forEachDropCase(t, func(t *testing.T, family, path, value string) {
 		res := scrubJSONL(t, s, family, buildRecordWithValueAt(t, path, value)+"\n")
 		out := res.Out.Bytes()
-		if got := valueAt(t, out, path); got != transforms.Sentinel(id) {
-			t.Fatalf("value at %s = %.60q, want %s", path, got, transforms.Sentinel(id))
+		if got := valueAt(t, out, path); got != droppedSentinel {
+			t.Fatalf("value at %s = %.60q, want %s", path, got, droppedSentinel)
 		}
-		if want := map[string]int{id: 1}; !maps.Equal(res.RuleHits, want) {
+		if want := map[string]int{transforms.Dropped: 1}; !maps.Equal(res.RuleHits, want) {
 			t.Errorf("rule hits = %v, want %v", res.RuleHits, want)
 		}
 		if res.BytesRedacted != len(value) {
@@ -119,7 +110,7 @@ func TestEveryDropPathBecomesItsSentinel(t *testing.T) {
 // Every entry's premise: without the drop the entropy backstop already destroys the value.
 func TestEveryDropPathIsDestroyedWithoutTheDrop(t *testing.T) {
 	s := scrubberWith(t, func(cfg *transforms.Config) { cfg.Drops = nil })
-	forEachDropCase(t, func(t *testing.T, family, path, _, value string) {
+	forEachDropCase(t, func(t *testing.T, family, path, value string) {
 		res := scrubJSONL(t, s, family, buildRecordWithValueAt(t, path, value)+"\n")
 		if strings.Contains(string(res.Out.Bytes()), value) {
 			t.Fatalf("the value ships intact without the drop; dropping it would lose data")
@@ -149,19 +140,16 @@ func TestClaudeCodeDropKeepsTheRestOfTheBlock(t *testing.T) {
 
 	for _, want := range []string{
 		`"type":"thinking","thinking":"Plan: rotate __REDACTED:github-pat__ first."`,
-		`"signature":"` + transforms.Sentinel(transforms.DropEncryptedReasoning) + `"`,
+		`"signature":"` + droppedSentinel + `"`,
 		`"id":"` + toolUseID + `"`, `"tool_use_id":"` + toolUseID + `"`,
-		`"source":{"type":"base64","media_type":"__REDACTED:aws-access-key-id__","data":"` + transforms.Sentinel(transforms.DropBase64Media) + `"}`,
-		`"file":{"base64":"` + transforms.Sentinel(transforms.DropBase64Media) + `","type":"image/png","originalSize":6144}`,
+		`"source":{"type":"base64","media_type":"__REDACTED:aws-access-key-id__","data":"` + droppedSentinel + `"}`,
+		`"file":{"base64":"` + droppedSentinel + `","type":"image/png","originalSize":6144}`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in\n%s", want, out)
 		}
 	}
-	want := map[string]int{
-		transforms.DropEncryptedReasoning: 1, transforms.DropBase64Media: 2,
-		"github-pat": 1, "aws-access-key-id": 1,
-	}
+	want := map[string]int{transforms.Dropped: 3, "github-pat": 1, "aws-access-key-id": 1}
 	if !maps.Equal(res.RuleHits, want) {
 		t.Errorf("rule hits = %v, want %v", res.RuleHits, want)
 	}
@@ -185,15 +173,15 @@ func TestCodexDropKeepsTheRestOfTheItem(t *testing.T) {
 	out := string(res.Out.Bytes())
 	for _, want := range []string{
 		`"text":"key __REDACTED:openai-api-key__ leaked"`,
-		`"encrypted_content":"` + transforms.Sentinel(transforms.DropEncryptedReasoning) + `"`,
+		`"encrypted_content":"` + droppedSentinel + `"`,
 		`"call_id":"call_abc"`, `{"type":"input_text","text":"see screenshot"}`,
-		`{"type":"input_image","image_url":"` + transforms.Sentinel(transforms.DropBase64Media) + `"}`,
+		`{"type":"input_image","image_url":"` + droppedSentinel + `"}`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in\n%s", want, out)
 		}
 	}
-	want := map[string]int{transforms.DropEncryptedReasoning: 1, transforms.DropBase64Media: 1, "openai-api-key": 1}
+	want := map[string]int{transforms.Dropped: 2, "openai-api-key": 1}
 	if !maps.Equal(res.RuleHits, want) {
 		t.Errorf("rule hits = %v, want %v", res.RuleHits, want)
 	}
@@ -229,7 +217,7 @@ func TestDropPathValueThatIsNotABlobIsScrubbedAsBefore(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			res := scrubJSONL(t, s, tc.family, tc.line+"\n")
-			if dropHits(res) != 0 {
+			if res.RuleHits[transforms.Dropped] != 0 {
 				t.Fatalf("dropped: %v\n%s", res.RuleHits, res.Out.Bytes())
 			}
 			if intact := string(res.Out.Bytes()) == tc.line+"\n"; intact != tc.intact {
@@ -257,7 +245,7 @@ func TestDropsAreScopedToTheirFamilyAndTheOuterRecord(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			res := scrubJSONL(t, s, tc.family, tc.line+"\n")
-			if dropHits(res) != 0 {
+			if res.RuleHits[transforms.Dropped] != 0 {
 				t.Errorf("dropped outside its scope: %v\n%s", res.RuleHits, res.Out.Bytes())
 			}
 		})
@@ -268,12 +256,9 @@ func TestDropsAreScopedToTheirFamilyAndTheOuterRecord(t *testing.T) {
 func TestDropsAreDisjointFromExemptions(t *testing.T) {
 	exempt := transforms.NewExemptionSet(transforms.CompiledExemptions())
 	for family, paths := range transforms.CompiledDrops() {
-		for path, id := range paths {
+		for _, path := range paths {
 			if exempt.Exempt(family, transforms.FieldPath(path)) {
 				t.Errorf("%s %s is both dropped and exempt", family, path)
-			}
-			if id != transforms.DropEncryptedReasoning && id != transforms.DropBase64Media {
-				t.Errorf("%s %s: unexpected rule id %q", family, path, id)
 			}
 		}
 	}
@@ -312,7 +297,7 @@ func TestTornTailAndRawTextAreNotDropped(t *testing.T) {
 	if res.ScanMode != transforms.ScanModeMixed || res.LinesRawScanned != 1 {
 		t.Fatalf("scan mode = %s, raw lines = %d", res.ScanMode, res.LinesRawScanned)
 	}
-	if res.RuleHits[transforms.DropEncryptedReasoning] != 1 {
+	if res.RuleHits[transforms.Dropped] != 1 {
 		t.Errorf("only the parsed line drops: %v", res.RuleHits)
 	}
 	if !strings.HasSuffix(string(res.Out.Bytes()), torn) {
@@ -342,7 +327,7 @@ func TestDuplicateKeysAreBothDropped(t *testing.T) {
 	s := newScrubber(t)
 	a, b := opaqueBlob(70, 900, base64.StdEncoding), opaqueBlob(71, 900, base64.StdEncoding)
 	res := scrubJSONL(t, s, "claude-code", `{"toolUseResult":{"file":{"base64":"`+a+`","base64":"`+b+`"}}}`+"\n")
-	if res.RuleHits[transforms.DropBase64Media] != 2 {
+	if res.RuleHits[transforms.Dropped] != 2 {
 		t.Errorf("rule hits = %v", res.RuleHits)
 	}
 	assertNoFragment(t, res.Out.Bytes(), a)
@@ -350,11 +335,11 @@ func TestDuplicateKeysAreBothDropped(t *testing.T) {
 }
 
 func TestNewRejectsADropThatCannotApply(t *testing.T) {
-	for name, drops := range map[string]map[string]map[string]string{
-		"every family": {"*": {"data": transforms.DropBase64Media}},
-		"bad rule id":  {"codex": {"payload.result": "Dropped Media"}},
-		"empty path":   {"codex": {"": transforms.DropBase64Media}},
-		"embedded":     {"codex": {"payload#json.encrypted_content": transforms.DropEncryptedReasoning}},
+	for name, drops := range map[string]map[string][]string{
+		"every family": {"*": {"data"}},
+		"empty path":   {"codex": {""}},
+		"embedded":     {"codex": {"payload#json.encrypted_content"}},
+		"duplicate":    {"codex": {"payload.result", "payload.result"}},
 	} {
 		cfg := transforms.DefaultConfig()
 		cfg.Drops = drops

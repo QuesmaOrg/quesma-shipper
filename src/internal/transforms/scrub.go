@@ -77,8 +77,8 @@ type Config struct {
 	SecretKeyNames []string
 	Entropy        EntropyConfig
 
-	// Drops maps family to exact field path to rule id; see CompiledDrops.
-	Drops map[string]map[string]string
+	// Drops maps family to exact field paths; see CompiledDrops.
+	Drops map[string][]string
 }
 
 // DefaultConfig is the compiled baseline.
@@ -111,7 +111,7 @@ type Scrubber struct {
 
 	keyNames *keyNameMatcher
 	exempt   *ExemptionSet
-	drops    map[string]map[FieldPath]compiledDrop
+	drops    map[string]map[FieldPath]bool
 
 	// Answers every pattern matcher's keyword question in one pass; read-only once
 	// built, so a Scrubber stays safe to share.
@@ -188,7 +188,7 @@ func New(cfg Config) (*Scrubber, error) {
 	}
 	// A configured exemption asks for the value to ship, so it outranks the compiled drop.
 	for family, byPath := range drops {
-		maps.DeleteFunc(byPath, func(path FieldPath, _ compiledDrop) bool { return s.exempt.Exempt(family, path) })
+		maps.DeleteFunc(byPath, func(path FieldPath, _ bool) bool { return s.exempt.Exempt(family, path) })
 	}
 	s.drops = drops
 

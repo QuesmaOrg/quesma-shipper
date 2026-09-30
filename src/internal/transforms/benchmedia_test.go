@@ -21,7 +21,7 @@ func BenchmarkScrubSyntheticMedia(b *testing.B) {
 	}
 	for _, variant := range []struct {
 		name  string
-		drops map[string]map[string]string
+		drops map[string][]string
 	}{{"drop", transforms.CompiledDrops()}, {"nodrop", nil}} {
 		s := scrubberWith(b, func(cfg *transforms.Config) {
 			cfg.Username = "devuser"

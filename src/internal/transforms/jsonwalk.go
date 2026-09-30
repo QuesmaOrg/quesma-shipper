@@ -44,7 +44,7 @@ type jsonWalker struct {
 	edits []replacementSpan
 
 	// The family's drop paths; empty when it has none and inside an embedded document.
-	drops map[FieldPath]compiledDrop
+	drops map[FieldPath]bool
 
 	redacted int
 	hits     map[string]int
@@ -194,17 +194,16 @@ func (w *jsonWalker) walkString(depth int, key, path string) error {
 
 // drop works on the raw token so a multi-megabyte image is neither validated nor copied.
 func (w *jsonWalker) drop(raw []byte, rawStart int, path string) bool {
-	d, ok := w.drops[FieldPath(path)]
-	if !ok {
+	if !w.drops[FieldPath(path)] {
 		return false
 	}
 	body := raw[1 : len(raw)-1]
 	if !droppable(body) {
 		return false
 	}
-	w.replace(raw, rawStart, d.sentinel)
+	w.replace(raw, rawStart, droppedSentinel)
 	w.redacted += len(body)
-	w.hits[d.id]++
+	w.hits[Dropped]++
 	return true
 }
 

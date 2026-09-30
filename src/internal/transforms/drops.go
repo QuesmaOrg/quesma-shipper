@@ -6,91 +6,88 @@ import (
 	"strings"
 )
 
-const (
-	DropEncryptedReasoning = "dropped-encrypted-reasoning"
-	DropBase64Media        = "dropped-base64-media"
-)
+// Dropped is the one rule id every drop reports.
+const Dropped = "dropped"
+
+var droppedSentinel = Sentinel(Dropped)
 
 // CompiledDrops is the compiled baseline of opaque payloads replaced whole by a sentinel before
 // any detector runs: encrypted reasoning and inline base64 media, which the entropy backstop
 // almost always shreds into undecodable fragments. Exact field paths, as in CompiledExemptions.
-func CompiledDrops() map[string]map[string]string {
-	return map[string]map[string]string{
+func CompiledDrops() map[string][]string {
+	return map[string][]string{
 		"claude-code": {
 			// thinking.signature and redacted_thinking.data.
-			"message.content[].signature": DropEncryptedReasoning,
-			"message.content[].data":      DropEncryptedReasoning,
+			"message.content[].signature",
+			"message.content[].data",
 			// Image and document blocks; the Read tool stores its file twice.
-			"message.content[].source.data":           DropBase64Media,
-			"message.content[].content[].source.data": DropBase64Media,
-			"attachment.prompt[].source.data":         DropBase64Media,
-			"toolUseResult.file.base64":               DropBase64Media,
+			"message.content[].source.data",
+			"message.content[].content[].source.data",
+			"attachment.prompt[].source.data",
+			"toolUseResult.file.base64",
 		},
 		"codex": {
 			// Fernet tokens, including their copies in compacted history.
-			"payload.encrypted_content":                                 DropEncryptedReasoning,
-			"payload.content[].encrypted_content":                       DropEncryptedReasoning,
-			"payload.replacement_history[].encrypted_content":           DropEncryptedReasoning,
-			"payload.replacement_history[].content[].encrypted_content": DropEncryptedReasoning,
-			"payload.guardian_history[].encrypted_content":              DropEncryptedReasoning,
-			"payload.guardian_history[].content[].encrypted_content":    DropEncryptedReasoning,
-			"payload.output[].encrypted_content":                        DropEncryptedReasoning,
-			"payload.replacement_history[].output[].encrypted_content":  DropEncryptedReasoning,
-			"payload.guardian_history[].output[].encrypted_content":     DropEncryptedReasoning,
-			"payload.item.output[].encrypted_content":                   DropEncryptedReasoning,
+			"payload.encrypted_content",
+			"payload.content[].encrypted_content",
+			"payload.replacement_history[].encrypted_content",
+			"payload.replacement_history[].content[].encrypted_content",
+			"payload.guardian_history[].encrypted_content",
+			"payload.guardian_history[].content[].encrypted_content",
+			"payload.output[].encrypted_content",
+			"payload.replacement_history[].output[].encrypted_content",
+			"payload.guardian_history[].output[].encrypted_content",
+			"payload.item.output[].encrypted_content",
 			// Image and audio data URLs, image generation results and MCP image blocks.
-			"payload.content[].image_url":                                DropBase64Media,
-			"payload.output[].image_url":                                 DropBase64Media,
-			"payload.replacement_history[].content[].image_url":          DropBase64Media,
-			"payload.replacement_history[].output[].image_url":           DropBase64Media,
-			"payload.guardian_history[].content[].image_url":             DropBase64Media,
-			"payload.guardian_history[].output[].image_url":              DropBase64Media,
-			"payload.images[]":                                           DropBase64Media,
-			"payload.item.content[].image_url":                           DropBase64Media,
-			"payload.item.result":                                        DropBase64Media,
-			"payload.item.result.content[].data":                         DropBase64Media,
-			"payload.item.result._meta.codex/toolSurface.screenshot.url": DropBase64Media,
-			"payload.result":                                             DropBase64Media,
-			"payload.result.Ok.content[].data":                           DropBase64Media,
-			"payload.item.output[].image_url":                            DropBase64Media,
-			"payload.content[].audio_url":                                DropBase64Media,
-			"payload.output[].audio_url":                                 DropBase64Media,
-			"payload.replacement_history[].content[].audio_url":          DropBase64Media,
-			"payload.replacement_history[].output[].audio_url":           DropBase64Media,
-			"payload.guardian_history[].content[].audio_url":             DropBase64Media,
-			"payload.guardian_history[].output[].audio_url":              DropBase64Media,
-			"payload.item.content[].audio_url":                           DropBase64Media,
-			"payload.item.output[].audio_url":                            DropBase64Media,
+			"payload.content[].image_url",
+			"payload.output[].image_url",
+			"payload.replacement_history[].content[].image_url",
+			"payload.replacement_history[].output[].image_url",
+			"payload.guardian_history[].content[].image_url",
+			"payload.guardian_history[].output[].image_url",
+			"payload.images[]",
+			"payload.item.content[].image_url",
+			"payload.item.result",
+			"payload.item.result.content[].data",
+			"payload.item.result._meta.codex/toolSurface.screenshot.url",
+			"payload.result",
+			"payload.result.Ok.content[].data",
+			"payload.item.output[].image_url",
+			"payload.content[].audio_url",
+			"payload.output[].audio_url",
+			"payload.replacement_history[].content[].audio_url",
+			"payload.replacement_history[].output[].audio_url",
+			"payload.guardian_history[].content[].audio_url",
+			"payload.guardian_history[].output[].audio_url",
+			"payload.item.content[].audio_url",
+			"payload.item.output[].audio_url",
 			// A dynamic tool call item serializes its content items in camelCase.
-			"payload.item.content_items[].imageUrl": DropBase64Media,
-			"payload.item.content_items[].audioUrl": DropBase64Media,
+			"payload.item.content_items[].imageUrl",
+			"payload.item.content_items[].audioUrl",
 		},
 	}
 }
 
-// compiledDrop carries the sentinel so the walk never builds it per value.
-type compiledDrop struct {
-	id, sentinel string
-}
-
-func compileDrops(spec map[string]map[string]string) (map[string]map[FieldPath]compiledDrop, error) {
-	out := make(map[string]map[FieldPath]compiledDrop, len(spec))
+func compileDrops(spec map[string][]string) (map[string]map[FieldPath]bool, error) {
+	out := make(map[string]map[FieldPath]bool, len(spec))
 	for family, paths := range spec {
 		if family == "*" || family == "" {
 			return nil, fmt.Errorf("scrub: drops need a source family, got %q", family)
 		}
-		byPath := make(map[FieldPath]compiledDrop, len(paths))
-		for path, id := range paths {
-			sentinel := Sentinel(id)
-			if path == "" || !isSentinel(sentinel) {
-				return nil, fmt.Errorf("scrub: drop %s %q -> %q needs a field path and a valid rule id", family, path, id)
+		set := make(map[FieldPath]bool, len(paths))
+		for _, path := range paths {
+			if path == "" {
+				return nil, fmt.Errorf("scrub: drop %s needs a field path", family)
 			}
 			if strings.Contains(path, embeddedSuffix) {
 				return nil, fmt.Errorf("scrub: drop %s %q cannot apply inside an embedded JSON document", family, path)
 			}
-			byPath[FieldPath(path)] = compiledDrop{id: id, sentinel: sentinel}
+			if set[FieldPath(path)] {
+				return nil, fmt.Errorf("scrub: drop %s %q is listed twice", family, path)
+			}
+			set[FieldPath(path)] = true
 		}
-		out[family] = byPath
+		out[family] = set
 	}
 	return out, nil
 }
