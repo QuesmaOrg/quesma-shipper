@@ -26,6 +26,10 @@ uploaded. Supported agents: Claude Code, Codex, Cursor. Supported platforms: mac
 Linux, Windows 10 1809 or newer. The project is pre-1.0: the wire protocol, the configuration
 format and the object naming are pinned by tests but can still change between minor releases.
 
+Want to see all of it work before rolling it out? [fleet-manager/WALKTHROUGH.md](fleet-manager/WALKTHROUGH.md)
+runs every step below on a throwaway deployment, with a container standing in for a developer
+machine, in about fifteen minutes, and tears it down at the end.
+
 ## Operator: set up Fleet Manager (once)
 
 1. **Have ready:** an AWS account or Google Cloud project you can create resources in, and on your
@@ -104,7 +108,8 @@ Uninstalling, MDM and Intune deployment, what is collected, and how to pause or 
 
 ## Learn more
 
-[fleet-manager/README.md](fleet-manager/README.md) covers the control plane;
+[fleet-manager/WALKTHROUGH.md](fleet-manager/WALKTHROUGH.md) rehearses everything above on a
+throwaway deployment; [fleet-manager/README.md](fleet-manager/README.md) covers the control plane;
 [CONSTITUTION.md](CONSTITUTION.md) the design rules; [ARCHITECTURE.md](ARCHITECTURE.md) the code
 layout; [CONTRIBUTING.md](CONTRIBUTING.md) building, testing and releases; [SECURITY.md](SECURITY.md)
 reporting a vulnerability. The wire contract is the public
