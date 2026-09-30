@@ -26,9 +26,13 @@ uploaded. Supported agents: Claude Code, Codex, Cursor. Supported platforms: mac
 Linux, Windows 10 1809 or newer. The project is pre-1.0: the wire protocol, the configuration
 format and the object naming are pinned by tests but can still change between minor releases.
 
-Want to see all of it work before rolling it out? [fleet-manager/WALKTHROUGH.md](fleet-manager/WALKTHROUGH.md)
-runs every step below on a throwaway deployment, with a container standing in for a developer
-machine, in about fifteen minutes, and tears it down at the end.
+## Get started
+
+| | |
+| --- | --- |
+| **Try it first** | [**WALKTHROUGH.md**](fleet-manager/WALKTHROUGH.md): every step below on a throwaway deployment, a container as the developer machine, torn down at the end. About fifteen minutes. |
+| **Set it up** | [Operator: set up Fleet Manager](#operator-set-up-fleet-manager-once), once, in your AWS account or Google Cloud project. |
+| **Join it** | [Developer: install the shipper](#developer-install-the-shipper-each-machine), on each machine. |
 
 ## Operator: set up Fleet Manager (once)
 
