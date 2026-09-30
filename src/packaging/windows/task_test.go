@@ -2,7 +2,6 @@ package windows
 
 import (
 	"encoding/binary"
-	"encoding/xml"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -116,12 +115,6 @@ func TestTaskXMLForSchtasksIsUTF16AndRoundTrips(t *testing.T) {
 	}
 	if doc.Actions.Exec.Command != `C:\Quesma Shipper\quesma-shipper-supervisor.exe` {
 		t.Fatalf("parsed command = %q", doc.Actions.Exec.Command)
-	}
-}
-
-func TestTaskXMLIsWellFormed(t *testing.T) {
-	if err := xml.Unmarshal([]byte(renderTask(common.Spec{Executable: `C:\shipper.exe`}, "S-1-5-21-1", "jane")), new(any)); err != nil {
-		t.Fatal(err)
 	}
 }
 

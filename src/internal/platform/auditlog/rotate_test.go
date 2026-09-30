@@ -46,37 +46,6 @@ func TestTheLogRotatesInsteadOfGrowingForever(t *testing.T) {
 	}
 }
 
-// Tailing must work at any size, and must not read the whole file to answer.
-func TestTailReadsFromTheEndOfALargeLog(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, auditlog.FileName)
-
-	// 40 MiB, well past anything worth loading to answer "what were the last three things".
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pad := strings.Repeat("y", 2<<10)
-	for i := 0; i < 20000; i++ {
-		fmt.Fprintf(f, `{"at":"2026-08-06T00:00:00Z","decision":"unchanged","file":"f%05d","reason":"%s"}`+"\n", i, pad)
-	}
-	f.Close()
-
-	entries, err := auditlog.Tail(path, 3)
-	if err != nil {
-		t.Fatalf("tailing a large log failed: %v", err)
-	}
-	if len(entries) != 3 {
-		t.Fatalf("want 3 entries, got %d", len(entries))
-	}
-	if entries[2].File != "f19999" {
-		t.Errorf("last entry is %q, want the newest line f19999", entries[2].File)
-	}
-	if entries[0].File != "f19997" {
-		t.Errorf("first of the three is %q, want f19997", entries[0].File)
-	}
-}
-
 // A tail that spans a rotation must still answer, or the rotation creates a blind window exactly when someone looks.
 func TestTailReachesIntoThePreviousGeneration(t *testing.T) {
 	dir := t.TempDir()

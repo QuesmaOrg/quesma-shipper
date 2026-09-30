@@ -272,7 +272,7 @@ func TestTheDerivedObjectReShipsOnlyWhenItsOutputChanges(t *testing.T) {
 		t.Errorf("an unchanged run created new keys: %d -> %d", keysAfterFirst, len(f.port.keys()))
 	}
 
-	// A DB-side-only change: the transcript is byte-identical, so only the derived object may move.
+	// A DB-side-only change: the transcript never moves, so only the recompute window re-reads it.
 	updateBubble(t, db, "bubbleId:"+enrichConv+":b3",
 		`{"bubbleId":"b3","type":2,"toolFormerData":{"toolCallId":"call_abc123",
 			"name":"run_terminal_cmd","status":"completed","rawArgs":"{\"command\":\"ls -la /work/api\"}",
@@ -488,27 +488,6 @@ func TestTheDerivedObjectIsFlaggedInMetadata(t *testing.T) {
 	}
 	if !flagged {
 		t.Fatal("no derived object shipped")
-	}
-}
-
-// The recompute window: an unchanged transcript is still read while it is recent.
-func TestAnUnchangedTranscriptIsStillEnrichedInsideTheRecomputeWindow(t *testing.T) {
-	f := newFixture(t)
-	db := cursorFixture(t, f)
-
-	runEnrich(t, f, enrichOpts(t, f, db, true))
-	f.reopen()
-
-	// The transcript is untouched and the store gained a late result: without the recompute window
-	// its size and mtime never move, so it would never be read again.
-	updateBubble(t, db, "bubbleId:"+enrichConv+":b3",
-		`{"bubbleId":"b3","type":2,"toolFormerData":{"toolCallId":"call_abc123",
-			"name":"run_terminal_cmd","status":"completed","rawArgs":"{\"command\":\"ls -la /work/api\"}",
-			"result":"LATE"}}`)
-
-	rep := runEnrich(t, f, enrichOpts(t, f, db, true))
-	if rep.Shipped != 1 {
-		t.Fatalf("shipped %d, want the derived object: %+v", rep.Shipped, rep.Sources)
 	}
 }
 

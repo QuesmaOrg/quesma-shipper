@@ -76,6 +76,7 @@ func TestValidateTicketRejects(t *testing.T) {
 		{"object id mismatch", func(_ *PreparedUpload, tk *Ticket) { tk.ObjectID = "trajectory-2" }, nil},
 		{"method is not PUT", func(_ *PreparedUpload, tk *Ticket) { tk.Method = "POST" }, nil},
 		{"content length mismatch", func(_ *PreparedUpload, tk *Ticket) { tk.ContentLength++ }, nil},
+		{"content length unsigned", func(_ *PreparedUpload, tk *Ticket) { tk.ContentLengthSigned = false }, nil},
 		{"unlisted origin", func(_ *PreparedUpload, tk *Ticket) {
 			tk.URL = strings.Replace(tk.URL, "archive.example.invalid", "evil.example.invalid", 1)
 		}, ErrNoTarget},

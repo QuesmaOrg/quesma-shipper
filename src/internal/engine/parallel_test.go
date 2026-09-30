@@ -2,7 +2,6 @@ package engine_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -11,34 +10,13 @@ import (
 	"filippo.io/age"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
-	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 )
 
 // --- the parallel pass ------------------------------------------------------
 //
 // Files in a source overlap; the loop thread still owns every decision. These tests pin what
-// overlap must not change: the budget, the report's order, the fatal stop, and that it overlaps.
-
-// Budget is reserved at admission, so no number of goroutines can overshoot max_files_per_run.
-func TestTheBudgetIsNotOvershotByFilesInFlight(t *testing.T) {
-	f := newFixture(t)
-	for i := 0; i < 20; i++ {
-		f.writeTranscript(fmt.Sprintf("p/a%02d.jsonl", i), line1)
-	}
-	f.eff.MaxFilesPerRun = 2
-
-	rep := f.runWith(func(o *engine.Options) { o.Workers = 8 })
-
-	if rep.Shipped != 2 {
-		t.Errorf("budget 2 shipped %d files", rep.Shipped)
-	}
-	if !rep.Truncated {
-		t.Error("a run that left 18 files behind did not say so")
-	}
-	if got := len(f.port.keys()); got != 2 {
-		t.Errorf("%d objects reached the store; the budget allows 2", got)
-	}
-}
+// overlap must not change: the report's order, and that it overlaps. The budget and the fatal stop
+// under overlap live in TestMaxFilesPerRunIsReportedNotSilent and TestARefusedAuthorizationStopsTheRun.
 
 // out.Files is index-addressed, so the report reads in candidate order however work interleaved.
 func TestTheReportKeepsCandidateOrderHoweverTheWorkFinished(t *testing.T) {
@@ -60,32 +38,6 @@ func TestTheReportKeepsCandidateOrderHoweverTheWorkFinished(t *testing.T) {
 		if fo.RelPath != want[i] {
 			t.Errorf("position %d: want %s, got %s", i, want[i], fo.RelPath)
 		}
-	}
-}
-
-// The refusal stops ADMISSION, not just the count, measured in authorization calls.
-func TestARefusedInstallDoesNotAttemptEveryFile(t *testing.T) {
-	f := newFixture(t)
-	for i := 0; i < 20; i++ {
-		f.writeTranscript(fmt.Sprintf("p/r%02d.jsonl", i), line1)
-	}
-	f.port.FailAll = fmt.Errorf("creds: vend failed: %w", formats.ErrCredentialsRefused)
-
-	o := f.opts()
-	o.Workers = 4
-	rep, err := engine.Run(context.Background(), f.store, o)
-
-	if !errors.Is(err, formats.ErrCredentialsRefused) {
-		t.Fatalf("want a refusal error from the run, got %v", err)
-	}
-	if rep.Failed != 1 {
-		t.Errorf("%d refusals counted; duplicates in flight are the same fact about the same install", rep.Failed)
-	}
-	if got := f.port.putCount(); got != 0 {
-		t.Errorf("%d objects stored against a revoked install", got)
-	}
-	if got := len(f.port.sizes()); got >= 20 {
-		t.Errorf("%d authorizations against a revoked install; admission never stopped", got)
 	}
 }
 

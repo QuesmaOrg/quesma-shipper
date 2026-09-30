@@ -74,6 +74,9 @@ func TestVendPathShipsAuthorizedObjectsToTheStore(t *testing.T) {
 	if _, _, err := seal.Open(beats[0].Body, v.Identity); err != nil {
 		t.Errorf("the heartbeat is not a sealed object: %v", err)
 	}
+	if out := run(t, "status"); !strings.Contains(out, v.store.server.URL) {
+		t.Errorf("status after a sync did not resolve the staged config:\n%s", out)
+	}
 }
 
 // Progress lives in the local fingerprint document and nowhere else: a second run with nothing
@@ -217,6 +220,10 @@ func TestVendPathDoctorProbesByWritingTheHeartbeat(t *testing.T) {
 	if status := run(t, "status"); !strings.Contains(status, v.store.server.URL) {
 		t.Errorf("status did not name the upload destination:\n%s", status)
 	}
+	// The write path is compiled in, so no config names it; config must still report it.
+	if out := run(t, "config"); !strings.Contains(out, "vend") {
+		t.Errorf("config show did not report the compiled write path:\n%s", out)
+	}
 	beats := v.store.heartbeats()
 	if len(beats) != 1 {
 		t.Fatalf("the probe wrote %d heartbeats, want exactly one", len(beats))
@@ -301,28 +308,6 @@ func TestDoctorsProbeDoesNotOverwriteTheLastFlushMirror(t *testing.T) {
 	}
 	if string(after) != string(shipped) {
 		t.Errorf("doctor's probe overwrote the last flush's mirror.\nbefore:\n%s\nafter:\n%s", shipped, after)
-	}
-}
-
-// The one write path is compiled in, so no config names it, and the verbs an operator reaches for
-// first must agree: disagreement is how a machine's real behaviour becomes unknowable.
-func TestVendPathIsCompiledInAndReportedByTheReadOnlyVerbs(t *testing.T) {
-	v := stageWorld(t)
-	stageClaude(t, v, realUsername(t))
-	writeConfig(t, v, "")
-
-	runOneShot(t)
-	v.plane.assertClean(t)
-	if len(v.store.mirrorPuts()) == 0 {
-		t.Fatalf("nothing shipped over the compiled write path; batches: %v",
-			v.plane.authorizeBatches())
-	}
-	// The read-only verbs must resolve the same document.
-	if out := run(t, "status"); !strings.Contains(out, v.store.server.URL) {
-		t.Errorf("status did not resolve the staged config:\n%s", out)
-	}
-	if out := run(t, "config"); !strings.Contains(out, "vend") {
-		t.Errorf("config show did not report the compiled write path:\n%s", out)
 	}
 }
 

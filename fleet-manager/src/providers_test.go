@@ -2,16 +2,20 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
+	"google.golang.org/api/googleapi"
 )
 
 func providerBatch() UploadBatch {
@@ -30,6 +34,21 @@ func TestS3SignerProducesAWSHeaderDialect(t *testing.T) {
 	ticket := response.Tickets[0]
 	if ticket.RequiredHeaders["x-amz-meta-source-hash"] == "" || ticket.RequiredHeaders["x-amz-tagging"] != "class=context" || !ticket.ContentLengthSigned {
 		t.Fatalf("invalid S3 ticket: %#v", ticket)
+	}
+}
+
+func TestGCSErrorMapsWrappedNotFound(t *testing.T) {
+	api := &googleapi.Error{Code: http.StatusNotFound}
+	for _, err := range []error{storage.ErrObjectNotExist, fmt.Errorf("%w: %w", storage.ErrObjectNotExist, api), api, fmt.Errorf("attrs: %w", api)} {
+		if got := mapGCSError(err); got != ErrNotFound {
+			t.Errorf("mapGCSError(%v) = %v, want ErrNotFound", err, got)
+		}
+	}
+	if got := mapGCSError(fmt.Errorf("attrs: %w", &googleapi.Error{Code: http.StatusPreconditionFailed})); got != ErrConflict {
+		t.Errorf("wrapped 412 = %v, want ErrConflict", got)
+	}
+	if denied := (&googleapi.Error{Code: http.StatusForbidden}); mapGCSError(denied) != error(denied) {
+		t.Error("a denied read must stay an error, never read as absent")
 	}
 }
 

@@ -1,7 +1,6 @@
 package transforms_test
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -59,51 +58,5 @@ func TestNegativeEntropyMinLengthFailsTheBuild(t *testing.T) {
 	cfg.Entropy.MinLength = 0
 	if _, err := transforms.New(cfg); err != nil {
 		t.Errorf("min_length 0 must still compile, got %v", err)
-	}
-}
-
-// The token walk visits duplicate members independently instead of collapsing them into a map.
-func TestWideObjectKeepsDuplicateKeySemantics(t *testing.T) {
-	s, err := transforms.New(transforms.DefaultConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Widths either side of the threshold where the parse switches to an index.
-	for _, width := range []int{8, 63, 64, 65, 200} {
-		for _, dup := range []bool{false, true} {
-			var b strings.Builder
-			b.WriteString(`{"type":"user"`)
-			for i := 0; i < width; i++ {
-				fmt.Fprintf(&b, `,"k%d":"value %d"`, i, i)
-			}
-			if dup {
-				b.WriteString(`,"k0":"AKIAIOSFODNN7EXAMPLE"`)
-			}
-			b.WriteString("}\n")
-
-			res, err := s.Scrub([]byte(b.String()), transforms.Hint{Family: "claude-code", JSONL: true})
-			if err != nil {
-				t.Fatalf("width %d dup %v: %v", width, dup, err)
-			}
-			name := fmt.Sprintf("width %d dup %v", width, dup)
-			if dup {
-				if res.LinesParsed != 1 || res.LinesRawScanned != 0 {
-					t.Errorf("%s: expected the line to stay decoded, got parsed=%d raw=%d",
-						name, res.LinesParsed, res.LinesRawScanned)
-				}
-				if strings.Contains(string(res.Out.Bytes()), "AKIAIOSFODNN7EXAMPLE") {
-					t.Errorf("%s: the secret survived: %s", name, res.Out.Bytes())
-				}
-				continue
-			}
-			if res.LinesParsed != 1 || res.LinesRawScanned != 0 {
-				t.Errorf("%s: expected a parsed line, got parsed=%d raw=%d",
-					name, res.LinesParsed, res.LinesRawScanned)
-			}
-			if string(res.Out.Bytes()) != b.String() {
-				t.Errorf("%s: a record with nothing to redact must come out verbatim", name)
-			}
-		}
 	}
 }

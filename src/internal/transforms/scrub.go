@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -75,6 +76,9 @@ type Config struct {
 	Username       string
 	SecretKeyNames []string
 	Entropy        EntropyConfig
+
+	// Drops maps family to exact field paths; see CompiledDrops.
+	Drops map[string][]string
 }
 
 // DefaultConfig is the compiled baseline.
@@ -82,6 +86,7 @@ func DefaultConfig() Config {
 	return Config{
 		RulePacks:      []string{packs.GitleaksCore, packs.QuesmaExtra, packs.CloudKeys, packs.GenericEntropy, packs.PIICore},
 		Exemptions:     CompiledExemptions(),
+		Drops:          CompiledDrops(),
 		Username:       "",
 		SecretKeyNames: DefaultSecretKeyNames(),
 		Entropy:        DefaultEntropyConfig(),
@@ -106,6 +111,7 @@ type Scrubber struct {
 
 	keyNames *keyNameMatcher
 	exempt   *ExemptionSet
+	drops    map[string]map[FieldPath]bool
 
 	// Answers every pattern matcher's keyword question in one pass; read-only once
 	// built, so a Scrubber stays safe to share.
@@ -176,6 +182,15 @@ func New(cfg Config) (*Scrubber, error) {
 	if cfg.Entropy.MinLength < 0 {
 		return nil, fmt.Errorf("scrub: entropy min_length %d is negative", cfg.Entropy.MinLength)
 	}
+	drops, err := compileDrops(cfg.Drops)
+	if err != nil {
+		return nil, err
+	}
+	// A configured exemption asks for the value to ship, so it outranks the compiled drop.
+	for family, byPath := range drops {
+		maps.DeleteFunc(byPath, func(path FieldPath, _ bool) bool { return s.exempt.Exempt(family, path) })
+	}
+	s.drops = drops
 
 	// One automaton over every rule's keywords; only here knows the whole ladder.
 	prefilter := packs.NewPrefilterBuilder()
@@ -437,8 +452,10 @@ func (s *Scrubber) planValueWith(
 	if entropy != nil {
 		heuristicSpans = entropy.Match(value)
 	}
+	var escapes escapeIndex
 	if strings.IndexByte(value, '\\') >= 0 {
-		if shadow, escapes := escapeShadow(value); !escapes.empty() {
+		var shadow []byte
+		if shadow, escapes = escapeShadow(value); !escapes.empty() {
 			patternSpans = s.unionEscapeShadow(value, string(shadow), escapes, patternSpans, scan)
 			// A run can start at the `n` of `\n`; the lone `\` left behind would break encoded JSON.
 			escapes.snapAll(heuristicSpans)
@@ -458,7 +475,10 @@ func (s *Scrubber) planValueWith(
 		}
 	}
 
-	resolved, redacted, hits := resolveSpans(value, patternSpans, heuristicSpans)
+	if len(patternSpans) > 0 && len(heuristicSpans) > 0 {
+		heuristicSpans = entropy.trimAtPatterns(value, heuristicSpans, patternSpans, escapes)
+	}
+	resolved, redacted, hits := resolveSpans(patternSpans, heuristicSpans)
 	plan := valuePlan{redacted: redacted, hits: hits}
 	for _, span := range resolved {
 		plan.spans = append(plan.spans, replacementSpan{
@@ -533,7 +553,7 @@ func (s *Scrubber) unionEscapeShadow(value, shadow string, escapes escapeIndex, 
 }
 
 // unionSpan adds sp unless a span already covers it; spans it overlaps are folded into one
-// span under the earliest rule, since resolveSpans would drop an overlapping tail.
+// span under the earliest rule.
 func unionSpan(spans []Span, sp Span) []Span {
 	if slices.ContainsFunc(spans, func(o Span) bool { return o.Start <= sp.Start && sp.End <= o.End }) {
 		return spans

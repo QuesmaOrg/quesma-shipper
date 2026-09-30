@@ -304,7 +304,8 @@ terraform apply \
 
 Terraform uses Quesma's published `docker.io/quesma/fleet-manager:latest` image by default.
 Add `-var='default_allow_quesma_etl=false'` if decision 2 calls for it. This creates a
-private, versioned bucket; a runtime role that is almost write-only below `install=`; a lifecycle
+private, versioned bucket; a runtime role that writes below `install=` and reads there only to name
+installs and deduplicate uploads (it can fetch ciphertext, never decrypt it); a lifecycle
 rule for superseded check-in records; a 30-day log group; and a public HTTPS service. Then:
 
 ```sh
@@ -365,6 +366,9 @@ agent session files ──► discover ──► detect change ──► read �
 - **Scrub.** Every file passes through redaction rule packs first. Three provider-key packs
   (`gitleaks-core`, `quesma-extra`, `cloud-keys`), an entropy backstop (`generic-entropy`), and a
   PII pack (`pii-core`) are compiled in. The control plane can add packs. It cannot remove them.
+  In the fields that carry encrypted reasoning and inline media, any string of 160 bytes or more
+  is replaced whole by the `__REDACTED:dropped__` sentinel before the packs run: the entropy
+  backstop almost always shredded them, and a configured exemption still wins.
   A scrub error means the file is not uploaded.
 - **Encrypt.** The scrubbed file is sealed with age to the recipients that the control plane
   supplies. The client can be configured to hold no key that decrypts what it ships.

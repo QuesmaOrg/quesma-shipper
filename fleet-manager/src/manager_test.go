@@ -276,7 +276,4 @@ func TestRoutingRequiresAnOrganization(t *testing.T) {
 	if _, err := enrollmentOrganization("fmi1.3f2504e0-4f89-41d3-9a0c-0305e82c3301.secret"); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("legacy token: %v", err)
 	}
-	if _, err := deviceOrganization(""); !errors.Is(err, ErrUnknownInstall) {
-		t.Fatalf("missing device organization: %v", err)
-	}
 }

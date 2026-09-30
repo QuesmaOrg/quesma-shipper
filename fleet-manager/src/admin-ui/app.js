@@ -253,10 +253,10 @@ async function loadConfig() {
 
 async function connect() {
   try {
-    deploymentDefaults = await (await api('/defaults')).json();
+    const [defaultsResponse, orgsResponse] = await Promise.all([api('/defaults'), api('/orgs')]);
+    deploymentDefaults = await defaultsResponse.json();
     resetOrganizationForm();
-    const response = await api('/orgs');
-    organizations = await response.json();
+    organizations = await orgsResponse.json();
     if (organizations.length === 0) {
       rememberCredential('organizations');
       return;

@@ -4,8 +4,8 @@
 this repository: a multi-organization control service. It stores configuration, enrollment
 credentials, and install identities below `v1/organization=<org>/control/`. Trajectory payloads go
 directly from shippers to object storage; the manager has no decrypt, acknowledgement, or cursor
-path for them, and the only object it reads outside `control/` is each install's `tags.json` — see
-[Install names](#install-names).
+path for them. Outside `control/` it reads only each install's `tags.json` (see
+[Install names](#install-names)) and the metadata of mirror objects, for upload deduplication.
 
 The service exposes shipper endpoints, a bearer-authenticated administration API below `/v1/admin`,
 and a self-contained administration UI at `/admin/`. Static UI assets are embedded in the binary and
@@ -173,9 +173,10 @@ are: one request, fanned out over the installs list, off the critical path so th
 first. `PUT /v1/admin/orgs/{org}/installs/{id}/tags` sets one, and an empty name clears it back to
 the id. A revoked install can still be named — the objects it already wrote still want a label.
 
-The read costs one narrow grant. The runtime identity is otherwise write-only below `install=`, and
-the templates hold it to the single object name (`InstallNamesRead` on AWS, the `names` role on
-GCP) rather than the prefix, which would be read access to every sealed payload.
+The read shares a grant with upload deduplication, which HEADs mirror objects for their
+`source-hash`: `InstallRead` on AWS and the `data` role on GCP cover the whole install prefix,
+because S3 and GCS authorize a HEAD as a full read. The runtime can therefore fetch every sealed
+payload; it holds no age identity, so it cannot open one.
 
 ## Install telemetry
 

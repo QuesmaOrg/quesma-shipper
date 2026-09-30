@@ -21,23 +21,6 @@ func write(t *testing.T, path, body string) {
 	}
 }
 
-func TestReadWhole(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "a.jsonl")
-	write(t, p, "{\"a\":1}\n{\"b\":2}\n")
-
-	got, info, err := platform.ReadWhole(p, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "{\"a\":1}\n{\"b\":2}\n" {
-		t.Errorf("content: %q", got)
-	}
-	if info.Size() != int64(len(got)) {
-		t.Errorf("stat size %d, read %d bytes", info.Size(), len(got))
-	}
-}
-
 // A torn final line is data, not an error: it ships byte-exact and nothing here may repair a tail.
 func TestReadWholeKeepsATornTailVerbatim(t *testing.T) {
 	dir := t.TempDir()
@@ -45,12 +28,15 @@ func TestReadWholeKeepsATornTailVerbatim(t *testing.T) {
 	const torn = "{\"a\":1}\n{\"b\":2"
 	write(t, p, torn)
 
-	got, _, err := platform.ReadWhole(p, 0)
+	got, info, err := platform.ReadWhole(p, 0)
 	if err != nil {
 		t.Fatalf("a truncated last line must not be an error: %v", err)
 	}
 	if string(got) != torn {
 		t.Errorf("tail was altered:\n got %q\nwant %q", got, torn)
+	}
+	if info.Size() != int64(len(got)) {
+		t.Errorf("stat size %d, read %d bytes", info.Size(), len(got))
 	}
 }
 

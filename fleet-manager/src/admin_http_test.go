@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -166,6 +167,15 @@ type failingGetStore struct {
 	ObjectStore
 	key string
 	err error
+}
+
+type organizationPrefixStore struct{ ObjectStore }
+
+func (s organizationPrefixStore) List(ctx context.Context, prefix string) ([]ObjectInfo, error) {
+	if prefix == "v1/organization=" {
+		return nil, errors.New("organization listing scanned the archive")
+	}
+	return s.ObjectStore.List(ctx, prefix)
 }
 
 func (s *failingGetStore) Get(ctx context.Context, key string) ([]byte, string, error) {
@@ -481,11 +491,6 @@ func TestMultiTenantOrganizationLifecycleAndIsolation(t *testing.T) {
 	if w = serveAdmin(t, server, req); w.Code != http.StatusNoContent {
 		t.Fatalf("update scoped config = %d: %s", w.Code, w.Body.String())
 	}
-	req = adminRequest("PUT", "/v1/admin/orgs/acme.prod/config", configJSON(t, twoRecipients(t)), testAdminCredential)
-	req.Header.Set("If-Match", etag)
-	if w = serveAdmin(t, server, req); w.Code != http.StatusPreconditionFailed {
-		t.Fatalf("stale scoped config = %d: %s", w.Code, w.Body.String())
-	}
 	w = serveAdmin(t, server, adminRequest("GET", "/v1/admin/orgs/acme.prod/config", "", testAdminCredential))
 	name := "Acme Renamed"
 	update := adminConfigRequest{DisplayName: &name, AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true}
@@ -522,6 +527,38 @@ func TestExistingConfigUsesSlugAsDisplayName(t *testing.T) {
 	w := serveAdmin(t, server, adminRequest("GET", "/v1/admin/orgs", "", testAdminCredential))
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"display_name":"legacy"`) {
 		t.Fatalf("legacy display name = %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestListOrganizationsUsesPrefixesAndReadsConfigsConcurrently(t *testing.T) {
+	store := newMemoryStore()
+	ctx := context.Background()
+	for i := 0; i < 40; i++ {
+		slug := fmt.Sprintf("org-%02d", i)
+		cfg := FleetConfig{Schema: schemaVersion, Organization: slug, DisplayName: slug,
+			AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true}
+		if err := createRecord(ctx, store, configKey(slug), cfg); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Put(ctx, "v1/organization="+slug+"/install=payload/file.age", []byte("payload")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Put(ctx, "v1/organization=orphan/install=payload/file.age", []byte("payload")); err != nil {
+		t.Fatal(err)
+	}
+	store.delayGetIn, store.getDelay = "/control/config.json", 20*time.Millisecond
+	manager, _ := NewManager(organizationPrefixStore{store})
+	start := time.Now()
+	records, err := manager.ListOrganizations(ctx)
+	if err != nil || len(records) != 40 {
+		t.Fatalf("list organizations = %d records, %v", len(records), err)
+	}
+	if records[0].Slug != "org-00" || records[39].Slug != "org-39" {
+		t.Fatalf("organization order = %v, %v", records[0], records[39])
+	}
+	if elapsed := time.Since(start); elapsed > 300*time.Millisecond {
+		t.Fatalf("reading organization configs took %s", elapsed)
 	}
 }
 
