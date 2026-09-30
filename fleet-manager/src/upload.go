@@ -220,10 +220,11 @@ func validateUploadMetadata(meta map[string]string, allowed map[string]uploadMet
 const uploadProbeTimeout = 3 * time.Second
 
 // splitAlreadyStored partitions a minted batch into the objects that still need a PUT ticket and
-// the ones the store already holds under the same source hash. Any doubt keeps an object in the
-// first half: a missed match costs one upload, a wrong match loses the object. Only mirror
-// objects are asked about: a state object such as the heartbeat is rewritten every tick, so the
-// archive never holds the bytes on offer.
+// the ones the store already holds under the same source and shipped hashes: the raw bytes alone
+// would keep an object scrubbed under older rules. Any doubt keeps an object in the first half: a
+// missed match costs one upload, a wrong match loses the object. Only mirror objects are asked
+// about: a state object such as the heartbeat is rewritten every tick, so the archive never holds
+// the bytes on offer.
 func splitAlreadyStored(ctx context.Context, store ObjectStore, logger *log.Logger, installID string, objects []UploadObjectRequest) ([]UploadObjectRequest, []uploadTicket) {
 	var mirrors []UploadObjectRequest
 	for _, object := range objects {
@@ -263,13 +264,15 @@ func probeStored(ctx context.Context, store ObjectStore, logger *log.Logger, ins
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			hash, err := store.SourceHash(ctx, object.Key)
+			held, err := store.StoredHashes(ctx, object.Key)
 			switch {
 			case errors.Is(err, ErrNotFound):
 			case err != nil:
 				errs[i] = err
 			default:
-				stored[i] = hash == object.Metadata["source-hash"]
+				// An object stored without a shipped hash never matches, whatever is on offer.
+				stored[i] = held.Source == object.Metadata["source-hash"] &&
+					held.Shipped != "" && held.Shipped == object.Metadata["shipped-hash"]
 			}
 		}()
 	}

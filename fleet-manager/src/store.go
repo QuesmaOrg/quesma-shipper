@@ -17,10 +17,14 @@ type ObjectStore interface {
 	List(context.Context, string) ([]ObjectInfo, error)
 	ListPrefixes(context.Context, string, string) ([]string, error)
 	VersioningEnabled(context.Context) (bool, error)
-	// SourceHash reads the stored object's source-hash metadata without its body; ErrNotFound
-	// when the key is absent, empty when the object carries none.
-	SourceHash(context.Context, string) (string, error)
+	// StoredHashes reads the stored object's hash metadata without its body; ErrNotFound when
+	// the key is absent, an empty field when the object carries none.
+	StoredHashes(context.Context, string) (StoredHashes, error)
 }
+
+// StoredHashes is what a mirror object was written under: Source covers the raw bytes, Shipped
+// the scrubbed ones that were sealed.
+type StoredHashes struct{ Source, Shipped string }
 
 type ObjectInfo struct {
 	Key     string

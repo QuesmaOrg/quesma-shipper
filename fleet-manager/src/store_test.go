@@ -22,7 +22,7 @@ type memoryStore struct {
 	failGetIn  string
 	delayGetIn string
 	getDelay   time.Duration
-	hashes     map[string]string
+	hashes     map[string]StoredHashes
 	hashReads  int
 }
 
@@ -33,7 +33,7 @@ func (s *memoryStore) versionOf(key string) int {
 }
 
 func newMemoryStore() *memoryStore {
-	return &memoryStore{objects: map[string]memoryObject{}, versioning: true, hashes: map[string]string{}}
+	return &memoryStore{objects: map[string]memoryObject{}, versioning: true, hashes: map[string]StoredHashes{}}
 }
 func (s *memoryStore) Get(ctx context.Context, key string) ([]byte, string, error) {
 	if s.getDelay > 0 && (s.delayGetIn == "" || strings.Contains(key, s.delayGetIn)) {
@@ -124,19 +124,19 @@ func (s *memoryStore) ListPrefixes(_ context.Context, prefix, delimiter string) 
 }
 func (s *memoryStore) VersioningEnabled(context.Context) (bool, error) { return s.versioning, nil }
 
-// setSourceHash stands in for a shipper's direct presigned PUT, which this store never sees.
-func (s *memoryStore) setSourceHash(key, hash string) {
+// setStoredHashes stands in for a shipper's direct presigned PUT, which this store never sees.
+func (s *memoryStore) setStoredHashes(key string, hashes StoredHashes) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.hashes[key] = hash
+	s.hashes[key] = hashes
 }
-func (s *memoryStore) SourceHash(_ context.Context, key string) (string, error) {
+func (s *memoryStore) StoredHashes(_ context.Context, key string) (StoredHashes, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.hashReads++
-	hash, ok := s.hashes[key]
+	hashes, ok := s.hashes[key]
 	if !ok {
-		return "", ErrNotFound
+		return StoredHashes{}, ErrNotFound
 	}
-	return hash, nil
+	return hashes, nil
 }

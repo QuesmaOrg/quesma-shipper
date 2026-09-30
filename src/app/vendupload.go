@@ -110,7 +110,7 @@ func (p *vendPort) AuthorizeAndUpload(ctx context.Context, batch []engine.Prepar
 				"upload: the control plane issued no ticket for object %q", obj.ObjectID)
 			continue
 		}
-		// The archive already holds these bytes under this source hash: nothing to validate, nothing
+		// The plane answered that the archive already holds this object: nothing to validate, nothing
 		// to send; the sentinel commits the fingerprint and marks the audit line.
 		if issued.AlreadyPresent {
 			out[i] = engine.ErrAlreadyPresent

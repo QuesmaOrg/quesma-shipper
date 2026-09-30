@@ -141,7 +141,7 @@ func open(stateDir, installID string, maxBytes int64) (*Store, error) {
 	s := &Store{dir: stateDir, installID: installID, lock: lock}
 
 	// Any document that cannot be loaded is discarded, never fatal: the archive answers for what it
-	// already holds, so an empty store costs a re-hash, not a re-upload.
+	// already holds, so an empty store costs a re-hash, and a re-upload only of what scrubs differently.
 	doc, err := load(stateDir, maxBytes)
 	if err == nil && doc.ForeignTo(installID) {
 		err = fmt.Errorf("state: %s belongs to install %s, this install is %s",
@@ -203,7 +203,8 @@ func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err erro
 }
 
 // Reset forgets every fingerprint, so the next sync re-hashes the whole history and re-probes the
-// archive; unchanged bytes come back already_present, so a reset never forces a re-seal.
+// archive; bytes that scrub to what it holds come back already_present, so a reset re-uploads only
+// what the scrub rules now rewrite. A recipient change alone re-uploads nothing.
 // The document is replaced with an empty one rather than deleted, so the install id survives.
 func Reset(stateDir, installID string, dryRun bool) (removed int, err error) {
 	return editStore(stateDir, installID, dryRun, func(s *Store) int {
@@ -363,7 +364,7 @@ func encode(installID string, updatedAt time.Time, specs map[string]string, entr
 			Enricher:   fp.Enricher,
 		}
 		// Only for a logical identity, so path-keyed entries keep their old bytes. Not additive for a rollback: an older
-		// binary fails the checksum on it and discards the store once (re-hash, uploads already_present, Codex keys revert).
+		// binary fails the checksum on it and discards the store once (re-hash, uploads re-probed, Codex keys revert).
 		if e.NativePath != k.ID {
 			e.Identity = k.ID
 		}

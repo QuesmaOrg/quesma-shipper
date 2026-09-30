@@ -30,7 +30,8 @@ bucket.
 
 **The age recipients are fixed when the organization is created.** Files are encrypted to the
 recipients registered at the time of upload. Changing the recipients later does not re-encrypt
-existing files.
+existing files, even after a shipper's `state reset`: upload deduplication replaces a stored file
+only when its scrubbed bytes changed, for example after a scrub-rule change.
 
 One thing has no dependency at all: installing the shipper binary. It registers a service that waits
 for enrollment, so you can push it out ahead of everything else and enroll later.

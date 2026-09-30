@@ -157,19 +157,24 @@ func (s *azureStore) ListPrefixes(ctx context.Context, prefix, delimiter string)
 	return out, nil
 }
 
-func (s *azureStore) SourceHash(ctx context.Context, key string) (string, error) {
+func (s *azureStore) StoredHashes(ctx context.Context, key string) (StoredHashes, error) {
 	props, err := s.client.ServiceClient().NewContainerClient(s.container).NewBlobClient(key).GetProperties(ctx, nil)
 	if err != nil {
-		return "", mapAzureError(err)
+		return StoredHashes{}, mapAzureError(err)
 	}
-	// The upload SAS wrote x-ms-meta-source_hash; the service echoes metadata names in
-	// whatever casing the transport canonicalized them to.
+	// The upload SAS wrote x-ms-meta-source_hash and x-ms-meta-shipped_hash; the service echoes
+	// metadata names in whatever casing the transport canonicalized them to.
+	var hashes StoredHashes
 	for name, value := range props.Metadata {
-		if strings.EqualFold(name, "source_hash") && value != nil {
-			return *value, nil
+		switch {
+		case value == nil:
+		case strings.EqualFold(name, "source_hash"):
+			hashes.Source = *value
+		case strings.EqualFold(name, "shipped_hash"):
+			hashes.Shipped = *value
 		}
 	}
-	return "", nil
+	return hashes, nil
 }
 
 // The Blob data API does not expose account-level versioning configuration. Azure startup

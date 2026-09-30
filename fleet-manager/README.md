@@ -174,9 +174,9 @@ first. `PUT /v1/admin/orgs/{org}/installs/{id}/tags` sets one, and an empty name
 the id. A revoked install can still be named — the objects it already wrote still want a label.
 
 The read shares a grant with upload deduplication, which HEADs mirror objects for their
-`source-hash`: `InstallRead` on AWS and the `data` role on GCP cover the whole install prefix,
-because S3 and GCS authorize a HEAD as a full read. The runtime can therefore fetch every sealed
-payload; it holds no age identity, so it cannot open one.
+`source-hash` and `shipped-hash`: `InstallRead` on AWS and the `data` role on GCP cover the whole
+install prefix, because S3 and GCS authorize a HEAD as a full read. The runtime can therefore
+fetch every sealed payload; it holds no age identity, so it cannot open one.
 
 ## Install telemetry
 
