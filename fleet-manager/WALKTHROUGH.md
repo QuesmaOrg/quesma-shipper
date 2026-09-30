@@ -39,7 +39,7 @@ sh deploy.sh aws --dir . --name fm-trial --region eu-central-1 \
 Answer `yes` to the plan. It prints the service URL, the admin UI address and the administrator
 credential. From now on `sh deploy.sh aws output <name> --dir .` returns any of them.
 
-## 2. Two custodian keys
+## 2. Create two custodian keys
 
 Two, because that is the minimum an organization accepts, and held by separate people in
 practice. Here both are yours.
