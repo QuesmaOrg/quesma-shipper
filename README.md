@@ -1,15 +1,15 @@
 # Quesma Shipper
 
-[![version](https://img.shields.io/badge/version-0.0.3-blue)](#from-a-release)
+[![version](https://img.shields.io/badge/version-0.0.3-blue)](#install-the-shipper)
 
 Quesma Shipper collects the session files that AI coding agents write on developer machines,
 removes secrets and personal data from each file, encrypts it, and uploads the ciphertext to object
-storage your organisation controls. This repository holds both parts of that system:
+storage your organisation controls. It is two parts:
 
-- **the shipper** (`src/`), which runs in the background on each developer machine: one static Go
-  binary for macOS, Linux and Windows;
-- **[Fleet Manager](fleet-manager/)** (`fleet-manager/`), the control plane: it enrolls shippers,
-  hands them their configuration, and signs each upload. It never sees file contents.
+- **the shipper** ([`src/`](src/README.md)), a background service on each developer machine: one
+  static binary for macOS, Linux and Windows;
+- **[Fleet Manager](fleet-manager/)**, the control plane you run in your own cloud: it enrolls
+  shippers, hands them their configuration, and signs each upload. It never sees file contents.
 
 ```mermaid
 flowchart LR
@@ -36,80 +36,62 @@ service), Windows 10 1809 or newer (per-user installer, scheduled task).
 
 ## Get started
 
-Three ways in. Each one below is a complete sequence -- follow one, in order.
-
-| You have | Start here |
+| You are | Start here |
 | --- | --- |
-| A control plane your organisation runs, and an enrollment token | [From a release](#from-a-release): install the signed build and enroll it |
-| Nothing yet, and want to see the whole system work | [On one machine](#on-one-machine): MinIO, Fleet Manager and a shipper built from this clone, no cloud account |
-| Nothing yet, and want to run it for real | [Run it in your own cloud](#run-it-in-your-own-cloud): Fleet Manager on AWS or Google Cloud, shippers on developer machines |
-
-The last two run the control plane yourself, so both start from a clone of this repository and the
-two decisions in [Before you run the control plane](#before-you-run-the-control-plane).
-
-To look at the pipeline without any control plane, install the shipper and run `quesma-shipper
-local-dev`, then `quesma-shipper preview`: collection and scrubbing work, and upload is disabled.
-
-## Status
+| A developer whose organisation runs Fleet Manager | [Install the shipper](#install-the-shipper): install, enroll, check |
+| Setting Fleet Manager up for your organisation | [Run Fleet Manager](#run-fleet-manager): one script in your AWS account or Google Cloud project |
+| Evaluating, with no cloud account | [On one machine](#on-one-machine): everything on a laptop, built from this repository |
 
 The project is pre-1.0. The wire protocol, the configuration format, and the object naming are
 versioned and pinned by tests. They can still change between minor releases.
 
-## From a release
+## Install the shipper
 
-Joining a fleet somebody else already runs. You need an enrollment token and the address of their
-Fleet Manager; nothing is built here.
+You need the address of your organisation's Fleet Manager and an enrollment token from its
+administrator. Nothing is built; every download installs for the current user and needs no
+administrator rights.
 
 ### 1. Install
 
-Every download installs for the current user and needs no administrator rights. Released builds
-keep themselves current from the signed TUF repository; the public repository and the stable
-download endpoints are described in [RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md).
-
-| Platform | Download |
+| Platform | Install |
 |---|---|
-| macOS 13+ | [quesma-shipper-macos-universal.pkg](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg), or with Homebrew `brew install --cask quesmaorg/tap/quesma-shipper` |
-| Windows 10 1809+ | [QuesmaShipperSetup-amd64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe) for x64, [QuesmaShipperSetup-arm64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe) for Arm |
+| macOS 13+ | `brew install --cask quesmaorg/tap/quesma-shipper`, or the signed [quesma-shipper-macos-universal.pkg](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg) |
 | Linux | `curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/src/packaging/linux/install.sh && sh install.sh` |
+| Windows 10 1809+ | [QuesmaShipperSetup-amd64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe) for x64, [QuesmaShipperSetup-arm64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe) for Arm |
 
-**macOS.** The Homebrew cask installs the command on your Homebrew `PATH` and starts a per-user
-background service, which waits for enrollment. It supports macOS 13 or newer on Apple Silicon and
-Intel, without administrator rights. `brew uninstall --cask quesmaorg/tap/quesma-shipper` removes
-it and keeps enrollment and upload history; add `--zap` to delete local state too, from the
-shipper's configured state directory. The signed `.pkg` is the same thing without Homebrew: it
-installs `Quesma Shipper.app` for the current user and registers a launchd agent. Before switching
-between the two, uninstall the previous installation without purging local state.
+Each installs the `quesma-shipper` command and a per-user background service that waits for
+enrollment. Released builds keep themselves current from Quesma's signed
+[TUF](https://theupdateframework.io/) repository; `quesma-shipper update` updates at once.
 
-**Linux.** The script downloads a hash-pinned bootstrap binary and installs a systemd user service.
-Run it again to upgrade; existing enrollment is kept. `--no-service` skips the service. The
-latest released binaries are also available directly for
+**macOS.** The cask supports Apple Silicon and Intel. `brew uninstall --cask
+quesmaorg/tap/quesma-shipper` removes it and keeps enrollment and upload history; add `--zap` to
+delete local state too. The `.pkg` is the same thing without Homebrew: **Install for me only** puts
+`Quesma Shipper.app` in `~/Applications`; **Install for all users** needs administrator
+authorization and is updated by an administrator. Before switching between the two, uninstall the
+previous installation without purging local state. For Jamf, Kandji and other MDM deployment, see
+the [macOS MDM guide](src/packaging/macos/mdm/README.md).
+
+**Linux.** The script downloads a hash-pinned bootstrap binary into `~/.local/bin` and installs a
+systemd user service. Run it again to upgrade; enrollment is kept. `--no-service` skips the
+service. Binaries are also available directly for
 [AMD64](https://updates.quesma.dev/download/quesma-shipper-linux-amd64) and
 [ARM64](https://updates.quesma.dev/download/quesma-shipper-linux-arm64).
 
-**Windows.** Run the setup as your normal user. It installs the command under `%LOCALAPPDATA%`,
-adds it to your user `PATH`, and registers a scheduled task that starts immediately and at login,
-without administrator rights. Re-running setup repairs that integration without changing
-enrollment. For managed deployments, follow the
-[Intune setup guide](src/packaging/windows/intune/README.md): user-context installation and
-unattended enrollment, a platform-script route you can configure from macOS, and a Win32 app
-package route with detection and uninstall scripts.
-
-Windows release signing is temporarily disabled while the publisher identity is validated. Until it
-is restored, Microsoft Defender SmartScreen may warn about the download, and managed devices whose
-application-control policy requires a trusted publisher may block it. The raw
-`quesma-shipper-windows-<arch>.exe` files remain available for portable use and are the payloads
-installed by the TUF self-updater; a portable copy has no scheduled task or uninstaller.
-
-The shipper updates itself automatically. `quesma-shipper update` updates it immediately.
+**Windows.** Run the setup as your normal user. It installs under `%LOCALAPPDATA%`, adds the
+command to your user `PATH`, and registers a scheduled task that starts immediately and at login.
+Re-running setup repairs that integration without changing enrollment. For Intune, see the
+[Intune guide](src/packaging/windows/intune/README.md). Release signing is temporarily disabled
+while the publisher identity is validated, so Microsoft Defender SmartScreen may warn about the
+download. The raw `quesma-shipper-windows-<arch>.exe` files remain available for portable use; a
+portable copy has no scheduled task or uninstaller.
 
 ### 2. Enroll
 
 Collection, scrubbing and preview work straight away; uploading does not, until the shipper is
-enrolled. Your administrator gives you the token and the server address. The command is the same on
-every platform:
+enrolled. The command is the same on every platform:
 
 ```sh
-quesma-shipper login <enrollment-token> --server https://cp.example.com
+quesma-shipper login <enrollment-token> --server https://fleet-manager.example.com
 ```
 
 ### 3. Check it enrolled
@@ -118,20 +100,28 @@ quesma-shipper login <enrollment-token> --server https://cp.example.com
 quesma-shipper doctor
 ```
 
-`doctor` reports whether the machine enrolled and received its configuration. `quesma-shipper` with
-no arguments shows whether it is on, what is collected, and what is waiting to be sent. The service
-ships on start and then every 15 minutes.
+`doctor` reports whether the machine enrolled and received its configuration. `quesma-shipper`
+with no arguments shows whether it is on, what is collected, and what is waiting to be sent. The
+service ships on start and then every 15 minutes. What is collected, how it is scrubbed, how to
+pause, and how to configure it: [the shipper](src/README.md).
 
-## Before you run the control plane
+## Run Fleet Manager
 
-For the two paths below. Joining a fleet somebody else runs, you can skip this.
+One script creates the bucket, the scoped roles, the service and the administrator credential in
+your AWS account or Google Cloud project, from Quesma's published image. You need Terraform 1.5 or
+later (or OpenTofu), `curl`, `age-keygen`, and the `aws` or `gcloud` CLI signed in to the target
+account; no clone, no Go, no Docker. On AWS you also need a default VPC in the Region with two
+public subnets in different availability zones, which ECS Express Mode requires.
+
+### Decide these first
 
 Two settings shape an organisation. Both act only on files uploaded after they are set, so decide
 them before the first shipper enrolls.
 
-**1. The age recipients, and who holds them.** An organisation needs **at least two distinct public
-recipients**, held by separate people: two custodians is the smallest arrangement that survives one
-of them leaving. Each custodian generates their own and hands over only the public half:
+**1. The age recipients, and who holds them.** An organisation needs **at least two distinct
+public recipients**, held by separate people: two custodians is the smallest arrangement that
+survives one of them leaving. Each custodian generates their own and hands over only the public
+half:
 
 ```sh
 age-keygen -o acme-security.agekey     # the private identity -- never leaves the custodian
@@ -146,138 +136,13 @@ registered when they are uploaded; changing the recipients later does not re-enc
 > If every private identity is lost, nobody can decrypt the uploaded files, and nothing reports it:
 > shippers keep enrolling and uploading normally.
 
-**2. Whether Quesma may decrypt.** `allow_quesma_etl` is **on unless you turn it off.**
-
-- While it is on, Fleet Manager adds Quesma's built-in public recipient to every configuration it
-  serves, so files sealed from then on can also be opened by Quesma, for its dashboards and
-  analytics.
-- On its own that grants nothing: Quesma holds no bucket access until you grant it one.
-- It is on by default because sealing cannot be added after the fact: turning it on later covers
-  only uploads from then on.
-- Turn it off per organisation (the checkbox when you create it), or for every organisation that
-  never chose with `default_allow_quesma_etl = false` in the Terraform. Do it before the first
-  upload if nothing should ever be sealed to Quesma.
-
-## On one machine
-
-MinIO, Fleet Manager and a shipper on a single machine, built from this repository. Nothing
-connects to a cloud provider. Use this to evaluate the system, to develop against it, or to
-demonstrate it.
-
-You need Docker (for MinIO), Go 1.27 or newer, the AWS CLI, `age` and `age-keygen`, `openssl` and
-`curl`, on macOS or Linux; `zstd` and `tar` to look inside what arrives.
-
-### 1. Storage and Fleet Manager
-
-```sh
-git clone https://github.com/QuesmaOrg/quesma-shipper
-cd quesma-shipper
-make -C fleet-manager run
-```
-
-This starts a MinIO container named `fleet-minio` on `127.0.0.1:9000`, creates the `trajectories`
-bucket with versioning on, mints an administrator credential, and serves Fleet Manager on port
-8099 in the foreground. It prints, among other lines:
-
-```
-  storage      http://127.0.0.1:9000   bucket trajectories, versioning on
-  credential   fma1.…
-               kept in data/admin-credential -- this is the only copy
-  admin UI     http://127.0.0.1:8099/admin/
-```
-
-Fleet Manager listens on every interface, over plain HTTP, so on a shared network anyone who can
-reach this machine can reach the admin UI; use a trusted network, or a firewall. Leave it running
-and continue in a second terminal. Ctrl-C stops it; the bucket and the credential
-survive, and running it again reuses both. `DEV_PORT=` moves it off 8099; the other settings,
-including pointing it at another store, are in the
-[Fleet Manager README](fleet-manager/README.md#run-it).
-
-### 2. The organisation
-
-Open `http://127.0.0.1:8099/admin/`, paste the credential, and create an organisation: a lowercase
-slug (`acme` in the commands below; use your own), a display name, the **two age recipients** from
-[decision 1](#before-you-run-the-control-plane), and the Quesma ETL checkbox from decision 2. The
-slug is permanent: it is part of every object key.
-
-Before enrolling any machine, check that a custodian can decrypt files sealed to those recipients:
-
-```sh
-echo test | age -r age1… -r age1… -o test.age     # the two recipients you just registered
-age -d -i acme-security.agekey test.age           # a custodian, with their private identity
-```
-
-Then create one invite on the Invites page. It is single-use, and its secret, an `fmi2.…` token, is
-shown only once. A grant, on the Grants page, is the same for any number of machines.
-
-### 3. The shipper
-
-```sh
-make build        # bin/quesma-shipper
-```
-
-**Pin the upload target before enrolling.** The local MinIO is plain HTTP and addressed path-style,
-and the shipper refuses an upload ticket that is not HTTPS unless told otherwise, in its
-[user configuration](#configuration). `~/.config/trajectory-shipper/config.yaml`:
-
-```yaml
-upload_targets:
-  - origin: http://127.0.0.1:9000
-    addressing: path-style
-    path_prefix: /trajectories
-    allow_loopback_http: true
-```
-
-Then install your build, register the background service, and enroll, in one command. `--from`
-uses your binary instead of downloading a release, on Linux and on macOS:
-
-```sh
-sh src/packaging/linux/install.sh --from bin/quesma-shipper fmi2.… --server http://127.0.0.1:8099
-~/.local/bin/quesma-shipper doctor
-```
-
-It installs into `~/.local/bin` for your user; do not run it as root. On a machine that already has
-a shipper installed, this replaces it. `--no-service` enrolls without registering the service. `make
-install` is the other way to get your build: it puts the binary in GOBIN, for running by hand, with
-no background service. Neither self-updates -- development builds report their commit and never
-fetch a release.
-
-### 4. Check that it arrived
-
-`doctor` confirms that the machine enrolled and received its configuration, not that an upload
-succeeded. The service ships on start and then every 15 minutes; list what it uploaded:
-
-```sh
-export AWS_ACCESS_KEY_ID=localadmin AWS_SECRET_ACCESS_KEY=localadmin-secret AWS_REGION=us-east-1
-aws s3 ls --recursive --endpoint-url http://127.0.0.1:9000 \
-  s3://trajectories/v1/organization=acme/install=
-```
-
-Every object sits under its install's own prefix. Open one with a custodian's identity; inside is
-the scrubbed file and its manifest:
-
-```sh
-aws s3 cp --endpoint-url http://127.0.0.1:9000 "s3://trajectories/<key from the listing>" object.age
-age -d -i acme-security.agekey object.age | zstd -d | tar -t     # manifest.json, payload
-```
-
-When you are done, remove the shipper and its service first, so it stops trying to upload, then
-the pin, then the control plane and its storage:
-
-```sh
-~/.local/bin/quesma-shipper uninstall --purge     # --purge also deletes enrollment and local state
-rm ~/.config/trajectory-shipper/config.yaml        # the pin, if nothing else is in the file
-docker rm -f fleet-minio                           # after Ctrl-C in the Fleet Manager terminal
-rm -rf fleet-manager/data/
-```
-
-## Run it in your own cloud
-
-One script creates the bucket, the scoped roles, the service and the administrator credential in
-your account, on AWS or Google Cloud, from Quesma's published image. It needs Terraform 1.5 or
-later (or OpenTofu), `curl`, and the `aws` or `gcloud` CLI signed in to the target account; no
-clone, no Go, no Docker. On AWS it also needs a default VPC with two public subnets in different
-availability zones, which ECS Express Mode requires. The shippers go on developer machines as usual.
+**2. Whether Quesma may decrypt.** `allow_quesma_etl` is **on unless you turn it off.** While it is
+on, Fleet Manager adds Quesma's built-in public recipient to every configuration it serves, so
+files sealed from then on can also be opened by Quesma, for its dashboards and analytics. On its
+own that grants nothing: Quesma holds no bucket access until you grant it one. It is on by default
+because sealing cannot be added after the fact. Turn it off per organisation, the checkbox when you
+create it, or for every organisation that never chose with `--no-quesma-etl` below. Do it before
+the first upload if nothing should ever be sealed to Quesma.
 
 ### 1. Deploy
 
@@ -289,408 +154,134 @@ sh deploy.sh gcp --project acme-prod --region europe-central2
 ```
 
 The script shows the plan, asks before applying, waits for the service to answer, and prints the
-service URL, the admin UI address and the administrator credential. Add `--no-quesma-etl` if
-decision 2 calls for it. Everything it makes lives in `~/.quesma/fleet-manager/<cloud>/`, including
-the Terraform state: back that directory up. Running the same command again upgrades;
+service URL, the admin UI address and the administrator credential. It takes a few minutes, most
+of it the service starting. Everything it makes lives in `~/.quesma/fleet-manager/<cloud>/`,
+including the Terraform state: back that directory up. Running the same command again upgrades;
 `sh deploy.sh aws output admin_credential` prints the credential again; `sh deploy.sh --help` lists
 the rest, including `--image` for an image you built yourself and `destroy`.
 
 This creates a private, versioned bucket; a runtime role that writes below `install=` and reads
 there only to name installs and deduplicate uploads (it can fetch ciphertext, never decrypt it); a
-lifecycle rule for superseded check-in records; a 30-day log group; and a public HTTPS service.
-[fleet-manager/terraform/aws/README.md](fleet-manager/terraform/aws/README.md) and
-[fleet-manager/terraform/gcp/README.md](fleet-manager/terraform/gcp/README.md) run the same
-templates by hand, for a registry of your own or Terraform state kept elsewhere.
+30-day log group; and a public HTTPS service. The templates themselves, for a registry of your own
+or state kept elsewhere, are [fleet-manager/terraform/aws](fleet-manager/terraform/aws/README.md)
+and [fleet-manager/terraform/gcp](fleet-manager/terraform/gcp/README.md).
 
-### 2. Check it
+### 2. Create the organisation
 
-```sh
-export FLEET_MANAGER_URL="$(sh deploy.sh aws output service_url)"
-curl --fail --silent --show-error "${FLEET_MANAGER_URL%/}/healthz"     # ok; /health on Google Cloud
-```
+Open the admin UI address the script printed, paste the credential, and create an organisation: a
+lowercase slug (`acme` below; use your own), a display name, the **two age recipients** from
+decision 1, and the Quesma ETL checkbox from decision 2. The slug is permanent: it is part of every
+object key.
 
-### 3. The organisation
-
-As in [On one machine](#2-the-organisation), at the admin UI address and with the credential the
-script printed: the same recipients, the same custody check, an invite or a grant.
-
-### 4. The shippers
-
-On each developer machine, install the shipper as in [From a release](#from-a-release) and enroll
-it with the invite or grant:
+Before enrolling any machine, check that a custodian can decrypt files sealed to those recipients:
 
 ```sh
-quesma-shipper login fmi2.… --server "$FLEET_MANAGER_URL"
+echo test | age -r age1… -r age1… -o test.age     # the two recipients you just registered
+age -d -i acme-security.agekey test.age           # a custodian, with their private identity
 ```
 
-No `upload_targets` pin is needed: S3 is served over HTTPS with virtual-host addressing, which the
-shipper allows by default. To enroll a build from source instead, use `install.sh --from` as in
-[step 3](#3-the-shipper) with `--server "$FLEET_MANAGER_URL"`.
+### 3. Invite the machines
 
-### 5. Check that it arrived
+On the Invites page, create one invite per machine. It is single-use, and its secret, an `fmi2.…`
+token, is shown only once. A grant, on the Grants page, is the same for any number of machines.
+Send the token and the service URL to the machine's owner through an approved secret-sharing
+channel; they follow [Install the shipper](#install-the-shipper). The new install appears on the
+Installs page with status `active`.
+
+### 4. Check that it arrived
+
+`doctor` on a machine confirms enrollment, not an upload. The service ships on start and then every
+15 minutes; list what arrived, then open one object with a custodian's identity:
 
 ```sh
 aws s3 ls --recursive "s3://$(sh deploy.sh aws output bucket)/v1/organization=acme/install=" | head
+aws s3 cp "s3://<bucket>/<key from the listing>" object.age
+age -d -i acme-security.agekey object.age | zstd -d | tar -t     # manifest.json, payload
 ```
 
-Then open one object with a custodian's identity, as in
-[On one machine](#4-check-that-it-arrived). What comes next, from
-rotating the credential and upgrading to backups, letting an outside ETL read and running without
-egress, is in [fleet-manager/OPERATIONS.md](fleet-manager/OPERATIONS.md), together with why the
-installation order matters and how to prepare the bucket by hand.
+On Google Cloud, `gcloud storage ls -r` and `gcloud storage cp` do the same.
 
-## The shipper
+### Afterwards
 
-What runs on each developer machine: how it works, what it collects, and how to use and
-configure it. Installing it is step 1 of each path above.
+Rotating the credential, revoking installs, upgrading, backups, letting an outside ETL read the
+bucket, and running without egress are in [fleet-manager/OPERATIONS.md](fleet-manager/OPERATIONS.md).
+Fleet Manager also runs on Azure and on any S3-compatible store, without a template yet; the
+[Fleet Manager README](fleet-manager/README.md) covers the executable and its flags.
 
-### How it works
+## On one machine
 
-```
-agent session files ──► discover ──► detect change ──► read ──► scrub ──► encrypt ──► upload ──► commit
-                        (catalog)    (size, mtime,              (rule     (age, to     (presigned  (local
-                                      content hash)              packs)    org keys)    PUT)        record)
-```
-
-- **Sources.** A compiled catalog describes where each agent stores sessions and how to read them.
-  This includes live SQLite databases. The shipper never writes inside an agent's store.
-- **Scrub.** Every file passes through redaction rule packs first. Three provider-key packs
-  (`gitleaks-core`, `quesma-extra`, `cloud-keys`), an entropy backstop (`generic-entropy`), and a
-  PII pack (`pii-core`) are compiled in. The control plane can add packs. It cannot remove them.
-  In the fields that carry encrypted reasoning and inline media, any string of 160 bytes or more
-  is replaced whole by the `__REDACTED:dropped__` sentinel before the packs run: the entropy
-  backstop almost always shredded them, and a configured exemption still wins.
-  A scrub error means the file is not uploaded.
-- **Encrypt.** The scrubbed file is sealed with age to the recipients that the control plane
-  supplies. The client can be configured to hold no key that decrypts what it ships.
-- **Upload.** The control plane authorises each upload with a presigned URL. Ciphertext goes from
-  the client directly to the sink. The control plane never receives trajectory bytes. No cloud SDK
-  is linked. The upload path is `net/http` only.
-- **Commit.** A local record of shipped files is updated after the sink confirms the write. That
-  record is the authority for resume.
-- **Update.** Release builds check a [TUF](https://theupdateframework.io/) repository. They replace
-  themselves when a newer signed release exists. Development builds do not self-update.
-
-The design rules are in [CONSTITUTION.md](CONSTITUTION.md). The code layout is in
-[ARCHITECTURE.md](ARCHITECTURE.md). The wire contract is the public
-[shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) module. This repository imports its schemas and
-fixtures. Protocol changes are reviewed and released there.
-
-### What is collected
-
-The shipper collects more than chat transcripts. Per agent, from the agent's own directories:
-
-| Agent | Trajectories | Context artifacts |
-|---|---|---|
-| Claude Code | Session and subagent transcripts, spilled tool results | Per-project memory files, plans, todos, file-history checkpoint metadata, the user-level `CLAUDE.md`, `settings.json` |
-| Codex | Sessions, one object each whether live, archived or zstd-compressed (decompressed and scrubbed like the rest), the session index | None |
-| Cursor | Agent transcripts, enriched with conversation text, tool calls, and model names read from Cursor's database | Spilled tool output, terminal captures, agent scratchpad notes |
-
-One more record is produced by the shipper itself:
-
-- **Account and usage history.** Independent Claude Code, Codex, and Cursor collectors upload
-  account metadata and provider usage JSON in UTC buckets matching the collection interval (default 15 minutes). Unknown fields are preserved;
-  these records skip scrubbing and ship encrypted.
-
-All other files above pass through the scrub stage before encryption. The control plane receives no
-file content. It receives the install id, hostname, platform, and agent version in each heartbeat.
-
-Never uploaded as files: credential stores such as Claude Code's `.credentials.json` and
-`~/.claude.json`, Codex's `auth.json`, and Cursor's `state.vscdb`. A compiled deny list blocks
-these paths even when a configured glob would match them. Collectors and enrichers read only
-the data they need from these stores:
-
-- Account collectors read account metadata and use credentials only to authenticate provider requests.
-- The Cursor enricher reads conversation records from `state.vscdb` and writes the conversation
-  text, tool calls, and model names it finds into the transcript record, because Cursor's own
-  transcript files lack them. The `cursorAuth/*` keys and the encryption-key fields are stripped
-  by a compiled rule that no configuration layer can disable.
-
-Everything derived this way passes through the scrub stage like any other file.
-
-`quesma-shipper tracking` shows what is collected on this machine, per agent and repository.
-`quesma-shipper preview` shows what the next run would send, after scrubbing, without sending it.
-
-## Install
-
-### From a release
-
-Personal release builds, including Homebrew installations, use the signed TUF repository to update themselves. System-wide macOS installations are updated by an administrator or MDM. The public
-repository and stable download endpoints are described in
-[RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md).
-
-**macOS**
-
-With Homebrew already installed:
+MinIO, Fleet Manager and a shipper on a single machine, built from this repository. Nothing
+connects to a cloud provider. You need Docker (for MinIO), Go 1.27 or newer, the AWS CLI, `age`
+and `age-keygen`, `openssl` and `curl`, on macOS or Linux.
 
 ```sh
-brew install --cask quesmaorg/tap/quesma-shipper
+git clone https://github.com/QuesmaOrg/quesma-shipper
+cd quesma-shipper
+make -C fleet-manager run
 ```
 
-The cask installs the command on your Homebrew `PATH` and starts a per-user background service,
-which waits for enrollment. It supports macOS 13 or newer on Apple Silicon and Intel, without
-administrator rights. Run the login command below after installing.
+This starts a MinIO container named `fleet-minio`, creates the `trajectories` bucket with
+versioning on, mints an administrator credential, and serves Fleet Manager on port 8099 in the
+foreground, printing the credential and the admin UI address. Leave it running and continue in a
+second terminal. Create the organisation as in [step 2](#2-create-the-organisation) and an invite
+as in [step 3](#3-invite-the-machines).
 
-The shipper updates itself automatically; run `quesma-shipper update` to update immediately.
-Use `brew uninstall --cask quesmaorg/tap/quesma-shipper` to remove it. Uninstall keeps enrollment and
-upload history. Add `--zap` to delete local state too, using the shipper's configured state directory.
-Before switching between Homebrew and the `.pkg`, uninstall the previous installation
-without purging local state.
+**Pin the upload target before enrolling.** The local MinIO is plain HTTP and addressed path-style,
+and the shipper refuses an upload ticket that is not HTTPS unless told otherwise, in
+`~/.config/trajectory-shipper/config.yaml`:
 
-Without Homebrew:
-
-Download and install the signed
-[`quesma-shipper-macos-universal.pkg`](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg).
-Choose **Install for me only** to install in `~/Applications` without administrator rights,
-or **Install for all users of this computer** to install in `/Applications` with administrator
-authorization. Both run a per-user LaunchAgent with separate enrollment and collection state.
-The system installation is updated and removed by an administrator.
-
-For Jamf, Kandji and other MDM deployment, use the same package and a `com.quesma.shipper`
-managed-preferences profile containing `Server` and `Grant`. See the
-[macOS MDM deployment guide and profile template](src/packaging/macos/mdm/README.md).
-
-**Linux**
-
-```sh
-curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/src/packaging/linux/install.sh
-sh install.sh
+```yaml
+upload_targets:
+  - origin: http://127.0.0.1:9000
+    addressing: path-style
+    path_prefix: /trajectories
+    allow_loopback_http: true
 ```
 
-The script downloads a hash-pinned bootstrap binary and installs a systemd user service. Run it
-again to upgrade. Existing enrollment is kept. Use `--no-service` to skip the service.
-
-The released binaries are also available directly for
-[AMD64](https://updates.quesma.dev/targets/3ae805e2d630af5cb52fff51a5c8ae77aeb7b12f2d73a56fd7723698e9bfe48e.shipper-linux-amd64)
-and
-[ARM64](https://updates.quesma.dev/targets/78f0c89019d8a2f86fe3723359c00082ba9ec6ddedfc5fde1709f7516c33a3b0.shipper-linux-arm64).
-
-**Windows**
-
-Download [QuesmaShipperSetup-amd64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe)
-on an x64 PC or [QuesmaShipperSetup-arm64.exe](https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe)
-on an Arm PC and run it as your normal user. The setup installs the command under `%LOCALAPPDATA%`, adds it to
-your user `PATH`, and registers a scheduled task that starts immediately and at login without
-administrator rights. Re-running setup repairs that integration without changing enrollment.
-
-For managed deployments, follow the [Intune setup guide](src/packaging/windows/intune/README.md).
-It includes user-context installation and unattended enrollment, a platform-script route you can
-configure from macOS, and a Win32 app package route with detection and uninstall scripts.
-
-Windows release signing is temporarily disabled while the publisher identity is validated. Until
-it is restored, Microsoft Defender SmartScreen may warn about the download, and managed devices
-whose application-control policy requires a trusted publisher may block it.
-
-The raw `quesma-shipper-windows-<arch>.exe` files remain available for portable use and are the
-payloads installed by the TUF self-updater. A portable copy has no scheduled task or uninstaller.
-
-### From source
-
-You need Go 1.27 or newer. No other tool is required. `make doctor` lists the optional ones.
-
-```sh
-make build                                     # bin/quesma-shipper
-make install                                   # into GOBIN, or GOPATH/bin
-```
-
-To test the Linux installer and the background service with a local build:
+Then build the shipper, install your build with its background service, and enroll, in one
+command; `--from` uses your binary instead of downloading a release, on Linux and on macOS:
 
 ```sh
 make build
-sh src/packaging/linux/install.sh --from bin/quesma-shipper
+sh src/packaging/linux/install.sh --from bin/quesma-shipper fmi2.… --server http://127.0.0.1:8099
+~/.local/bin/quesma-shipper doctor
 ```
 
-To build the macOS package: `make macos-pkg RELEASE_VERSION=<version>`. This works on macOS only.
-On Windows with Inno Setup installed, build an installer with:
-
-```powershell
-src/packaging/windows/build-setup.ps1 -ReleaseVersion <version> -Architecture amd64 `
-  -BinaryPath <binary> -SupervisorPath <supervisor-binary> -OutputDir bin/dist
-```
-
-`make dist RELEASE_VERSION=<version>` cross-compiles both Windows binaries.
-
-### Enroll
-
-Every new shipper must be enrolled with the control plane selected by your administrator. The
-command is the same on every platform:
+List what it uploaded with the local store's credentials:
 
 ```sh
-quesma-shipper login <enrollment-token> --server https://cp.example.com
+export AWS_ACCESS_KEY_ID=localadmin AWS_SECRET_ACCESS_KEY=localadmin-secret AWS_REGION=us-east-1
+aws s3 ls --recursive --endpoint-url http://127.0.0.1:9000 s3://trajectories/v1/organization=acme/install=
 ```
 
-To run the pipeline without a control plane:
+When you are done: `~/.local/bin/quesma-shipper uninstall --purge`, remove the pin, Ctrl-C Fleet
+Manager, `docker rm -f fleet-minio`, and `rm -rf fleet-manager/data/`. The other local settings,
+including pointing Fleet Manager at a real bucket, are in the
+[Fleet Manager README](fleet-manager/README.md#run-it).
 
-```sh
-bin/quesma-shipper local-dev      # create a local identity and state directory
-bin/quesma-shipper preview        # show what would be collected and how it would be scrubbed
-```
+## Learn more
 
-## Usage
-
-```
-quesma-shipper                Status: is it on, what is collected, what is waiting to be sent
-quesma-shipper login <token>  Join your organisation with the token from your admin
-quesma-shipper tracking       What is collected, per agent and repository
-quesma-shipper pause [dur]    Stop collecting for 15m, 1h, 6h, 12h, 24h, or until tomorrow 9:00
-quesma-shipper resume         Start collecting again
-quesma-shipper doctor         Check collecting and sending, explain anything wrong
-quesma-shipper update         Install the newest release
-quesma-shipper uninstall      Remove the service and program, keep local state
-quesma-shipper licenses       Print the license and the third-party notices
-```
-
-Debug commands. These are not shown in `--help`:
-
-```
-quesma-shipper run [--once|--drain] [-q]   Run the scheduler loop in the foreground, log to stderr
-quesma-shipper preview                      Show what would be sent, without sending or recording anything
-quesma-shipper config [--with-provenance]   The effective configuration and where each value came from
-quesma-shipper log                          Recent audit entries: what was decided about each file
-quesma-shipper state reset|prune            Inspect and repair the local record of what was sent
-quesma-shipper service uninstall|restart    Manage the background service entry
-quesma-shipper local-dev                    Set up without a control plane
-```
-
-### Configuration
-
-Configuration is resolved from four layers, in this order: compiled defaults, the source catalog,
-the user file, the document served by the control plane. `quesma-shipper config --with-provenance` prints
-each effective value and the layer that set it.
-
-The served document has limited authority. A rulebook in the
-[shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) module states, field by field, what the control plane
-can change. For example, it can add scrub rule packs. It cannot remove them. It cannot turn off
-scrub or encryption. Contract tests here and in the control plane enforce the rulebook.
-
-File locations. `XDG_CONFIG_HOME` and `XDG_STATE_HOME` are honoured.
-
-| Path | Contents |
-|---|---|
-| `~/.config/trajectory-shipper/config.yaml` | Optional user layer |
-| `~/.local/state/trajectory-shipper/` | Identity, upload record, audit log, run logs |
-
-`trajectory-shipper` remains the wire identifier and the on-disk configuration and state namespace,
-separate from the user-facing Quesma Shipper package and command.
-
-**Upload targets.** The shipper refuses an upload ticket that is not HTTPS, so a store such as a
-local MinIO needs an `upload_targets` entry in the user file, as in
-[On one machine](#3-the-shipper). The pin lives there and only there: a presigned ticket authorises
-itself, so a served document that could write the pin could also loosen it.
-
-Defaults: a 15-minute schedule, a maximum of 512 files per run, a 5-minute drain deadline.
-
-Environment variables:
-
-| Variable | Effect |
-|---|---|
-| `SHIPPER_AUTH_KEY` | Supplies the login token without a prompt |
-| `SHIPPER_NO_SELFUPDATE` | Any value disables the self-update check |
-
-### Security model
-
-- Trajectory files contain prompts, source code, shell output, and often credentials. Treat local
-  state, logs, and encrypted bundles as confidential.
-- Scrub and encrypt are mandatory pipeline stages in every build. No configuration layer can
-  remove them.
-- The control plane distributes configuration and authorises uploads. It does not proxy, receive,
-  or store trajectory content.
-- Uploads use per-object presigned URLs. The client holds no long-lived storage credential.
-- One install cannot overwrite another install's objects. The object-key grammar and the per-upload
-  authorisation enforce this.
-- Updates are verified against an offline-signed TUF root that is embedded in the binary.
-
-Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
-
-## Fleet Manager
-
-Fleet Manager is one stateless service with an administration UI and an admin API. It serves
-many organisations from one bucket: their configuration, enrollment grants and invites, and install
-records live below `v1/organization=<org>/control/`, and the shippers' sealed objects below
-`v1/organization=<org>/install=<id>/`. It has no decrypt path and no delete operation.
-
-- [fleet-manager/README.md](fleet-manager/README.md): running it locally, the admin UI and API, how
-  install names and telemetry work;
-- [fleet-manager/OPERATIONS.md](fleet-manager/OPERATIONS.md): operating a deployment;
-- [fleet-manager/terraform/](fleet-manager/terraform/): the AWS and Google Cloud templates;
-- [fleet-manager/SECURITY.md](fleet-manager/SECURITY.md): what is in scope for the control plane.
-
-## Repository layout
-
-```
-src/           Go module root
-  cmd/quesma-shipper/   main
-  app/           composes a run
-  internal/      pipeline stages, config, control-plane client, platform floor
-  packaging/     install, service, and update mechanics per OS
-  internal/legal embedded LICENSE, NOTICE, and third-party license texts
-  e2e/           hermetic end-to-end and golden tests
-Makefile       repository-level build and test entry points
-fleet-manager/ the control plane: its own Go module, Makefile, VERSION, NOTICE and third_party/
-  src/           the service and its embedded administration UI
-  terraform/     deployment templates for AWS and Google Cloud
-```
-
-## Build and test
-
-```sh
-make build       # bin/quesma-shipper
-make test        # unit suite and local end-to-end tests
-make race        # the same under the race detector
-make check       # the commit gate: fmt, vet, version, dead code, licenses, race
-make perf-smoke  # PR-sized performance gates, needs Docker
-make perf        # full performance suite, needs Docker
-make help        # every target
-```
-
-CI runs `make check` and `make perf-smoke`. `make perf` runs the full performance tier against a
-local MinIO and Toxiproxy. Both perf targets need Docker and are skipped without it.
-
-Installers come from the same tree. `make macos-pkg RELEASE_VERSION=<version>` builds the macOS
-package, on macOS only, and `make dist RELEASE_VERSION=<version>` cross-compiles both Windows
-binaries. On Windows with Inno Setup installed:
-
-```powershell
-src/packaging/windows/build-setup.ps1 -ReleaseVersion <version> -Architecture amd64 `
-  -BinaryPath <binary> -SupervisorPath <supervisor-binary> -OutputDir bin/dist
-```
-
-Fleet Manager builds and checks on its own: `make -C fleet-manager check` (Go, plus Node 22 for the
-administration UI's tests), which CI runs on every pull request as well. Tests that run the shipper
-against a live Fleet Manager are not part of this repository yet.
-
-## Versions and releases
-
-`VERSION` contains the reviewed `MAJOR.MINOR.PATCH` release line. Change it only to start a new
-line. `make version-check` validates it. Release builds are stamped
-`<VERSION>-<commit count>.<short sha>` by `scripts/release-version.sh`. `make release-version`
-prints the stamp. Development builds are not stamped. They report their commit and do not
-self-update.
-
-A push to `main` that touches the shipper builds six platform binaries and the macOS package, signs
-TUF metadata, and publishes to `https://updates.quesma.dev`. It then creates a
-[GitHub release](https://github.com/QuesmaOrg/quesma-shipper/releases) linking the stable downloads.
-The first release through this workflow was published on 2026-09-04. A maintainer approves each
-publication.
-
-Each GitHub release also carries a `quesma-shipper.rb` cask pinned to the published macOS binaries.
-The [Homebrew tap](https://github.com/QuesmaOrg/homebrew-tap) imports it hourly or on a manual workflow
-run. See [Homebrew packaging](src/packaging/homebrew/README.md) for the first-release rollout and checks.
+- [src/README.md](src/README.md): the shipper, how it works, what is collected, its commands,
+  configuration and security model.
+- [fleet-manager/README.md](fleet-manager/README.md): the control plane, its admin UI and API, install
+  names and telemetry; [fleet-manager/OPERATIONS.md](fleet-manager/OPERATIONS.md): operating a
+  deployment.
+- [CONSTITUTION.md](CONSTITUTION.md): the design rules; [ARCHITECTURE.md](ARCHITECTURE.md): the code
+  layout. The wire contract is the public [shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol)
+  module.
+- [CONTRIBUTING.md](CONTRIBUTING.md): building, testing, installers and releases.
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Do not attach
-real trajectories, agent databases, logs, or credentials to issues or pull requests.
+real trajectories, agent databases, logs, or credentials to issues or pull requests. Report
+vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). `quesma-shipper licenses` prints the
-license and every bundled dependency's license text; the same texts ship inside the macOS app
-bundle and are kept in `src/internal/legal/third_party/` with an inventory in `licenses.csv` that
-covers Linux, macOS, and Windows builds. `make licenses` regenerates them after a dependency change.
-`make check` fails when they are stale or when a dependency is not under a permissive license.
-Fleet Manager keeps its own: [fleet-manager/NOTICE](fleet-manager/NOTICE) and
-`fleet-manager/third_party/`, regenerated by `make -C fleet-manager licenses`.
+license and every bundled dependency's license text; Fleet Manager keeps its own in
+[fleet-manager/NOTICE](fleet-manager/NOTICE) and `fleet-manager/third_party/`.
 
 Quesma, Quesma Shipper, Quesma Fleet Manager, and the Quesma logo are trademarks of Quesma Inc.
 The license does not grant trademark rights. If you distribute a modified build, read

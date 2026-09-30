@@ -11,8 +11,9 @@ The service exposes shipper endpoints, a bearer-authenticated administration API
 and a self-contained administration UI at `/admin/`. Static UI assets are embedded in the binary and
 make no third-party requests.
 
-To deploy it together with the shippers, on one machine or in your own cloud, follow
-[Get started](../README.md#get-started) in the repository README; once it runs,
+To deploy it in your own cloud, follow [Run Fleet Manager](../README.md#run-fleet-manager) in the
+repository README, which is one script over the templates under [terraform/](terraform/); for
+everything on one machine, [On one machine](../README.md#on-one-machine). Once it runs,
 [OPERATIONS.md](OPERATIONS.md) covers operating it. This README covers what the service does and
 how to work on it.
 
@@ -146,10 +147,8 @@ start. Turning it off removes the recipient from future configurations and makes
 dashboards, and dependent features unavailable for those uploads; objects already sealed to it stay
 openable by it.
 
-Deployment runbooks:
-
-- [Google Cloud](terraform/gcp/README.md)
-- [AWS](terraform/aws/README.md)
+The templates, for running them by hand: [AWS](terraform/aws/README.md) and
+[Google Cloud](terraform/gcp/README.md).
 
 ## Install names
 
