@@ -51,7 +51,7 @@
           "minLength": 1
         },
         "identity": {
-          "description": "Logical identity from the source's identity rule, shared by every form one object takes on disk (live, archived, compressed); native_path is then the form last observed. Absent means the path is the identity. Not additive for a rollback: a binary that predates this field fails the checksum on a document carrying it and discards the whole store once. Accepted: that costs a re-hash, the uploads are answered already_present, and Codex rollouts go back to their path keys.",
+          "description": "Logical identity from the source's identity rule, shared by every form one object takes on disk (live, archived, compressed); native_path is then the form last observed. Absent means the path is the identity. Not additive for a rollback: a binary that predates this field fails the checksum on a document carrying it and discards the whole store once. Accepted: that costs a re-hash, the uploads are re-probed and only what the older binary scrubs differently is sent again, and Codex rollouts go back to their path keys.",
           "type": "string",
           "minLength": 1
         },
