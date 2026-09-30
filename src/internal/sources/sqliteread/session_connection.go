@@ -159,19 +159,19 @@ func (c *sessionConnection) verifyFiles(wal bool) error {
 	if err = verifySessionFile(c.bound, main, ""); err != nil {
 		return err
 	}
-	if wal {
-		journal, err := c.filePointer(sqlite3.SQLITE_FCNTL_JOURNAL_POINTER)
-		if err != nil {
+	if !wal {
+		return nil
+	}
+	journal, err := c.filePointer(sqlite3.SQLITE_FCNTL_JOURNAL_POINTER)
+	if err != nil {
+		return err
+	}
+	if journal != 0 && nativeValue[sqlite3.Tsqlite3_file](journal).FpMethods != 0 {
+		if err = verifySessionFile(c.bound, journal, "-wal"); err != nil {
 			return err
 		}
-		if journal != 0 && nativeValue[sqlite3.Tsqlite3_file](journal).FpMethods != 0 {
-			if err = verifySessionFile(c.bound, journal, "-wal"); err != nil {
-				return err
-			}
-		}
-		return verifySessionSHM(c.bound, main)
 	}
-	return nil
+	return verifySessionSHM(c.bound, main)
 }
 
 func (c *sessionConnection) query(ctx context.Context, query string, args []string, visit func(map[string]any) error) error {
@@ -229,33 +229,37 @@ func (c *sessionConnection) query(ctx context.Context, query string, args []stri
 			if visit == nil {
 				continue
 			}
-			row := map[string]any{}
-			for i, n := int32(0), sqlite3.Xsqlite3_column_count(c.tls, stmt); i < n; i++ {
-				name := libc.GoString(sqlite3.Xsqlite3_column_name(c.tls, stmt, i))
-				var value any
-				switch sqlite3.Xsqlite3_column_type(c.tls, stmt, i) {
-				case sqlite3.SQLITE_INTEGER:
-					value = sqlite3.Xsqlite3_column_int64(c.tls, stmt, i)
-				case sqlite3.SQLITE_FLOAT:
-					value = sqlite3.Xsqlite3_column_double(c.tls, stmt, i)
-				case sqlite3.SQLITE_TEXT, sqlite3.SQLITE_BLOB:
-					p := sqlite3.Xsqlite3_column_blob(c.tls, stmt, i)
-					n := sqlite3.Xsqlite3_column_bytes(c.tls, stmt, i)
-					if n > 0 {
-						value = string(libc.GoBytes(p, int(n)))
-					} else {
-						value = ""
-					}
-				}
-				row[name] = value
-			}
-			if err := visit(row); err != nil {
+			if err := visit(c.row(stmt)); err != nil {
 				return err
 			}
 		default:
 			return c.err(rc)
 		}
 	}
+}
+
+func (c *sessionConnection) row(stmt uintptr) map[string]any {
+	row := map[string]any{}
+	for i, n := int32(0), sqlite3.Xsqlite3_column_count(c.tls, stmt); i < n; i++ {
+		name := libc.GoString(sqlite3.Xsqlite3_column_name(c.tls, stmt, i))
+		var value any
+		switch sqlite3.Xsqlite3_column_type(c.tls, stmt, i) {
+		case sqlite3.SQLITE_INTEGER:
+			value = sqlite3.Xsqlite3_column_int64(c.tls, stmt, i)
+		case sqlite3.SQLITE_FLOAT:
+			value = sqlite3.Xsqlite3_column_double(c.tls, stmt, i)
+		case sqlite3.SQLITE_TEXT, sqlite3.SQLITE_BLOB:
+			p := sqlite3.Xsqlite3_column_blob(c.tls, stmt, i)
+			n := sqlite3.Xsqlite3_column_bytes(c.tls, stmt, i)
+			if n > 0 {
+				value = string(libc.GoBytes(p, int(n)))
+			} else {
+				value = ""
+			}
+		}
+		row[name] = value
+	}
+	return row
 }
 
 // Native structs contain C addresses as uintptr values, never Go pointers.
