@@ -27,11 +27,13 @@ You need an AWS principal permitted to create S3, IAM, CloudWatch Logs and ECS E
 resources; a default VPC in the Region with at least two public subnets in different Availability
 Zones and at least eight free addresses in each, which
 [ECS Express Mode requires](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/express-service-work.html#express-service-network-defaults);
-Terraform 1.5 or later, or OpenTofu; and the AWS CLI with a profile for the account.
+Terraform 1.5 or later, or OpenTofu; and credentials Terraform's AWS provider can use, in
+whatever form you already use with the AWS CLI. If you have none yet, the
+[AWS CLI authentication guide](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-authentication.html)
+covers the options.
 
 ```sh
-export AWS_PROFILE='acme-prod'
-aws sso login --profile "$AWS_PROFILE"      # with IAM Identity Center; `aws configure` otherwise
+export AWS_PROFILE='acme-prod'              # only if your credentials are a named profile
 aws sts get-caller-identity                 # the account you are about to change
 
 terraform init

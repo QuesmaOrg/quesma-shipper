@@ -30,13 +30,13 @@ creating the organization and enrolling the shippers, are
 
 You need a project with billing enabled and permission to enable APIs and create Cloud Run, Cloud
 Storage, service account, IAM role and IAM policy resources in it; Terraform 1.5 or later, or
-OpenTofu; and the `gcloud` CLI.
+OpenTofu; and credentials Terraform's Google provider can use, for example Application Default
+Credentials from `gcloud auth application-default login`. If you have none yet,
+[Google Cloud's Terraform authentication guide](https://cloud.google.com/docs/terraform/authentication)
+covers the options. The `gcloud` CLI itself is needed only by `deploy.sh`, for its preflight.
 
 ```sh
-export PROJECT_ID='acme-prod'
-gcloud auth login
-gcloud auth application-default login       # what Terraform uses
-gcloud config set project "$PROJECT_ID"
+export PROJECT_ID='acme-prod'               # the project you are about to change
 
 terraform init
 terraform apply -var="project=$PROJECT_ID" -var="region=europe-central2"
