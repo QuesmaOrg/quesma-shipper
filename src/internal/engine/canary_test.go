@@ -116,12 +116,52 @@ var canaryFixtures = map[string]func(t *testing.T, home string){
 		writeFile(t, filepath.Join(dir, "terminals", "1.txt"), []byte("$ env\n"+canaryText()))
 		writeFile(t, filepath.Join(dir, "agent-notes", "scratch.md"), []byte(canaryText()))
 	},
+	"pi-sessions": func(t *testing.T, home string) {
+		writeFile(t, filepath.Join(home, ".pi", "agent", "sessions", "canary.jsonl"), []byte(
+			`{"type":"session","id":"`+canaryUUID+`","version":3}`+"\n"+canaryJSONL(func(l string) string {
+				return `{"type":"message","message":{"role":"user","content":` + jsonString(l) + `}}`
+			})))
+	},
+	"opencode-sessions": func(t *testing.T, home string) {
+		writeSessionCanary(t, filepath.Join(home, ".local", "share", "opencode", "opencode.db"), `
+CREATE TABLE session(id TEXT,parent_id TEXT,directory TEXT,title TEXT,version TEXT,time_created INTEGER,time_updated INTEGER);
+CREATE TABLE message(id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
+CREATE TABLE part(id TEXT,message_id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
+INSERT INTO session VALUES ('canary',NULL,'/work/api','test','1.18.20',1000,1000);`,
+			`INSERT INTO message VALUES ('m','canary',1000,1000,?)`,
+			`{"role":"user","text":`+jsonString(canaryText())+`}`)
+	},
+	"hermes-sessions": func(t *testing.T, home string) {
+		writeSessionCanary(t, filepath.Join(home, ".hermes", "state.db"), `
+CREATE TABLE sessions(id TEXT,parent_session_id TEXT,source TEXT,model TEXT,cwd TEXT,started_at REAL,ended_at REAL,title TEXT,input_tokens INTEGER,output_tokens INTEGER,cache_read_tokens INTEGER,cache_write_tokens INTEGER);
+CREATE TABLE messages(id INTEGER,session_id TEXT,role TEXT,content TEXT,tool_call_id TEXT,tool_calls TEXT,tool_name TEXT,timestamp REAL,finish_reason TEXT);
+INSERT INTO sessions VALUES ('canary',NULL,'cli','model','/work/api',1,NULL,'test',5,2,0,0);`,
+			`INSERT INTO messages VALUES (1,'canary','user',?,NULL,NULL,NULL,1,NULL)`, canaryText())
+	},
 	"project-map": func(t *testing.T, home string) {
 		// The transcript fixture supplies the cwd; the remote's userinfo is the planted credential.
 		writeFile(t, filepath.Join(home, "work", "api", ".git", "config"), []byte(
 			"[remote \"origin\"]\n\turl = https://jane:"+codexSecrets["ghp"]+"@github.com/acme/api.git\n"+
 				"[remote \"ci\"]\n\turl = https://x-access-token:"+codexSecrets["ghfg"]+"@github.com/acme/api.git\n"))
 	},
+}
+
+func writeSessionCanary(t *testing.T, path, schema, insert, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(schema); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(insert, content); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func jsonString(s string) string {
