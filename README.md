@@ -134,9 +134,11 @@ recipients**, held by separate people: two custodians is the smallest arrangemen
 of them leaving. Each custodian generates their own and hands over only the public half:
 
 ```sh
-age-keygen -o acme-security.agekey     # the private identity -- never leaves the custodian
-age-keygen -y acme-security.agekey     # prints the age1… recipient -- this is what you collect
+age-keygen -o acme-security.agekey
 ```
+
+The command saves the private identity to `acme-security.agekey` and prints its public recipient.
+Share only that recipient; the identity stays with its custodian.
 
 Whoever runs an ETL that reads the archive needs a private identity too, so in practice one
 recipient belongs to the ETL and the rest are custody copies. Files are sealed to the recipients
@@ -282,54 +284,26 @@ yet.
 
 You need Terraform 1.5 or later (or OpenTofu); the AWS CLI with a profile allowed to create S3, IAM,
 CloudWatch Logs and ECS Express Mode resources; a default VPC with two public subnets in different
-availability zones, which ECS Express Mode requires; Docker and Go 1.27 or newer to build the image;
-and `age-keygen` and `curl`.
+availability zones, which ECS Express Mode requires; and `age-keygen` and `curl`.
 
-### 1. Build and push your image
-
-Build from your clone and push to your own registry, so you control the supply chain:
+### 1. Deploy
 
 ```sh
 git clone https://github.com/QuesmaOrg/quesma-shipper
-cd quesma-shipper/fleet-manager
-make check                                  # the gate: formatting, vet, licenses, tests
+cd quesma-shipper/fleet-manager/terraform/aws
 
-export AWS_REGION='eu-central-1'
-export REGISTRY='123456789012.dkr.ecr.eu-central-1.amazonaws.com'
-rev=$(git rev-parse --short=12 HEAD)
+export AWS_PROFILE='your-aws-profile-name'
+export AWS_REGION='your-aws-region-of-choice' # e.g. eu-central-1
+export TRAJECTORIES_BUCKET='your-aws-bucket-name' # S3 bucket names must be globally unique
 
-aws ecr get-login-password --region "$AWS_REGION" \
-  | docker login --username AWS --password-stdin "$REGISTRY"
-
-docker buildx build --platform linux/amd64 --target cloud-run \
-  --build-arg VERSION="$(cat VERSION)+$rev" \
-  -t "$REGISTRY/fleet-manager:$rev" --push .
-
-docker buildx imagetools inspect "$REGISTRY/fleet-manager:$rev" \
-  --format '{{json .Manifest.Digest}}' | tr -d '"'          # deploy this digest, not the tag
-```
-
-`linux/amd64` is the architecture ECS Express Mode, Cloud Run and Azure Container Apps all accept.
-Without `--build-arg VERSION` the running service reports `dev`, which is indistinguishable from a
-laptop build months later. Deploying by digest rather than by tag rules out the service coming up
-on an image you did not build. If you prefer not to build, the templates default to
-`docker.io/quesma/fleet-manager:latest`, a moving tag Quesma publishes, which most on-premise
-deployments will want to avoid.
-
-### 2. Deploy
-
-```sh
-export BUCKET='globally-unique-acme-trajectories'      # S3 bucket names are global
-
-cd terraform/aws
 terraform init
 terraform apply \
   -var="region=$AWS_REGION" \
-  -var="bucket=$BUCKET" \
-  -var="image_uri=$REGISTRY/fleet-manager@sha256:…"     # the digest from step 1
+  -var="bucket=$TRAJECTORIES_BUCKET"
 ```
 
-Add `-var='default_allow_quesma_etl=false'` here if decision 2 calls for it. This creates a
+Terraform uses Quesma's published `docker.io/quesma/fleet-manager:latest` image by default.
+Add `-var='default_allow_quesma_etl=false'` if decision 2 calls for it. This creates a
 private, versioned bucket; a runtime role that writes below `install=` and reads there only to name
 installs and deduplicate uploads (it can fetch ciphertext, never decrypt it); a lifecycle
 rule for superseded check-in records; a 30-day log group; and a public HTTPS service. Then:
@@ -344,12 +318,12 @@ terraform output -raw admin_credential
 [fleet-manager/terraform/aws/README.md](fleet-manager/terraform/aws/README.md) is the full runbook
 for this step, including authenticating the AWS CLI and rotating the credential.
 
-### 3. The organisation
+### 2. The organisation
 
 As in [On one machine](#2-the-organisation), at `admin_url` with the credential from
 `terraform output`: the same recipients, the same custody check, an invite or a grant.
 
-### 4. The shippers
+### 3. The shippers
 
 On each developer machine, install the shipper as in [From a release](#from-a-release) and enroll
 it with the invite or grant:
@@ -362,10 +336,10 @@ No `upload_targets` pin is needed: S3 is served over HTTPS with virtual-host add
 shipper allows by default. To enroll a build from source instead, use `install.sh --from` as in
 [step 3](#3-the-shipper) with `--server "$FLEET_MANAGER_URL"`.
 
-### 5. Check that it arrived
+### 4. Check that it arrived
 
 ```sh
-aws s3 ls --recursive "s3://$BUCKET/v1/organization=acme/install=" | head
+aws s3 ls --recursive "s3://$TRAJECTORIES_BUCKET/v1/organization=acme/install=" | head
 ```
 
 Then open one object with a custodian's identity, as in

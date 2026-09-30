@@ -13,7 +13,6 @@ You need:
 - permission to enable APIs and create Cloud Run, Cloud Storage, service account,
   IAM role, and IAM policy resources in that project;
 - [Terraform](https://developer.hashicorp.com/terraform/install) 1.5 or later,
-  the [`gcloud` CLI](https://cloud.google.com/sdk/docs/install),
   [`age`](https://age-encryption.org/) (for `age-keygen`), and `curl`; and
 - an organization policy that permits
   [public invocation](https://cloud.google.com/run/docs/authenticating/public) of
@@ -22,24 +21,19 @@ You need:
 
 ## 1. Authenticate and select the deployment
 
-Set these deployment values.
+Authenticate to Google Cloud using a method supported by Terraform. Your credentials must be
+allowed to create the resources listed in [Before you begin](#before-you-begin). If you have not
+configured credentials yet, follow [Google Cloud's Terraform authentication guide](https://cloud.google.com/docs/terraform/authentication).
+
+Set the project and deployment Region:
 
 ```sh
 export PROJECT_ID='your-gcp-project-id'
-export REGION='europe-central2'
-
-gcloud auth login
-gcloud auth application-default login
-gcloud config set project "$PROJECT_ID"
+export REGION='your-gcp-region-of-choice' # e.g. europe-central2
 ```
 
-Terraform uses Application Default Credentials. Confirm
-that the selected account and project are correct before continuing:
-
-```sh
-gcloud auth list --filter=status:ACTIVE
-gcloud config get-value project
-```
+Confirm that `$PROJECT_ID` is the project where you intend to deploy. Terraform receives both
+values explicitly below and uses the credentials available to its Google Cloud provider.
 
 ## 2. Deploy
 
@@ -47,14 +41,10 @@ gcloud config get-value project
 terraform init
 terraform apply \
   -var="project=$PROJECT_ID" \
-  -var="region=$REGION" \
-  -var="image=$REGISTRY/fleet-manager@sha256:…"     # your image, by digest
+  -var="region=$REGION"
 ```
 
-Build and push the image first, as in
-[Build and push your image](../../../README.md#1-build-and-push-your-image), to a registry Cloud
-Run can pull from. The variable is `image` here, `image_uri` in the AWS template. Without it the
-service runs `docker.io/quesma/fleet-manager:latest`, a moving tag Quesma publishes.
+The service uses Quesma's published `docker.io/quesma/fleet-manager:latest` image by default.
 
 `tofu` works in place of `terraform` throughout. The committed `.terraform.lock.hcl` pins the
 providers as OpenTofu resolves them (`registry.opentofu.org`). Terraform resolves them from
@@ -83,22 +73,27 @@ you only its printed `age1...` public recipient:
 
 ```sh
 age-keygen -o acme-security.agekey
-age-keygen -y acme-security.agekey
 ```
 
+The command saves the private identity to `acme-security.agekey` and prints its public recipient.
 Never place a private identity in this repository, Terraform variables, or Terraform state.
 
-Retrieve the sensitive administrator credential explicitly, open the administration
-URL, and paste the credential into the login form:
+1. Retrieve the sensitive administrator credential:
 
-```sh
-terraform output -raw admin_url
-terraform output -raw admin_credential
-```
+   ```sh
+   terraform output -raw admin_credential
+   ```
 
-Create an organization with an immutable lowercase slug, a display name, and at least two
-independently held public recipients. The optional authored YAML field controls that
-organization's collection settings. Use the selector to create or switch organizations.
+2. Get the administration URL and open it in a browser:
+
+   ```sh
+   terraform output -raw admin_url
+   ```
+
+3. Paste the credential into the login form and sign in. Create an organization with an immutable
+   lowercase slug, a display name, and at least two independently held public recipients. The
+   optional authored YAML field controls that organization's collection settings. Use the selector
+   to create or switch organizations.
 
 ## 4. Install and enroll the first shipper
 
