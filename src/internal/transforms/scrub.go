@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -75,6 +76,9 @@ type Config struct {
 	Username       string
 	SecretKeyNames []string
 	Entropy        EntropyConfig
+
+	// Drops maps family to exact field paths; see CompiledDrops.
+	Drops map[string][]string
 }
 
 // DefaultConfig is the compiled baseline.
@@ -82,6 +86,7 @@ func DefaultConfig() Config {
 	return Config{
 		RulePacks:      []string{packs.GitleaksCore, packs.QuesmaExtra, packs.CloudKeys, packs.GenericEntropy, packs.PIICore},
 		Exemptions:     CompiledExemptions(),
+		Drops:          CompiledDrops(),
 		Username:       "",
 		SecretKeyNames: DefaultSecretKeyNames(),
 		Entropy:        DefaultEntropyConfig(),
@@ -106,6 +111,7 @@ type Scrubber struct {
 
 	keyNames *keyNameMatcher
 	exempt   *ExemptionSet
+	drops    map[string]map[FieldPath]bool
 
 	// Answers every pattern matcher's keyword question in one pass; read-only once
 	// built, so a Scrubber stays safe to share.
@@ -176,6 +182,15 @@ func New(cfg Config) (*Scrubber, error) {
 	if cfg.Entropy.MinLength < 0 {
 		return nil, fmt.Errorf("scrub: entropy min_length %d is negative", cfg.Entropy.MinLength)
 	}
+	drops, err := compileDrops(cfg.Drops)
+	if err != nil {
+		return nil, err
+	}
+	// A configured exemption asks for the value to ship, so it outranks the compiled drop.
+	for family, byPath := range drops {
+		maps.DeleteFunc(byPath, func(path FieldPath, _ bool) bool { return s.exempt.Exempt(family, path) })
+	}
+	s.drops = drops
 
 	// One automaton over every rule's keywords; only here knows the whole ladder.
 	prefilter := packs.NewPrefilterBuilder()

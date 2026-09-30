@@ -392,6 +392,9 @@ agent session files ──► discover ──► detect change ──► read �
 - **Scrub.** Every file passes through redaction rule packs first. Three provider-key packs
   (`gitleaks-core`, `quesma-extra`, `cloud-keys`), an entropy backstop (`generic-entropy`), and a
   PII pack (`pii-core`) are compiled in. The control plane can add packs. It cannot remove them.
+  In the fields that carry encrypted reasoning and inline media, any string of 160 bytes or more
+  is replaced whole by the `__REDACTED:dropped__` sentinel before the packs run: the entropy
+  backstop almost always shredded them, and a configured exemption still wins.
   A scrub error means the file is not uploaded.
 - **Encrypt.** The scrubbed file is sealed with age to the recipients that the control plane
   supplies. The client can be configured to hold no key that decrypts what it ships.
