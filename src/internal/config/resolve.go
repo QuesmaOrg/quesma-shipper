@@ -23,7 +23,7 @@ import (
 // ResolvedSource is sources.Resolved, aliased because this is the package that produces one.
 type ResolvedSource = sources.Resolved
 
-// Effective is the resolved configuration: the compiled ceiling, narrowed by every config layer in precedence order.
+// Effective is the resolved configuration after applying layers in precedence order.
 type Effective struct {
 	ConfigVersion int
 
@@ -487,22 +487,10 @@ func checkEncryption(eff *Effective) error {
 
 // resolveRoots expands each source's root candidates, then applies the deny list to the symlink-resolved path and require_subdir.
 func resolveRoots(eff *Effective, in Input) error {
-	compiled := in.Catalog
-
 	for i := range eff.Sources {
 		src := &eff.Sources[i]
 		if !src.Enabled {
 			continue
-		}
-
-		spec, _ := compiled.Source(src.ID)
-		rootsField := "sources." + src.ID + ".roots"
-
-		// The scope ceiling: a root must be one the compiled catalog declared for this source.
-		for _, candidate := range src.Roots {
-			if !slices.Contains(spec.Roots, candidate) {
-				return eff.reject(rootsField, "%q is outside the compiled scope ceiling %v: a new root requires a release", candidate, spec.Roots)
-			}
 		}
 
 		root, reasons, rej := pickRoot(eff, src, in.Env)

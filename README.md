@@ -23,9 +23,12 @@ flowchart LR
 
 Only the holders of the organisation's [age](https://age-encryption.org/) keys can read what was
 uploaded. Supported agents: Claude Code, Codex, Cursor, GitHub Copilot (the Copilot CLI and
-Copilot Chat in VS Code), Pi, OpenCode, Hermes. Supported platforms: macOS 13 or newer, Linux, Windows 10 1809 or newer.
+Copilot Chat in VS Code), Pi\*, OpenCode\*, Hermes\*. Supported platforms: macOS 13 or newer, Linux, Windows 10 1809 or newer.
 The project is pre-1.0: the wire protocol, the configuration format and the object naming are
 pinned by tests but can still change between minor releases.
+
+\* Experimental. We actively run and test Claude Code, Codex, and Cursor.
+Pi, OpenCode, and Hermes support may change or be withdrawn.
 
 ## Get started
 

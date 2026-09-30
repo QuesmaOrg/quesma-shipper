@@ -6,10 +6,10 @@ import "fmt"
 type Layer int
 
 const (
-	// LayerCompiledDefaults is the binary's own defaults: the scope ceiling. Not overridable.
+	// LayerCompiledDefaults is the binary's initial configuration values.
 	LayerCompiledDefaults Layer = iota + 1
 
-	// LayerBundledCatalog is the embedded source-spec catalog: data, but compiled in, so it carries the ceiling.
+	// LayerBundledCatalog is the embedded source-spec catalog with default roots and collection rules.
 	LayerBundledCatalog
 
 	// LayerUser is the per-user config file, the highest layer a machine owner controls directly.

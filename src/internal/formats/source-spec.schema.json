@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/QuesmaOrg/quesma-shipper/schemas/source-spec.schema.json",
   "title": "Source-spec catalog document",
-  "description": "One catalog file per agent family, embedded in the binary. The catalog is the Compiled tier and therefore carries the scope ceiling: roots resolve only within the agent-owned directories named here plus their documented env-var overrides, and no config layer can add a root. The ceiling is root-granular by design -- glob subsumption is deliberately not computed -- so the airtight path floor is the compiled deny list (applied after env expansion and symlink resolution) plus require_subdir. Primitives are code; sources are data: new agent coverage within an already-compiled root family is a data-file change, a genuinely new root is a release.",
+  "description": "Default collection rules for one agent family, embedded in the binary. Configuration may replace roots and globs. The deny list, required root structure, and compiled collection primitives still constrain reads.",
   "type": "object",
   "required": ["spec_version", "family", "sources"],
   "additionalProperties": false,
