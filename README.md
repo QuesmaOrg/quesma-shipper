@@ -134,9 +134,11 @@ recipients**, held by separate people: two custodians is the smallest arrangemen
 of them leaving. Each custodian generates their own and hands over only the public half:
 
 ```sh
-age-keygen -o acme-security.agekey     # the private identity -- never leaves the custodian
-age-keygen -y acme-security.agekey     # prints the age1… recipient -- this is what you collect
+age-keygen -o acme-security.agekey
 ```
+
+The command saves the private identity to `acme-security.agekey` and prints its public recipient.
+Share only that recipient; the identity stays with its custodian.
 
 Whoever runs an ETL that reads the archive needs a private identity too, so in practice one
 recipient belongs to the ETL and the rest are custody copies. Files are sealed to the recipients

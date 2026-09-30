@@ -86,9 +86,9 @@ you only its printed `age1...` public recipient:
 
 ```sh
 age-keygen -o acme-security.agekey
-age-keygen -y acme-security.agekey
 ```
 
+The command saves the private identity to `acme-security.agekey` and prints its public recipient.
 Never place a private identity in this repository, Terraform variables, or Terraform state.
 
 Retrieve the sensitive administrator credential explicitly, open the administration
