@@ -184,16 +184,15 @@ func (s *fakeStore) heartbeats() []storedPut {
 	return out
 }
 
-// The hashes the newest version under a key was stored with: what a real plane's HEAD reads back,
-// and the only thing that tells "already holds these bytes" from "holds older or differently
-// scrubbed ones".
-func (s *fakeStore) storedHashes(key string) (source, shipped string, held bool) {
+// The hashes the newest version under a key was stored with, empty when nothing is: what a real
+// plane's HEAD reads back to tell the bytes on offer from older or differently scrubbed ones.
+func (s *fakeStore) storedHashes(key string) (source, shipped string) {
 	for _, p := range s.stored() {
 		if p.Key == key {
-			source, shipped, held = p.Headers["x-amz-meta-source-hash"], p.Headers["x-amz-meta-shipped-hash"], true
+			source, shipped = p.Headers["x-amz-meta-source-hash"], p.Headers["x-amz-meta-shipped-hash"]
 		}
 	}
-	return source, shipped, held
+	return source, shipped
 }
 
 // The write count under one key, which is the only thing making "the same file shipped twice"
@@ -319,8 +318,8 @@ func (p *fakePlane) serve(w http.ResponseWriter, r *http.Request) {
 		ticketID := fmt.Sprintf("ticket-%d-%d", seq, i)
 		// Bytes a landed PUT stored under these source and shipped hashes are answered for: no
 		// capability is minted, so the client sends nothing for them.
-		source, shipped, held := p.store.storedHashes(obj.Key)
-		if held && source == obj.SourceHash && shipped != "" && shipped == obj.Metadata["shipped-hash"] {
+		source, shipped := p.store.storedHashes(obj.Key)
+		if source == obj.SourceHash && shipped != "" && shipped == obj.Metadata["shipped-hash"] {
 			present = append(present, obj.Key)
 			tickets = append(tickets, map[string]any{
 				"ticket_id": ticketID, "object_id": obj.ObjectID, "already_present": true,

@@ -204,8 +204,8 @@ func Prune(stateDir, installID string, dryRun bool) (removed, kept int, err erro
 
 // Reset forgets every fingerprint, so the next sync re-hashes the whole history and re-probes the
 // archive; bytes that scrub to what it holds come back already_present, so a reset re-uploads only
-// what the scrub rules now rewrite. A recipient change alone re-uploads nothing.
-// The document is replaced with an empty one rather than deleted, so the install id survives.
+// what the scrub rules now rewrite. The document is replaced with an empty one rather than
+// deleted, so the install id survives.
 func Reset(stateDir, installID string, dryRun bool) (removed int, err error) {
 	return editStore(stateDir, installID, dryRun, func(s *Store) int {
 		removed := len(s.entries)

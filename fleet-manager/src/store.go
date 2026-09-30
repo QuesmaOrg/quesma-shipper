@@ -22,8 +22,7 @@ type ObjectStore interface {
 	StoredHashes(context.Context, string) (StoredHashes, error)
 }
 
-// StoredHashes is what a mirror object was written under: Source covers the raw bytes, Shipped
-// the scrubbed ones that were sealed.
+// StoredHashes: Source covers an object's raw bytes, Shipped the scrubbed bytes that were sealed.
 type StoredHashes struct{ Source, Shipped string }
 
 type ObjectInfo struct {

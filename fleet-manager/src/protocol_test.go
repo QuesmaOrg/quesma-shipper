@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -408,8 +409,7 @@ func TestUploadAuthorizationAnswersAlreadyPresent(t *testing.T) {
 		return recorder
 	}
 
-	// Only a match on both hashes settles. A grown file re-uploads, and so does one whose raw bytes
-	// are unchanged but which was scrubbed differently, or stored with no shipped hash at all.
+	// Only a match on both hashes settles; every other stored shape is handed a ticket.
 	recorder := authorize(uploadAuthorizeRequest{WriterID: uuid.NewString(), IssuedAt: now,
 		Objects: []uploadObject{object("stored", mirrorKey("b")), object("fresh", mirrorKey("c")), object("grown", mirrorKey("e")),
 			object("rescrubbed", mirrorKey("f")), object("unhashed", mirrorKey("1"))}})
@@ -496,7 +496,7 @@ func TestProbeNeverMatchesOnAnAbsentShippedHash(t *testing.T) {
 	store, hash := newMemoryStore(), strings.Repeat("a", 64)
 	store.setStoredHashes("k", StoredHashes{Source: hash})
 	objects := []UploadObjectRequest{{ObjectID: "a", Key: "k", Mirror: true, Metadata: map[string]string{"source-hash": hash}}}
-	needed, settled := splitAlreadyStored(context.Background(), store, log.New(&bytes.Buffer{}, "", 0), "install", objects)
+	needed, settled := splitAlreadyStored(context.Background(), store, log.New(io.Discard, "", 0), "install", objects)
 	if len(needed) != 1 || settled != nil {
 		t.Fatalf("needed %d, settled %v", len(needed), settled)
 	}
