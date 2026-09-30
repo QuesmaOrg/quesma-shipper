@@ -10,8 +10,8 @@ import (
 // With "/" in the candidate alphabet a whole path prefix was one run, and the
 // generic-entropy rule was 55% of all redaction hits on a real archive, shipping
 // __REDACTED:generic-entropy__ as the repository name of 144 of 818 sessions. These
-// fixtures are the shapes that fired: a lowercase path sits under threshold and proves
-// nothing.
+// fixtures are the shapes that fired (cwd and grep output are conformance vectors): a
+// lowercase path sits under threshold and proves nothing.
 func TestOrdinaryPathsSurviveTheEntropyBackstop(t *testing.T) {
 	s := newScrubber(t)
 
@@ -21,24 +21,11 @@ func TestOrdinaryPathsSurviveTheEntropyBackstop(t *testing.T) {
 		want string // a fragment that must survive, post path-user
 	}{
 		{
-			// cwd is where the per-repository dimension downstream comes from. Exempt now, but the
-			// next cases prove the regex fix protects it where no exemption applies.
-			"mixed-case cwd",
-			`{"type":"user","uuid":"u1","cwd":"/Users/jane/Work2026/SampleOrg/blink-UI/apps/webFrontend/src"}`,
-			`/Users/__USER__/Work2026/SampleOrg/blink-UI/apps/webFrontend/src`,
-		},
-		{
-			// The same path in free text, where no exemption reaches: it passes only because a
-			// candidate can no longer span "/".
+			// The cwd conformance vector's path in free text, where no exemption reaches: it passes
+			// only because a candidate can no longer span "/".
 			"mixed-case path in prose",
 			`{"type":"user","uuid":"u1","message":{"content":[{"type":"text","text":"the build lives in /Users/jane/Work2026/SampleOrg/blink-UI/apps/webFrontend/src now"}]}}`,
 			`/Users/__USER__/Work2026/SampleOrg/blink-UI/apps/webFrontend/src`,
-		},
-		{
-			// Grep output, the shape that shipped as __REDACTED:generic-entropy__.ts:185.
-			"grep output",
-			`{"type":"user","uuid":"u1","toolUseResult":{"stdout":"src/Components/CardPreview2/ButtonGroup_v3.tsx:42:export const ButtonGroup"}}`,
-			`src/Components/CardPreview2/ButtonGroup_v3.tsx:42`,
 		},
 		{
 			// A dash-encoded slug carrying the RAW username in free text: dashes stay in the candidate
@@ -65,25 +52,6 @@ func TestOrdinaryPathsSurviveTheEntropyBackstop(t *testing.T) {
 	}
 }
 
-// __USER__ is built from in-class characters, so substituting it into a dash-encoded slug
-// ADDS entropy: the rewritten path can cross a threshold its raw form sat under. This is
-// the test that fails if the alphabet change lands without the placeholder skip.
-func TestUserPlaceholderNeverTripsTheEntropyBackstop(t *testing.T) {
-	s := newScrubber(t)
-
-	// 4.22 bits/char as one run: over threshold, and in an unexempt field.
-	payload := `{"type":"user","uuid":"u1","cwd":"/Users/__USER__/Work2026/SampleOrg/blink-UI",` +
-		`"message":{"content":[{"type":"text","text":"logs under ~/.claude/projects/-Users-__USER__-Work2026-SampleOrg-blink-UI/f00.jsonl"}]}}` + "\n"
-
-	res := scrubJSONL(t, s, "claude-code", payload)
-	if string(res.Out.Bytes()) != payload {
-		t.Errorf("already-placeholdered content changed:\n got %s\nwant %s", res.Out.Bytes(), payload)
-	}
-	if len(res.RuleHits) != 0 {
-		t.Errorf("no rule should fire on already-scrubbed shapes: %v", res.RuleHits)
-	}
-}
-
 // A sentinel begins with in-class characters and its ":" comes after them, so
 // "activity-__REDACTED:card-pan__-KzYA" fuses into one candidate over the threshold and a
 // second pass nests sentinels. The backstop must never eat its own ledger: candidates
@@ -103,8 +71,8 @@ func TestSentinelGlueNeverTripsTheEntropyBackstop(t *testing.T) {
 }
 
 // Dropping "/" from the entropy alphabet leans on the pattern packs for slash-carrying
-// secrets: every labeled arrival of that shape must stay caught, and this test says so if
-// a pack edit loosens one of the anchors.
+// secrets: every labeled arrival of that shape must stay caught, and this test (with the
+// labeled aws conformance vector) says so if a pack edit loosens one of the anchors.
 func TestLabeledSecretsWithSlashesAreStillCaught(t *testing.T) {
 	s := newScrubber(t)
 
@@ -113,11 +81,6 @@ func TestLabeledSecretsWithSlashesAreStillCaught(t *testing.T) {
 		text   string
 		secret string
 	}{
-		{
-			"aws secret access key",
-			"aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-			"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-		},
 		{
 			"azure storage account key",
 			"DefaultEndpointsProtocol=https;AccountKey=abc123/def456+ghi789/jkl012+mno345/pqr678stu901vwx234yz567EXAMPLE==;",

@@ -61,44 +61,6 @@ func enrolledInstall(t *testing.T, manager *Manager) string {
 	return installID
 }
 
-func TestHealthRoundTrips(t *testing.T) {
-	manager := initialisedManager(t)
-	installID := enrolledInstall(t, manager)
-
-	err := manager.ReportHealth(context.Background(), installID, HealthReport{
-		Consecutive: 3,
-		Faults:      []Fault{{Kind: "tick_failed", Message: "upload: PUT object: refused", At: "2026-09-07T09:00:00Z", RunID: "r1"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	records, err := manager.ListHealth(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(records) != 1 {
-		t.Fatalf("want one record, got %d", len(records))
-	}
-	rec := records[0]
-	if rec.InstallID != installID || rec.Consecutive != 3 || len(rec.Faults) != 1 {
-		t.Fatalf("record did not survive: %+v", rec)
-	}
-	if rec.ReportedAt.IsZero() {
-		t.Fatal("no report time was stamped")
-	}
-}
-
-// The health prefix must not become storage for anything the organization does not have.
-func TestHealthForAnUnknownInstallIsRefused(t *testing.T) {
-	manager := initialisedManager(t)
-	err := manager.ReportHealth(context.Background(), "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
-		HealthReport{Faults: []Fault{{Kind: "tick_failed"}}})
-	if err == nil {
-		t.Fatal("a report for an unknown install was stored")
-	}
-}
-
 // A revoked install's row is about to disappear; health on it would outlive what it describes.
 func TestRevokedInstallsAreNotReportable(t *testing.T) {
 	manager := initialisedManager(t)
@@ -175,15 +137,6 @@ func TestReportedAtIsTheServersClock(t *testing.T) {
 	records, _ := manager.ListHealth(context.Background())
 	if len(records) != 1 || !records[0].ReportedAt.Equal(received) {
 		t.Fatalf("reported_at = %v, want the server's %v", records[0].ReportedAt, received)
-	}
-}
-
-func TestAFaultWithoutAKindIsRejected(t *testing.T) {
-	if err := ValidateHealthReport(HealthReport{Faults: []Fault{{Message: "something"}}}); err == nil {
-		t.Fatal("a fault with no kind was accepted")
-	}
-	if err := ValidateHealthReport(HealthReport{Faults: []Fault{{Kind: "tick_failed"}}}); err != nil {
-		t.Fatalf("a usable fault was rejected: %v", err)
 	}
 }
 

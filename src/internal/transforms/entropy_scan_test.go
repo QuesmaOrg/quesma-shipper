@@ -33,10 +33,11 @@ func refMatch(m *entropyMatcher, value string) []Span {
 			continue
 		}
 		candidate := value[start:i]
-		if m.skipsCandidate(candidate) {
+		if !m.clears(candidate) {
 			continue
 		}
-		if !m.clears(candidate) {
+		if m.skipsCandidate(candidate) {
+			out = m.appendClearingWords(out, value, start, i)
 			continue
 		}
 		out = append(out, Span{Start: start, End: i, RuleID: m.RuleID()})

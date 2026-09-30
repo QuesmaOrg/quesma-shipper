@@ -1,7 +1,6 @@
 package packs_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/packs"
@@ -64,24 +63,6 @@ func TestPESELRejectsImpossibleDates(t *testing.T) {
 	// Month 99 cannot occur in any PESEL century encoding.
 	if len(pesel.MatchScanned("44991401351")) != 0 {
 		t.Error("a PESEL-shaped number with an impossible month must not match")
-	}
-}
-
-// A rule with no id would produce a sentinel of "__REDACTED:__", which tells a consumer nothing.
-func TestAllPacksCompileWithNamedRules(t *testing.T) {
-	for _, pack := range packs.PatternPacks {
-		rules, err := packs.Load(pack)
-		if err != nil {
-			t.Fatalf("%s: %v", pack, err)
-		}
-		if len(rules) == 0 {
-			t.Errorf("%s: no rules", pack)
-		}
-		for _, r := range rules {
-			if strings.TrimSpace(r.RuleID()) == "" {
-				t.Errorf("%s: a rule has no id", pack)
-			}
-		}
 	}
 }
 

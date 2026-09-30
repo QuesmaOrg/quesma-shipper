@@ -113,18 +113,27 @@ func TestAnUnusableInFlightCapIsRefused(t *testing.T) {
 	}
 }
 
-func TestAReadingDescribesTheRun(t *testing.T) {
-	before := platform.ReadMemStats()
+func TestADeltaReportsSignedGrowth(t *testing.T) {
+	d := platform.Delta{Before: platform.Sample{HeapInuse: 1 << 20}, After: platform.Sample{HeapInuse: 3 << 20}}
+	if got := d.Growth(); got != 2<<20 {
+		t.Errorf("growth %d, want %d", got, 2<<20)
+	}
+	if !strings.Contains(d.String(), "(2 MB)") {
+		t.Errorf("summary does not show the growth: %s", d)
+	}
+	shrink := platform.Delta{Before: d.After, After: d.Before}
+	if got := shrink.Growth(); got != -2<<20 {
+		t.Errorf("shrink %d, want %d", got, -2<<20)
+	}
+	if !strings.Contains(shrink.String(), "(-2 MB)") {
+		t.Errorf("summary does not show the shrink: %s", shrink)
+	}
+}
+
+func TestAReadingSeesTheLiveHeap(t *testing.T) {
 	junk := make([]byte, 32<<20)
-	for i := range junk {
-		junk[i] = byte(i)
-	}
-	d := platform.Delta{Before: before, After: platform.ReadMemStats()}
-	if d.Growth() <= 0 {
-		t.Errorf("allocating 32 MB showed growth of %d", d.Growth())
-	}
-	if d.String() == "" {
-		t.Error("empty summary")
+	if got := platform.ReadMemStats().HeapInuse; got < 32<<20 {
+		t.Errorf("heap in use is %d while holding 32 MB", got)
 	}
 	runtimeKeepAlive(junk)
 }

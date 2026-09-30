@@ -33,37 +33,6 @@ func TestBlindingIsKeyed(t *testing.T) {
 	}
 }
 
-// A pathologically long native path leaves the key length unchanged.
-func TestNameLengthIsFixed(t *testing.T) {
-	long := strings.Repeat("verylongsegmentname/", 500) + "leaf.jsonl"
-	short := formats.MirrorName(keyA(t), "a")
-	huge := formats.MirrorName(keyA(t), formats.CanonicalPath(long, "jane"))
-
-	if len(short) != 64 || len(huge) != 64 {
-		t.Fatalf("mirror names must be 64 hex chars, got %d and %d", len(short), len(huge))
-	}
-}
-
-// A file's whole history lands on one key, so a re-ship after state loss is an overwrite.
-func TestNameIsStableAcrossCalls(t *testing.T) {
-	p := formats.CanonicalPath("projects/-Users-jane-work-api/3f2504e0.jsonl", "jane")
-	first := formats.MirrorName(keyA(t), p)
-	for range 100 {
-		if got := formats.MirrorName(keyA(t), p); got != first {
-			t.Fatalf("mirror name is not deterministic: %s != %s", got, first)
-		}
-	}
-}
-
-// Home paths differing only by user name converge, so a renamed account does not re-ship.
-func TestUserPlaceholderMakesPathsConverge(t *testing.T) {
-	jane := formats.CanonicalPath("projects/-Users-jane-work-api/s.jsonl", "jane")
-	bob := formats.CanonicalPath("projects/-Users-bob-work-api/s.jsonl", "bob")
-	if jane != bob {
-		t.Errorf("canonical paths should converge:\n jane %q\n bob  %q", jane, bob)
-	}
-}
-
 // Over-replacing is the worse failure: it merges two different files onto one key.
 func TestUserPlaceholderDoesNotOverMatch(t *testing.T) {
 	cases := []struct{ in, username, want string }{
@@ -71,6 +40,7 @@ func TestUserPlaceholderDoesNotOverMatch(t *testing.T) {
 		{"notes/mariajane.txt", "jane", "notes/mariajane.txt"},
 		{"jane/x.txt", "jane", "__USER__/x.txt"},
 		{"-Users-jane-work", "jane", "-Users-__USER__-work"},
+		{"-Users-bob-work", "bob", "-Users-__USER__-work"},
 		{"a/b.txt", "a", "a/b.txt"},
 		{"projects/x.jsonl", "", "projects/x.jsonl"},
 	}

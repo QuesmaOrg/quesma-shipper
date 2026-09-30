@@ -244,8 +244,7 @@ func TestEscapeShadowSpansNeverSplitAnEscape(t *testing.T) {
 	}
 }
 
-// One shadow hit bridging two original spans must leave one span covering all three, since
-// resolveSpans keeps the first of two overlapping spans and would expose the other's tail.
+// One shadow hit bridging two original spans must leave one span covering all three.
 func TestUnionSpanFoldsEveryOverlap(t *testing.T) {
 	base := func() []Span { return []Span{{Start: 0, End: 5, RuleID: "a"}, {Start: 8, End: 12, RuleID: "b"}} }
 	for _, c := range []struct {

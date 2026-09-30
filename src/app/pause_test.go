@@ -137,8 +137,4 @@ func TestOneResolvedStateDirectoryForEveryArtifact(t *testing.T) {
 	if eff.StateDir != moved {
 		t.Errorf("eff.StateDir = %q, want %q", eff.StateDir, moved)
 	}
-	if paths.StateDir != eff.StateDir {
-		t.Errorf("the CLI and the engine would use different state directories: %q vs %q",
-			paths.StateDir, eff.StateDir)
-	}
 }

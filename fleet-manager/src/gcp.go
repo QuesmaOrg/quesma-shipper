@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -110,6 +111,23 @@ func (s *gcsStore) List(ctx context.Context, prefix string) ([]ObjectInfo, error
 	}
 }
 
+func (s *gcsStore) ListPrefixes(ctx context.Context, prefix, delimiter string) ([]string, error) {
+	it := s.bucket.Objects(ctx, &storage.Query{Prefix: prefix, Delimiter: delimiter})
+	var out []string
+	for {
+		attrs, err := it.Next()
+		if err == iterator.Done {
+			return out, nil
+		}
+		if err != nil {
+			return nil, mapGCSError(err)
+		}
+		if attrs.Prefix != "" {
+			out = append(out, attrs.Prefix)
+		}
+	}
+}
+
 func (s *gcsStore) SourceHash(ctx context.Context, key string) (string, error) {
 	attrs, err := s.bucket.Object(key).Attrs(ctx)
 	if err != nil {
@@ -130,10 +148,12 @@ func mapGCSError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if err == storage.ErrObjectNotExist {
+	// The client wraps a 404 as ErrObjectNotExist around the googleapi error, so neither compares equal.
+	if errors.Is(err, storage.ErrObjectNotExist) {
 		return ErrNotFound
 	}
-	if api, ok := err.(*googleapi.Error); ok {
+	var api *googleapi.Error
+	if errors.As(err, &api) {
 		if api.Code == http.StatusNotFound {
 			return ErrNotFound
 		}

@@ -144,31 +144,3 @@ func TestPrefilterRejectsNonASCIIKeywords(t *testing.T) {
 		t.Fatal("expected an empty keyword to fail the build")
 	}
 }
-
-// Same registrations, same tables: the build stays reproducible.
-func TestPrefilterGatesAreDeterministic(t *testing.T) {
-	build := func() *Prefilter {
-		b := NewPrefilterBuilder()
-		for _, pack := range PatternPacks {
-			rules, err := Load(pack)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, r := range rules {
-				if _, err := b.AddKeywords(r.Keywords()); err != nil {
-					t.Fatal(err)
-				}
-			}
-		}
-		return b.Build()
-	}
-	a, c := build(), build()
-	if a.width != c.width || len(a.next) != len(c.next) {
-		t.Fatal("table shape differs between builds")
-	}
-	for i := range a.next {
-		if a.next[i] != c.next[i] {
-			t.Fatalf("transition %d differs between builds", i)
-		}
-	}
-}

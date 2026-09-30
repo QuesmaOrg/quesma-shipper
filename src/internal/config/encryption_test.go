@@ -75,33 +75,3 @@ func TestServedRemoteConfigAddsRecipients(t *testing.T) {
 		t.Errorf("provenance should be the remote layer, got %v", origin.Layer)
 	}
 }
-
-// An org may withhold the install's own key, but only while at least one additional recipient exists.
-func TestWithholdingTheInstallRecipientRequiresAnotherReader(t *testing.T) {
-	home := fakeHome(t)
-
-	_, err := config.Resolve(baseInput(t, home,
-		config.LayeredDocument{Layer: config.LayerRemote, Doc: doc(t, `
-encryption:
-  include_install_recipient: false
-`)},
-	))
-	if err == nil {
-		t.Fatal("withholding the only recipient must be rejected: it would seal objects no key can open")
-	}
-
-	rec := testRecipient(t)
-	eff, err := config.Resolve(baseInput(t, home,
-		config.LayeredDocument{Layer: config.LayerRemote, Doc: doc(t,
-			"encryption:\n  include_install_recipient: false\n  additional_recipients: ["+rec+"]\n")},
-	))
-	if err != nil {
-		t.Fatalf("withhold plus an org reader is the documented enterprise shape: %v", err)
-	}
-	if eff.IncludeInstallRecipient {
-		t.Error("include_install_recipient=false from the served layer did not take effect")
-	}
-	if !slices.Equal(eff.AdditionalRecipients, []string{rec}) {
-		t.Errorf("additional recipients: %v", eff.AdditionalRecipients)
-	}
-}

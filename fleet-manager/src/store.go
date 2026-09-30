@@ -15,6 +15,7 @@ type ObjectStore interface {
 	// may mark them for lifecycle expiry rather than keeping every version forever.
 	Put(context.Context, string, []byte) error
 	List(context.Context, string) ([]ObjectInfo, error)
+	ListPrefixes(context.Context, string, string) ([]string, error)
 	VersioningEnabled(context.Context) (bool, error)
 	// SourceHash reads the stored object's source-hash metadata without its body; ErrNotFound
 	// when the key is absent, empty when the object carries none.

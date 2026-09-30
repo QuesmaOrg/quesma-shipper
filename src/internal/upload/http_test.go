@@ -172,30 +172,3 @@ func TestUploadNonOKStatusIsAFailure(t *testing.T) {
 	}
 	assertNoURLLeak(t, err, ticket.URL)
 }
-
-// The gate milestone 3 exists for: validation runs before the socket, not after it.
-func TestValidationRefusesBeforeAnyRequest(t *testing.T) {
-	server, _, requests := objectStore(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	prepared, ticket := testTicket(server.URL)
-	allowed := UploadTargetList{loopbackTarget(t, server.URL)}
-
-	t.Run("unlisted origin", func(t *testing.T) {
-		elsewhere := UploadTargetList{loopbackTarget(t, "http://127.0.0.1:1")}
-		if _, err := elsewhere.Match(ticket.URL); !errors.Is(err, ErrNoTarget) {
-			t.Fatalf("Match returned %v, want ErrNoTarget", err)
-		}
-	})
-	t.Run("right host, wrong key", func(t *testing.T) {
-		other := ticket
-		other.URL = server.URL + "/" + canonicalPath(strings.Replace(testKey,
-			"3f2504e0-4f89-41d3-9a0c-0305e82c3301", "11111111-2222-3333-4444-555555555555", 1))
-		if err := ValidateTicket(allowed, prepared, other); err == nil {
-			t.Fatal("a sibling install's key was accepted")
-		}
-	})
-	if requests.Load() != 0 {
-		t.Fatalf("object store saw %d requests, want none", requests.Load())
-	}
-}

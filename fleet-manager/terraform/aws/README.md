@@ -22,44 +22,32 @@ You need:
 
 ## 1. Authenticate and select the deployment
 
-`AWS_PROFILE` below names a profile that must already exist in `~/.aws/config`. If you have none
-for this account, make one first. With IAM Identity Center, once:
+Authenticate to AWS using the method you normally use with the AWS CLI and Terraform. Your
+credentials must be allowed to create the resources listed in [Before you begin](#before-you-begin).
+If you have not configured credentials yet, follow the
+[AWS CLI authentication guide](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-authentication.html).
+
+Set the deployment Region and a globally unique S3 bucket name:
 
 ```sh
-aws configure sso --profile acme-dev
+export AWS_REGION='your-aws-region-of-choice' # e.g. eu-central-1
+export TRAJECTORIES_BUCKET='your-aws-bucket-name' # S3 bucket names must be globally unique
 ```
 
-It asks for your organisation's access portal URL and the region Identity Center runs in, opens a
-browser, then lets you pick the account and the permission set. Answer the default client Region
-with the Region you are deploying into, which is a separate setting from the Identity Center one.
-With long-lived access keys instead, `aws configure --profile acme-dev` asks for the key, the
-secret and the Region.
-
-Set these deployment values. The S3 bucket name must be globally unique.
+If your credentials use a named AWS profile, select it too:
 
 ```sh
-export AWS_PROFILE='your-aws-profile'
-export AWS_REGION='eu-central-1'
-export TRAJECTORIES_BUCKET='globally-unique-acme-trajectories'
+export AWS_PROFILE='your-aws-profile-name'
 ```
 
-If the profile uses IAM Identity Center, authenticate before continuing. A session lasts hours,
-so this is the one command you repeat; `aws configure sso` is not:
-
-```sh
-aws sso login --profile "$AWS_PROFILE"
-```
-
-Terraform uses the standard AWS credential chain. Confirm
-the selected account and Region:
+Check which AWS account your current credentials access:
 
 ```sh
 aws sts get-caller-identity
-aws configure get region --profile "$AWS_PROFILE"
 ```
 
-If the second command is empty or differs from `AWS_REGION`, Terraform still uses
-the explicit `region` value below.
+Confirm that the account shown is the one where you intend to deploy. The Terraform command below
+receives `$AWS_REGION` explicitly.
 
 ## 2. Deploy
 
@@ -67,13 +55,10 @@ the explicit `region` value below.
 terraform init
 terraform apply \
   -var="region=$AWS_REGION" \
-  -var="bucket=$TRAJECTORIES_BUCKET" \
-  -var="image_uri=$REGISTRY/fleet-manager@sha256:…"     # your image, by digest
+  -var="bucket=$TRAJECTORIES_BUCKET"
 ```
 
-Build and push the image first, as in
-[Build and push your image](../../../README.md#1-build-and-push-your-image). Without `image_uri`
-the service runs `docker.io/quesma/fleet-manager:latest`, a moving tag Quesma publishes.
+The service uses Quesma's published `docker.io/quesma/fleet-manager:latest` image by default.
 
 `tofu` works in place of `terraform` throughout. The committed `.terraform.lock.hcl` pins the
 providers as OpenTofu resolves them (`registry.opentofu.org`). Terraform resolves them from
@@ -101,22 +86,27 @@ you only its printed `age1...` public recipient:
 
 ```sh
 age-keygen -o acme-security.agekey
-age-keygen -y acme-security.agekey
 ```
 
+The command saves the private identity to `acme-security.agekey` and prints its public recipient.
 Never place a private identity in this repository, Terraform variables, or Terraform state.
 
-Retrieve the sensitive administrator credential explicitly, open the administration
-URL, and paste the credential into the login form:
+1. Retrieve the sensitive administrator credential:
 
-```sh
-terraform output -raw admin_url
-terraform output -raw admin_credential
-```
+   ```sh
+   terraform output -raw admin_credential
+   ```
 
-Create an organization with an immutable lowercase slug, a display name, and at least two
-independently held public recipients. The optional authored YAML field controls that
-organization's collection settings. Use the selector to create or switch organizations.
+2. Get the administration URL and open it in a browser:
+
+   ```sh
+   terraform output -raw admin_url
+   ```
+
+3. Paste the credential into the login form and sign in. Create an organization with an immutable
+   lowercase slug, a display name, and at least two independently held public recipients. The
+   optional authored YAML field controls that organization's collection settings. Use the selector
+   to create or switch organizations.
 
 ## 4. Install and enroll the first shipper
 

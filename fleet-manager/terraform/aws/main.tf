@@ -156,13 +156,13 @@ resource "aws_iam_role_policy" "objects" {
       },
       {
         # S3 answers a read of an absent object with 403 rather than 404 unless the caller may list
-        # that key, and naming an install starts by reading a name that is not there yet. The prefix
-        # is the one object name, so the listing reveals nothing about the payloads beside it.
-        Sid       = "InstallNamesAbsence"
+        # that key: an install not yet named, and an object the deduplication probe has not seen,
+        # must both read as absent.
+        Sid       = "InstallAbsence"
         Effect    = "Allow"
         Action    = "s3:ListBucket"
         Resource  = aws_s3_bucket.fleet.arn
-        Condition = { StringLike = { "s3:prefix" = "${local.data_prefix}*/tags.json" } }
+        Condition = { StringLike = { "s3:prefix" = "${local.data_prefix}*" } }
       },
       {
         Sid      = "TrajectoryWriteAndTagOnly"
@@ -171,12 +171,12 @@ resource "aws_iam_role_policy" "objects" {
         Resource = "${aws_s3_bucket.fleet.arn}/${local.data_prefix}*"
       },
       {
-        # One object name, never the prefix: names are read back from each install's own root, and
-        # a grant over that prefix would be read access to every sealed payload in the bucket.
-        Sid      = "InstallNamesRead"
+        # Install names, and the source-hash the deduplication probe HEADs. S3 authorizes HEAD as
+        # GetObject, so the runtime can fetch every sealed payload; it holds no age identity to open one.
+        Sid      = "InstallRead"
         Effect   = "Allow"
         Action   = "s3:GetObject"
-        Resource = "${aws_s3_bucket.fleet.arn}/${local.data_prefix}*/tags.json"
+        Resource = "${aws_s3_bucket.fleet.arn}/${local.data_prefix}*"
       },
       {
         Sid      = "VerifyBucketVersioning"

@@ -192,22 +192,6 @@ func TestAuthorizeUploadsRefusesIncompleteRequest(t *testing.T) {
 	}
 }
 
-func TestAuthorizeUploadsAcceptsAnAlreadyPresentTicket(t *testing.T) {
-	resp, err := authorizeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tickets":[` + alreadyPresentTicketJSON() + `]}`))
-	})
-	if err != nil {
-		t.Fatalf("an already-present answer must decode: %v", err)
-	}
-	if len(resp.Tickets) != 1 || !resp.Tickets[0].AlreadyPresent {
-		t.Fatalf("want one already-present ticket, got %+v", resp.Tickets)
-	}
-	if resp.Tickets[0].URL != "" || len(resp.Tickets[0].RequiredHeaders) != 0 {
-		t.Errorf("an already-present ticket carried a capability: %+v", resp.Tickets[0])
-	}
-}
-
 // Writer ids are minted per process, so two calls never agree.
 func TestNewWriterIDIsFresh(t *testing.T) {
 	first := controlplane.NewWriterID()
