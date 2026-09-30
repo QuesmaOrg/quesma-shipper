@@ -91,17 +91,22 @@ age-keygen -o acme-security.agekey
 The command saves the private identity to `acme-security.agekey` and prints its public recipient.
 Never place a private identity in this repository, Terraform variables, or Terraform state.
 
-Retrieve the sensitive administrator credential explicitly, open the administration
-URL, and paste the credential into the login form:
+1. Retrieve the sensitive administrator credential:
 
-```sh
-terraform output -raw admin_url
-terraform output -raw admin_credential
-```
+   ```sh
+   terraform output -raw admin_credential
+   ```
 
-Create an organization with an immutable lowercase slug, a display name, and at least two
-independently held public recipients. The optional authored YAML field controls that
-organization's collection settings. Use the selector to create or switch organizations.
+2. Get the administration URL and open it in a browser:
+
+   ```sh
+   terraform output -raw admin_url
+   ```
+
+3. Paste the credential into the login form and sign in. Create an organization with an immutable
+   lowercase slug, a display name, and at least two independently held public recipients. The
+   optional authored YAML field controls that organization's collection settings. Use the selector
+   to create or switch organizations.
 
 ## 4. Install and enroll the first shipper
 
