@@ -13,7 +13,7 @@ make no third-party requests.
 
 To deploy it in your own cloud, follow [Run Fleet Manager](../README.md#run-fleet-manager) in the
 repository README, which is one script over the templates under [terraform/](terraform/); for
-everything on one machine, [On one machine](../README.md#on-one-machine). Once it runs,
+everything on a laptop, [On one machine](#on-one-machine) below. Once it runs,
 [OPERATIONS.md](OPERATIONS.md) covers operating it. This README covers what the service does and
 how to work on it.
 
@@ -81,6 +81,68 @@ reach, which makes it the one that can prove an upload end to end.
 | `DEV_BUCKET` | `trajectories` | required against real AWS |
 | `DEV_PORT` | `8099` | |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `localadmin` / `localadmin-secret` | ignored against real AWS |
+
+## On one machine
+
+MinIO, Fleet Manager and a shipper on a single machine, built from this repository, for evaluating
+the system, developing against it, or demonstrating it. Nothing connects to a cloud provider. You
+need Docker (for MinIO), Go 1.27 or newer, the AWS CLI, `age` and `age-keygen`, `openssl` and
+`curl`, on macOS or Linux.
+
+```sh
+git clone https://github.com/QuesmaOrg/quesma-shipper
+cd quesma-shipper
+make -C fleet-manager run
+```
+
+This is [Run it](#run-it) above: a MinIO container named `fleet-minio` on `127.0.0.1:9000`, the
+`trajectories` bucket with versioning on, an administrator credential, and Fleet Manager on port
+8099 in the foreground, printing the credential and the admin UI address. It listens on every
+interface over plain HTTP, so use a trusted network. Leave it running and continue in a second
+terminal. Create the organization and an invite as in
+[Run Fleet Manager](../README.md#run-fleet-manager), steps 1, 2, 4 and 5.
+
+**Pin the upload target before enrolling.** The local MinIO is plain HTTP and addressed path-style,
+and the shipper refuses an upload ticket that is not HTTPS unless told otherwise, in its user
+configuration, `~/.config/trajectory-shipper/config.yaml`:
+
+```yaml
+upload_targets:
+  - origin: http://127.0.0.1:9000
+    addressing: path-style
+    path_prefix: /trajectories
+    allow_loopback_http: true
+```
+
+Then build the shipper, install your build with its background service, and enroll, in one
+command; `--from` uses your binary instead of downloading a release, on Linux and on macOS:
+
+```sh
+make build
+sh src/packaging/linux/install.sh --from bin/quesma-shipper fmi2.… --server http://127.0.0.1:8099
+~/.local/bin/quesma-shipper doctor
+```
+
+`doctor` confirms enrollment, not an upload. The service ships on start and then every 15 minutes;
+list what it uploaded with the local store's credentials, then open one object with a custodian's
+identity:
+
+```sh
+export AWS_ACCESS_KEY_ID=localadmin AWS_SECRET_ACCESS_KEY=localadmin-secret AWS_REGION=us-east-1
+aws s3 ls --recursive --endpoint-url http://127.0.0.1:9000 s3://trajectories/v1/organization=acme/install=
+aws s3 cp --endpoint-url http://127.0.0.1:9000 "s3://trajectories/<key from the listing>" object.age
+age -d -i acme-security.agekey object.age | zstd -d | tar -t     # manifest.json, payload
+```
+
+When you are done, remove the shipper and its service first, so it stops trying to upload, then
+the pin, then the control plane and its storage:
+
+```sh
+~/.local/bin/quesma-shipper uninstall --purge     # --purge also deletes enrollment and local state
+rm ~/.config/trajectory-shipper/config.yaml        # the pin, if nothing else is in the file
+docker rm -f fleet-minio                           # after Ctrl-C in the Fleet Manager terminal
+rm -rf fleet-manager/data/
+```
 
 ## Executable mode
 

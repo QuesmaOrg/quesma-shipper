@@ -3,6 +3,45 @@
 What runs on each developer machine: how it works, what it collects, and how to use and configure
 it. Installing and enrolling it is in the repository [README](../README.md#install-the-shipper).
 
+## Installing
+
+The commands are in the repository [README](../README.md#install-the-shipper). What each one does:
+
+**macOS.** The Homebrew cask installs the command on your Homebrew `PATH` and starts a per-user
+background service, which waits for enrollment. It supports macOS 13 or newer on Apple Silicon and
+Intel, without administrator rights. `brew uninstall --cask quesmaorg/tap/quesma-shipper` removes
+it and keeps enrollment and upload history; add `--zap` to delete local state too. The signed
+`.pkg` is the same thing without Homebrew: **Install for me only** puts `Quesma Shipper.app` in
+`~/Applications` and registers a launchd agent; **Install for all users** needs administrator
+authorization and is updated and removed by an administrator. Before switching between the two,
+uninstall the previous installation without purging local state. For Jamf, Kandji and other MDM
+deployment, use the same package and a `com.quesma.shipper` managed-preferences profile: see the
+[macOS MDM guide](packaging/macos/mdm/README.md).
+
+**Linux.** The script downloads a hash-pinned bootstrap binary into `~/.local/bin` and installs a
+systemd user service. Run it again to upgrade; enrollment is kept. `--no-service` skips the
+service; `--from PATH` installs a local build instead of a release. Do not run it as root. The
+released binaries are also available directly for
+[AMD64](https://updates.quesma.dev/download/quesma-shipper-linux-amd64) and
+[ARM64](https://updates.quesma.dev/download/quesma-shipper-linux-arm64).
+
+**Windows.** Run the setup as your normal user. It installs under `%LOCALAPPDATA%`, adds the
+command to your user `PATH`, and registers a scheduled task that starts immediately and at login,
+without administrator rights. Re-running setup repairs that integration without changing
+enrollment. For Intune, see the [Intune guide](packaging/windows/intune/README.md): user-context
+installation and unattended enrollment, a platform-script route, and a Win32 app package route.
+Release signing is temporarily disabled while the publisher identity is validated, so Microsoft
+Defender SmartScreen may warn about the download, and devices whose application-control policy
+requires a trusted publisher may block it. The raw `quesma-shipper-windows-<arch>.exe` files remain
+available for portable use and are what the self-updater installs; a portable copy has no
+scheduled task or uninstaller.
+
+**Updates.** Released builds keep themselves current from Quesma's signed
+[TUF](https://theupdateframework.io/) repository; `quesma-shipper update` updates at once. The
+public repository and the stable download endpoints are described in
+[RELEASE_DOWNLOADS.md](../RELEASE_DOWNLOADS.md). `quesma-shipper uninstall` removes the service
+and program on any platform and keeps local state; `--purge` deletes enrollment and state too.
+
 ## How it works
 
 ```
@@ -123,7 +162,7 @@ separate from the user-facing Quesma Shipper package and command.
 
 **Upload targets.** The shipper refuses an upload ticket that is not HTTPS, so a store such as a
 local MinIO needs an `upload_targets` entry in the user file, as in
-[On one machine](../README.md#on-one-machine). The pin lives there and only there: a presigned
+[On one machine](../fleet-manager/README.md#on-one-machine). The pin lives there and only there: a presigned
 ticket authorises itself, so a served document that could write the pin could also loosen it.
 
 Defaults: a 15-minute schedule, a maximum of 512 files per run, a 5-minute drain deadline.
