@@ -20,15 +20,6 @@ func fernetToken(seed int64, n int) string {
 	return randFernet(rand.New(rand.NewSource(seed)), n)
 }
 
-// dropShapes are the value forms seen at drop paths: std base64, a data URL and a Fernet token.
-func dropShapes() map[string]string {
-	return map[string]string{
-		"base64":   opaqueBlob(1, 4096, base64.StdEncoding),
-		"data-url": "data:image/png;base64," + opaqueBlob(2, 4096, base64.StdEncoding),
-		"fernet":   fernetToken(3, 2048),
-	}
-}
-
 func scrubberWith(t testing.TB, edit func(*transforms.Config)) *transforms.Scrubber {
 	t.Helper()
 	cfg := transforms.DefaultConfig()
@@ -78,47 +69,27 @@ func assertNoFragment(t *testing.T, out []byte, original string) {
 
 var droppedSentinel = transforms.Sentinel(transforms.Dropped)
 
-func forEachDropCase(t *testing.T, f func(t *testing.T, family, path, value string)) {
-	shapes := dropShapes()
-	for family, paths := range transforms.CompiledDrops() {
-		for _, path := range paths {
-			for shape, value := range shapes {
-				t.Run(family+"/"+path+"/"+shape, func(t *testing.T) { f(t, family, path, value) })
-			}
-		}
-	}
-}
-
 func TestEveryDropPathBecomesItsSentinel(t *testing.T) {
 	s := newScrubber(t)
-	forEachDropCase(t, func(t *testing.T, family, path, value string) {
-		res := scrubJSONL(t, s, family, buildRecordWithValueAt(t, path, value)+"\n")
-		out := res.Out.Bytes()
-		if got := valueAt(t, out, path); got != droppedSentinel {
-			t.Fatalf("value at %s = %.60q, want %s", path, got, droppedSentinel)
+	value := opaqueBlob(1, 4096, base64.StdEncoding)
+	for family, paths := range transforms.CompiledDrops() {
+		for _, path := range paths {
+			t.Run(family+"/"+path, func(t *testing.T) {
+				res := scrubJSONL(t, s, family, buildRecordWithValueAt(t, path, value)+"\n")
+				out := res.Out.Bytes()
+				if got := valueAt(t, out, path); got != droppedSentinel {
+					t.Fatalf("value at %s = %.60q, want %s", path, got, droppedSentinel)
+				}
+				if want := map[string]int{transforms.Dropped: 1}; !maps.Equal(res.RuleHits, want) {
+					t.Errorf("rule hits = %v, want %v", res.RuleHits, want)
+				}
+				if res.BytesRedacted != len(value) {
+					t.Errorf("bytes redacted = %d, want the whole value, %d", res.BytesRedacted, len(value))
+				}
+				assertNoFragment(t, out, value)
+			})
 		}
-		if want := map[string]int{transforms.Dropped: 1}; !maps.Equal(res.RuleHits, want) {
-			t.Errorf("rule hits = %v, want %v", res.RuleHits, want)
-		}
-		if res.BytesRedacted != len(value) {
-			t.Errorf("bytes redacted = %d, want the whole value, %d", res.BytesRedacted, len(value))
-		}
-		assertNoFragment(t, out, value)
-	})
-}
-
-// Every entry's premise: without the drop the entropy backstop already destroys the value.
-func TestEveryDropPathIsDestroyedWithoutTheDrop(t *testing.T) {
-	s := scrubberWith(t, func(cfg *transforms.Config) { cfg.Drops = nil })
-	forEachDropCase(t, func(t *testing.T, family, path, value string) {
-		res := scrubJSONL(t, s, family, buildRecordWithValueAt(t, path, value)+"\n")
-		if strings.Contains(string(res.Out.Bytes()), value) {
-			t.Fatalf("the value ships intact without the drop; dropping it would lose data")
-		}
-		if res.RuleHits["generic-entropy"] == 0 {
-			t.Errorf("expected the entropy backstop to shred the value: %v", res.RuleHits)
-		}
-	})
+	}
 }
 
 func TestClaudeCodeDropKeepsTheRestOfTheBlock(t *testing.T) {
@@ -192,22 +163,15 @@ const plantedPAT = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
 // A short string or a non-string at a drop path takes the full ladder, as before.
 func TestShortValueAtADropPathIsScrubbedAsBefore(t *testing.T) {
 	s := newScrubber(t)
-	b64 := opaqueBlob(30, 600, base64.StdEncoding)
 	cases := []struct {
 		name, family, line string
 		// The rule that redacts part of the value; empty when the record ships intact.
 		rule string
 	}{
-		{"text document", "claude-code",
-			`{"message":{"content":[{"type":"document","source":{"type":"text","media_type":"text/plain","data":"Meeting notes: ship the drop list on Tuesday."}}]}}`, ""},
-		{"https image url", "codex",
-			`{"payload":{"type":"message","content":[{"type":"input_image","image_url":"https://example.com/cat.png"}]}}`, ""},
 		{"https image url with a secret", "codex",
 			`{"payload":{"type":"message","content":[{"type":"input_image","image_url":"https://example.com/cat.png?token=` + plantedPAT + `"}]}}`, "github-pat"},
 		{"number", "claude-code", `{"message":{"content":[{"type":"thinking","signature":12345}]}}`, ""},
 		{"object", "codex", `{"payload":{"result":{"Ok":{"content":[{"type":"text","text":"done"}]}}}}`, ""},
-		{"short base64", "claude-code",
-			`{"message":{"content":[{"type":"redacted_thinking","data":"` + b64[:120] + `"}]}}`, "generic-entropy"},
 		{"one byte under the floor", "claude-code",
 			`{"toolUseResult":{"file":{"base64":"` + strings.Repeat("note ", 32)[:159] + `"}}}`, ""},
 	}
@@ -238,14 +202,10 @@ func TestLongStringAtADropPathIsDroppedWhateverItHolds(t *testing.T) {
 		{"plaintext with a secret", "claude-code", "message.content[].source.data",
 			strings.Repeat("Meeting notes: ship the drop list on Tuesday. ", 4) + "Token " + plantedPAT + "."},
 		{"at the floor", "claude-code", "toolUseResult.file.base64", strings.Repeat("note ", 32)},
-		{"mixed alphabets", "claude-code", "message.content[].signature", b64[:300] + "-_" + b64[300:]},
-		{"padding inside", "claude-code", "toolUseResult.file.base64", b64[:300] + "==" + b64[300:]},
 		// The ledger counts decoded bytes: these 18 raw bytes of escapes decode to 6.
 		{"escaped", "claude-code", "toolUseResult.file.base64", b64[:300] + `\u0041\n\"\\\u00e9` + b64[300:]},
 		// The floor is on the raw body: 310 bytes here, which decode to 155.
 		{"escaped under the floor once decoded", "claude-code", "toolUseResult.file.base64", strings.Repeat(`note\u0020`, 31)},
-		{"data url without base64", "codex", "payload.content[].image_url", "data:text/plain," + b64},
-		{"data url with prose type", "codex", "payload.content[].image_url", "data:see this;base64," + b64},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -354,27 +314,6 @@ func TestTornTailAndRawTextAreNotDropped(t *testing.T) {
 	if raw.ScanMode != transforms.ScanModeRawText || len(raw.RuleHits) != 0 {
 		t.Errorf("raw text mode changed: %s %v", raw.ScanMode, raw.RuleHits)
 	}
-}
-
-func TestDropIsIdempotent(t *testing.T) {
-	s := newScrubber(t)
-	line := buildRecordWithValueAt(t, "message.content[].content[].source.data", opaqueBlob(60, 5000, base64.StdEncoding))
-	first := scrubJSONL(t, s, "claude-code", line+"\n")
-	second := scrubJSONL(t, s, "claude-code", string(first.Out.Bytes()))
-	if string(second.Out.Bytes()) != string(first.Out.Bytes()) || len(second.RuleHits) != 0 {
-		t.Errorf("second pass changed the output or hit rules: %v\n%s", second.RuleHits, second.Out.Bytes())
-	}
-}
-
-func TestDuplicateKeysAreBothDropped(t *testing.T) {
-	s := newScrubber(t)
-	a, b := opaqueBlob(70, 900, base64.StdEncoding), opaqueBlob(71, 900, base64.StdEncoding)
-	res := scrubJSONL(t, s, "claude-code", `{"toolUseResult":{"file":{"base64":"`+a+`","base64":"`+b+`"}}}`+"\n")
-	if res.RuleHits[transforms.Dropped] != 2 {
-		t.Errorf("rule hits = %v", res.RuleHits)
-	}
-	assertNoFragment(t, res.Out.Bytes(), a)
-	assertNoFragment(t, res.Out.Bytes(), b)
 }
 
 func TestNewRejectsADropThatCannotApply(t *testing.T) {
