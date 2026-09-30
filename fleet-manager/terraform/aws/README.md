@@ -22,44 +22,32 @@ You need:
 
 ## 1. Authenticate and select the deployment
 
-Set these deployment values first.
+Authenticate to AWS using the method you normally use with the AWS CLI and Terraform. Your
+credentials must be allowed to create the resources listed in [Before you begin](#before-you-begin).
+If you have not configured credentials yet, follow the
+[AWS CLI authentication guide](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-authentication.html).
+
+Set the deployment Region and a globally unique S3 bucket name:
 
 ```sh
-export AWS_PROFILE='your-aws-profile-name'
 export AWS_REGION='your-aws-region-of-choice' # e.g. eu-central-1
 export TRAJECTORIES_BUCKET='your-aws-bucket-name' # S3 bucket names must be globally unique
 ```
 
-`AWS_PROFILE` names a profile in `~/.aws/config`. If you have none for this account, create one.
-With IAM Identity Center, run once:
+If your credentials use a named AWS profile, select it too:
 
 ```sh
-aws configure sso --profile "$AWS_PROFILE"
+export AWS_PROFILE='your-aws-profile-name'
 ```
 
-It asks for your organisation's access portal URL and the region Identity Center runs in, opens a
-browser, then lets you pick the account and the permission set. Answer the default client Region
-with `$AWS_REGION`, which is a separate setting from the Identity Center Region. With long-lived
-access keys instead, `aws configure --profile "$AWS_PROFILE"` asks for the key, the secret and the
-Region.
-
-If the profile uses IAM Identity Center, authenticate before continuing. A session lasts hours,
-so this is the one command you repeat; `aws configure sso` is not:
-
-```sh
-aws sso login --profile "$AWS_PROFILE"
-```
-
-Terraform uses the standard AWS credential chain. Confirm
-the selected account and Region:
+Check which AWS account your current credentials access:
 
 ```sh
 aws sts get-caller-identity
-aws configure get region --profile "$AWS_PROFILE"
 ```
 
-If the second command is empty or differs from `AWS_REGION`, Terraform still uses
-the explicit `region` value below.
+Confirm that the account shown is the one where you intend to deploy. The Terraform command below
+receives `$AWS_REGION` explicitly.
 
 ## 2. Deploy
 
