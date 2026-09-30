@@ -157,7 +157,7 @@ func (w *jsonWalker) walkString(depth int, key, path string) error {
 	if err != nil {
 		return err
 	}
-	// The tests are inline so a short value, or any value in a family without drops, pays no call.
+	// The floor is tested here only, inline, so a short value or a family without drops pays no call.
 	if len(raw) >= dropMinLength+2 && len(w.drops) > 0 && w.drop(raw, rawStart, path) {
 		return nil
 	}
@@ -192,17 +192,13 @@ func (w *jsonWalker) walkString(depth int, key, path string) error {
 	return nil
 }
 
-// drop works on the raw token so a multi-megabyte image is neither validated nor copied.
+// drop counts decoded bytes, as every other redaction does, without copying a multi-megabyte image.
 func (w *jsonWalker) drop(raw []byte, rawStart int, path string) bool {
 	if !w.drops[FieldPath(path)] {
 		return false
 	}
-	body := raw[1 : len(raw)-1]
-	if !droppable(body) {
-		return false
-	}
 	w.replace(raw, rawStart, droppedSentinel)
-	w.redacted += len(body)
+	w.redacted += len(w.decoded(raw))
 	w.hits[Dropped]++
 	return true
 }
@@ -288,12 +284,17 @@ func (w *jsonWalker) readRaw() (raw []byte, rawStart int, err error) {
 }
 
 func (w *jsonWalker) unquote(raw []byte) string {
+	return string(w.decoded(raw))
+}
+
+// decoded borrows the raw body when nothing in it needs decoding.
+func (w *jsonWalker) decoded(raw []byte) []byte {
 	body := raw[1 : len(raw)-1]
 	if bytes.IndexByte(body, '\\') < 0 && utf8.Valid(body) {
-		return string(body)
+		return body
 	}
 	w.unquoted, _ = jsontext.AppendUnquote(w.unquoted[:0], raw)
-	return string(w.unquoted)
+	return w.unquoted
 }
 
 func joinFieldPath(parent, child string) string {

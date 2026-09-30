@@ -187,32 +187,29 @@ func TestCodexDropKeepsTheRestOfTheItem(t *testing.T) {
 	}
 }
 
-// A value at a drop path that is not an opaque blob takes the full ladder, as before.
-func TestDropPathValueThatIsNotABlobIsScrubbedAsBefore(t *testing.T) {
+const plantedPAT = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+
+// A short string or a non-string at a drop path takes the full ladder, as before.
+func TestShortValueAtADropPathIsScrubbedAsBefore(t *testing.T) {
 	s := newScrubber(t)
 	b64 := opaqueBlob(30, 600, base64.StdEncoding)
 	cases := []struct {
 		name, family, line string
-		intact             bool
+		// The rule that redacts part of the value; empty when the record ships intact.
+		rule string
 	}{
 		{"text document", "claude-code",
-			`{"message":{"content":[{"type":"document","source":{"type":"text","media_type":"text/plain","data":"Meeting notes: ship the drop list on Tuesday."}}]}}`, true},
+			`{"message":{"content":[{"type":"document","source":{"type":"text","media_type":"text/plain","data":"Meeting notes: ship the drop list on Tuesday."}}]}}`, ""},
 		{"https image url", "codex",
-			`{"payload":{"type":"message","content":[{"type":"input_image","image_url":"https://example.com/cat.png"}]}}`, true},
-		{"number", "claude-code", `{"message":{"content":[{"type":"thinking","signature":12345}]}}`, true},
-		{"object", "codex", `{"payload":{"result":{"Ok":{"content":[{"type":"text","text":"done"}]}}}}`, true},
+			`{"payload":{"type":"message","content":[{"type":"input_image","image_url":"https://example.com/cat.png"}]}}`, ""},
+		{"https image url with a secret", "codex",
+			`{"payload":{"type":"message","content":[{"type":"input_image","image_url":"https://example.com/cat.png?token=` + plantedPAT + `"}]}}`, "github-pat"},
+		{"number", "claude-code", `{"message":{"content":[{"type":"thinking","signature":12345}]}}`, ""},
+		{"object", "codex", `{"payload":{"result":{"Ok":{"content":[{"type":"text","text":"done"}]}}}}`, ""},
 		{"short base64", "claude-code",
-			`{"message":{"content":[{"type":"redacted_thinking","data":"` + b64[:120] + `"}]}}`, false},
-		{"mixed alphabets", "claude-code",
-			`{"message":{"content":[{"type":"thinking","signature":"` + b64[:300] + "-_" + b64[300:] + `"}]}}`, false},
-		{"padding inside", "claude-code",
-			`{"toolUseResult":{"file":{"base64":"` + b64[:300] + "==" + b64[300:] + `"}}}`, false},
-		{"escaped", "claude-code",
-			`{"toolUseResult":{"file":{"base64":"` + b64[:300] + `\u0041` + b64[300:] + `"}}}`, false},
-		{"data url without base64", "codex",
-			`{"payload":{"type":"message","content":[{"type":"input_image","image_url":"data:text/plain,` + b64 + `"}]}}`, false},
-		{"data url with prose type", "codex",
-			`{"payload":{"type":"message","content":[{"type":"input_image","image_url":"data:see this;base64,` + b64 + `"}]}}`, false},
+			`{"message":{"content":[{"type":"redacted_thinking","data":"` + b64[:120] + `"}]}}`, "generic-entropy"},
+		{"one byte under the floor", "claude-code",
+			`{"toolUseResult":{"file":{"base64":"` + strings.Repeat("note ", 32)[:159] + `"}}}`, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -220,9 +217,55 @@ func TestDropPathValueThatIsNotABlobIsScrubbedAsBefore(t *testing.T) {
 			if res.RuleHits[transforms.Dropped] != 0 {
 				t.Fatalf("dropped: %v\n%s", res.RuleHits, res.Out.Bytes())
 			}
-			if intact := string(res.Out.Bytes()) == tc.line+"\n"; intact != tc.intact {
-				t.Errorf("intact = %v, want %v:\n%s", intact, tc.intact, res.Out.Bytes())
+			if intact := string(res.Out.Bytes()) == tc.line+"\n"; intact != (tc.rule == "") {
+				t.Errorf("intact = %v, want %v:\n%s", intact, tc.rule == "", res.Out.Bytes())
 			}
+			if tc.rule != "" && res.RuleHits[tc.rule] == 0 {
+				t.Errorf("expected %s to scrub the value: %v", tc.rule, res.RuleHits)
+			}
+			if strings.Contains(string(res.Out.Bytes()), plantedPAT) {
+				t.Error("the secret shipped")
+			}
+		})
+	}
+}
+
+// A string from the floor up is dropped whole whatever it holds, so a secret in it never meets a rule.
+func TestLongStringAtADropPathIsDroppedWhateverItHolds(t *testing.T) {
+	s := newScrubber(t)
+	b64 := opaqueBlob(30, 600, base64.StdEncoding)
+	cases := []struct{ name, family, path, body string }{
+		{"plaintext with a secret", "claude-code", "message.content[].source.data",
+			strings.Repeat("Meeting notes: ship the drop list on Tuesday. ", 4) + "Token " + plantedPAT + "."},
+		{"at the floor", "claude-code", "toolUseResult.file.base64", strings.Repeat("note ", 32)},
+		{"mixed alphabets", "claude-code", "message.content[].signature", b64[:300] + "-_" + b64[300:]},
+		{"padding inside", "claude-code", "toolUseResult.file.base64", b64[:300] + "==" + b64[300:]},
+		// The ledger counts decoded bytes: these 18 raw bytes of escapes decode to 6.
+		{"escaped", "claude-code", "toolUseResult.file.base64", b64[:300] + `\u0041\n\"\\\u00e9` + b64[300:]},
+		// The floor is on the raw body: 310 bytes here, which decode to 155.
+		{"escaped under the floor once decoded", "claude-code", "toolUseResult.file.base64", strings.Repeat(`note\u0020`, 31)},
+		{"data url without base64", "codex", "payload.content[].image_url", "data:text/plain," + b64},
+		{"data url with prose type", "codex", "payload.content[].image_url", "data:see this;base64," + b64},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			line := strings.Replace(buildRecordWithValueAt(t, tc.path, "BODY"), "BODY", tc.body, 1)
+			value, ok := valueAt(t, []byte(line), tc.path).(string)
+			if !ok {
+				t.Fatalf("no string at %s in %s", tc.path, line)
+			}
+			res := scrubJSONL(t, s, tc.family, line+"\n")
+			out := res.Out.Bytes()
+			if got := valueAt(t, out, tc.path); got != droppedSentinel {
+				t.Fatalf("value at %s = %.60q, want %s", tc.path, got, droppedSentinel)
+			}
+			if want := map[string]int{transforms.Dropped: 1}; !maps.Equal(res.RuleHits, want) {
+				t.Errorf("rule hits = %v, want %v", res.RuleHits, want)
+			}
+			if res.BytesRedacted != len(value) {
+				t.Errorf("bytes redacted = %d, want the decoded value, %d", res.BytesRedacted, len(value))
+			}
+			assertNoFragment(t, out, value)
 		})
 	}
 }
