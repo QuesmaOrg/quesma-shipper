@@ -134,11 +134,9 @@ recipients**, held by separate people: two custodians is the smallest arrangemen
 of them leaving. Each custodian generates their own and hands over only the public half:
 
 ```sh
-age-keygen -o acme-security.agekey
+age-keygen -o acme-security.agekey     # the private identity -- never leaves the custodian
+age-keygen -y acme-security.agekey     # prints the age1… recipient -- this is what you collect
 ```
-
-The command saves the private identity to `acme-security.agekey` and prints its public recipient.
-Share only that recipient; the identity stays with its custodian.
 
 Whoever runs an ETL that reads the archive needs a private identity too, so in practice one
 recipient belongs to the ETL and the rest are custody copies. Files are sealed to the recipients
@@ -275,55 +273,48 @@ rm -rf fleet-manager/data/
 
 ## Run it in your own cloud
 
-Terraform creates the bucket, the scoped roles, the service and the administrator credential; the
-shippers go on developer machines as usual. The steps below are for AWS. Google Cloud follows the
-same shape with [fleet-manager/terraform/gcp](fleet-manager/terraform/gcp/README.md). Fleet
-Manager also runs on Azure (`--provider azure`, see the
-[Fleet Manager README](fleet-manager/README.md#executable-mode)), but there is no Azure template
-yet.
-
-You need Terraform 1.5 or later (or OpenTofu); the AWS CLI with a profile allowed to create S3, IAM,
-CloudWatch Logs and ECS Express Mode resources; a default VPC with two public subnets in different
-availability zones, which ECS Express Mode requires; and `age-keygen` and `curl`.
+One script creates the bucket, the scoped roles, the service and the administrator credential in
+your account, on AWS or Google Cloud, from Quesma's published image. It needs Terraform 1.5 or
+later (or OpenTofu), `curl`, and the `aws` or `gcloud` CLI signed in to the target account; no
+clone, no Go, no Docker. On AWS it also needs a default VPC with two public subnets in different
+availability zones, which ECS Express Mode requires. The shippers go on developer machines as usual.
 
 ### 1. Deploy
 
 ```sh
-git clone https://github.com/QuesmaOrg/quesma-shipper
-cd quesma-shipper/fleet-manager/terraform/aws
+curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/fleet-manager/deploy.sh
 
-export AWS_PROFILE='your-aws-profile-name'
-export AWS_REGION='your-aws-region-of-choice' # e.g. eu-central-1
-export TRAJECTORIES_BUCKET='your-aws-bucket-name' # S3 bucket names must be globally unique
-
-terraform init
-terraform apply \
-  -var="region=$AWS_REGION" \
-  -var="bucket=$TRAJECTORIES_BUCKET"
+sh deploy.sh aws --bucket globally-unique-acme-trajectories --region eu-central-1
+sh deploy.sh gcp --project acme-prod --region europe-central2
 ```
 
-Terraform uses Quesma's published `docker.io/quesma/fleet-manager:latest` image by default.
-Add `-var='default_allow_quesma_etl=false'` if decision 2 calls for it. This creates a
-private, versioned bucket; a runtime role that writes below `install=` and reads there only to name
-installs and deduplicate uploads (it can fetch ciphertext, never decrypt it); a lifecycle
-rule for superseded check-in records; a 30-day log group; and a public HTTPS service. Then:
+The script shows the plan, asks before applying, waits for the service to answer, and prints the
+service URL, the admin UI address and the administrator credential. Add `--no-quesma-etl` if
+decision 2 calls for it. Everything it makes lives in `~/.quesma/fleet-manager/<cloud>/`, including
+the Terraform state: back that directory up. Running the same command again upgrades;
+`sh deploy.sh aws output admin_credential` prints the credential again; `sh deploy.sh --help` lists
+the rest, including `--image` for an image you built yourself and `destroy`.
+
+This creates a private, versioned bucket; a runtime role that writes below `install=` and reads
+there only to name installs and deduplicate uploads (it can fetch ciphertext, never decrypt it); a
+lifecycle rule for superseded check-in records; a 30-day log group; and a public HTTPS service.
+[fleet-manager/terraform/aws/README.md](fleet-manager/terraform/aws/README.md) and
+[fleet-manager/terraform/gcp/README.md](fleet-manager/terraform/gcp/README.md) run the same
+templates by hand, for a registry of your own or Terraform state kept elsewhere.
+
+### 2. Check it
 
 ```sh
-export FLEET_MANAGER_URL="$(terraform output -raw service_url)"
-curl --fail --silent --show-error "${FLEET_MANAGER_URL%/}/healthz"     # ok
-terraform output -raw admin_url
-terraform output -raw admin_credential
+export FLEET_MANAGER_URL="$(sh deploy.sh aws output service_url)"
+curl --fail --silent --show-error "${FLEET_MANAGER_URL%/}/healthz"     # ok; /health on Google Cloud
 ```
 
-[fleet-manager/terraform/aws/README.md](fleet-manager/terraform/aws/README.md) is the full runbook
-for this step, including authenticating the AWS CLI and rotating the credential.
+### 3. The organisation
 
-### 2. The organisation
+As in [On one machine](#2-the-organisation), at the admin UI address and with the credential the
+script printed: the same recipients, the same custody check, an invite or a grant.
 
-As in [On one machine](#2-the-organisation), at `admin_url` with the credential from
-`terraform output`: the same recipients, the same custody check, an invite or a grant.
-
-### 3. The shippers
+### 4. The shippers
 
 On each developer machine, install the shipper as in [From a release](#from-a-release) and enroll
 it with the invite or grant:
@@ -336,10 +327,10 @@ No `upload_targets` pin is needed: S3 is served over HTTPS with virtual-host add
 shipper allows by default. To enroll a build from source instead, use `install.sh --from` as in
 [step 3](#3-the-shipper) with `--server "$FLEET_MANAGER_URL"`.
 
-### 4. Check that it arrived
+### 5. Check that it arrived
 
 ```sh
-aws s3 ls --recursive "s3://$TRAJECTORIES_BUCKET/v1/organization=acme/install=" | head
+aws s3 ls --recursive "s3://$(sh deploy.sh aws output bucket)/v1/organization=acme/install=" | head
 ```
 
 Then open one object with a custodian's identity, as in

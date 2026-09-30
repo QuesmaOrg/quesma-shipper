@@ -5,7 +5,7 @@
 set -eu
 
 REPO=QuesmaOrg/quesma-shipper
-REF=${QUESMA_SHIPPER_REF:-main}
+REF=${QUESMA_SHIPPER_REF:-}
 HOME_DIR=${QUESMA_FLEET_MANAGER_HOME:-$HOME/.quesma/fleet-manager}
 
 main() {
@@ -45,6 +45,7 @@ main() {
 
 	DIR=$HOME_DIR/$CLOUD
 	VARS=$DIR/terraform.tfvars.json
+	[ -n "$REF" ] || REF=$(cat "$DIR/ref" 2>/dev/null || echo main)
 	pick_terraform
 
 	case $ACTION in
@@ -188,6 +189,7 @@ fetch_template() {
 	rm -f "$DIR"/*.tf
 	cp "$src"/*.tf "$DIR"/
 	[ -f "$DIR/.terraform.lock.hcl" ] || cp "$src/.terraform.lock.hcl" "$DIR/" 2>/dev/null || true
+	echo "$REF" >"$DIR/ref"
 }
 
 wait_healthy() {
@@ -232,7 +234,7 @@ Options, remembered between runs:
   --bucket NAME           on gcp, instead of <project>-trajectories
   --no-quesma-etl         do not seal uploads to Quesma's recipient unless an organization asks
   --telemetry URL         forward shipper telemetry there for organizations that name nowhere
-  --ref REF               the template's git ref (default main); --dir DIR where state is kept
+  --ref REF               the template's git ref, main unless set once; --dir DIR where state is kept
   -y, --yes               apply without asking
 
 Needs: terraform or tofu, curl, and the aws or gcloud CLI signed in to the target account.
