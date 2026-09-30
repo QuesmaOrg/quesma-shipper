@@ -20,7 +20,11 @@ func sessionStore(t *testing.T, family string) (string, *sql.DB) {
 	if runtime.GOOS == "windows" {
 		name = "sessions # ü.db"
 	}
-	path := filepath.Join(t.TempDir(), name)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, name)
 	uriPath := filepath.ToSlash(path)
 	if !strings.HasPrefix(uriPath, "/") {
 		uriPath = "/" + uriPath

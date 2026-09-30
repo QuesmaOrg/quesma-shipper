@@ -173,7 +173,7 @@ type sessionDatabase struct {
 	root          string
 }
 
-// SQLite opens by name, so this rechecks scope before each read but cannot make validation and opening atomic.
+// The reader also verifies its native SQLite handles against an anchored path before returning records.
 func (db sessionDatabase) checkedPath(deny *List) (string, error) {
 	root, err := filepath.EvalSymlinks(db.root)
 	if err != nil {

@@ -2,7 +2,6 @@ package sqliteread
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 )
@@ -11,10 +10,10 @@ import (
 type OpenCodeSessions struct{}
 
 func (OpenCodeSessions) List(ctx context.Context, path string) ([]Session, error) {
-	return listSessions(ctx, path, `SELECT id, directory FROM session ORDER BY time_created, id LIMIT 100001`)
+	return listSessions(ctx, path, `SELECT id, directory AS cwd FROM session ORDER BY time_created, id LIMIT 100001`)
 }
 func (OpenCodeSessions) Read(ctx context.Context, path, id string, maxBytes int64) ([]byte, error) {
-	return readSession(ctx, path, "opencode", id, maxBytes, func(tx *sql.Tx, emit func(string, string) error) error {
+	return readSession(ctx, path, "opencode", id, maxBytes, func(tx *sessionConnection, emit func(string, string) error) error {
 		err := emit("session", `SELECT id, parent_id, directory AS cwd, title, version, time_created, time_updated FROM session WHERE id = ?`)
 		if err == nil {
 			err = emit("message", `SELECT id, time_created, time_updated, data FROM message WHERE session_id = ? ORDER BY time_created,id`)

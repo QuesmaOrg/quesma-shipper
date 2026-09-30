@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"path/filepath"
 	"strings"
 )
 
@@ -17,10 +15,6 @@ const DefaultSessionMaxBytes = 64 << 20
 
 // Session stores only routing metadata; transcript bytes are loaded one session at a time.
 type Session struct{ ID, CWD string }
-
-func openSessions(path string) (*sql.DB, error) {
-	return sql.Open("sqlite", sessionFileURI(filepath.ToSlash(path))+"?mode=ro&_pragma=query_only(1)&_pragma=busy_timeout(2000)")
-}
 
 // SQLite requires drive letters in the URI path, not the authority (file:///C:/...).
 func sessionFileURI(slashPath string) string {
@@ -32,74 +26,42 @@ func sessionFileURI(slashPath string) string {
 
 // listSessions bounds routing metadata independently of transcript loading.
 func listSessions(ctx context.Context, path, query string) ([]Session, error) {
-	db, err := openSessions(path)
+	db, err := openSessions(ctx, path)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
-	rows, err := db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	var out []Session
-	for rows.Next() {
-		var s Session
-		if err := rows.Scan(&s.ID, &s.CWD); err != nil {
-			return nil, err
+	err = db.query(ctx, query, nil, func(row map[string]any) error {
+		id, okID := row["id"].(string)
+		cwd, okCWD := row["cwd"].(string)
+		if !okID || !okCWD {
+			return fmt.Errorf("invalid session routing metadata")
 		}
-		out = append(out, s)
-	}
-	if len(out) > 100000 {
-		return nil, fmt.Errorf("session discovery exceeds 100000 sessions")
-	}
-	return out, rows.Err()
+		out = append(out, Session{ID: id, CWD: cwd})
+		if len(out) > 100000 {
+			return fmt.Errorf("session discovery exceeds 100000 sessions")
+		}
+		return nil
+	})
+	return out, err
 }
 
 // readSession uses one read transaction for metadata, messages and usage, including committed WAL data.
 // Only declared columns ship; new database columns cannot silently widen collection.
-func readSession(ctx context.Context, path, family, id string, maxBytes int64, collect func(*sql.Tx, func(string, string) error) error, decorate func(string, map[string]any) error) ([]byte, error) {
-	db, err := openSessions(path)
+func readSession(ctx context.Context, path, family, id string, maxBytes int64, collect func(*sessionConnection, func(string, string) error) error, decorate func(string, map[string]any) error) ([]byte, error) {
+	db, err := openSessions(ctx, path)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
 	if maxBytes <= 0 {
 		maxBytes = DefaultSessionMaxBytes
 	}
 	var out bytes.Buffer
 	emit := func(kind, query string) error {
-		rows, err := tx.QueryContext(ctx, query, id)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		cols, err := rows.Columns()
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			vals := make([]any, len(cols))
-			ptrs := make([]any, len(cols))
-			for i := range vals {
-				ptrs[i] = &vals[i]
-			}
-			if err := rows.Scan(ptrs...); err != nil {
-				return err
-			}
-			record := map[string]any{"type": kind, "session_id": id, "session_key": sessionKey(family, id), "format_version": 1}
-			for i, k := range cols {
-				v := vals[i]
-				if b, ok := v.([]byte); ok {
-					v = string(b)
-				}
-				record[k] = v
-			}
+		return db.query(ctx, query, []string{id}, func(record map[string]any) error {
+			record["type"], record["session_id"], record["session_key"], record["format_version"] = kind, id, sessionKey(family, id), 1
 			if event, ok := record["id"]; ok {
 				record["event_key"] = sessionKey(family+":"+id, fmt.Sprint(event))
 			}
@@ -118,18 +80,15 @@ func readSession(ctx context.Context, path, family, id string, maxBytes int64, c
 			}
 			out.Write(b)
 			out.WriteByte('\n')
-		}
-		return rows.Err()
+			return nil
+		})
 	}
-	err = collect(tx, emit)
+	err = collect(db, emit)
 	if err != nil {
 		return nil, err
 	}
 	if out.Len() == 0 {
 		return nil, fmt.Errorf("session disappeared during collection")
-	}
-	if err = tx.Commit(); err != nil {
-		return nil, err
 	}
 	return out.Bytes(), nil
 }
