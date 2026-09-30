@@ -17,7 +17,7 @@ Deploy only one route to a given pilot group.
   intended user signed in for the pilot. This guide does not cover Entra-registered
   personal devices, multi-session Windows, or installation before user sign-in.
 - Obtain `QuesmaShipperSetup-amd64.exe` or `QuesmaShipperSetup-arm64.exe` from the
-  [Windows releases](../../../../README.md#install-the-shipper). The raw
+  [Windows releases](../../../../README.md#developer-install-the-shipper-each-machine). The raw
   `quesma-shipper-windows-<arch>.exe` does not install the supervisor or scheduled task.
   Use separate deployments for x64 and ARM64 devices.
 - Know the control-plane HTTPS URL, exact organization name returned by `login`,

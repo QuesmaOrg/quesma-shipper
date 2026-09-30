@@ -11,7 +11,7 @@ The service exposes shipper endpoints, a bearer-authenticated administration API
 and a self-contained administration UI at `/admin/`. Static UI assets are embedded in the binary and
 make no third-party requests.
 
-To deploy it in your own cloud, follow [Run Fleet Manager](../README.md#run-fleet-manager) in the
+To deploy it in your own cloud, follow [Run Fleet Manager](../README.md#operator-set-up-fleet-manager-once) in the
 repository README, which is one script over the templates under [terraform/](terraform/); for
 everything on a laptop, [On one machine](#on-one-machine) below. Once it runs,
 [OPERATIONS.md](OPERATIONS.md) covers operating it. This README covers what the service does and
@@ -100,7 +100,7 @@ This is [Run it](#run-it) above: a MinIO container named `fleet-minio` on `127.0
 8099 in the foreground, printing the credential and the admin UI address. It listens on every
 interface over plain HTTP, so use a trusted network. Leave it running and continue in a second
 terminal. Create the organization and an invite as in
-[Run Fleet Manager](../README.md#run-fleet-manager), steps 1, 2, 4 and 5.
+[Operator: set up Fleet Manager](../README.md#operator-set-up-fleet-manager-once), steps 2, 4 and 5.
 
 **Pin the upload target before enrolling.** The local MinIO is plain HTTP and addressed path-style,
 and the shipper refuses an upload ticket that is not HTTPS unless told otherwise, in its user

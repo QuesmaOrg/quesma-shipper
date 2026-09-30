@@ -1,11 +1,11 @@
 # The shipper
 
 What runs on each developer machine: how it works, what it collects, and how to use and configure
-it. Installing and enrolling it is in the repository [README](../README.md#install-the-shipper).
+it. Installing and enrolling it is in the repository [README](../README.md#developer-install-the-shipper-each-machine).
 
 ## Installing
 
-The commands are in the repository [README](../README.md#install-the-shipper). What each one does:
+The commands are in the repository [README](../README.md#developer-install-the-shipper-each-machine). What each one does:
 
 **macOS.** The Homebrew cask installs the command on your Homebrew `PATH` and starts a per-user
 background service, which waits for enrollment. It supports macOS 13 or newer on Apple Silicon and

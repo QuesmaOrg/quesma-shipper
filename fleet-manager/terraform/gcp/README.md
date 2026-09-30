@@ -4,7 +4,7 @@ This template is what [`deploy.sh gcp`](../../deploy.sh) applies in your project
 when you want an image from your own registry, Terraform state kept somewhere other than a
 directory on a laptop, or a change to the template. The steps around it, deciding the recipients,
 creating the organization and enrolling the shippers, are
-[Run Fleet Manager](../../../README.md#run-fleet-manager) in the repository README.
+[Run Fleet Manager](../../../README.md#operator-set-up-fleet-manager-once) in the repository README.
 
 ## What it creates
 
