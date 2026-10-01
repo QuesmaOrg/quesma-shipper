@@ -1,4 +1,4 @@
-# Makefile for the trajectory shipper.
+# Makefile for Quesma Shipper.
 #
 # The Shipper module lives in src/. Its wire contract comes from github.com/QuesmaOrg/shipper-protocol.
 
@@ -249,7 +249,7 @@ graph: ## Print the internal import graph
 
 .PHONY: help
 help: ## Show this help
-	@echo "trajectory-shipper — $(VERSION)"
+	@echo "Quesma Shipper — $(VERSION)"
 	@echo
 	@grep -hE '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-14s\033[0m %s\n", $$1, $$2}'
