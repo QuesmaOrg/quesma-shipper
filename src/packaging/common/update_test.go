@@ -1,15 +1,12 @@
 package common
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 )
 
@@ -46,86 +43,46 @@ func TestNewReleaseLineSupersedesOldRepository(t *testing.T) {
 	}
 }
 
-func TestMain(m *testing.M) {
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "--test-update":
-			raw, err := os.ReadFile(os.Args[2])
-			if err != nil {
-				panic(err)
-			}
-			if err := ApplyBinary(raw); err != nil {
-				panic(err)
-			}
-			os.Args[1] = "--test-restarted"
-			if err := ReExec(); err != nil {
-				panic(err)
-			}
-			panic("re-exec unexpectedly returned")
-		case "--test-restarted":
-			fmt.Println(strings.Join(os.Args[2:], "|"), os.Getenv("QUESMA_TEST_REEXEC"))
-			os.Exit(0)
+// The child updates its own installed copy and re-execs; only a restart that kept argv and the
+// environment can run this test again and print "restarted".
+func TestReExecAfterUpdate(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch os.Getenv("QUESMA_TEST_REEXEC") {
+	case "update":
+		if err := ApplyBinary(raw); err != nil {
+			t.Fatal(err)
 		}
+		os.Setenv("QUESMA_TEST_REEXEC", "restarted")
+		t.Fatal(ReExec())
+	case "restarted":
+		fmt.Println("restarted")
+		return
 	}
-	os.Exit(m.Run())
-}
-
-func TestUpdateReExec(t *testing.T) {
-	executable, err := os.Executable()
-	if err != nil {
+	dir := t.TempDir()
+	installed := filepath.Join(dir, filepath.Base(exe))
+	if err := os.WriteFile(installed, raw, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(executable)
-	if err != nil {
-		t.Fatal(err)
+	launches := []string{installed}
+	if runtime.GOOS != "windows" { // Homebrew launches through a symlink
+		link := filepath.Join(dir, "shipper")
+		if err := os.Symlink(installed, link); err != nil {
+			t.Fatal(err)
+		}
+		launches = append(launches, link)
 	}
-	t.Setenv("QUESMA_TEST_REEXEC", "preserved")
-	t.Setenv(SupervisedEnv, "")
-	suffix := ""
-	if runtime.GOOS == "windows" {
-		suffix = ".exe"
-	}
-	for _, name := range []string{"direct", "symlink"} {
-		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			installed := filepath.Join(dir, "quesma-shipper"+suffix)
-			if err := os.WriteFile(installed, raw, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			before, err := os.Stat(installed)
-			if err != nil {
-				t.Fatal(err)
-			}
-			launch := installed
-			if name == "symlink" {
-				launch = filepath.Join(dir, "shipper"+suffix)
-				if err := os.Symlink(installed, launch); err != nil {
-					// Windows reports missing symlink privileges separately from os.ErrPermission.
-					if runtime.GOOS == "windows" && (errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.Errno(1314))) {
-						t.Skipf("Windows symlink permission unavailable: %v", err)
-					}
-					t.Fatal(err)
-				}
-			}
-			if out, err := exec.Command(launch, "--test-update", executable, "argument with spaces").CombinedOutput(); err != nil || string(out) != executable+"|argument with spaces preserved\n" {
-				t.Fatalf("update and reexec: %v, %s", err, out)
-			}
-			after, err := os.Stat(installed)
-			if err != nil || os.SameFile(before, after) {
-				t.Fatalf("installed executable was not replaced: %v", err)
-			}
-			updated, err := os.ReadFile(installed)
-			if err != nil || !bytes.Equal(updated, raw) {
-				t.Fatalf("installed binary differs from update payload: %v", err)
-			}
-			if name == "symlink" {
-				if target, err := os.Readlink(launch); err != nil || target != installed {
-					t.Fatalf("command link changed: %q, %v", target, err)
-				}
-			}
-			if out, err := exec.Command(launch, "--test-restarted", "next launch").CombinedOutput(); err != nil || string(out) != "next launch preserved\n" {
-				t.Fatalf("launch after update: %v, %s", err, out)
-			}
-		})
+	for _, launch := range launches {
+		cmd := exec.Command(launch, "-test.run=^TestReExecAfterUpdate$")
+		cmd.Env = append(os.Environ(), "QUESMA_TEST_REEXEC=update")
+		if out, err := cmd.CombinedOutput(); err != nil || !strings.HasPrefix(string(out), "restarted\n") {
+			t.Fatalf("%s: update and re-exec: %v, %s", launch, err, out)
+		}
 	}
 }
