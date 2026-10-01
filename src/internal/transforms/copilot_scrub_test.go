@@ -5,20 +5,12 @@ package transforms_test
 
 import (
 	"encoding/base64"
-	"math/rand"
 	"strings"
 	"testing"
 )
 
-// opaqueBlob is shaped like encryptedContent: base64 of ciphertext, seeded so failures reproduce.
-func opaqueBlob(n int) string {
-	b := make([]byte, n)
-	rand.New(rand.NewSource(7)).Read(b)
-	return base64.StdEncoding.EncodeToString(b)
-}
-
 func TestCopilotJoinIdsAndCiphertextSurvive(t *testing.T) {
-	blob := opaqueBlob(600)
+	blob := opaqueBlob(7, 600, base64.StdEncoding) // shaped like encryptedContent: base64 ciphertext
 	call := "call_r4KeDgjw3zhljpnAV4CdlZT0"
 	api := "chatcmpl-CaZ8xQ3vN1rT5yLp0WkEe7Hs2Df9"
 	lines := []string{
