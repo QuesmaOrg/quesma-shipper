@@ -1,85 +1,26 @@
 package cli
 
 import (
-	"context"
 	"errors"
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/spf13/cobra"
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/crashjournal"
-	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 )
 
-func TestRecycleMarksTheRunCleanBeforeReexec(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "state"))
-	t.Setenv(app.ReexecGuardEnv, "")
-	previousLimit := debug.SetMemoryLimit(-1)
-	t.Cleanup(func() { debug.SetMemoryLimit(previousLimit) })
-
-	catalog, err := sources.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var conf strings.Builder
-	conf.WriteString("sources:\n")
-	for _, source := range catalog.Sources() {
-		fmt.Fprintf(&conf, "  - id: %s\n    enabled: false\n", source.ID)
-	}
-	configDir := filepath.Join(home, "config", "trajectory-shipper")
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(conf.String()), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	paths, _, err := app.LocalDev()
-	if err != nil {
-		t.Fatal(err)
-	}
-	fl, err := crashjournal.Open(paths.StateDir, "recycled-run")
+func TestRecycleRetriesAFailedSupervisionProbe(t *testing.T) {
+	dir := t.TempDir()
+	fl, err := crashjournal.Open(dir, "recycled-run")
 	if err != nil {
 		t.Fatal(err)
 	}
 	fl.Start()
-	cmd := &cobra.Command{}
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-	reexecuted := false
-	err = runLoop(cmd, context.Background(), app.Build{}, false, false, false,
-		fl, "recycled-run", nil,
-		func(time.Time, string) bool { return true },
-		func() error {
-			reexecuted = true
-			raw, err := os.ReadFile(filepath.Join(paths.StateDir, "crash-journal.log"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(string(raw), `"ev":"exit"`) {
-				t.Fatal("re-exec started before the run was marked clean")
-			}
-			return errors.New("synthetic re-exec failure")
-		})
-	if err != nil || !reexecuted {
-		t.Fatalf("run loop did not recycle: err=%v reexecuted=%v", err, reexecuted)
-	}
-}
-
-func TestRecycleRetriesAFailedSupervisionProbe(t *testing.T) {
 	started := time.Unix(0, 0)
 	probes := 0
 	serviceLoaded := func() bool {
@@ -87,20 +28,35 @@ func TestRecycleRetriesAFailedSupervisionProbe(t *testing.T) {
 		return probes > 1
 	}
 
-	if recycleDue(started, started.Add(recycleAfter-time.Second), serviceLoaded) {
+	if prepareRecycle(started, started.Add(recycleAfter-time.Second), serviceLoaded, fl) {
 		t.Fatal("recycling became due before the uptime threshold")
 	}
 	if probes != 0 {
 		t.Fatalf("supervision was probed %d times before recycling was due", probes)
 	}
-	if recycleDue(started, started.Add(recycleAfter), serviceLoaded) {
+	if prepareRecycle(started, started.Add(recycleAfter), serviceLoaded, fl) {
 		t.Fatal("a failed supervision probe allowed recycling")
 	}
-	if !recycleDue(started, started.Add(recycleAfter+time.Second), serviceLoaded) {
+	path := filepath.Join(dir, "crash-journal.log")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"ev":"exit"`) {
+		t.Fatal("run was marked clean before recycling was approved")
+	}
+	if !prepareRecycle(started, started.Add(recycleAfter+time.Second), serviceLoaded, fl) {
 		t.Fatal("a transient supervision failure permanently disabled recycling")
 	}
 	if probes != 2 {
 		t.Fatalf("supervision was probed %d times, want 2", probes)
+	}
+	raw, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"ev":"exit"`) {
+		t.Fatal("run was not marked clean before recycling")
 	}
 }
 
