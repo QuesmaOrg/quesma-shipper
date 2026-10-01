@@ -5,11 +5,19 @@ package macos
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
+
+func TestRawExecutableUpdateTarget(t *testing.T) {
+	release := common.Release{Targets: map[string]string{"darwin/" + runtime.GOARCH: "raw-binary", "darwin/pkg": "package"}}
+	if got := UpdateTarget(release); got != "raw-binary" {
+		t.Fatalf("update target = %q", got)
+	}
+}
 
 func TestHomebrewServiceOwnership(t *testing.T) {
 	brew := "/opt/brew & tools/Caskroom/quesma-shipper/1.0.0/quesma-shipper"

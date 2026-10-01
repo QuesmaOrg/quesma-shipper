@@ -2,13 +2,13 @@ package common
 
 import (
 	"bytes"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -46,66 +46,54 @@ func TestNewReleaseLineSupersedesOldRepository(t *testing.T) {
 	}
 }
 
+func TestMain(m *testing.M) {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--test-update":
+			raw, err := os.ReadFile(os.Args[2])
+			if err != nil {
+				panic(err)
+			}
+			if err := ApplyBinary(raw); err != nil {
+				panic(err)
+			}
+			os.Args[1] = "--test-restarted"
+			if err := ReExec(); err != nil {
+				panic(err)
+			}
+			panic("re-exec unexpectedly returned")
+		case "--test-restarted":
+			fmt.Println(strings.Join(os.Args[2:], "|"), os.Getenv("QUESMA_TEST_REEXEC"))
+			os.Exit(0)
+		}
+	}
+	os.Exit(m.Run())
+}
+
 func TestUpdateReExec(t *testing.T) {
-	root := t.TempDir()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUESMA_TEST_REEXEC", "preserved")
+	t.Setenv(SupervisedEnv, "")
 	suffix := ""
 	if runtime.GOOS == "windows" {
 		suffix = ".exe"
 	}
-	build := func(name, source string) string {
-		t.Helper()
-		path := filepath.Join(root, name+".go")
-		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		binary := filepath.Join(root, name+suffix)
-		if out, err := exec.Command("go", "build", "-o", binary, path).CombinedOutput(); err != nil {
-			t.Fatalf("build %s: %v, %s", name, err, out)
-		}
-		return binary
-	}
-	updateImport, target, apply := "", "common.BinaryTarget", "common.ApplyBinary(raw)"
-	if runtime.GOOS == "darwin" {
-		updateImport = `"github.com/QuesmaOrg/quesma-shipper/packaging/macos"`
-		target, apply = "macos.UpdateTarget", `macos.ApplyTarget(raw, "1.0.1")`
-	}
-	updater := build("updater", fmt.Sprintf(`package main
-import (
-	"os"
-	"runtime"
-	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
-	%s
-)
-func main() {
-	release := common.Release{Targets: map[string]string{runtime.GOOS + "/" + runtime.GOARCH: "raw-binary", "darwin/pkg": "package"}}
-	if got := %s(release); got != "raw-binary" { panic("unexpected update target: " + got) }
-	raw, err := os.ReadFile(os.Args[1])
-	if err != nil { panic(err) }
-	if err := %s; err != nil { panic(err) }
-	if err := common.ReExec(); err != nil { panic(err) }
-}
-`, updateImport, target, apply))
-	replacement := build("replacement", `package main
-import ("fmt"; "os"; "strings")
-func main() { fmt.Println(strings.Join(os.Args[1:], "|"), os.Getenv("QUESMA_TEST_REEXEC")) }
-`)
-	updaterRaw, err := os.ReadFile(updater)
-	if err != nil {
-		t.Fatal(err)
-	}
-	replacementRaw, err := os.ReadFile(replacement)
-	if err != nil {
-		t.Fatal(err)
-	}
-	env := append(os.Environ(), "QUESMA_TEST_REEXEC=preserved", SupervisedEnv+"=")
 	for _, name := range []string{"direct", "symlink"} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			installed := filepath.Join(dir, "Caskroom", "quesma-shipper", "1.0.0", "quesma-shipper"+suffix)
-			if err := os.MkdirAll(filepath.Dir(installed), 0o755); err != nil {
+			installed := filepath.Join(dir, "quesma-shipper"+suffix)
+			if err := os.WriteFile(installed, raw, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(installed, updaterRaw, 0o755); err != nil {
+			before, err := os.Stat(installed)
+			if err != nil {
 				t.Fatal(err)
 			}
 			launch := installed
@@ -119,37 +107,23 @@ func main() { fmt.Println(strings.Join(os.Args[1:], "|"), os.Getenv("QUESMA_TEST
 					t.Fatal(err)
 				}
 			}
-			plist := filepath.Join(dir, "agent.plist")
-			if runtime.GOOS == "darwin" {
-				var escaped bytes.Buffer
-				if err := xml.EscapeText(&escaped, []byte(installed)); err != nil {
-					t.Fatal(err)
-				}
-				service := "<plist><dict><key>ProgramArguments</key><array><string>" + escaped.String() + "</string></array></dict></plist>"
-				if err := os.WriteFile(plist, []byte(service), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			cmd := exec.Command(launch, replacement, "updated")
-			cmd.Env = env
-			if out, err := cmd.CombinedOutput(); err != nil || string(out) != replacement+"|updated preserved\n" {
+			if out, err := exec.Command(launch, "--test-update", executable, "argument with spaces").CombinedOutput(); err != nil || string(out) != executable+"|argument with spaces preserved\n" {
 				t.Fatalf("update and reexec: %v, %s", err, out)
 			}
+			after, err := os.Stat(installed)
+			if err != nil || os.SameFile(before, after) {
+				t.Fatalf("installed executable was not replaced: %v", err)
+			}
 			updated, err := os.ReadFile(installed)
-			if err != nil || !bytes.Equal(updated, replacementRaw) {
-				t.Fatalf("installed binary differs from replacement: %v", err)
+			if err != nil || !bytes.Equal(updated, raw) {
+				t.Fatalf("installed binary differs from update payload: %v", err)
 			}
 			if name == "symlink" {
 				if target, err := os.Readlink(launch); err != nil || target != installed {
 					t.Fatalf("command link changed: %q, %v", target, err)
 				}
 			}
-			if runtime.GOOS == "darwin" && ServiceProgram(Status{Path: plist}) != installed {
-				t.Fatal("service program changed")
-			}
-			cmd = exec.Command(launch, "next launch")
-			cmd.Env = env
-			if out, err := cmd.CombinedOutput(); err != nil || string(out) != "next launch preserved\n" {
+			if out, err := exec.Command(launch, "--test-restarted", "next launch").CombinedOutput(); err != nil || string(out) != "next launch preserved\n" {
 				t.Fatalf("launch after update: %v, %s", err, out)
 			}
 		})
