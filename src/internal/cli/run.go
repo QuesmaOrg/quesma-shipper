@@ -68,13 +68,8 @@ func firstStackFrame(stack string) string {
 const recycleAfter = 3 * time.Hour
 const enrollmentPollInterval = 5 * time.Second
 
-func prepareRecycle(started, now time.Time, serviceLoaded func() bool, fl *crashjournal.Log) bool {
-	if now.Sub(started) < recycleAfter || !serviceLoaded() {
-		return false
-	}
-	// Successful re-exec never returns to the run command's Exit call.
-	fl.Exit()
-	return true
+func recycleDue(started, now time.Time, serviceLoaded func() bool) bool {
+	return now.Sub(started) >= recycleAfter && serviceLoaded()
 }
 
 // reportOutcome submits telemetry for whatever was just judged, under a bound of its own so it
@@ -336,12 +331,13 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 			}
 			return nil
 		}
-		if prepareRecycle(started, time.Now(), func() bool {
+		if recycleDue(started, time.Now(), func() bool {
 			return packaging.ServiceState(env.StateDir()).Loaded
-		}, fl) {
+		}) {
 			fmt.Fprintf(out, "recycling after %s of uptime; replacing the process in place\n",
 				time.Since(started).Round(time.Second))
 			clearSelfUpdateHop()
+			fl.Exit() // a successful re-exec never returns to the run command's Exit
 			if err := packaging.ReExec(); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "recycle: re-exec failed (%v); exiting for the supervisor\n", err)
 				app.RecordUpdateFailure(fmt.Sprintf("recycle re-exec failed, falling back to the supervisor: %v", err))

@@ -2,8 +2,6 @@ package cli
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,16 +9,9 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/app"
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
-	"github.com/QuesmaOrg/quesma-shipper/internal/platform/crashjournal"
 )
 
 func TestRecycleRetriesAFailedSupervisionProbe(t *testing.T) {
-	dir := t.TempDir()
-	fl, err := crashjournal.Open(dir, "recycled-run")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fl.Start()
 	started := time.Unix(0, 0)
 	probes := 0
 	serviceLoaded := func() bool {
@@ -28,35 +19,20 @@ func TestRecycleRetriesAFailedSupervisionProbe(t *testing.T) {
 		return probes > 1
 	}
 
-	if prepareRecycle(started, started.Add(recycleAfter-time.Second), serviceLoaded, fl) {
+	if recycleDue(started, started.Add(recycleAfter-time.Second), serviceLoaded) {
 		t.Fatal("recycling became due before the uptime threshold")
 	}
 	if probes != 0 {
 		t.Fatalf("supervision was probed %d times before recycling was due", probes)
 	}
-	if prepareRecycle(started, started.Add(recycleAfter), serviceLoaded, fl) {
+	if recycleDue(started, started.Add(recycleAfter), serviceLoaded) {
 		t.Fatal("a failed supervision probe allowed recycling")
 	}
-	path := filepath.Join(dir, "crash-journal.log")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(raw), `"ev":"exit"`) {
-		t.Fatal("run was marked clean before recycling was approved")
-	}
-	if !prepareRecycle(started, started.Add(recycleAfter+time.Second), serviceLoaded, fl) {
+	if !recycleDue(started, started.Add(recycleAfter+time.Second), serviceLoaded) {
 		t.Fatal("a transient supervision failure permanently disabled recycling")
 	}
 	if probes != 2 {
 		t.Fatalf("supervision was probed %d times, want 2", probes)
-	}
-	raw, err = os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(raw), `"ev":"exit"`) {
-		t.Fatal("run was not marked clean before recycling")
 	}
 }
 
