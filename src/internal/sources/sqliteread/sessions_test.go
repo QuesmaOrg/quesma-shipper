@@ -78,7 +78,7 @@ func TestSessionReadWALScopeAndBounds(t *testing.T) {
 			if len(sessions) == 0 || sessions[0].CWD == "" {
 				t.Fatalf("no routing metadata: %+v", sessions)
 			}
-			data, err := reader(family).Read(context.Background(), path, sessions[0].ID, 1<<20)
+			data, err := reader(family).Read(context.Background(), path, "state.db", sessions[0].ID, 1<<20)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -92,10 +92,10 @@ func TestSessionReadWALScopeAndBounds(t *testing.T) {
 					t.Fatalf("invalid JSON: %s", line)
 				}
 			}
-			if got, err := reader(family).Read(context.Background(), path, sessions[0].ID, 10); err == nil || got != nil {
+			if got, err := reader(family).Read(context.Background(), path, "state.db", sessions[0].ID, 10); err == nil || got != nil {
 				t.Fatal("oversize snapshot must fail without partial bytes")
 			}
-			again, err := reader(family).Read(context.Background(), path, sessions[0].ID, 1<<20)
+			again, err := reader(family).Read(context.Background(), path, "state.db", sessions[0].ID, 1<<20)
 			if err != nil || string(again) != string(data) {
 				t.Fatal("unchanged snapshots differ")
 			}
@@ -107,7 +107,7 @@ func TestSessionReadWALScopeAndBounds(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			changed, err := reader(family).Read(context.Background(), path, sessions[0].ID, 1<<20)
+			changed, err := reader(family).Read(context.Background(), path, "state.db", sessions[0].ID, 1<<20)
 			if err != nil || !strings.Contains(string(changed), "updated") {
 				t.Fatalf("WAL update missed: %s %v", changed, err)
 			}
@@ -120,7 +120,7 @@ func TestSessionReadWALScopeAndBounds(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			if _, err := reader(family).Read(ctx, path, sessions[0].ID, 1<<20); err == nil {
+			if _, err := reader(family).Read(ctx, path, "state.db", sessions[0].ID, 1<<20); err == nil {
 				t.Fatal("cancelled read succeeded")
 			}
 		})
@@ -129,20 +129,20 @@ func TestSessionReadWALScopeAndBounds(t *testing.T) {
 
 func TestSessionReadMissingMalformedAndOldUsage(t *testing.T) {
 	path, db := sessionStore(t, "opencode")
-	if raw, err := reader("opencode").Read(context.Background(), path, "missing", 1<<20); err == nil || raw != nil {
+	if raw, err := reader("opencode").Read(context.Background(), path, "state.db", "missing", 1<<20); err == nil || raw != nil {
 		t.Fatal("missing session succeeded")
 	}
 	if _, err := db.Exec(`UPDATE message SET data='invalid' WHERE id='m1'`); err != nil {
 		t.Fatal(err)
 	}
-	if raw, err := reader("opencode").Read(context.Background(), path, "ses_../weird", 1<<20); err == nil || raw != nil {
+	if raw, err := reader("opencode").Read(context.Background(), path, "state.db", "ses_../weird", 1<<20); err == nil || raw != nil {
 		t.Fatal("malformed JSON shipped")
 	}
 	path, db = sessionStore(t, "hermes")
 	if _, err := db.Exec(`DROP TABLE session_model_usage`); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := reader("hermes").Read(context.Background(), path, "20260925_a", 1<<20)
+	raw, err := reader("hermes").Read(context.Background(), path, "state.db", "20260925_a", 1<<20)
 	if err != nil || !strings.Contains(string(raw), `"input_tokens":10`) {
 		t.Fatalf("legacy session totals lost: %s %v", raw, err)
 	}
@@ -150,7 +150,7 @@ func TestSessionReadMissingMalformedAndOldUsage(t *testing.T) {
 
 type sessionReader interface {
 	List(context.Context, string) ([]sqliteread.Session, error)
-	Read(context.Context, string, string, int64) ([]byte, error)
+	Read(context.Context, string, string, string, int64) ([]byte, error)
 }
 
 func reader(family string) sessionReader {
@@ -158,4 +158,52 @@ func reader(family string) sessionReader {
 		return sqliteread.OpenCodeSessions{}
 	}
 	return sqliteread.HermesSessions{}
+}
+
+func TestHermesProfileRecordKeys(t *testing.T) {
+	path, _ := sessionStore(t, "hermes")
+	seen := map[string]string{}
+	for _, rel := range []string{"state.db", "profiles/work/state.db", "profiles/personal/state.db"} {
+		raw, err := reader("hermes").Read(context.Background(), path, filepath.FromSlash(rel), "20260925_a", 1<<20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		again, err := reader("hermes").Read(context.Background(), path, filepath.FromSlash(rel), "20260925_a", 1<<20)
+		if err != nil || string(again) != string(raw) {
+			t.Fatalf("unstable profile snapshot: %s: %v", rel, err)
+		}
+		var sessionKey string
+		counts := map[string]int{}
+		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+			var row map[string]any
+			if err := json.Unmarshal([]byte(line), &row); err != nil {
+				t.Fatal(err)
+			}
+			if row["session_id"] != "20260925_a" {
+				t.Fatalf("raw session ID changed: %v", row)
+			}
+			key := row["session_key"].(string)
+			if sessionKey == "" {
+				sessionKey = key
+			}
+			if key != sessionKey {
+				t.Fatalf("records disagree on session key: %s", rel)
+			}
+			for _, field := range []string{"session_key", "event_key", "usage_id"} {
+				if key, ok := row[field].(string); ok {
+					counts[field]++
+					if previous, exists := seen[field+key]; exists && previous != rel {
+						t.Fatalf("%s collision between %s and %s", field, previous, rel)
+					}
+					seen[field+key] = rel
+				}
+			}
+		}
+		if rel == "state.db" && sessionKey != "ae8c1970-e8d6-460c-3d7d-20e61e4134e8" {
+			t.Fatalf("default-profile key changed: %s", sessionKey)
+		}
+		if counts["session_key"] != 4 || counts["event_key"] != 2 || counts["usage_id"] != 2 {
+			t.Fatalf("missing record keys: %v", counts)
+		}
+	}
 }

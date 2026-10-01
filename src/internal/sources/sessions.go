@@ -18,7 +18,7 @@ import (
 // Session databases produce one bounded JSONL snapshot per session, never a database upload.
 type sessionReader interface {
 	List(context.Context, string) ([]sqliteread.Session, error)
-	Read(context.Context, string, string, int64) ([]byte, error)
+	Read(context.Context, string, string, string, int64) ([]byte, error)
 }
 
 func sessionCollector(emit string) (Primitive, bool) {
@@ -92,7 +92,7 @@ func discoverSessions(req Request, reader sessionReader) (Discovery, error) {
 				if err != nil {
 					return Payload{}, err
 				}
-				raw, err := reader.Read(ctx, path, id, src.MaxFileBytes)
+				raw, err := reader.Read(ctx, path, db.RelPath, id, src.MaxFileBytes)
 				return Payload{Bytes: raw, MTime: now}, err
 			}
 			d.Candidates = append(d.Candidates, cand)

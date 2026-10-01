@@ -49,7 +49,7 @@ func listSessions(ctx context.Context, path, query string) ([]Session, error) {
 
 // readSession uses one read transaction for metadata, messages and usage, including committed WAL data.
 // Only declared columns ship; new database columns cannot silently widen collection.
-func readSession(ctx context.Context, path, family, id string, maxBytes int64, collect func(*sessionConnection, func(string, string) error) error, decorate func(string, map[string]any) error) ([]byte, error) {
+func readSession(ctx context.Context, path, namespace, id string, maxBytes int64, collect func(*sessionConnection, func(string, string) error) error, decorate func(string, map[string]any) error) ([]byte, error) {
 	db, err := openSessions(ctx, path)
 	if err != nil {
 		return nil, err
@@ -61,12 +61,12 @@ func readSession(ctx context.Context, path, family, id string, maxBytes int64, c
 	var out bytes.Buffer
 	emit := func(kind, query string) error {
 		return db.query(ctx, query, []string{id}, func(record map[string]any) error {
-			record["type"], record["session_id"], record["session_key"], record["format_version"] = kind, id, sessionKey(family, id), 1
+			record["type"], record["session_id"], record["session_key"], record["format_version"] = kind, id, sessionKey(namespace, id), 1
 			if event, ok := record["id"]; ok {
-				record["event_key"] = sessionKey(family+":"+id, fmt.Sprint(event))
+				record["event_key"] = sessionKey(namespace+":"+id, fmt.Sprint(event))
 			}
 			if message, ok := record["message_id"].(string); ok {
-				record["message_key"] = sessionKey(family+":"+id, message)
+				record["message_key"] = sessionKey(namespace+":"+id, message)
 			}
 			if err := decorate(kind, record); err != nil {
 				return err

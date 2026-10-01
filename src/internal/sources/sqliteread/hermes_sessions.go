@@ -3,6 +3,7 @@ package sqliteread
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 )
 
 // HermesSessions reads only Hermes transcript and usage columns.
@@ -11,8 +12,13 @@ type HermesSessions struct{}
 func (HermesSessions) List(ctx context.Context, path string) ([]Session, error) {
 	return listSessions(ctx, path, `SELECT id, coalesce(cwd, '') AS cwd FROM sessions ORDER BY started_at, id LIMIT 100001`)
 }
-func (HermesSessions) Read(ctx context.Context, path, id string, maxBytes int64) ([]byte, error) {
-	return readSession(ctx, path, "hermes", id, maxBytes, func(tx *sessionConnection, emit func(string, string) error) error {
+func (HermesSessions) Read(ctx context.Context, path, relPath, id string, maxBytes int64) ([]byte, error) {
+	namespace := "hermes"
+	// Relative database paths distinguish profiles without tying keys to the installation directory.
+	if relPath = filepath.ToSlash(filepath.Clean(relPath)); relPath != "state.db" {
+		namespace += ":" + sessionKey("hermes-database", relPath)
+	}
+	return readSession(ctx, path, namespace, id, maxBytes, func(tx *sessionConnection, emit func(string, string) error) error {
 		err := emit("session", `SELECT id, parent_session_id, source, model, cwd, started_at, ended_at, title, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens FROM sessions WHERE id = ?`)
 		if err == nil {
 			err = emit("message", `SELECT id, role, content, tool_call_id, tool_calls, tool_name, timestamp, finish_reason FROM messages WHERE session_id = ? ORDER BY timestamp,id`)
@@ -30,7 +36,7 @@ func (HermesSessions) Read(ctx context.Context, path, id string, maxBytes int64)
 	}, func(kind string, record map[string]any) error {
 		if kind == "usage" {
 			scope, _ := json.Marshal([]any{record["model"], record["billing_provider"], record["billing_base_url"], record["billing_mode"], record["task"]})
-			record["usage_id"] = sessionKey("hermes:"+id, string(scope))
+			record["usage_id"] = sessionKey(namespace+":"+id, string(scope))
 			delete(record, "billing_base_url")
 		}
 

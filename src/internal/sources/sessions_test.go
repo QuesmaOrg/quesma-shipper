@@ -1,8 +1,10 @@
 package sources
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -208,5 +210,41 @@ func TestSessionLoadRechecksProfilePath(t *testing.T) {
 				t.Fatalf("changed path must return an error without bytes: %s %v", payload.Bytes, err)
 			}
 		})
+	}
+}
+
+func TestHermesProfileKeysSurviveRootMove(t *testing.T) {
+	baseline := map[string]string{}
+	for copy := 0; copy < 2; copy++ {
+		root := t.TempDir()
+		for _, dir := range []string{".", "profiles/work", "profiles/personal"} {
+			writeSessionStore(t, filepath.Join(root, filepath.FromSlash(dir)), "identical session")
+		}
+		src := Resolved{Source: Source{ID: "hermes-sessions", Include: []string{"state.db", "profiles/*/state.db"}}, Root: root}
+		d, err := discoverSessions(Request{Source: src}, sqliteread.HermesSessions{})
+		if err != nil || len(d.Candidates) != 3 {
+			t.Fatalf("discovery: %+v %v", d, err)
+		}
+		keys := map[string]string{}
+		for _, candidate := range d.Candidates {
+			payload, err := candidate.Load(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if copy == 0 {
+				baseline[candidate.RelPath] = string(payload.Bytes)
+			} else if baseline[candidate.RelPath] != string(payload.Bytes) {
+				t.Fatalf("moving the root changed snapshot: %s", candidate.RelPath)
+			}
+			var row map[string]any
+			if err := json.Unmarshal(bytes.SplitN(payload.Bytes, []byte("\n"), 2)[0], &row); err != nil {
+				t.Fatal(err)
+			}
+			key := row["session_key"].(string)
+			if previous, exists := keys[key]; exists {
+				t.Fatalf("profiles share session key: %s and %s", previous, candidate.RelPath)
+			}
+			keys[key] = candidate.RelPath
+		}
 	}
 }
