@@ -47,7 +47,7 @@ Out of scope:
 
 Trajectory files contain prompts, source code, shell output, and often credentials. The shipper
 also collects context artifacts, a project-to-repository map, and account metadata; the README
-section [What is collected](README.md#what-is-collected) lists them. Treat local state, logs, and
+section [What is collected](src/README.md#what-is-collected) lists them. Treat local state, logs, and
 encrypted bundles as confidential.
 
 - Do not attach real trajectories, agent databases, logs, credentials, or encrypted bundles to an
