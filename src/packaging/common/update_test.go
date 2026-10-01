@@ -1,10 +1,12 @@
 package common
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -42,21 +44,25 @@ func TestNewReleaseLineSupersedesOldRepository(t *testing.T) {
 	}
 }
 
-// The child updates its own installed copy and re-execs; only a restart that kept argv and the
-// environment can run this test again and print "restarted".
+// The child updates its installed copy to a marked build and re-execs; only a restart into the
+// marked binary, with argv and the environment kept, can run this test again and print "restarted".
 func TestReExecAfterUpdate(t *testing.T) {
+	marker := []byte("quesma-test-update")
 	raw, err := os.ReadFile(os.Args[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	switch os.Getenv("QUESMA_TEST_REEXEC") {
 	case "update":
-		if err := ApplyBinary(raw); err != nil {
+		if err := ApplyBinary(append(raw, marker...)); err != nil {
 			t.Fatal(err)
 		}
 		os.Setenv("QUESMA_TEST_REEXEC", "restarted")
 		t.Fatal(ReExec())
 	case "restarted":
+		if !bytes.HasSuffix(raw, marker) {
+			t.Fatal("restarted the old binary")
+		}
 		fmt.Println("restarted")
 		return
 	}
@@ -65,9 +71,21 @@ func TestReExecAfterUpdate(t *testing.T) {
 	if err := os.WriteFile(installed, raw, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(installed, "-test.run=^TestReExecAfterUpdate$")
+	launch := installed
+	if runtime.GOOS != "windows" { // Homebrew runs the binary through a symlink
+		launch = filepath.Join(dir, "shipper")
+		if err := os.Symlink(installed, launch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command(launch, "-test.run=^TestReExecAfterUpdate$")
 	cmd.Env = append(os.Environ(), "QUESMA_TEST_REEXEC=update")
 	if out, err := cmd.CombinedOutput(); err != nil || !strings.HasPrefix(string(out), "restarted\n") {
 		t.Fatalf("update and re-exec: %v, %s", err, out)
+	}
+	if launch != installed {
+		if target, err := os.Readlink(launch); err != nil || target != installed {
+			t.Fatalf("command link changed: %q, %v", target, err)
+		}
 	}
 }
