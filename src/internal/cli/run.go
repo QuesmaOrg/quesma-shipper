@@ -72,9 +72,8 @@ func recycleDue(started, now time.Time, serviceLoaded func() bool) bool {
 	return now.Sub(started) >= recycleAfter && serviceLoaded()
 }
 
-// A successful re-exec never returns to the run command's Exit, so the run is marked clean first.
 func recycle(fl *crashjournal.Log) error {
-	fl.Exit()
+	fl.Exit() // a successful re-exec never returns to the run command's Exit
 	return packaging.ReExec()
 }
 
