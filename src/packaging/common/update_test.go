@@ -46,11 +46,7 @@ func TestNewReleaseLineSupersedesOldRepository(t *testing.T) {
 // The child updates its own installed copy and re-execs; only a restart that kept argv and the
 // environment can run this test again and print "restarted".
 func TestReExecAfterUpdate(t *testing.T) {
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile(exe)
+	raw, err := os.ReadFile(os.Args[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +62,7 @@ func TestReExecAfterUpdate(t *testing.T) {
 		return
 	}
 	dir := t.TempDir()
-	installed := filepath.Join(dir, filepath.Base(exe))
+	installed := filepath.Join(dir, filepath.Base(os.Args[0]))
 	if err := os.WriteFile(installed, raw, 0o755); err != nil {
 		t.Fatal(err)
 	}
