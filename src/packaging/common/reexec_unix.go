@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-// Linux follows the running inode after an update renames and removes the old executable.
+// Capture the path at startup; on Linux, the updater's rename makes os.Executable return the deleted backup path.
 var reexecPath, reexecPathErr = os.Executable()
 
 // ReExec replaces this process with the binary now on disk at this executable's path, keeping argv
