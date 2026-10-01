@@ -2,6 +2,8 @@ package cli
 
 import (
 	"errors"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -9,7 +11,37 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/app"
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform/crashjournal"
 )
+
+// The child journals a run and recycles into this same test; once it is gone, its run must read as clean.
+func TestRecycleIsNotACrash(t *testing.T) {
+	switch os.Getenv("QUESMA_TEST_RECYCLE") {
+	case "recycle":
+		fl, err := crashjournal.Open(os.Getenv("QUESMA_TEST_RECYCLE_DIR"), "recycled-run")
+		if err != nil {
+			t.Fatal(err)
+		}
+		fl.Start()
+		os.Setenv("QUESMA_TEST_RECYCLE", "restarted")
+		t.Fatal(recycle(fl))
+	case "restarted":
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	cmd := exec.Command(exe, "-test.run=^TestRecycleIsNotACrash$")
+	cmd.Env = append(os.Environ(), "QUESMA_TEST_RECYCLE=recycle", "QUESMA_TEST_RECYCLE_DIR="+dir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("recycle: %v, %s", err, out)
+	}
+	if s := crashjournal.LastRun(dir); s != nil {
+		t.Fatalf("a recycle reads as a crash: %+v", s)
+	}
+}
 
 func TestRecycleRetriesAFailedSupervisionProbe(t *testing.T) {
 	started := time.Unix(0, 0)
