@@ -60,6 +60,7 @@ func TestCleanRunReportsNoCrash(t *testing.T) {
 	l.Start()
 	l.Phase("init")
 	l.Exit()
+	stampDeadPID(t, dir, "run-a")
 
 	if s := LastRun(dir); s != nil {
 		t.Fatalf("a clean run is no crash, got %+v", s)

@@ -72,13 +72,6 @@ func recycleDue(started, now time.Time, serviceLoaded func() bool) bool {
 	return now.Sub(started) >= recycleAfter && serviceLoaded()
 }
 
-func recycleProcess(fl *crashjournal.Log) error {
-	clearSelfUpdateHop()
-	// Successful re-exec never returns to the run command's Exit call.
-	fl.Exit()
-	return packaging.ReExec()
-}
-
 // reportOutcome submits telemetry for whatever was just judged, under a bound of its own so it
 // cannot spend the caller's budget: the drain deadline, or the gap before the next tick.
 func reportOutcome(ctx context.Context, env *app.Runtime) {
@@ -343,7 +336,10 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 		}) {
 			fmt.Fprintf(out, "recycling after %s of uptime; replacing the process in place\n",
 				time.Since(started).Round(time.Second))
-			if err := recycleProcess(fl); err != nil {
+			clearSelfUpdateHop()
+			// Successful re-exec never returns to the run command's Exit call.
+			fl.Exit()
+			if err := packaging.ReExec(); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "recycle: re-exec failed (%v); exiting for the supervisor\n", err)
 				app.RecordUpdateFailure(fmt.Sprintf("recycle re-exec failed, falling back to the supervisor: %v", err))
 			}
