@@ -108,4 +108,5 @@ func main() {
         Env:QUESMA_INTUNE_TEST_LOGIN, Env:QUESMA_INTUNE_TEST_ENROLLED -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
 }
+& (Join-Path $PSScriptRoot 'Test-SystemDetection.ps1')
 $global:LASTEXITCODE = 0

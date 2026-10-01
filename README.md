@@ -92,7 +92,8 @@ no cloud account: [On one machine](fleet-manager/README.md#on-one-machine).
 
 ## Developer: install the shipper (each machine)
 
-1. **Install.** Every download installs for the current user and needs no administrator rights.
+1. **Install.** Personal installations need no administrator rights. The macOS package and
+   Windows setup also offer an administrator-managed all-users installation.
    - macOS: `brew install --cask quesmaorg/tap/quesma-shipper`, or the signed
      [quesma-shipper-macos-universal.pkg](https://updates.quesma.dev/download/quesma-shipper-macos-universal.pkg)
    - Linux: `curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/src/packaging/linux/install.sh && sh install.sh`

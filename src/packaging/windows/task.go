@@ -108,12 +108,15 @@ type taskDocument struct {
 	} `xml:"Settings"`
 	Actions struct {
 		Exec struct {
-			Command string `xml:"Command"`
+			Command   string `xml:"Command"`
+			Arguments string `xml:"Arguments"`
 		} `xml:"Exec"`
 	} `xml:"Actions"`
 	Principals struct {
 		Principal struct {
-			UserID string `xml:"UserId"`
+			UserID   string `xml:"UserId"`
+			GroupID  string `xml:"GroupId"`
+			RunLevel string `xml:"RunLevel"`
 		} `xml:"Principal"`
 	} `xml:"Principals"`
 }

@@ -1,13 +1,17 @@
 # Deploy Quesma Shipper with Microsoft Intune
 
-Deploy the existing **per-user setup executable** and enroll each Windows user with
-the control plane. Intune supports user-context installation; a machine-wide
+For device provisioning, shared computers, and administrator-owned updates, use the
+[all-users System deployment guide](README-System.md). It supports setup before
+first login and keeps enrollment and collection per user.
+
+The routes below deploy the **personal installation** and enroll each Windows user
+with the control plane. Intune supports user-context installation; a machine-wide
 installer is not required for this workflow. Installation and `login` must run as
 the same user, whose profile contains the coding-agent files to collect.
 
 Use the **platform-script route** for a small pilot you administer from a Mac. Use
 the **Win32 app route** for app detection, required assignments, and managed
-uninstallation. Both use [Install.ps1](Install.ps1), including unattended login.
+uninstallation. Both use [Install.ps1](Install.ps1), including unattended login and an explicit `/CURRENTUSER` installer switch.
 Deploy only one route to a given pilot group.
 
 ## Before deployment

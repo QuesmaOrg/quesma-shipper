@@ -1,4 +1,4 @@
-# Builds one architecture-specific per-user setup executable with the Inno compiler on the runner.
+# Builds one architecture-specific dual-scope setup executable with the Inno compiler on the runner.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseVersion,

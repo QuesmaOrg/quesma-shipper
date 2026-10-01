@@ -61,7 +61,7 @@ func checkUpdate(ctx context.Context, build Build, autoupdate, systemManaged boo
 	case available:
 		fix := "quesma-shipper update"
 		if systemManaged {
-			fix = "ask an administrator to deploy the newer macOS package through MDM"
+			fix = "ask an administrator to deploy the newer package through MDM"
 		}
 		return UpdateStatus{State: "available", Latest: latest, Published: published,
 			Detail: fmt.Sprintf("%s available (%s)", latest, published.Format("2006-01-02")),
@@ -398,7 +398,7 @@ func enricherIssues(name string, src config.ResolvedSource) []Row {
 		case p.err != nil:
 			fix := "`quesma-shipper update` may carry it"
 			if packaging.SystemManaged() {
-				fix = "a newer macOS package deployed by your administrator may carry it"
+				fix = "a newer package deployed by your administrator may carry it"
 			}
 			rows = append(rows, Row{Sev: SevWarn, Sub: true, Label: "  database",
 				Brief:  name + ": enricher missing from this build",

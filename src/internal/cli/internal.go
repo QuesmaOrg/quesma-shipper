@@ -62,6 +62,26 @@ func preuninstallSystemCmd() *cobra.Command {
 		RunE: func(*cobra.Command, []string) error { return packaging.PreUninstallSystem() }}
 }
 
+func systemInstallCmd(name string, action func(string, string) error) *cobra.Command {
+	var dir, recovery string
+	cmd := &cobra.Command{Use: name, Args: cobra.NoArgs, Hidden: true,
+		RunE: func(*cobra.Command, []string) error { return action(dir, recovery) }}
+	cmd.Flags().StringVar(&dir, "install-dir", "", "Machine installation directory")
+	cmd.Flags().StringVar(&recovery, "recovery-file", "", "Setup task recovery file")
+	_ = cmd.MarkFlagRequired("install-dir")
+	_ = cmd.MarkFlagRequired("recovery-file")
+	return cmd
+}
+
+func prepareUserInstallCmd() *cobra.Command {
+	var dir string
+	cmd := &cobra.Command{Use: "prepare-user-install", Args: cobra.NoArgs, Hidden: true,
+		RunE: func(*cobra.Command, []string) error { return packaging.PrepareUserInstall(dir) }}
+	cmd.Flags().StringVar(&dir, "install-dir", "", "Personal installation directory")
+	_ = cmd.MarkFlagRequired("install-dir")
+	return cmd
+}
+
 func reportRemote(w io.Writer, r *app.Runtime) {
 	rem := r.Remote()
 	if rem.Err != nil && rem.Origin == controlplane.OriginCached {

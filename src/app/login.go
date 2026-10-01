@@ -71,7 +71,7 @@ func managedEnrollmentError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("managed enrollment failed: connection timed out")
 	}
-	return fmt.Errorf("managed enrollment did not complete; check server reachability and the Server/Grant profile")
+	return fmt.Errorf("managed enrollment did not complete; check server reachability and the Server/Grant policy")
 }
 
 func login(ctx context.Context, server, token string, managed bool) (LoginResult, error) {

@@ -74,7 +74,7 @@ function Install-Shipper {
                 Invoke-WebRequest -Uri $InstallerUrl -OutFile $InstallerPath -UseBasicParsing -TimeoutSec 300
             }
             $setup = Start-Process -FilePath (Resolve-Path -LiteralPath $InstallerPath).Path -Wait -PassThru `
-                -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'
+                -ArgumentList '/CURRENTUSER /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'
             if ($setup.ExitCode -ne 0) { throw "Installer failed with exit code $($setup.ExitCode)." }
             $status = Get-ShipperStatus $exe
             Assert-EnrollmentTarget $status $Server $Organization

@@ -16,7 +16,7 @@ Set-Content -LiteralPath $state -Value 'preserve-existing-state'
 function Start-Process {
     param($FilePath, [switch]$Wait, [switch]$PassThru, $ArgumentList)
     if ($FilePath -ne $Template -or -not $Wait -or -not $PassThru -or
-        $ArgumentList -ne '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-') {
+        $ArgumentList -ne '/CURRENTUSER /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-') {
         throw 'Unexpected setup invocation.'
     }
     if ($env:SHIPPER_AUTH_KEY -ne 'existing-token') { throw 'Setup inherited the enrollment grant.' }

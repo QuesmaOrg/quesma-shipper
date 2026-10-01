@@ -19,6 +19,9 @@ import (
 )
 
 func InstallService(spec Spec) error {
+	if err := PrepareUserInstall(filepath.Dir(spec.Executable)); err != nil {
+		return err
+	}
 	if err := common.ValidateInstall(spec); err != nil {
 		return err
 	}
@@ -64,6 +67,9 @@ func InstallService(spec Spec) error {
 }
 
 func UninstallService() error {
+	if err := ValidateUserUninstall(); err != nil {
+		return err
+	}
 	sid, err := currentUserSID()
 	if err != nil {
 		return err
@@ -151,6 +157,9 @@ func queryOwnTask(ctx context.Context, userSID string) (string, []byte, error) {
 var ErrTaskDeleteUnverified = errors.New("supervise: delete scheduled task, outcome unverified")
 
 func ServiceState(ctx context.Context) Status {
+	if SystemManaged() {
+		return managedServiceState(ctx)
+	}
 	sid, err := currentUserSID()
 	if err != nil {
 		return Status{Kind: common.KindWindowsTask, Detail: err.Error()}
@@ -189,6 +198,9 @@ func ServiceState(ctx context.Context) Status {
 }
 
 func RestartService(ctx context.Context) error {
+	if SystemManaged() {
+		return common.ErrSystemManaged
+	}
 	sid, err := currentUserSID()
 	if err != nil {
 		return err
@@ -204,6 +216,9 @@ func RestartService(ctx context.Context) error {
 
 // RestartCommand is a hint printed for the user; the caller drops it when it is empty.
 func RestartCommand() string {
+	if SystemManaged() {
+		return ""
+	}
 	sid, err := currentUserSID()
 	if err != nil {
 		return ""
@@ -213,6 +228,9 @@ func RestartCommand() string {
 }
 
 func RemoveProgram(executable string) (string, error) {
+	if err := ValidateUserUninstall(); err != nil {
+		return "", err
+	}
 	uninstaller := filepath.Join(filepath.Dir(executable), "unins000.exe")
 	if _, err := os.Stat(uninstaller); err == nil {
 		cmd := exec.Command(uninstaller, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")

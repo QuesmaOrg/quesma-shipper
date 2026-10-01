@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
@@ -19,8 +20,28 @@ import (
 // action. The caller is built with -H windowsgui; CREATE_NO_WINDOW keeps its child windowless too.
 func RunSupervisor() {
 	logDir := ""
+	managed := len(os.Args) == 2 && os.Args[1] == "--managed"
 	if len(os.Args) > 1 {
 		logDir = os.Args[1]
+	}
+	if managed {
+		var err error
+		logDir, err = managedSupervisorLogDir()
+		if err != nil {
+			os.Exit(1)
+		}
+		lock, err := managedSupervisorLock()
+		if errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+			return
+		}
+		if err != nil {
+			if f, logErr := openLog(logDir, "agent.err.log"); logErr == nil {
+				fmt.Fprintf(f, "managed supervisor: %v\n", err)
+				f.Close()
+			}
+			os.Exit(1)
+		}
+		defer lock.Close()
 	}
 	err := supervise(logDir)
 	if err == nil {
@@ -31,6 +52,61 @@ func RunSupervisor() {
 		f.Close()
 	}
 	os.Exit(1)
+}
+
+func managedSupervisorLogDir() (string, error) {
+	if err := validateUserIdentity(); err != nil {
+		return "", err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	stateHome := os.Getenv("XDG_STATE_HOME")
+	if stateHome == "" {
+		stateHome = filepath.Join(home, ".local", "state")
+	}
+	if !filepath.IsAbs(stateHome) {
+		return "", fmt.Errorf("managed supervisor requires an absolute user state directory")
+	}
+	return filepath.Join(stateHome, "trajectory-shipper", "logs"), nil
+}
+
+func managedSupervisorLock() (*os.File, error) {
+	installed, err := ManagedExecutable()
+	if err != nil {
+		return nil, err
+	}
+	self, err := common.CurrentExecutable()
+	if err != nil {
+		return nil, err
+	}
+	if installed == "" || !SameProgram(self, taskRunner(installed)) {
+		return nil, fmt.Errorf("this supervisor does not own the managed installation")
+	}
+	if err := CheckNoUserInstallation(); err != nil {
+		return nil, err
+	}
+	local, err := windows.KnownFolderPath(windows.FOLDERID_LocalAppData, windows.KF_FLAG_DEFAULT)
+	if err != nil {
+		return nil, err
+	}
+	return acquireSupervisorLock(filepath.Join(local, "Quesma Shipper"))
+}
+
+func acquireSupervisorLock(dir string) (*os.File, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "supervisor.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := platform.LockFile(f); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
 }
 
 func supervise(logDir string) error {

@@ -20,7 +20,10 @@ try {
     $name = 'quesmatest' + [guid]::NewGuid().ToString('N').Substring(0, 10)
     $password = ConvertTo-SecureString ([guid]::NewGuid().ToString('N') + 'aA1!') -AsPlainText -Force
     $testUser = New-LocalUser -Name $name -Password $password -AccountNeverExpires -PasswordNeverExpires
-    Add-LocalGroupMember -Group (Get-LocalGroup -SID 'S-1-5-32-545') -Member $testUser
+    $users = Get-LocalGroup -SID 'S-1-5-32-545'
+    if (-not (Get-LocalGroupMember -Group $users | Where-Object { $_.SID -eq $testUser.SID })) {
+        Add-LocalGroupMember -Group $users -Member $testUser
+    }
     $acl = Get-Acl -LiteralPath $temp
     $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
         $testUser.SID, 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
@@ -64,8 +67,8 @@ Start-Sleep -Seconds 90
     $action.Arguments = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $childScript + '"'
     $task = $folder.RegisterTaskDefinition($taskName, $definition, 6, $null, $null, 4,
         'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;IU)')
-    $null = $task.RunEx($null, 4, $sessionId, $account)
-    $null = $task.RunEx($null, 4, $sessionId, $account)
+    $null = $task.RunEx($null, 12, $sessionId, $testUser.SID.Value)
+    $null = $task.RunEx($null, 12, $sessionId, $testUser.SID.Value)
     $deadline = (Get-Date).AddSeconds(30)
     do {
         $reports = @(Get-ChildItem -LiteralPath $temp -Filter '*.json')
