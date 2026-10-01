@@ -199,7 +199,12 @@ func runCmd(build app.Build) *cobra.Command {
 				stateDir, dirErr = app.StateDirWithoutConfig()
 			}
 			fl, runID, lastCrash := startCrashJournal(cmd.ErrOrStderr(), stateDir, dirErr)
-			err = runLoop(cmd, ctx, build, once, drain, quiet, fl, runID, lastCrash)
+			err = runLoop(cmd, ctx, build, once, drain, quiet, fl, runID, lastCrash,
+				func(started time.Time, stateDir string) bool {
+					return recycleDue(started, time.Now(), func() bool {
+						return packaging.ServiceState(stateDir).Loaded
+					})
+				}, packaging.ReExec)
 			fl.Exit()
 			return err
 		},
@@ -211,7 +216,8 @@ func runCmd(build app.Build) *cobra.Command {
 }
 
 func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, drain, quiet bool,
-	fl *crashjournal.Log, runID string, lastCrash *formats.LastCrash) error {
+	fl *crashjournal.Log, runID string, lastCrash *formats.LastCrash,
+	shouldRecycle func(time.Time, string) bool, reexec func() error) error {
 	fl.Phase("init")
 
 	env, err := app.New(build)
@@ -331,15 +337,13 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 			}
 			return nil
 		}
-		if recycleDue(started, time.Now(), func() bool {
-			return packaging.ServiceState(env.StateDir()).Loaded
-		}) {
+		if shouldRecycle(started, env.StateDir()) {
 			fmt.Fprintf(out, "recycling after %s of uptime; replacing the process in place\n",
 				time.Since(started).Round(time.Second))
 			clearSelfUpdateHop()
 			// Successful re-exec never returns to the run command's Exit call.
 			fl.Exit()
-			if err := packaging.ReExec(); err != nil {
+			if err := reexec(); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "recycle: re-exec failed (%v); exiting for the supervisor\n", err)
 				app.RecordUpdateFailure(fmt.Sprintf("recycle re-exec failed, falling back to the supervisor: %v", err))
 			}
