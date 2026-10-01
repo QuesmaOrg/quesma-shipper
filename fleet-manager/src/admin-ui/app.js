@@ -12,6 +12,7 @@ let deploymentDefaults = {allow_quesma_etl: true};
 // current one and drop it.
 let tableGeneration = 0;
 const installDetailCells = new Map();
+let installRecords = [];
 const $ = (selector) => document.querySelector(selector);
 const all = (selector, root = document) => [...root.querySelectorAll(selector)];
 const expiryPicker = createExpiryPicker($('#create-dialog'));
@@ -275,6 +276,7 @@ async function connect() {
 function selectOrganization(slug) {
   tableGeneration++;
   currentOrg = slug;
+  renderInstalls([]);
   const select = $('#org-select');
   select.replaceChildren(...organizations.map((org) => {
     const option = document.createElement('option'); option.value = org.slug; option.textContent = org.display_name; return option;
@@ -364,21 +366,23 @@ function stamp(value) {
 }
 
 function renderInstalls(records) {
+  installRecords = records;
   const body = $('#installs tbody'); body.replaceChildren();
   $('#installs .table-empty').classList.toggle('hidden', records.length > 0);
   installDetailCells.clear();
   records.forEach((record) => {
     const row = body.insertRow(); cell(row, record.install_id);
-    const name = cell(row, '');
+    const name = cell(row, ''), metadata = cell(row, '');
     cell(row, record.hostname); cell(row, record.platform);
     const os = cell(row, ''), booted = cell(row, '');
     cell(row, stamp(record.created_at));
     const config = cell(row, ''), vend = cell(row, ''), version = cell(row, '');
-    installDetailCells.set(record.install_id, {name, os, booted, config, vend, version});
+    installDetailCells.set(record.install_id, {name, metadata, os, booted, config, vend, version});
     const revoked = record.status === 'revoked'; emptyCell(row).append(statusPill(record.status, revoked));
     const actions = emptyCell(row);
     // A revoked install keeps its Name button: the objects it already wrote still want a label.
     actions.append(quietButton('Name', () => openRename(record.install_id, name.textContent)));
+    actions.append(quietButton('Metadata', () => openMetadata(record.install_id)));
     if (!revoked) actions.append(actionButton('Revoke', () => mutate(`/installs/${encodeURIComponent(record.install_id)}/revoke`, 'Install revoked')));
   });
 }
@@ -406,7 +410,10 @@ async function loadTags(generation) {
   if (generation !== tableGeneration) return;
   records.forEach((record) => {
     const cells = installDetailCells.get(record.install_id);
-    if (cells) cells.name.textContent = record.name || '—';
+    if (cells) {
+      cells.name.textContent = record.name || '—';
+      cells.metadata.textContent = metadataLabel(record.metadata);
+    }
   });
 }
 
@@ -419,7 +426,7 @@ async function loadTables() {
     if (generation === tableGeneration) toast(`Install details unavailable: ${error.message}`);
   });
   loadTags(generation).catch((error) => {
-    if (generation === tableGeneration) toast(`Install names unavailable: ${error.message}`);
+    if (generation === tableGeneration) toast(`Install tags unavailable: ${error.message}`);
   });
 }
 
@@ -539,6 +546,128 @@ $('#copy-command').addEventListener('click', async () => { try { await navigator
 all('[data-copy-keygen]').forEach((button) => button.addEventListener('click', async () => { try { await navigator.clipboard.writeText(button.parentElement.querySelector('code').textContent); toast('Command copied'); } catch (error) { toast(`Copy failed: ${error.message}`); } }));
 $('#close-secret').addEventListener('click', () => $('#secret-dialog').close());
 $('#secret-dialog').addEventListener('close', () => { $('#secret').textContent = ''; $('#enroll-command').textContent = ''; });
+
+function metadataLabel(metadata) {
+  return Object.entries(metadata || {}).map(([key, value]) => `${key}: ${value}`).join('; ') || '—';
+}
+
+let metadataEdit = null;
+function addMetadataField(key = '', value = '') {
+  const row = document.createElement('div'); row.className = 'metadata-field';
+  const keyLabel = document.createElement('label'); keyLabel.textContent = 'Key';
+  const keyInput = document.createElement('input'); keyInput.value = key;
+  keyInput.required = true; keyInput.pattern = '[a-z][a-z0-9_]{0,31}'; keyInput.maxLength = 32;
+  keyInput.autocomplete = 'off'; keyLabel.append(keyInput);
+  const valueLabel = document.createElement('label'); valueLabel.textContent = 'Value';
+  const valueInput = document.createElement('input'); valueInput.value = value; valueInput.autocomplete = 'off';
+  valueLabel.append(valueInput);
+  row.append(keyLabel, valueLabel, quietButton('Remove', () => { row.remove(); updateMetadataButton(); }));
+  $('#metadata-fields').append(row); updateMetadataButton();
+}
+function updateMetadataButton() {
+  $('#add-metadata').disabled = $('#metadata-fields').children.length >= 16;
+}
+async function openMetadata(installID) {
+  const org = currentOrg;
+  const records = await (await api(orgPath('/installs/tags'))).json();
+  if (currentOrg !== org) return;
+  const original = records.find((record) => record.install_id === installID)?.metadata || {};
+  metadataEdit = {org, installID, original};
+  $('#metadata-install').textContent = installID; $('#metadata-error').textContent = '';
+  $('#metadata-fields').replaceChildren();
+  Object.entries(original).forEach(([key, value]) => addMetadataField(key, value));
+  updateMetadataButton(); $('#metadata-dialog').showModal();
+}
+$('#add-metadata').addEventListener('click', () => addMetadataField());
+all('[data-close-metadata]').forEach((button) => button.addEventListener('click', () => $('#metadata-dialog').close()));
+$('#metadata-dialog').addEventListener('close', () => { metadataEdit = null; $('#metadata-fields').replaceChildren(); });
+$('#metadata-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!metadataEdit || metadataEdit.org !== currentOrg) return;
+  const edit = metadataEdit;
+  const button = $('#save-metadata'); button.disabled = true;
+  try {
+    const entries = all('.metadata-field', $('#metadata-fields')).map((row) => all('input', row).map((input) => input.value));
+    if (new Set(entries.map(([key]) => key)).size !== entries.length) throw new Error('Each metadata key must be unique.');
+    if (entries.some(([, value]) => [...value].length > 256 || /\p{Cc}/u.test(value))) throw new Error('Values must have at most 256 characters and no control characters.');
+    const updated = Object.fromEntries(entries), patch = Object.create(null);
+    for (const [key, value] of entries) if (edit.original[key] !== value) patch[key] = value;
+    for (const key of Object.keys(edit.original)) if (!Object.hasOwn(updated, key)) patch[key] = null;
+    await api(`/orgs/${encodeURIComponent(edit.org)}/installs/${encodeURIComponent(edit.installID)}/metadata`, {method: 'PATCH', body: JSON.stringify({metadata: patch})});
+    $('#metadata-dialog').close(); toast('Metadata saved'); await loadTables();
+  } catch (error) { $('#metadata-error').textContent = error.message; } finally { button.disabled = false; }
+});
+
+let inventory = null;
+$('#import-metadata').addEventListener('click', () => {
+  inventory = {org: currentOrg, rows: [], results: []};
+  $('#inventory-org').textContent = currentOrg; $('#inventory-error').textContent = '';
+  $('#inventory-csv').value = ''; $('#inventory-file').value = '';
+  $('#inventory-results').classList.add('hidden'); $('#retry-inventory').classList.add('hidden');
+  $('#inventory-dialog').showModal();
+});
+all('[data-close-inventory]').forEach((button) => button.addEventListener('click', () => $('#inventory-dialog').close()));
+$('#inventory-dialog').addEventListener('close', () => { inventory = null; });
+$('#inventory-file').addEventListener('change', async (event) => {
+  const file = event.currentTarget.files[0];
+  if (!file) return;
+  if (file.size > 1024 * 1024) { $('#inventory-error').textContent = 'Inventory files must be at most 1 MiB.'; return; }
+  const session = inventory;
+  try {
+    const contents = await file.text();
+    if (inventory === session) $('#inventory-csv').value = contents;
+  } catch (error) { $('#inventory-error').textContent = error.message; }
+});
+function renderInventory() {
+  const body = $('#inventory-results tbody'); body.replaceChildren();
+  const used = new Set(inventory.results.filter((result) => result.status === 'imported').map((result) => result.install_id));
+  inventory.results.forEach((result, index) => {
+    const row = body.insertRow(); cell(row, index + 1);
+    const source = inventory.rows[index]; cell(row, `${source.hostname}\n${metadataLabel(source.metadata)}`);
+    cell(row, result.status === 'imported' ? `Imported: ${result.install_id}` : `${result.status}: ${result.message || ''}`);
+    const choice = emptyCell(row);
+    if (result.status === 'imported') return;
+    const select = document.createElement('select'); select.dataset.inventoryRow = index;
+    select.setAttribute('aria-label', `Install for inventory row ${index + 1}`);
+    select.add(new Option('Skip row / select an install', ''));
+    const candidates = new Set(result.candidates || []);
+    [...installRecords].sort((a, b) => Number(candidates.has(b.install_id)) - Number(candidates.has(a.install_id))).forEach((install) => {
+      if (used.has(install.install_id)) return;
+      const option = new Option(`${install.hostname || 'No hostname'} — ${install.install_id} (${install.status})`, install.install_id);
+      select.add(option);
+    });
+    choice.append(select);
+  });
+  $('#inventory-results').classList.remove('hidden');
+  $('#retry-inventory').classList.toggle('hidden', inventory.results.every((result) => result.status === 'imported'));
+}
+async function submitInventory(retry) {
+  const session = inventory;
+  if (!session || session.org !== currentOrg) return;
+  $('#run-inventory').disabled = true; $('#retry-inventory').disabled = true; $('#inventory-error').textContent = '';
+  try {
+    let indexes, rows;
+    if (retry) {
+      const selections = all('[data-inventory-row]').filter((select) => select.value);
+      if (!selections.length) throw new Error('Select an install for at least one unresolved row.');
+      indexes = selections.map((select) => Number(select.dataset.inventoryRow));
+      rows = selections.map((select, i) => ({...session.rows[indexes[i]], install_id: select.value}));
+    } else {
+      if (new TextEncoder().encode($('#inventory-csv').value).length > 1024 * 1024) throw new Error('Inventory must be at most 1 MiB.');
+      rows = parseInventoryCSV($('#inventory-csv').value);
+      indexes = rows.map((_, index) => index);
+    }
+    const result = await (await api(`/orgs/${encodeURIComponent(session.org)}/installs/metadata/import`, {method: 'POST', body: JSON.stringify({rows})})).json();
+    if (inventory !== session) return;
+    if (!retry) { session.rows = rows; session.results = []; }
+    result.results.forEach((entry, i) => { session.results[indexes[i]] = entry; });
+    renderInventory(); await loadTables();
+  } catch (error) {
+    if (inventory === session) $('#inventory-error').textContent = error.message;
+  } finally { $('#run-inventory').disabled = false; $('#retry-inventory').disabled = false; }
+}
+$('#run-inventory').addEventListener('click', () => submitInventory(false));
+$('#retry-inventory').addEventListener('click', () => submitInventory(true));
 
 all('[data-server]').forEach((node) => { node.textContent = location.origin; });
 resetOrganizationForm();

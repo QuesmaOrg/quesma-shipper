@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
+	"maps"
 
 	"golang.org/x/sync/errgroup"
 )
 
-// Install names, written to each install's own root. Reads fan out over the installs list rather
+// Install names and metadata, written to each install's own root. Reads fan out over the installs list rather
 // than listing the payload prefix: the runtime identity is granted a listing of control/ and of
 // the organization roots, never of an install's objects.
 
@@ -23,36 +25,75 @@ func (m *Manager) LoadTags(ctx context.Context, installID string) (TagsRecord, s
 // SetTag names an install, or clears the name when given an empty one — the way back to showing the
 // install id. A revoked install can still be renamed: names are for reading what it already wrote.
 func (m *Manager) SetTag(ctx context.Context, installID, name string) error {
-	if _, err := uuidParse(installID); err != nil {
-		return errors.New("install id is not a UUID")
-	}
+	return m.setTag(ctx, installID, name, false)
+}
+
+func (m *Manager) setTag(ctx context.Context, installID, name string, ifMissing bool) error {
 	if name != "" {
 		if err := validateHumanName("install name", name); err != nil {
 			return err
 		}
 	}
-	// The install record proves the id belongs to this organization; without it any UUID would
-	// place a file under a root of its choosing.
+	return m.updateTags(ctx, installID, func(rec *TagsRecord) error {
+		if !ifMissing || rec.Name == "" {
+			rec.Name = name
+		}
+		return nil
+	})
+}
+
+// Retry against the latest record so name changes and disjoint metadata edits never erase one another.
+func (m *Manager) updateTags(ctx context.Context, installID string, update func(*TagsRecord) error) error {
+	if _, err := uuidParse(installID); err != nil {
+		return errors.New("install id is not a UUID")
+	}
 	if _, _, err := getRecord[InstallRecord](ctx, m.store, installKey(m.org, installID)); err != nil {
 		return err
 	}
-	rec := TagsRecord{Schema: schemaVersion, InstallID: installID, Name: name, UpdatedAt: m.time()}
-	current, version, err := getRecord[TagsRecord](ctx, m.store, tagsKey(m.org, installID))
-	if errors.Is(err, ErrNotFound) {
-		return createRecord(ctx, m.store, tagsKey(m.org, installID), rec)
+	key := tagsKey(m.org, installID)
+	for range 8 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		current, version, err := getRecord[TagsRecord](ctx, m.store, key)
+		missing := errors.Is(err, ErrNotFound)
+		if missing {
+			current = TagsRecord{Schema: schemaVersion, InstallID: installID}
+		} else if err != nil {
+			return err
+		} else if current.Schema != schemaVersion || current.InstallID != installID {
+			return errors.New("invalid install tags record")
+		}
+		rec := current
+		rec.Metadata = maps.Clone(current.Metadata)
+		if err := update(&rec); err != nil {
+			return err
+		}
+		if !missing && rec.Name == current.Name && maps.Equal(rec.Metadata, current.Metadata) {
+			return nil
+		}
+		// This is the one object the service writes outside control/; an update that leaves nothing
+		// to say does not create it.
+		if missing && rec.Name == "" && len(rec.Metadata) == 0 {
+			return nil
+		}
+		rec.UpdatedAt = m.time()
+		if missing {
+			err = createRecord(ctx, m.store, key, rec)
+		} else {
+			err = replaceRecord(ctx, m.store, key, version, rec)
+		}
+		if !errors.Is(err, ErrConflict) {
+			return err
+		}
 	}
-	if err != nil {
-		return err
-	}
-	if current.Name == name {
-		return nil
-	}
-	return replaceRecord(ctx, m.store, tagsKey(m.org, installID), version, rec)
+	return ErrConflict
 }
 
-// ListTags drops names it cannot use so their install rows can still render. An install with no
-// name is the normal case, not a failure.
-func (m *Manager) ListTags(ctx context.Context) ([]TagsRecord, error) {
+// ListTags returns every install's tags record, named or not. A record whose metadata this version
+// cannot vouch for -- one a later version wrote, say -- keeps its name and loses the metadata, and
+// the log says so: a name must not vanish from the table because a field beside it did.
+func (m *Manager) ListTags(ctx context.Context, logger *log.Logger) ([]TagsRecord, error) {
 	installs, err := m.ListInstalls(ctx)
 	if err != nil {
 		return nil, err
@@ -64,8 +105,12 @@ func (m *Manager) ListTags(ctx context.Context) ([]TagsRecord, error) {
 	for i, install := range installs {
 		group.Go(func() error {
 			rec, _, err := getRecord[TagsRecord](ctx, m.store, tagsKey(m.org, install.InstallID))
-			if err != nil || rec.Name == "" || rec.InstallID != install.InstallID {
+			if err != nil || rec.InstallID != install.InstallID || rec.Schema != schemaVersion {
 				return nil
+			}
+			if err := validateMetadata(rec.Metadata); err != nil {
+				logger.Printf("tags for install %s carry unusable metadata, listed without it: %v", install.InstallID, err)
+				rec.Metadata = nil
 			}
 			records[i], found[i] = rec, true
 			return nil

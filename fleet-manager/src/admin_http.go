@@ -38,7 +38,8 @@ type adminExpiryRequest struct {
 }
 
 type adminTagsRequest struct {
-	Name string `json:"name"`
+	Name      string `json:"name"`
+	IfMissing bool   `json:"if_missing,omitempty"`
 }
 
 type adminSecretResponse struct {
@@ -206,6 +207,8 @@ func registerOrganizationRoutes(mux *http.ServeMux, prefix string, s *Server) {
 	mux.HandleFunc("POST "+prefix+"/installs/{id}/health", s.scoped(s.handleAdminReportHealth))
 	mux.HandleFunc("GET "+prefix+"/installs/tags", s.scopedAdmin(s.handleAdminListTags))
 	mux.HandleFunc("PUT "+prefix+"/installs/{id}/tags", s.scopedAdmin(s.handleAdminSetTag))
+	mux.HandleFunc("PATCH "+prefix+"/installs/{id}/metadata", s.scopedAdmin(s.handleAdminPatchMetadata))
+	mux.HandleFunc("POST "+prefix+"/installs/metadata/import", s.scopedAdmin(s.handleAdminImportMetadata))
 	mux.HandleFunc("POST "+prefix+"/installs/{id}/revoke", s.scopedAdmin(s.handleAdminRevokeInstall))
 }
 
@@ -542,8 +545,8 @@ func (s *Server) writeAdminList(w http.ResponseWriter, operation string, records
 
 func (s *Server) handleAdminListTags(w http.ResponseWriter, r *http.Request) {
 	manager, _ := s.adminManager(r)
-	records, err := manager.ListTags(r.Context())
-	s.writeAdminList(w, "list install names", records, err)
+	records, err := manager.ListTags(r.Context(), s.logger)
+	s.writeAdminList(w, "list install tags", records, err)
 }
 
 func (s *Server) handleAdminSetTag(w http.ResponseWriter, r *http.Request) {
@@ -552,7 +555,7 @@ func (s *Server) handleAdminSetTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	manager, _ := s.adminManager(r)
-	s.adminEmptyMutation(w, "set install name", manager.SetTag(r.Context(), r.PathValue("id"), req.Name))
+	s.adminEmptyMutation(w, "set install name", manager.setTag(r.Context(), r.PathValue("id"), req.Name, req.IfMissing))
 }
 
 func (s *Server) handleAdminRevokeInstall(w http.ResponseWriter, r *http.Request) {
@@ -574,6 +577,8 @@ func (s *Server) adminOperationError(w http.ResponseWriter, operation string, er
 		writeAdminError(w, http.StatusNotFound, "not found")
 	case errors.Is(err, ErrConflict):
 		writeAdminError(w, http.StatusConflict, "conflict")
+	case errors.Is(err, errInvalidMetadata):
+		writeAdminError(w, http.StatusBadRequest, err.Error())
 	case err.Error() == "a spent invite cannot be released", err.Error() == "reservation install exists and is not revoked":
 		writeAdminError(w, http.StatusConflict, err.Error())
 	case err.Error() == "grant id is not a UUID", err.Error() == "invite id is not a UUID",
