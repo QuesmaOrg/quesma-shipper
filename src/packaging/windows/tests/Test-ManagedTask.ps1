@@ -7,14 +7,35 @@ $principal = New-Object Security.Principal.WindowsPrincipal($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw 'Run this test from an elevated Windows shell.'
 }
-$temp = Join-Path ([IO.Path]::GetTempPath()) ('quesma-task-test-' + [guid]::NewGuid())
+$temp = Join-Path $env:ProgramData ('quesma-task-test-' + [guid]::NewGuid())
 $taskName = 'Quesma Shipper Task Test - ' + [guid]::NewGuid()
 $scheduler = New-Object -ComObject 'Schedule.Service'
 $scheduler.Connect()
 $folder = $scheduler.GetFolder('\')
 $task = $null
+$testUser = $null
+$holder = $null
 try {
     New-Item -ItemType Directory -Path $temp | Out-Null
+    $name = 'quesmatest' + [guid]::NewGuid().ToString('N').Substring(0, 10)
+    $password = ConvertTo-SecureString ([guid]::NewGuid().ToString('N') + 'aA1!') -AsPlainText -Force
+    $testUser = New-LocalUser -Name $name -Password $password -AccountNeverExpires -PasswordNeverExpires
+    Add-LocalGroupMember -Group (Get-LocalGroup -SID 'S-1-5-32-545') -Member $testUser
+    $acl = Get-Acl -LiteralPath $temp
+    $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
+        $testUser.SID, 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+    Set-Acl -LiteralPath $temp -AclObject $acl
+    $account = "$env:COMPUTERNAME\$name"
+    $credential = New-Object Management.Automation.PSCredential($account, $password)
+    # Hosted runners use the built-in Administrator, for which Windows ignores RunLevel.
+    $holder = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
+        -Credential $credential -LoadUserProfile -PassThru -WorkingDirectory $temp `
+        -ArgumentList '-NoLogo -NoProfile -NonInteractive -Command "Start-Sleep -Seconds 120"'
+    if ($holder.HasExited -or $holder.SessionId -ne $sessionId) {
+        throw 'Could not establish a standard-user logon token in the interactive session.'
+    }
+    $profile = Get-ItemProperty -LiteralPath ("HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\" + $testUser.SID.Value)
+    $expectedProfile = [Environment]::ExpandEnvironmentVariables($profile.ProfileImagePath)
     $childScript = Join-Path $temp 'identity.ps1'
     @'
 $ErrorActionPreference = 'Stop'
@@ -25,7 +46,8 @@ $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     Profile = $env:USERPROFILE
     Session = (Get-Process -Id $PID).SessionId
     Elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $PSScriptRoot "$PID.json")
+} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $PSScriptRoot "$PID.tmp")
+Move-Item -LiteralPath (Join-Path $PSScriptRoot "$PID.tmp") -Destination (Join-Path $PSScriptRoot "$PID.json")
 Start-Sleep -Seconds 90
 '@ | Set-Content -LiteralPath $childScript -Encoding UTF8
 
@@ -42,8 +64,8 @@ Start-Sleep -Seconds 90
     $action.Arguments = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $childScript + '"'
     $task = $folder.RegisterTaskDefinition($taskName, $definition, 6, $null, $null, 4,
         'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;IU)')
-    $null = $task.RunEx($null, 4, $sessionId, $null)
-    $null = $task.RunEx($null, 4, $sessionId, $null)
+    $null = $task.RunEx($null, 4, $sessionId, $account)
+    $null = $task.RunEx($null, 4, $sessionId, $account)
     $deadline = (Get-Date).AddSeconds(30)
     do {
         $reports = @(Get-ChildItem -LiteralPath $temp -Filter '*.json')
@@ -55,8 +77,8 @@ Start-Sleep -Seconds 90
     }
     foreach ($reportFile in $reports) {
         $report = Get-Content -LiteralPath $reportFile.FullName -Raw | ConvertFrom-Json
-        if ($report.SID -ne $identity.User.Value -or $report.SID -in @('S-1-5-18', 'S-1-5-19', 'S-1-5-20') -or
-            $report.Profile -ne $env:USERPROFILE -or $report.Session -ne $sessionId -or $report.Elevated) {
+        if ($report.SID -ne $testUser.SID.Value -or $report.SID -in @('S-1-5-18', 'S-1-5-19', 'S-1-5-20') -or
+            $report.Profile -ne $expectedProfile -or $report.Session -ne $sessionId -or $report.Elevated) {
             throw "Task did not use the unelevated interactive user: $($report | ConvertTo-Json -Compress)"
         }
     }
@@ -65,6 +87,12 @@ Start-Sleep -Seconds 90
     if ($task) {
         $task.Stop(0)
         $folder.DeleteTask($taskName, 0)
+    }
+    if ($holder -and -not $holder.HasExited) { Stop-Process -Id $holder.Id -Force }
+    if ($testUser) {
+        Remove-LocalUser -SID $testUser.SID
+        Get-CimInstance Win32_UserProfile -Filter "SID='$($testUser.SID.Value)'" |
+            Remove-CimInstance -ErrorAction Continue
     }
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
 }
