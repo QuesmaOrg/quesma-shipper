@@ -1,0 +1,165 @@
+# GitHub Copilot — two agents, one event schema. The Copilot CLI keeps one directory per
+# session under <root>/session-state/<id>/; Copilot Chat in VS Code writes the same
+# {type, data, id, parentId} events per workspace, plus VS Code's own chat store beside them.
+#
+# The split mirrors Cursor: the VS Code transcript is clean but records only whether a tool
+# succeeded, while chatSessions/ is VS Code's mutation log (kind 0 snapshot, 1 set, 2 splice)
+# and the only carrier of tool results, rendered prompts and usage. Both ship.
+#
+# Credentials sit in the same roots (the CLI's config.json, mcp-oauth-config and mcp-secrets,
+# the IDE bridge's lock files, VS Code's secret storage), so includes name session files only and
+# the compiled deny list backs them up. config.json is also where CLI settings live, so they are
+# not collected. Deferred: session-store.db (an index of these same files), VS Code Insiders and
+# the remote server's ~/.vscode-server, both separate roots.
+spec_version: 1
+family: copilot
+display_name: GitHub Copilot
+
+sources:
+  - id: copilot-cli-sessions
+    description: >-
+      Copilot CLI session event logs, one per session directory. Append-only JSONL whose
+      first line (session.start) names the cwd, repository and branch; tool results ship
+      inline. Sessions started from VS Code's Copilot CLI integration land here too.
+    gather: file_glob
+    artifact_class: trajectory
+    roots:
+      - $COPILOT_HOME
+      - ~/.copilot
+    require_subdir: session-state
+    # Measured: 0.3 and 0.8 MB, longest line 115 KB (model.messages_snapshot repeats the
+    # conversation). Same ceiling as the other transcript sources.
+    max_file_bytes: 268435456
+    include:
+      - "session-state/*/events.jsonl"
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 65536
+
+  - id: copilot-cli-context
+    description: >-
+      Per-session sidecars: workspace.yaml (cwd, repository, branch, name), the plan,
+      compaction checkpoints, research reports, session files and rewind snapshots of
+      edited files. Attributed to the repository through the session's events.jsonl.
+    gather: file_glob
+    artifact_class: context
+    roots:
+      - $COPILOT_HOME
+      - ~/.copilot
+    require_subdir: session-state
+    # Rewind snapshots copy whatever file the agent edited, like Claude Code's file-history.
+    max_file_bytes: 67108864
+    include:
+      - "session-state/*/workspace.yaml"
+      - "session-state/*/plan.md"
+      - "session-state/*/autopilot-objective.json"
+      - "session-state/*/checkpoints/**"
+      - "session-state/*/research/**"
+      - "session-state/*/files/**"
+      - "session-state/*/rewind-file-snapshots/**"
+    # Snapshots of binary files: the scrubber cannot see into them.
+    exclude:
+      - "session-state/**/*.{jpg,jpeg,png,gif,webp,pdf,bin,zip,gz,JPG,JPEG,PNG,GIF,WEBP,PDF,BIN,ZIP,GZ}"
+    sniff:
+      kind: none
+
+  - id: copilot-cli-instructions
+    description: >-
+      Personal custom instructions the CLI loads into every session:
+      copilot-instructions.md and the instructions/ tree. Repository instruction files sit
+      outside these roots.
+    gather: file_glob
+    artifact_class: context
+    roots:
+      - $COPILOT_HOME
+      - ~/.copilot
+    # Hand-written markdown; the cap only bounds what an accident here can make the pipeline hold.
+    max_file_bytes: 8388608
+    include:
+      - "copilot-instructions.md"
+      - "instructions/**/*.instructions.md"
+    sniff:
+      kind: none
+
+  - id: copilot-vscode-transcripts
+    description: >-
+      Copilot Chat agent transcripts, one per chat session, in the CLI's event schema.
+      Tool results are absent (success only); chatSessions carries them.
+    gather: file_glob
+    artifact_class: trajectory
+    roots:
+      - ~/Library/Application Support/Code/User/workspaceStorage
+      - $APPDATA/Code/User/workspaceStorage
+      - $XDG_CONFIG_HOME/Code/User/workspaceStorage
+      - ~/.config/Code/User/workspaceStorage
+    max_file_bytes: 268435456
+    include:
+      - "*/GitHub.copilot-chat/transcripts/*.jsonl"
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 65536
+
+  - id: copilot-vscode-chat-sessions
+    description: >-
+      VS Code's chat session store: an operation log replayed onto the kind 0 snapshot,
+      where k is the path a value lands at. Holds the rendered prompt, tool results keyed
+      by tool call id, the model and token counts. Mutated by the editor, so it re-ships
+      whole when it changes. With chat.useLogSessionStorage off, and for sessions written
+      before the log existed, the store is a flat <id>.json: the same snapshot on one line.
+      no-workspace/chatSessions is the older empty-window location.
+    gather: file_glob
+    artifact_class: trajectory
+    roots:
+      - ~/Library/Application Support/Code/User/workspaceStorage
+      - $APPDATA/Code/User/workspaceStorage
+      - $XDG_CONFIG_HOME/Code/User/workspaceStorage
+      - ~/.config/Code/User/workspaceStorage
+    # Measured 0.7 MB for a one-hour agent session, single lines to 455 KB.
+    max_file_bytes: 268435456
+    include:
+      - "*/chatSessions/*.jsonl"
+      - "*/chatSessions/*.json"
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 1048576
+
+  - id: copilot-vscode-global-sessions
+    description: >-
+      The same chat session store kept in global storage: chats opened with no folder, and
+      sessions transferred between workspaces (flat <id>.json). No workspace, so no
+      repository attribution.
+    gather: file_glob
+    artifact_class: trajectory
+    roots:
+      - ~/Library/Application Support/Code/User/globalStorage
+      - $APPDATA/Code/User/globalStorage
+      - $XDG_CONFIG_HOME/Code/User/globalStorage
+      - ~/.config/Code/User/globalStorage
+    max_file_bytes: 268435456
+    include:
+      - "emptyWindowChatSessions/*.jsonl"
+      - "emptyWindowChatSessions/*.json"
+      - "transferredChatSessions/*.json"
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 1048576
+
+  - id: copilot-vscode-editing
+    description: >-
+      Chat editing sessions: the checkpoint timeline and the baseline contents of files the
+      agent edited, VS Code's equivalent of a file-history checkpoint.
+    gather: file_glob
+    artifact_class: context
+    roots:
+      - ~/Library/Application Support/Code/User/workspaceStorage
+      - $APPDATA/Code/User/workspaceStorage
+      - $XDG_CONFIG_HOME/Code/User/workspaceStorage
+      - ~/.config/Code/User/workspaceStorage
+    max_file_bytes: 67108864
+    include:
+      - "*/chatEditingSessions/*/state.json"
+      - "*/chatEditingSessions/*/contents/**"
+    exclude:
+      - "*/chatEditingSessions/**/*.{jpg,jpeg,png,gif,webp,pdf,bin,zip,gz,JPG,JPEG,PNG,GIF,WEBP,PDF,BIN,ZIP,GZ}"
+    sniff:
+      kind: none

@@ -517,6 +517,20 @@ func resolveRoots(eff *Effective, in Input) error {
 	return nil
 }
 
+// layerIncludes are the include globs a config layer set that the compiled catalog does not have.
+// Only those are checked against files on disk: a compiled glob over names the agent chooses
+// (plans, notes, session files) would otherwise let one file named .env reject the whole config,
+// and discovery still skips each denied file it reaches.
+func layerIncludes(eff *Effective, src *ResolvedSource) []string {
+	if eff.Catalog == nil {
+		return src.Include
+	}
+	spec, _ := eff.Catalog.Source(src.ID)
+	return slices.DeleteFunc(slices.Clone(src.Include), func(glob string) bool {
+		return slices.Contains(spec.Include, glob)
+	})
+}
+
 // pickRoot returns the first candidate that expands, exists and satisfies require_subdir, or the
 // reasons no candidate qualified. A RejectionError separates a configuration fault -- a candidate
 // that cannot expand, or one the deny list forbids -- from the ordinary absent agent, which is an
@@ -555,7 +569,7 @@ func pickRoot(eff *Effective, src *ResolvedSource, env sources.Env) (string, []s
 			reasons = append(reasons, err.Error())
 			continue
 		}
-		if err := eff.Deny.CheckIncludes(expanded, src.Include); err != nil {
+		if err := eff.Deny.CheckIncludes(expanded, layerIncludes(eff, src)); err != nil {
 			return "", reasons, eff.reject("sources."+src.ID+".include", "%v", err)
 		}
 

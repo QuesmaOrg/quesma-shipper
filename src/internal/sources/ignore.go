@@ -31,6 +31,11 @@ type RepoFilter struct {
 	// while the daemon runs must bite on the next flush, not the next restart.
 	cwds   map[string]string
 	scopes map[string]gitScope
+
+	// anchors names the Copilot sources whose files take their folders from one anchor file per
+	// directory, and anchored caches those folders; see anchor.go.
+	anchors  map[string]sessionAnchor
+	anchored map[string][]string
 }
 
 // gitScope is the checkout containing a working directory and the repository's main
@@ -54,23 +59,35 @@ type GitRead struct {
 }
 
 // RepoFilter builds the attributor. Claude Code states cwd at the top level of a transcript
-// record, Codex under payload.
+// record, Codex under payload, the Copilot CLI under data.context.
 func (c *Compiled) RepoFilter() *RepoFilter {
 	home, _ := os.UserHomeDir()
-	return newRepoFilter(
-		&CWDProbe{From: []string{"claude-code-transcripts", "codex-rollouts"}, Fields: []string{"cwd", "payload.cwd"}, ScanBytes: 64 << 10},
+	f := newRepoFilter(
+		&CWDProbe{From: []string{"claude-code-transcripts", "codex-rollouts"}, Fields: []string{"cwd", "payload.cwd", "data.context.cwd"}, ScanBytes: 64 << 10},
 		&GitRead{WalkUp: true, FollowGitdirFile: true},
 		home)
+	f.anchors = copilotAnchors(f.probe)
+	return f
 }
 
 func newRepoFilter(probe *CWDProbe, git *GitRead, home string) *RepoFilter {
-	return &RepoFilter{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}}
+	return &RepoFilter{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}, anchored: map[string][]string{}}
 }
 
 // CWD is the working directory a candidate's session ran in, or "" when none was found,
 // which is a legal outcome.
 func (f *RepoFilter) CWD(src Resolved, c Candidate) string {
-	if f == nil || f.probe == nil || !slices.Contains(f.probe.From, src.ID) {
+	if f == nil {
+		return ""
+	}
+	if a, ok := f.anchors[src.ID]; ok {
+		// A multi-root workspace has no single working directory.
+		if dirs := f.anchoredDirs(src, c, a); len(dirs) == 1 {
+			return dirs[0]
+		}
+		return ""
+	}
+	if f.probe == nil || !slices.Contains(f.probe.From, src.ID) {
 		return ""
 	}
 	key := c.Path
@@ -183,8 +200,16 @@ func (f *RepoFilter) Match(src Resolved, c Candidate) bool {
 	if f == nil {
 		return false
 	}
-	_, marked := f.Marker(f.CWD(src, c))
-	return marked
+	dirs := []string{f.CWD(src, c)}
+	if a, ok := f.anchors[src.ID]; ok {
+		dirs = f.anchoredDirs(src, c, a)
+	}
+	for _, dir := range dirs {
+		if _, marked := f.Marker(dir); marked {
+			return true
+		}
+	}
+	return false
 }
 
 // Untrack drops a marker in dir; Track removes dir's own marker. Both are idempotent, and
