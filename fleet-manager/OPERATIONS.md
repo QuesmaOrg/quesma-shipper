@@ -37,6 +37,14 @@ for enrollment, so you can push it out ahead of everything else and enroll later
 
 ## Afterwards
 
+**Publish the Fleet Manager image.** A push to `main` that changes `fleet-manager/` or its image
+workflow runs `make check`, then pushes `quesma/fleet-manager:<sha>` and `:latest` to Docker Hub.
+The `fleet-manager-publishing` GitHub environment holds `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`
+but has no required reviewers. Keep that environment setting without a reviewer gate so image
+publishing follows a reviewed, green merge automatically. Shipper releases use a separate workflow
+and still require approval. A change to GitHub environment protection is made in repository
+settings, outside this file.
+
 **Rotate the administrator credential.** With Terraform,
 `terraform apply -replace=random_bytes.admin_credential`; the digest object changes during the
 apply and the old credential stops working immediately. Locally, delete
