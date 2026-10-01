@@ -84,6 +84,9 @@ jobs:
       - name: Check Intune scripts with Windows PowerShell 5.1
         shell: powershell
         run: ./src/packaging/windows/intune/tests/Test-Deployment.ps1
+      - name: Verify managed task session behavior
+        shell: powershell
+        run: ./src/packaging/windows/tests/Test-ManagedTask.ps1
       - name: Build and exercise the per-user installer
         shell: pwsh
         run: |
