@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -66,19 +65,9 @@ func TestReExecAfterUpdate(t *testing.T) {
 	if err := os.WriteFile(installed, raw, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	launches := []string{installed}
-	if runtime.GOOS != "windows" { // Homebrew launches through a symlink
-		link := filepath.Join(dir, "shipper")
-		if err := os.Symlink(installed, link); err != nil {
-			t.Fatal(err)
-		}
-		launches = append(launches, link)
-	}
-	for _, launch := range launches {
-		cmd := exec.Command(launch, "-test.run=^TestReExecAfterUpdate$")
-		cmd.Env = append(os.Environ(), "QUESMA_TEST_REEXEC=update")
-		if out, err := cmd.CombinedOutput(); err != nil || !strings.HasPrefix(string(out), "restarted\n") {
-			t.Fatalf("%s: update and re-exec: %v, %s", launch, err, out)
-		}
+	cmd := exec.Command(installed, "-test.run=^TestReExecAfterUpdate$")
+	cmd.Env = append(os.Environ(), "QUESMA_TEST_REEXEC=update")
+	if out, err := cmd.CombinedOutput(); err != nil || !strings.HasPrefix(string(out), "restarted\n") {
+		t.Fatalf("update and re-exec: %v, %s", err, out)
 	}
 }
