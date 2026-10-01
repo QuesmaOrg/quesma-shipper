@@ -139,6 +139,7 @@ func (m *Manager) ImportMetadata(ctx context.Context, rows []metadataImportRow, 
 	}
 	byHost := make(map[string][]string)
 	byID := make(map[string]bool)
+	// Revocation preserves an identity; a shared hostname never proves its replacement owns the metadata.
 	for _, install := range installs {
 		if key := hostnameMatchKey(install.Hostname); key != "" {
 			byHost[key] = append(byHost[key], install.InstallID)
@@ -162,7 +163,7 @@ func (m *Manager) ImportMetadata(ctx context.Context, rows []metadataImportRow, 
 		case len(result.Candidates) == 0:
 			result.Status, result.Message = "unmatched", "No install has this hostname; select an install manually"
 		case len(result.Candidates) > 1:
-			result.Status, result.Message = "ambiguous", "Multiple installs share this hostname; select an install manually"
+			result.Status, result.Message = "ambiguous", "Multiple install identities share this hostname; revoked installs also count. Select the intended install manually"
 		default:
 			result.InstallID = result.Candidates[0]
 		}

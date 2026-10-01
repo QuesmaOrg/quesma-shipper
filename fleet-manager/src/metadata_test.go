@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -168,6 +169,61 @@ func TestMetadataImportMatchesWithinOrganizationAndResolvesManually(t *testing.T
 	} {
 		if w := serveAdmin(t, server, adminRequest("POST", "/v1/admin/orgs/acme/installs/metadata/import", body, testAdminCredential)); w.Code != http.StatusBadRequest {
 			t.Fatalf("invalid import %s = %d", body, w.Code)
+		}
+	}
+}
+
+func TestMetadataImportRequiresSelectionForRevokedAndNewIdentity(t *testing.T) {
+	server, store := testAdminServer(t)
+	manager := acmeManager(t, server)
+	ctx := context.Background()
+	oldID := "11111111-1111-1111-1111-111111111111"
+	newID := "22222222-2222-2222-2222-222222222222"
+	for _, id := range []string{oldID, newID} {
+		plantInstall(t, server, store, id)
+		record, version, err := getRecord[InstallRecord](ctx, store, installKey("acme", id))
+		if err != nil {
+			t.Fatal(err)
+		}
+		record.Hostname = "Laptop-42.local"
+		if err := replaceRecord(ctx, store, installKey("acme", id), version, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := manager.PatchMetadata(ctx, oldID, map[string]*string{"email": ptr("previous@example.com")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RevokeInstall(ctx, oldID); err != nil {
+		t.Fatal(err)
+	}
+	rows := []metadataImportRow{{Hostname: "laptop-42", Metadata: map[string]*string{"email": ptr("current@example.com")}}}
+	results, err := manager.ImportMetadata(ctx, rows, log.Default())
+	if err != nil || len(results) != 1 {
+		t.Fatalf("import: %+v, %v", results, err)
+	}
+	result := results[0]
+	if result.Status != "ambiguous" || result.InstallID != "" || len(result.Candidates) != 2 ||
+		!slices.Contains(result.Candidates, oldID) || !slices.Contains(result.Candidates, newID) {
+		t.Fatalf("expected both identities to require selection: %+v", result)
+	}
+	if _, _, err := manager.LoadTags(ctx, newID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("ambiguous import wrote new identity metadata: %v", err)
+	}
+	rows[0].InstallID = newID
+	results, err = manager.ImportMetadata(ctx, rows, log.Default())
+	if err != nil || len(results) != 1 || results[0].Status != "imported" || results[0].InstallID != newID {
+		t.Fatalf("manual selection: %+v, %v", results, err)
+	}
+	for id, email := range map[string]string{oldID: "previous@example.com", newID: "current@example.com"} {
+		record, _, err := manager.LoadTags(ctx, id)
+		if err != nil || record.Metadata["email"] != email {
+			t.Fatalf("metadata for %s: %+v, %v", id, record, err)
+		}
+	}
+	for id, status := range map[string]InstallStatus{oldID: InstallRevoked, newID: InstallActive} {
+		record, _, err := getRecord[InstallRecord](ctx, store, installKey("acme", id))
+		if err != nil || record.Status != status {
+			t.Fatalf("identity status for %s: %+v, %v", id, record, err)
 		}
 	}
 }
