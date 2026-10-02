@@ -91,6 +91,15 @@ func CompiledExemptions() map[string][]string {
 			"requests[].result.metadata.toolCallResults.*",
 			"requests[].response[].invocationMessage.uris.*", "requests[].response[].pastTenseMessage.uris.*",
 		},
+		"pi": {
+			"message.content[].id", "message.toolCallId",
+		},
+		"opencode": {
+			"id", "parent_id", "session_id", "message_id", "data.parentID", "data.callID",
+		},
+		"hermes": {
+			"tool_call_id", "tool_calls#json[].id", "tool_calls#json[].call_id", "tool_calls#json[].response_item_id",
+		},
 		"*": {"timestamp", "version"},
 	}
 }

@@ -65,6 +65,10 @@ func CompiledDrops() map[string][]string {
 			"payload.item.content_items[].imageUrl",
 			"payload.item.content_items[].audioUrl",
 		},
+		"pi": {
+			"message.content[].thinkingSignature",
+			"message.content[].data",
+		},
 	}
 }
 
