@@ -153,7 +153,7 @@ function Assert-Installed([string]$Version) {
         $group = (New-Object Security.Principal.NTAccount($group)).Translate([Security.Principal.SecurityIdentifier]).Value
     }
     if (-not $task.Enabled -or $group -ne 'S-1-5-32-545' -or
-        $xml.Task.Principals.Principal.RunLevel -ne 'LeastPrivilege' -or
+        $task.Definition.Principal.RunLevel -ne 0 -or
         $xml.Task.Settings.MultipleInstancesPolicy -ne 'Parallel' -or
         -not $xml.Task.Triggers.LogonTrigger -or $xml.Task.Triggers.LogonTrigger.UserId -or
         $xml.Task.Actions.Exec.Command -ne $supervisorPath -or $xml.Task.Actions.Exec.Arguments -ne '--managed') {

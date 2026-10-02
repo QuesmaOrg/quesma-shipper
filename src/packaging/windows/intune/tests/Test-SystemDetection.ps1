@@ -27,6 +27,8 @@ try {
     $cases = @(
         @{ Name = 'installed before first login'; Detect = $true },
         @{ Name = 'default enabled'; Replace = @('<Enabled>true</Enabled>', ''); Detect = $true },
+        @{ Name = 'default least privilege'; Replace = @('<RunLevel>LeastPrivilege</RunLevel>', ''); Detect = $true },
+        @{ Name = 'empty run level'; Replace = @('LeastPrivilege', '') },
         @{ Name = 'wrong version'; Version = '1.2.3-3.previous' },
         @{ Name = 'unconfigured version'; ExpectedVersion = 'REPLACE_WITH_RELEASE_VERSION' },
         @{ Name = 'registration missing'; MissingRegistration = $true },

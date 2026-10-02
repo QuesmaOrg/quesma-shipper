@@ -16,6 +16,7 @@ $folder = $scheduler.GetFolder('\')
 $task = $null
 $testUser = $null
 $testSession = $null
+$remoteLogonGranted = $false
 $terminalServerKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'
 $previousDeny = (Get-ItemProperty -LiteralPath $terminalServerKey).fDenyTSConnections
 $firewallRule = 'quesma-rdp-test-' + [guid]::NewGuid()
@@ -30,6 +31,13 @@ try {
         Add-LocalGroupMember -Group $users -Member $testUser
     }
     Add-LocalGroupMember -Group (Get-LocalGroup -SID 'S-1-5-32-555') -Member $testUser
+    $rightsFile = Join-Path $temp 'rights.cfg'
+    & "$env:SystemRoot\System32\secedit.exe" /export /cfg $rightsFile /areas USER_RIGHTS /quiet | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Could not inspect remote logon authorization.' }
+    Get-Content -LiteralPath $rightsFile | Select-String '^Se(Deny)?RemoteInteractiveLogonRight\s*=' |
+        ForEach-Object { Write-Host $_.Line }
+    [QuesmaTestSessions]::RemoteLogonRight($testUser.SID.Value, $true)
+    $remoteLogonGranted = $true
     $acl = Get-Acl -LiteralPath $temp
     $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
         $testUser.SID, 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
@@ -66,6 +74,7 @@ Start-Sleep -Seconds 90
     New-NetFirewallRule -Name $firewallRule -DisplayName $firewallRule -Direction Inbound -Action Allow `
         -Protocol TCP -LocalPort 3389 -LocalAddress 127.0.0.1 -RemoteAddress 127.0.0.1 | Out-Null
     Start-Service TermService
+    & "$env:SystemRoot\System32\query.exe" session | Out-String | Write-Host
     $testSession = Open-TestSession $name $plainPassword
     $deadline = (Get-Date).AddSeconds(30)
     do {
@@ -105,9 +114,11 @@ Start-Sleep -Seconds 90
     Set-ItemProperty -LiteralPath $terminalServerKey -Name fDenyTSConnections -Value $previousDeny
     Remove-NetFirewallRule -Name $firewallRule -ErrorAction SilentlyContinue
     if ($testUser) {
+        if ($remoteLogonGranted) { [QuesmaTestSessions]::RemoteLogonRight($testUser.SID.Value, $false) }
         Remove-LocalUser -SID $testUser.SID
         Get-CimInstance Win32_UserProfile -Filter "SID='$($testUser.SID.Value)'" |
             Remove-CimInstance -ErrorAction Continue
     }
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
 }
+$global:LASTEXITCODE = 0

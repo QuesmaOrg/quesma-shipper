@@ -17,6 +17,33 @@ public static class QuesmaTestSessions {
     [DllImport("wtsapi32.dll", SetLastError=true)] static extern bool WTSQuerySessionInformationW(IntPtr server, int session, int info, out IntPtr buffer, out int bytes);
     [DllImport("wtsapi32.dll")] static extern void WTSFreeMemory(IntPtr memory);
     [DllImport("wtsapi32.dll", SetLastError=true)] static extern bool WTSLogoffSession(IntPtr server, int session, bool wait);
+    [StructLayout(LayoutKind.Sequential)] struct PolicyAttributes {
+        public uint Length; public IntPtr Root, Name; public uint Attributes; public IntPtr Security, Quality;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct PolicyString {
+        public ushort Length, MaximumLength; public IntPtr Buffer;
+    }
+    [DllImport("advapi32.dll")] static extern uint LsaOpenPolicy(IntPtr system, ref PolicyAttributes attributes, uint access, out IntPtr policy);
+    [DllImport("advapi32.dll")] static extern uint LsaAddAccountRights(IntPtr policy, byte[] sid, PolicyString[] rights, uint count);
+    [DllImport("advapi32.dll")] static extern uint LsaRemoveAccountRights(IntPtr policy, byte[] sid, bool all, PolicyString[] rights, uint count);
+    [DllImport("advapi32.dll")] static extern uint LsaClose(IntPtr policy);
+    [DllImport("advapi32.dll")] static extern uint LsaNtStatusToWinError(uint status);
+    public static void RemoteLogonRight(string sid, bool allow) {
+        var attributes = new PolicyAttributes { Length = (uint)Marshal.SizeOf(typeof(PolicyAttributes)) };
+        IntPtr policy;
+        uint status = LsaOpenPolicy(IntPtr.Zero, ref attributes, 0x810, out policy);
+        if (status != 0) throw new Win32Exception((int)LsaNtStatusToWinError(status));
+        string name = "SeRemoteInteractiveLogonRight";
+        IntPtr buffer = Marshal.StringToHGlobalUni(name);
+        try {
+            var identifier = new System.Security.Principal.SecurityIdentifier(sid);
+            var bytes = new byte[identifier.BinaryLength];
+            identifier.GetBinaryForm(bytes, 0);
+            var rights = new[] { new PolicyString { Length = (ushort)(name.Length * 2), MaximumLength = (ushort)(name.Length * 2 + 2), Buffer = buffer } };
+            status = allow ? LsaAddAccountRights(policy, bytes, rights, 1) : LsaRemoveAccountRights(policy, bytes, false, rights, 1);
+            if (status != 0) throw new Win32Exception((int)LsaNtStatusToWinError(status));
+        } finally { Marshal.FreeHGlobal(buffer); LsaClose(policy); }
+    }
     public static int Find(string user) {
         IntPtr sessions; int count;
         if (!WTSEnumerateSessionsW(IntPtr.Zero, 0, 1, out sessions, out count)) throw new Win32Exception();
@@ -78,7 +105,7 @@ function Open-TestSession([string]$Name, [string]$Password) {
             $bitmap.Save((Join-Path $diagnosticDir 'quesma-rdp.png'))
         } finally { $graphics.Dispose(); $bitmap.Dispose() }
         Get-NetTCPConnection -LocalPort 3389 -ErrorAction SilentlyContinue | Format-Table | Out-String | Write-Host
-        & "$env:SystemRoot\System32\query.exe" user
+        & "$env:SystemRoot\System32\query.exe" user | Out-String | Write-Host
         foreach ($log in @('Microsoft-Windows-TerminalServices-LocalSessionManager/Operational',
             'Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational')) {
             Get-WinEvent -LogName $log -MaxEvents 5 -ErrorAction SilentlyContinue |

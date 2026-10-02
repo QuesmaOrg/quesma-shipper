@@ -134,7 +134,7 @@ func managedServiceState(ctx context.Context) Status {
 	doc, err := parseTask(out)
 	if err != nil || !SameProgram(doc.Actions.Exec.Command, taskRunner(exe)) ||
 		doc.Actions.Exec.Arguments != "--managed" || !isUsersGroup(doc.Principals.Principal.GroupID) ||
-		doc.Principals.Principal.RunLevel != "LeastPrivilege" {
+		!doc.leastPrivilege() {
 		st.Detail = "managed task does not match the installation; ask an administrator to repair it"
 		return st
 	}

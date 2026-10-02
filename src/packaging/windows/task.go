@@ -114,9 +114,9 @@ type taskDocument struct {
 	} `xml:"Actions"`
 	Principals struct {
 		Principal struct {
-			UserID   string `xml:"UserId"`
-			GroupID  string `xml:"GroupId"`
-			RunLevel string `xml:"RunLevel"`
+			UserID   string  `xml:"UserId"`
+			GroupID  string  `xml:"GroupId"`
+			RunLevel *string `xml:"RunLevel"`
 		} `xml:"Principal"`
 	} `xml:"Principals"`
 }
@@ -125,6 +125,12 @@ type taskDocument struct {
 // setting left at its default, so reading a missing one as false calls a healthy task disabled.
 func (d taskDocument) enabled() bool {
 	return d.Settings.Enabled == nil || *d.Settings.Enabled
+}
+
+// Task Scheduler omits RunLevel when it retains the LeastPrivilege default.
+func (d taskDocument) leastPrivilege() bool {
+	level := d.Principals.Principal.RunLevel
+	return level == nil || *level == "LeastPrivilege"
 }
 
 // legacyTaskIsOurs reports whether the pre-rename task belongs to this user: another user's task is

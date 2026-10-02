@@ -56,13 +56,15 @@ function Test-SystemInstallation($Registration, [string]$TaskXML, [string]$Expec
     $principal = $principals[0]
     $action = $actions[0]
     $trigger = $triggers[0]
+    $runLevel = $principal.SelectSingleNode('t:RunLevel', $ns)
+    $leastPrivilege = $null -eq $runLevel -or $runLevel.InnerText -ceq 'LeastPrivilege'
     $group = [string]$principal.GroupId
     if ($group -and $group -notmatch '^S-') {
         $account = New-Object Security.Principal.NTAccount($group)
         $group = $account.Translate([Security.Principal.SecurityIdentifier]).Value
     }
     return ($group -eq 'S-1-5-32-545' -and -not $principal.UserId -and
-        $principal.RunLevel -eq 'LeastPrivilege' -and
+        $leastPrivilege -and
         $action.LocalName -eq 'Exec' -and
         [string]$action.Command -ieq (Join-Path $Registration.Directory 'quesma-shipper-supervisor.exe') -and
         [string]$action.Arguments -ceq '--managed' -and
