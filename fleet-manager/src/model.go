@@ -18,7 +18,6 @@ import (
 
 	"filippo.io/age"
 	"github.com/google/uuid"
-	"gopkg.in/yaml.v3"
 )
 
 const schemaVersion = 1
@@ -28,15 +27,17 @@ const quesmaETLAgeRecipient = "age1ge6plfgzzhzagl7qkp8k74qa90zxh4qvp84sgsw3up2zx
 var orgPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 type FleetConfig struct {
-	Schema                  int       `json:"schema"`
-	Organization            string    `json:"organization"`
-	DisplayName             string    `json:"display_name,omitempty"`
-	AgeRecipients           []string  `json:"age_recipients"`
-	IncludeInstallRecipient bool      `json:"include_install_recipient"`
-	AllowQuesmaETL          *bool     `json:"allow_quesma_etl,omitempty"`
-	AuthoredYAML            string    `json:"authored_yaml"`
-	UpdatedAt               time.Time `json:"updated_at"`
-	TelemetryCollectorURL   *string   `json:"telemetry_collector_url,omitempty"`
+	Schema                  int               `json:"schema"`
+	Organization            string            `json:"organization"`
+	DisplayName             string            `json:"display_name,omitempty"`
+	AgeRecipients           []string          `json:"age_recipients"`
+	IncludeInstallRecipient bool              `json:"include_install_recipient"`
+	AllowQuesmaETL          *bool             `json:"allow_quesma_etl,omitempty"`
+	AuthoredYAML            string            `json:"authored_yaml,omitempty"`
+	Collection              *CollectionConfig `json:"collection"`
+	CollectionError         string            `json:"collection_error,omitempty"`
+	UpdatedAt               time.Time         `json:"updated_at"`
+	TelemetryCollectorURL   *string           `json:"telemetry_collector_url,omitempty"`
 }
 
 // quesmaETLEnabled reports whether to seal to Quesma's recipient as well. Unset is on here, as in
@@ -260,18 +261,8 @@ func validateConfig(c FleetConfig) error {
 		}
 		seen[recipient] = true
 	}
-	if strings.Contains(c.AuthoredYAML, "\n---") || strings.HasPrefix(c.AuthoredYAML, "---") {
-		return errors.New("authored config must be a single YAML document")
-	}
-	var doc map[string]any
-	if err := yaml.Unmarshal([]byte(c.AuthoredYAML), &doc); err != nil {
-		return fmt.Errorf("authored YAML: %w", err)
-	}
-	allowed := map[string]bool{"mode": true, "sources": true, "scrub": true, "max_files_per_run": true, "drain_deadline": true}
-	for key := range doc {
-		if !allowed[key] {
-			return fmt.Errorf("authored YAML may not set %q", key)
-		}
+	if err := normalizeCollection(&c); err != nil {
+		return err
 	}
 	return nil
 }

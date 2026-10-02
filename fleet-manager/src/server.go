@@ -249,6 +249,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request, rec Instal
 	}
 	scoped, _ := s.manager.ForOrganization(rec.Organization)
 	cfg, _, err := scoped.LoadConfig(r.Context())
+	if err == nil && cfg.CollectionError != "" {
+		err = errors.New(cfg.CollectionError)
+	}
 	if err != nil {
 		s.logger.Printf("config state read failed for install %s: %v", rec.InstallID, err)
 		http.Error(w, "config unavailable", http.StatusInternalServerError)
@@ -257,32 +260,41 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request, rec Instal
 	s.touch(r, rec, seenConfig)
 	cfg = s.defaults.resolve(cfg)
 	doc := renderConfig(cfg)
-	endpoint := ""
-	if cfg.telemetryCollectorURL() != "" {
-		endpoint = telemetryPath
-	}
-	field, _ := yaml.Marshal(map[string]string{"telemetry_endpoint": endpoint})
-	doc += string(field)
 	writeJSON(w, configResponse{Config: []byte(doc), ExpiresAt: s.manager.time().Add(s.configTTL)})
 }
 
 func renderConfig(cfg FleetConfig) string {
-	var out strings.Builder
-	fmt.Fprintf(&out, "config_version: 1\nissued_at: %s\norg: %s\nencryption:\n  additional_recipients:\n", cfg.UpdatedAt.UTC().Format(time.RFC3339), cfg.Organization)
-	for _, recipient := range cfg.AgeRecipients {
-		fmt.Fprintf(&out, "    - %s\n", recipient)
-	}
+	recipients := append([]string{}, cfg.AgeRecipients...)
 	if cfg.quesmaETLEnabled() {
-		fmt.Fprintf(&out, "    - %s\n", quesmaETLAgeRecipient)
+		recipients = append(recipients, quesmaETLAgeRecipient)
 	}
+	endpoint := ""
+	if cfg.telemetryCollectorURL() != "" {
+		endpoint = telemetryPath
+	}
+	collection := cfg.Collection
+	if collection == nil {
+		collection = &CollectionConfig{}
+	}
+	doc := struct {
+		ConfigVersion int    `yaml:"config_version"`
+		IssuedAt      string `yaml:"issued_at"`
+		Org           string `yaml:"org"`
+		Encryption    struct {
+			AdditionalRecipients    []string `yaml:"additional_recipients"`
+			IncludeInstallRecipient *bool    `yaml:"include_install_recipient,omitempty"`
+		} `yaml:"encryption"`
+		*CollectionConfig `yaml:",inline"`
+		TelemetryEndpoint string `yaml:"telemetry_endpoint"`
+	}{ConfigVersion: 1, IssuedAt: cfg.UpdatedAt.UTC().Format(time.RFC3339), Org: cfg.Organization,
+		CollectionConfig: collection, TelemetryEndpoint: endpoint}
+	doc.Encryption.AdditionalRecipients = recipients
 	if !cfg.IncludeInstallRecipient {
-		out.WriteString("  include_install_recipient: false\n")
+		doc.Encryption.IncludeInstallRecipient = &cfg.IncludeInstallRecipient
 	}
-	if authored := strings.TrimSpace(cfg.AuthoredYAML); authored != "" {
-		out.WriteString(authored)
-		out.WriteByte('\n')
-	}
-	return out.String()
+	// Every value has a statically supported YAML type.
+	raw, _ := yaml.Marshal(doc)
+	return string(raw)
 }
 
 func (s *Server) handleUploadAuthorize(w http.ResponseWriter, r *http.Request, rec InstallRecord, body []byte) {

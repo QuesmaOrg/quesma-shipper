@@ -64,6 +64,7 @@ github.com/klauspost/cpuid/v2,MIT
 github.com/kylelemons/godebug,Apache-2.0
 github.com/pierrec/lz4/v4,BSD-3-Clause
 github.com/pkg/browser,BSD-2-Clause
+github.com/santhosh-tekuri/jsonschema/v6,Apache-2.0
 github.com/spiffe/go-spiffe/v2,Apache-2.0
 github.com/zeebo/xxh3,BSD-2-Clause
 go.opentelemetry.io/auto/sdk,Apache-2.0

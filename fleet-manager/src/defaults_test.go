@@ -93,7 +93,7 @@ func TestDeploymentDefaultsFillOnlyUnsetSettings(t *testing.T) {
 	// A write that names neither setting leaves both unset. (A client that writes back what it read
 	// states the effective values instead, which is what that client showed and chose to keep.)
 	cfg, etag := read("silent")
-	body, _ := json.Marshal(adminConfigRequest{AgeRecipients: cfg.AgeRecipients, AuthoredYAML: "mode: daemon"})
+	body, _ := json.Marshal(adminConfigRequest{AgeRecipients: cfg.AgeRecipients, AuthoredYAML: "mode: {schedule: 15m}"})
 	req := adminRequest("PUT", "/v1/admin/orgs/silent/config", string(body), testAdminCredential)
 	req.Header.Set("If-Match", etag)
 	if w := serveAdmin(t, server, req); w.Code != http.StatusNoContent {

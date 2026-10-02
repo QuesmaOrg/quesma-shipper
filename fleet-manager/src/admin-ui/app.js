@@ -125,7 +125,7 @@ function configBody(form) {
     age_recipients: data.getAll('recipients').map((value) => String(value).trim()).filter(Boolean),
     include_install_recipient: false,
     allow_quesma_etl: data.get('quesma-etl') === 'on',
-    authored_yaml: String(data.get('yaml') || '')
+    collection: collectionBody(form)
   };
   if (form.elements.display_name) body.display_name = String(data.get('display_name') || '').trim();
   const collector = form.elements.telemetry_collector_url;
@@ -146,6 +146,7 @@ function syncTelemetry(form) {
 function resetOrganizationForm() {
   const form = $('#organization-form');
   form.reset();
+  fillCollection(form, {});
   setRecipients(form, []);
   form.elements['quesma-etl'].checked = deploymentDefaults.allow_quesma_etl !== false;
   const collector = form.elements.telemetry_collector_url;
@@ -171,7 +172,7 @@ function fillConfig(config) {
   collector.dataset.initialValue = collector.value;
   form.elements['telemetry-enabled'].checked = collector.value !== '';
   syncTelemetry(form);
-  form.elements.yaml.value = config.authored_yaml || '';
+  fillCollection(form, config.collection, config.collection_error || '', config.authored_yaml || '');
   $('#config-time').textContent = config.updated_at ? `Updated ${new Date(config.updated_at).toLocaleString()}` : '';
   lockConfig(true);
 }

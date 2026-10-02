@@ -46,7 +46,17 @@
           <label class="telemetry-collector">Collector URL<input name="telemetry_collector_url" type="text" autocomplete="off" spellcheck="false" placeholder="collector.example" pattern=".*\S.*" aria-describedby="organization-collector-help"></label>
           <p id="organization-collector-help" class="telemetry-help">Enter a hostname or HTTPS URL. Turn off telemetry to stop forwarding.</p>
         </fieldset>
-        <label>Authored fleet YAML <span>(optional)</span><textarea name="yaml" class="code" placeholder="mode: daemon"></textarea></label>
+        <fieldset class="setting-fieldset"><legend>Collection</legend>
+          <p data-collection-error role="alert"></p>
+          <pre data-legacy-collection class="hidden"></pre><button type="button" data-rebuild-collection class="quiet hidden">Rebuild collection settings</button>
+          <label>Schedule (minimum 1 minute)<input name="schedule" placeholder="15m"></label>
+          <label>Maximum files per run<input name="max_files_per_run" type="number" min="0" step="1"></label>
+          <label>Drain deadline<input name="drain_deadline" placeholder="30s"></label>
+          <label>Additional scrub rule packs (one per line)<textarea name="rule_packs"></textarea></label>
+          <label>Additional secret key names (one per line)<textarea name="secret_key_names"></textarea></label>
+          <div data-source-list></div><button type="button" data-add-source class="quiet">Add source override</button>
+          <p>Leave fields empty to use shipper defaults.</p>
+        </fieldset>
         <div class="actions"><button type="button" id="cancel-org" class="quiet hidden">Cancel</button><button>Create organization</button></div>
       </form>
     </section>
@@ -55,7 +65,7 @@
       <nav><button data-view="configuration" class="active">Configuration</button><button data-view="grants">Grants</button><button data-view="invites">Invites</button><button data-view="installs">Installs</button></nav>
 
       <section id="configuration" class="view card">
-        <div class="section-title"><div><h2>Configuration</h2><p>Encryption custody and authored fleet settings.</p></div><div class="config-head"><span id="config-time" class="muted"></span><button type="button" id="edit-config">Edit configuration</button></div></div>
+        <div class="section-title"><div><h2>Configuration</h2><p>Encryption custody and collection settings.</p></div><div class="config-head"><span id="config-time" class="muted"></span><button type="button" id="edit-config">Edit configuration</button></div></div>
         <form id="config-form" class="config-form locked">
           <label>Display name<input name="display_name" required maxlength="100"></label>
           <fieldset class="recipient-fieldset" data-quesma-etl-recipient="age1ge6plfgzzhzagl7qkp8k74qa90zxh4qvp84sgsw3up2zxrp5mq6qvex69a"><legend>Public age recipients</legend><p>Add at least two independently held customer recipients. Quesma's recipient appears here while Quesma ETL is enabled.</p><p class="recipient-help">For each custodian, run this command. It creates the private key file and prints its public recipient:</p><div class="keygen-commands"><pre><code>age-keygen -o custodian.agekey</code></pre><button type="button" class="quiet copy-icon" data-copy-keygen aria-label="Copy key generation command" title="Copy command"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="1"></rect><path d="M16 8V5H5v11h3"></path></svg></button></div><p class="recipient-help">Make sure to store the private <code>.agekey</code> file in a secure location.</p><div class="recipient-list" data-recipient-list></div><button type="button" class="quiet add-recipient" data-add-recipient>Add recipient</button></fieldset>
@@ -69,7 +79,17 @@
             <label class="telemetry-collector">Collector URL<input name="telemetry_collector_url" type="text" autocomplete="off" spellcheck="false" placeholder="collector.example" pattern=".*\S.*" aria-describedby="config-collector-help"></label>
             <p id="config-collector-help" class="telemetry-help">Effective collector for this organization. Enter a hostname or HTTPS URL. Turn off telemetry to stop forwarding.</p>
           </fieldset>
-          <label>Authored fleet YAML<textarea name="yaml" class="code"></textarea></label>
+          <fieldset class="setting-fieldset"><legend>Collection</legend>
+          <p data-collection-error role="alert"></p>
+          <pre data-legacy-collection class="hidden"></pre><button type="button" data-rebuild-collection class="quiet hidden">Rebuild collection settings</button>
+          <label>Schedule (minimum 1 minute)<input name="schedule" placeholder="15m"></label>
+          <label>Maximum files per run<input name="max_files_per_run" type="number" min="0" step="1"></label>
+          <label>Drain deadline<input name="drain_deadline" placeholder="30s"></label>
+          <label>Additional scrub rule packs (one per line)<textarea name="rule_packs"></textarea></label>
+          <label>Additional secret key names (one per line)<textarea name="secret_key_names"></textarea></label>
+          <div data-source-list></div><button type="button" data-add-source class="quiet">Add source override</button>
+          <p>Leave fields empty to use shipper defaults.</p>
+        </fieldset>
           <p class="edit-warning">Apply replaces this organization's stored configuration. Recipients you add only cover uploads made from then on; a recipient you remove cannot decrypt anything uploaded after that.</p>
           <div class="actions"><button type="button" id="cancel-config" class="quiet hidden">Cancel</button><button id="apply-config" class="hidden">Apply configuration</button></div>
         </form>
@@ -115,6 +135,7 @@
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="date-time.js" defer></script>
   <script src="metadata-import.js" defer></script>
+  <script src="collection.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>
