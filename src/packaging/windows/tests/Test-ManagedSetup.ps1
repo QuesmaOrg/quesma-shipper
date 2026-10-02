@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$InstallerPath,
+    [Parameter(Mandatory = $true)][string]$InitialVersion,
     [Parameter(Mandatory = $true)][string]$UpgradeInstallerPath,
     [Parameter(Mandatory = $true)][string]$ExpectedVersion
 )
@@ -162,8 +163,8 @@ function Assert-Installed([string]$Version) {
     foreach ($ace in $taskSecurity.DiscretionaryAcl) {
         if ($ace.AceQualifier -eq 'AccessAllowed' -and
             $ace.SecurityIdentifier.Value -in @('S-1-1-0', 'S-1-5-4', 'S-1-5-11', 'S-1-5-32-545') -and
-            ([int64]$ace.AccessMask -band 0x500D0156) -ne 0) {
-            throw 'Ordinary users can modify the managed scheduled task.'
+            ([int64]$ace.AccessMask -band 0x700D0176) -ne 0) {
+            throw 'Ordinary users can execute, stop, or modify the managed scheduled task.'
         }
     }
     foreach ($path in @($installDir, $shipperPath, $supervisorPath)) {
@@ -199,7 +200,7 @@ try {
     Set-Content -LiteralPath $stateMarker -Value 'preserve-user-state'
     $systemState = Get-SystemState
     Invoke-Setup $InstallerPath
-    Assert-Installed '0.0.0-0.ci'
+    Assert-Installed $InitialVersion
 
     $recovery = Join-Path $installDir '.test-recovery.json'
     $recoveryArguments = '--install-dir "' + $installDir + '" --recovery-file "' + $recovery + '"'
@@ -221,7 +222,7 @@ try {
     }
     $task.Enabled = $true
     $null = $task.RunEx($null, 4, $sessionId, $null)
-    Assert-Installed '0.0.0-0.ci'
+    Assert-Installed $InitialVersion
 
     $personalLog = Join-Path $temp 'scope-conflict.log'
     $personal = Start-Process -FilePath $UpgradeInstallerPath -Wait -PassThru -ArgumentList `
@@ -230,7 +231,7 @@ try {
     if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs\Quesma Shipper\quesma-shipper.exe')) {
         throw 'Scope conflict left a personal executable behind.'
     }
-    Assert-Installed '0.0.0-0.ci'
+    Assert-Installed $InitialVersion
 
     $task = $folder.GetTask($taskName)
     $null = $task.RunEx($null, 4, $sessionId, $null)
@@ -240,13 +241,13 @@ try {
     $task.Enabled = $false
     $task.Stop(0)
     Wait-Stopped
-    Assert-Detected '0.0.0-0.ci' $false
+    Assert-Detected $InitialVersion $false
     $task.Enabled = $true
     Remove-Item -LiteralPath $supervisorPath
-    Assert-Detected '0.0.0-0.ci' $false
+    Assert-Detected $InitialVersion $false
     $task.Enabled = $false
     Invoke-Setup $InstallerPath
-    Assert-Installed '0.0.0-0.ci'
+    Assert-Installed $InitialVersion
 
     $installScript = (Resolve-Path (Join-Path $PSScriptRoot '..\intune\Install-System.ps1')).Path
     $code = Invoke-SystemProcess "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `

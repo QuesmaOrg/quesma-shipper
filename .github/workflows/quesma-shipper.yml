@@ -155,7 +155,7 @@ jobs:
         run: |
           $version = (sh scripts/release-version.sh).Trim()
           if ($LASTEXITCODE -ne 0) { throw "could not compute release version" }
-          $oldVersion = '0.0.0-0.ci'
+          $oldVersion = '0.0.0-' + ($version -split '-', 2)[1]
           New-Item -ItemType Directory -Force bin/managed-old | Out-Null
           Push-Location src
           go build -trimpath -ldflags "-X github.com/QuesmaOrg/quesma-shipper/internal/platform.releaseVersion=$oldVersion" `
@@ -167,7 +167,7 @@ jobs:
             -SupervisorPath bin/dist/quesma-shipper-windows-amd64-supervisor.exe -OutputDir bin/managed-old
           ./src/packaging/windows/tests/Test-ManagedSetup.ps1 `
             -InstallerPath bin/managed-old/QuesmaShipperSetup-amd64.exe `
-            -UpgradeInstallerPath bin/dist/QuesmaShipperSetup-amd64.exe -ExpectedVersion $version
+            -InitialVersion $oldVersion -UpgradeInstallerPath bin/dist/QuesmaShipperSetup-amd64.exe -ExpectedVersion $version
 
   macos-package:
     runs-on: macos-15

@@ -140,8 +140,9 @@ try {
             $action = $definition.Actions.Create(0)
             $action.Path = $runner
             $action.Arguments = '--managed'
-            $task = $folder.RegisterTaskDefinition($taskName, $definition, 6, $null, $null, 4,
-                'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;IU)')
+            # Readers cannot stop every user's instance; suppress Task Scheduler's implicit principal ACE.
+            $task = $folder.RegisterTaskDefinition($taskName, $definition, 22, $null, $null, 4,
+                'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GR;;;IU)')
             Start-UserSessions $task
         }
         'Remove' {

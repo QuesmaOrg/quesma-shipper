@@ -11,12 +11,15 @@ with a logon token in the current session. Each child reports its SID, user
 profile, session, and elevation. The test requires an ordinary token and rejects
 service-account identities. A separate account is necessary because hosted
 runners use the built-in Administrator, for which Windows ignores `RunLevel`.
+The prototype grants the test user execute access for `RunEx(AS_SELF)`. The real
+managed task grants ordinary users read access only; the installer test checks
+that restriction and starts it with administrator-controlled session targeting.
 
-`Test-ManagedSetup.ps1` takes an installer built with release version
-`0.0.0-0.ci`, an installer built with a newer version, and that newer version:
+`Test-ManagedSetup.ps1` takes two installers and their release versions:
 
 ```powershell
 ./Test-ManagedSetup.ps1 -InstallerPath ./old/QuesmaShipperSetup-amd64.exe `
+  -InitialVersion '0.0.0-456.abcdef' `
   -UpgradeInstallerPath ./new/QuesmaShipperSetup-amd64.exe `
   -ExpectedVersion '1.2.3-456.abcdef'
 ```
@@ -29,7 +32,7 @@ exercises the upgrade recovery commands with initially enabled and disabled task
 checks Intune detection as SYSTEM, and checks that setup did not create shipper
 state in service-account profiles.
 
-The Windows CI job runs both scripts and retains the existing personal-installer
+The Windows CI jobs run both scripts and retain the existing personal-installer
 smoke test. Its one logged-in administrator session cannot establish all of the
 following behaviors. Validate these on enterprise Windows VMs before rollout:
 

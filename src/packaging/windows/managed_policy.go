@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
 const (
@@ -90,6 +92,17 @@ func checkNoPersonalProgram(dir string) error {
 			return fmt.Errorf("a personal installation exists at %s; uninstall it without purging local state", path)
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
+		}
+	}
+	return nil
+}
+
+func checkNoManagedProgram(dir string) error {
+	for _, name := range []string{"quesma-shipper.exe", "unins000.exe"} {
+		if _, err := os.Lstat(filepath.Join(dir, name)); err == nil {
+			return common.ErrSystemManaged
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect managed installation: %w", err)
 		}
 	}
 	return nil

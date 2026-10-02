@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
@@ -131,15 +134,30 @@ func ManagedExecutable() (string, error) {
 	if err != nil || dir == "" {
 		return "", err
 	}
-	for _, key := range []string{`MACHINE\Software\Quesma`, `MACHINE\` + ManagedInstallKey} {
-		if err := protectedObject(key, windows.SE_REGISTRY_KEY, managedRegistryWriteMask); err != nil {
-			return "", err
-		}
+	if err := validateExistingManagedRegistry(); err != nil {
+		return "", err
 	}
 	if err := ValidateManagedInstallDir(dir, true); err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, "quesma-shipper.exe"), nil
+}
+
+func validateExistingManagedRegistry() error {
+	for _, path := range []string{`Software`, `Software\Quesma`, ManagedInstallKey} {
+		key, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.QUERY_VALUE|registry.WOW64_64KEY)
+		if errors.Is(err, registry.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("read managed installation registry parent %s: %w", path, err)
+		}
+		key.Close()
+		if err := protectedObject(`MACHINE\`+path, windows.SE_REGISTRY_KEY, managedRegistryWriteMask); err != nil {
+			return fmt.Errorf("managed installation registry parent %s: %w", path, err)
+		}
+	}
+	return nil
 }
 
 func SystemManaged() bool {
@@ -261,6 +279,15 @@ func PrepareUserInstall(dir string) error {
 	if err != nil {
 		return err
 	}
+	if err := ValidateManagedInstallDir(managed, false); err != nil {
+		return err
+	}
+	if err := checkNoManagedProgram(managed); err != nil {
+		return err
+	}
+	if err := checkNoManagedTask(); err != nil {
+		return err
+	}
 	if !filepath.IsAbs(dir) || SameProgram(dir, managed) || strings.HasPrefix(strings.ToLower(filepath.Clean(dir)), strings.ToLower(managed)+string(filepath.Separator)) {
 		return errors.New("personal installation requires an absolute directory outside the managed installation")
 	}
@@ -278,6 +305,32 @@ func PrepareUserInstall(dir string) error {
 			return errors.New("personal installation has no existing parent directory")
 		}
 	}
+}
+
+func checkNoManagedTask() error {
+	system, err := windows.GetSystemDirectory()
+	if err != nil {
+		return err
+	}
+	// Only Task Scheduler's typed not-found HRESULT proves absence; an unreadable task blocks a scope change.
+	script := `$ErrorActionPreference = 'Stop'; $s = New-Object -ComObject 'Schedule.Service'; $s.Connect(); ` +
+		`$f = $s.GetFolder('\'); try { $null = $f.GetTask('Quesma Shipper Managed') } catch { ` +
+		`$e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }; ` +
+		`if ($e.HResult -eq -2147024894) { exit 0 }; throw }; exit 10`
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, filepath.Join(system, `WindowsPowerShell\v1.0\powershell.exe`),
+		"-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 10 {
+		return common.ErrSystemManaged
+	}
+	return fmt.Errorf("cannot verify absence of the managed scheduled task: %s", commandError(err, out))
 }
 
 func ManagedRunLog(stateDir string) (*os.File, error) {

@@ -2,11 +2,14 @@ package windows
 
 import (
 	"encoding/binary"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf16"
+
+	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
 func policyString(value string) []byte {
@@ -115,6 +118,28 @@ func TestMigrationAllowsUninstallLeftoversButRejectsInstalledPrograms(t *testing
 			}
 			if err := checkNoPersonalProgram(dir); (err != nil) != (name != "notes.txt") {
 				t.Fatalf("migration conflict = %v", err)
+			}
+		})
+	}
+}
+
+func TestPersonalInstallRejectsManagedPayloadWithoutRegistration(t *testing.T) {
+	for _, name := range []string{"notes.txt", "quesma-shipper.exe", "unins000.exe"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := checkNoManagedProgram(dir); err != nil {
+				t.Fatalf("empty machine directory blocks personal installation: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err := checkNoManagedProgram(dir)
+			if name == "notes.txt" {
+				if err != nil {
+					t.Fatalf("unrelated leftover blocks personal installation: %v", err)
+				}
+			} else if !errors.Is(err, common.ErrSystemManaged) {
+				t.Fatalf("machine payload without registration: got %v, want ErrSystemManaged", err)
 			}
 		})
 	}

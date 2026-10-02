@@ -4,8 +4,15 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 	"golang.org/x/sys/windows"
 )
+
+func TestManagedTaskConflictQueryUsesTaskSchedulerWithoutModifyingIt(t *testing.T) {
+	if err := checkNoManagedTask(); err != nil && !errors.Is(err, common.ErrSystemManaged) {
+		t.Fatalf("read-only managed task query did not distinguish an existing task from absence: %v", err)
+	}
+}
 
 func TestManagedSupervisorLockPreventsDuplicateCollectorsAndReleasesOnExit(t *testing.T) {
 	dir := t.TempDir()

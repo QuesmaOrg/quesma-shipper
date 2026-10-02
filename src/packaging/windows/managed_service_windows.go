@@ -33,6 +33,9 @@ func PrepareSystemInstall(dir, recoveryFile string) error {
 	if err := requireAdministrator(); err != nil {
 		return err
 	}
+	if err := validateExistingManagedRegistry(); err != nil {
+		return err
+	}
 	if err := ValidateManagedInstallDir(dir, false); err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-# Prove the group principal and RunEx session semantics on Windows before relying on them in setup.
+# Prove a group task preserves the standard user's identity, profile, session, and ordinary token.
 $ErrorActionPreference = 'Stop'
 $sessionId = (Get-Process -Id $PID).SessionId
 if ($sessionId -le 0) { throw 'This test requires a logged-in Windows session, not session zero.' }
@@ -30,10 +30,33 @@ try {
     Set-Acl -LiteralPath $temp -AclObject $acl
     $account = "$env:COMPUTERNAME\$name"
     $credential = New-Object Management.Automation.PSCredential($account, $password)
+    $launchScript = Join-Path $temp 'launch.ps1'
+    @'
+param([string]$TaskName)
+$ErrorActionPreference = 'Stop'
+try {
+    $deadline = (Get-Date).AddSeconds(60)
+    while (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'start'))) {
+        if ((Get-Date) -ge $deadline) { throw 'Task registration did not complete.' }
+        Start-Sleep -Milliseconds 100
+    }
+    $scheduler = New-Object -ComObject 'Schedule.Service'
+    $scheduler.Connect()
+    $task = $scheduler.GetFolder('\').GetTask($TaskName)
+    $null = $task.RunEx($null, 1, 0, $null)
+    $null = $task.RunEx($null, 1, 0, $null)
+    Set-Content -LiteralPath (Join-Path $PSScriptRoot 'launch.result') -Value 'started'
+    Start-Sleep -Seconds 90
+} catch {
+    Set-Content -LiteralPath (Join-Path $PSScriptRoot 'launch.result') -Value $_.ToString()
+    exit 1
+}
+'@ | Set-Content -LiteralPath $launchScript -Encoding UTF8
     # Hosted runners use the built-in Administrator, for which Windows ignores RunLevel.
     $holder = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
         -Credential $credential -LoadUserProfile -PassThru -WorkingDirectory $temp `
-        -ArgumentList '-NoLogo -NoProfile -NonInteractive -Command "Start-Sleep -Seconds 120"'
+        -ArgumentList ('-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $launchScript +
+            '" -TaskName "' + $taskName + '"')
     if ($holder.HasExited -or $holder.SessionId -ne $sessionId) {
         throw 'Could not establish a standard-user logon token in the interactive session.'
     }
@@ -67,8 +90,7 @@ Start-Sleep -Seconds 90
     $action.Arguments = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $childScript + '"'
     $task = $folder.RegisterTaskDefinition($taskName, $definition, 6, $null, $null, 4,
         'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;IU)')
-    $null = $task.RunEx($null, 12, $sessionId, $testUser.SID.Value)
-    $null = $task.RunEx($null, 12, $sessionId, $testUser.SID.Value)
+    Set-Content -LiteralPath (Join-Path $temp 'start') -Value 'registered'
     $deadline = (Get-Date).AddSeconds(30)
     do {
         $reports = @(Get-ChildItem -LiteralPath $temp -Filter '*.json')
@@ -76,7 +98,8 @@ Start-Sleep -Seconds 90
         Start-Sleep -Milliseconds 250
     } while ((Get-Date) -lt $deadline)
     if ($reports.Count -ne 2) {
-        throw "Expected two parallel task children, got $($reports.Count); task result=$($task.LastTaskResult)"
+        $launchResult = Get-Content -LiteralPath (Join-Path $temp 'launch.result') -ErrorAction SilentlyContinue
+        throw "Expected two parallel task children, got $($reports.Count); task result=$($task.LastTaskResult); launcher=$launchResult"
     }
     foreach ($reportFile in $reports) {
         $report = Get-Content -LiteralPath $reportFile.FullName -Raw | ConvertFrom-Json
@@ -85,7 +108,7 @@ Start-Sleep -Seconds 90
             throw "Task did not use the unelevated interactive user: $($report | ConvertTo-Json -Compress)"
         }
     }
-    Write-Output 'Passed: interactive group task, session-targeted RunEx, parallel children, user SID/profile, and least privilege.'
+    Write-Output 'Passed: interactive group task, standard-user RunEx, parallel children, user SID/profile/session, and least privilege.'
 } finally {
     if ($task) {
         $task.Stop(0)
