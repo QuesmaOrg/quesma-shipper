@@ -15,11 +15,11 @@ function Assert-ProtectedProgramPath([string]$Path) {
     if ($null -eq $descriptor.DiscretionaryAcl -or $descriptor.DiscretionaryAcl.Count -gt 4096) {
         throw 'Managed program permissions are invalid or unrestricted.'
     }
-    foreach ($rule in $acl.Access) {
+    foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
         if ($rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
             ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly)) { continue }
         if (([int]$rule.FileSystemRights -band 0x500D0156) -ne 0 -and
-            $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -notin $trusted) {
+            $rule.IdentityReference.Value -notin $trusted) {
             throw 'Managed program files can be modified by a non-administrator; repair permissions before removal.'
         }
     }

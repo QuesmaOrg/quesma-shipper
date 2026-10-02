@@ -1,6 +1,6 @@
 # A loopback RDP connection supplies a real standard-user desktop session on disposable Windows Server runners.
 Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Security
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 Add-Type -ReferencedAssemblies System, System.Windows.Forms, System.Drawing -TypeDefinition @'
 using System;
 using System.ComponentModel;
@@ -62,41 +62,45 @@ public static class QuesmaTestSessions {
 }
 '@
 
+function Confirm-TestCertificate([int]$ClientId) {
+    $condition = New-Object Windows.Automation.PropertyCondition(
+        [Windows.Automation.AutomationElement]::ProcessIdProperty, $ClientId)
+    $windows = [Windows.Automation.AutomationElement]::RootElement.FindAll(
+        [Windows.Automation.TreeScope]::Children, $condition)
+    foreach ($window in $windows) {
+        $elements = $window.FindAll([Windows.Automation.TreeScope]::Descendants,
+            [Windows.Automation.Condition]::TrueCondition)
+        $names = @($elements | ForEach-Object { $_.Current.Name }) -join "`n"
+        if ($names -notlike '*The identity of the remote computer cannot be verified*' -or
+            ($names -notmatch '127\.0\.0\.1' -and $names -notmatch [regex]::Escape($env:COMPUTERNAME))) { continue }
+        foreach ($element in $elements) {
+            if ($element.Current.ControlType -eq [Windows.Automation.ControlType]::Button -and
+                $element.Current.Name.Replace('&', '') -eq 'Yes') {
+                $element.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+                return
+            }
+        }
+    }
+}
+
 function Open-TestSession([string]$Name, [string]$Password) {
-    $rdpFile = Join-Path ([IO.Path]::GetTempPath()) ('quesma-session-' + [guid]::NewGuid() + '.rdp')
+    $credentialTarget = 'TERMSRV/127.0.0.1'
+    $credentialCreated = $false
     $client = $null
     try {
-        $protected = [Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::Unicode.GetBytes($Password),
-            $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
-        $passwordHex = [BitConverter]::ToString($protected).Replace('-', '')
-        New-Item -ItemType File -Path $rdpFile | Out-Null
-        $acl = New-Object Security.AccessControl.FileSecurity
-        $acl.SetAccessRuleProtection($true, $false)
-        $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
-            [Security.Principal.WindowsIdentity]::GetCurrent().User, 'FullControl', 'Allow')))
-        $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
-            (New-Object Security.Principal.SecurityIdentifier('S-1-5-18')), 'FullControl', 'Allow')))
-        Set-Acl -LiteralPath $rdpFile -AclObject $acl
-        @"
-full address:s:127.0.0.1
-username:s:$env:COMPUTERNAME\$Name
-password 51:b:$passwordHex
-screen mode id:i:1
-desktopwidth:i:800
-desktopheight:i:600
-session bpp:i:32
-authentication level:i:0
-enablecredsspsupport:i:1
-prompt for credentials:i:0
-redirectclipboard:i:0
-redirectprinters:i:0
-audiomode:i:2
-"@ | Set-Content -LiteralPath $rdpFile -Encoding Unicode
-        $client = Start-Process -FilePath "$env:SystemRoot\System32\mstsc.exe" -ArgumentList ('"' + $rdpFile + '"') -PassThru
+        $existing = & "$env:SystemRoot\System32\cmdkey.exe" "/list:$credentialTarget" | Out-String
+        if ($LASTEXITCODE -ne 0 -or $existing -match [regex]::Escape($credentialTarget)) {
+            throw 'Cannot safely create the temporary loopback RDP credential.'
+        }
+        & "$env:SystemRoot\System32\cmdkey.exe" "/generic:$credentialTarget" "/user:$env:COMPUTERNAME\$Name" "/pass:$Password" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Could not create the temporary RDP credential.' }
+        $credentialCreated = $true
+        $client = Start-Process -FilePath "$env:SystemRoot\System32\mstsc.exe" -ArgumentList '/v:127.0.0.1 /w:800 /h:600' -PassThru
         $deadline = (Get-Date).AddSeconds(60)
         do {
+            Confirm-TestCertificate $client.Id
             $sessionId = [QuesmaTestSessions]::Find($Name)
-            if ($sessionId -gt 0) { return [pscustomobject]@{ Client = $client; RdpFile = $rdpFile; Id = $sessionId } }
+            if ($sessionId -gt 0) { return [pscustomobject]@{ Client = $client; CredentialTarget = $credentialTarget; Id = $sessionId } }
             Start-Sleep -Milliseconds 100
         } while ((Get-Date) -lt $deadline)
         throw "No desktop session for the test user; mstsc exited=$($client.HasExited)"
@@ -126,7 +130,7 @@ audiomode:i:2
         Get-Process csrss, winlogon, dwm, mstsc -ErrorAction SilentlyContinue |
             Select-Object Name, Id, SessionId | Format-Table | Out-String | Write-Host
         if ($client -and -not $client.HasExited) { $client.Kill() }
-        Remove-Item -LiteralPath $rdpFile -Force -ErrorAction SilentlyContinue
+        if ($credentialCreated) { & "$env:SystemRoot\System32\cmdkey.exe" "/delete:$credentialTarget" | Out-Null }
         throw
     }
 }
@@ -136,6 +140,6 @@ function Close-TestSession($Session) {
     try { [QuesmaTestSessions]::Logoff($Session.Id) }
     finally {
         if (-not $Session.Client.HasExited) { $Session.Client.Kill() }
-        Remove-Item -LiteralPath $Session.RdpFile -Force -ErrorAction SilentlyContinue
+        & "$env:SystemRoot\System32\cmdkey.exe" "/delete:$($Session.CredentialTarget)" | Out-Null
     }
 }

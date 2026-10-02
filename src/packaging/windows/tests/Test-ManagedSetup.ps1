@@ -168,8 +168,8 @@ function Assert-Installed([string]$Version) {
         }
     }
     foreach ($path in @($installDir, $shipperPath, $supervisorPath)) {
-        foreach ($rule in (Get-Acl -LiteralPath $path).Access) {
-            $ruleSID = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+        foreach ($rule in (Get-Acl -LiteralPath $path).GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+            $ruleSID = $rule.IdentityReference.Value
             if ($rule.AccessControlType -eq 'Allow' -and $ruleSID -in @('S-1-1-0', 'S-1-5-4', 'S-1-5-11', 'S-1-5-32-545') -and
                 ([int]$rule.FileSystemRights -band 0xD0156) -ne 0) {
                 throw "Ordinary users can modify managed program files: $path ($ruleSID)"
