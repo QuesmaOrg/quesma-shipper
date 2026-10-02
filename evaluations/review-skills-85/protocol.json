@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "skill_pr": 85,
+  "skill_sha": "7eb78e6a4bd8ae07b8858bccaff89dc7dd597726",
+  "design": "paired retrospective review of six historical revisions",
+  "selection": "Three Fleet Manager PRs and three shipper PRs; varied change areas, excluding tuning PRs 64 and 79; includes two single-commit PRs without substantive historical findings. Purposive, not random.",
+  "revision_policy": "Earliest revision with an inline review still in PR history. Single-commit head when there is no inline review. Parent/common ancestor with API baseRefOid is baseline.",
+  "generic_prompt": "Review this PR. Pay attention to regressions, correctness, security, compatibility, code cleanliness, and missing tests. Report actionable issues introduced or materially exposed by this change; give concrete triggers, consequences, file/line references, and priorities. Check the base to distinguish pre-existing issues.",
+  "common_constraints": [
+    "Read only the assigned case base/, head/, change.diff, stat.txt and target.json; read repository governing documents from this snapshot.",
+    "No historical comments, later commits, current checkout code, amended PR descriptions, other review outputs, or GitHub history.",
+    "Skill-guided arm additionally reads the three frozen component skill files. Existing-thread lookup and PR-description checks are disabled in both arms to prevent answer leakage.",
+    "Report findings with P1/P2/P3, title, file, line, trigger/consequence, evidence, and suggested fix. Include tests actually run and limitations. No invented test runs.",
+    "No modifications to source snapshots. Reproductions can use a private temporary copy. Do not post to GitHub."
+  ],
+  "scoring": [
+    "Freeze historically documented issues before comparing outputs; verify each remains present at the selected head and was introduced or newly exposed relative to base.",
+    "Exclude pure stylistic preferences, already-fixed issues, and explicitly disproven review comments from the bug-recall denominator; report useful cleanliness findings separately.",
+    "One point per independently actionable root cause, merging duplicate findings. Report historical recovery and adjudicated additional findings separately.",
+    "Classify each reported finding as supported defect, supported maintainability issue, false positive, pre-existing, or uncertain. Do not assume no historical comment means false positive.",
+    "Report precision only on adjudicated classifications, with uncertain findings shown explicitly. Missing PR description is unavailable, not a bug.",
+    "Compare components separately and disclose contamination: all selected PRs are named in at least one skill/checklist/gotcha. No claim of unseen-PR efficacy or statistical significance."
+  ],
+  "execution_notes": [
+    "Each paired generic/skill review runs in a distinct agent context; no findings or historical comments are shared between arms.",
+    "The f2 skill reviewer reuses its completed f1 skill context due to the agent-slot limit; this is cross-case carryover within the skill arm, not a fresh-context trial for that case.",
+    "All reviewers are the session-default model and inherited reasoning effort; no model override or cross-model comparison. Runtime exposes no precise model/version or token accounting for these agents.",
+    "Approximately six minutes requested per review, not a hard token or compute budget; no claims about speed or cost.",
+    "Coordinator adjudication is not blinded to arm and is not a second human review."
+  ],
+  "adjudication_notes": [
+    "Strict historical matching requires the actual root cause, not merely a related symptom. The generic macOS returned-error stderr finding does not receive credit for historical pre-log validation ordering; both get credit as supported logging findings.",
+    "Historical managed exact-body retry issue depends on a control-plane contract whose implementation is absent from the selected macOS snapshot. Retained in the frozen denominator, explicitly marked as limited evidence available to reviewers.",
+    "Coordinator verified niche platform assumptions against official Apple, HashiCorp, AWS and Google documentation; source-derived cloud conclusions remain untested live.",
+    "A native local-only Terraform 1.5.7 experiment contradicted generic f3 finding 0; current official -input=false documentation differs from the tested behavior. No cloud resources were created."
+  ]
+}

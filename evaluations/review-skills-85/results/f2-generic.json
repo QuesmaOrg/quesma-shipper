@@ -1,0 +1,23 @@
+{
+  "case": "f2",
+  "arm": "generic",
+  "head": "c9a2f985017e6db351720f22ae9a7e87d5a09cf2",
+  "findings": [],
+  "checks": [
+    "Read the complete change.diff and compared the organization-listing behavior with the supplied base snapshot.",
+    "Read root and fleet-manager AGENTS.md, CONSTITUTION.md, and both architecture documents.",
+    "Inspected prefix extraction, slug validation, bounded concurrent config reads, error propagation, missing-config handling, output sorting, and empty-list serialization.",
+    "Inspected all three new cloud-provider ListPrefixes implementations, their pagination loops and error mappings, and the existing Terraform list/read grants.",
+    "Inspected the admin UI Promise.all change and surrounding credential, error, and connect handling.",
+    "make fmt-check version-check test-ui passed; all three Node tests passed.",
+    "GOCACHE=/private/tmp/f2-generic-gocache GOPROXY=off go vet ./src/... passed.",
+    "GOCACHE=/private/tmp/f2-generic-gocache GOPROXY=off go test ./src -run 'Test(ListOrganizations|MultiTenantOrganization|ExistingConfigUsesSlug|ObjectStore|Admin)' -count=3 passed.",
+    "Attempted go test ./src/... using the isolated cache and GOPROXY=off; compilation completed, but the suite stopped at TestTelemetryForwardsToTheDeploymentDefaultCollector because the sandbox denied binding an httptest listener."
+  ],
+  "limitations": [
+    "The complete Go suite could not finish because local TCP listener creation is prohibited in the sandbox.",
+    "No live cloud services were contacted; provider behavior was inspected statically, without live pagination or IAM validation.",
+    "The complete make check gate was not run because its license step installs tooling and accesses the network; its safe formatting, version, vet, UI, and focused Go checks were run separately.",
+    "No race-detector run was completed within the review budget."
+  ]
+}

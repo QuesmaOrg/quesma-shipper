@@ -1,0 +1,27 @@
+Coordinator counterexample to f3-generic finding 0
+
+The selected AWS and GCP modules require Terraform >= 1.5. Installed native CLI:
+  Terraform v1.5.7 on darwin_arm64
+
+In an isolated temporary directory, main.tf contained only:
+  resource "terraform_data" "local_only" {
+    input = "synthetic-backtest"
+  }
+
+No providers were downloaded and no cloud resources existed in this configuration.
+  terraform init -backend=false -input=false -no-color
+  printf 'yes\n' | terraform apply -input=false -no-color
+
+Observed: the CLI displayed its approval prompt, consumed yes and returned exit 0:
+  Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+The only added resource was built-in Terraform local state, with no external effect.
+
+Therefore a stub that merely records 'apply -input=false' does not demonstrate
+that native Terraform cannot request approval. The generic report's unconditional
+P1 deployment-cancellation claim is contradicted on a supported CLI version.
+
+The current official reference says that -input=false disables approval prompts:
+https://developer.hashicorp.com/terraform/cli/commands/apply
+This differs from the observed Terraform 1.5.7 behavior. Other Terraform and OpenTofu
+versions were not tested. Do not generalize the counterexample to all versions;
+a version-specific failure would need its own actual reproduction.

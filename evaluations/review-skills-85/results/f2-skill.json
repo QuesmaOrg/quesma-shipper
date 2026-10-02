@@ -1,0 +1,25 @@
+{
+  "case": "f2",
+  "arm": "skill",
+  "head": "c9a2f985017e6db351720f22ae9a7e87d5a09cf2",
+  "findings": [],
+  "checks": [
+    "Applied supplied fleet-manager SKILL.md, checklist.md and gotchas.md, previously read in this reviewer session; verified relevant facts against f2 snapshots rather than assuming later behavior.",
+    "Read f2 target, complete diff, root and fleet-manager AGENTS.md, CONSTITUTION.md, fleet-manager ARCHITECTURE.md, SECURITY.md and PR template; inspected relevant operator documentation and Terraform grants.",
+    "Compared changed listing, provider, UI and in-memory store behavior with f2 base. Traced organization discovery through admin authentication, ListPrefixes, validated slugs and LoadConfig; checked sorting, empty results, orphan prefixes and error propagation.",
+    "Checked existing AWS ControlList s3:prefix permission and GCP objectListPrefix condition against the unchanged v1/organization= prefix plus delimiter. Reviewed SDK pagination and prefix extraction for S3, GCS and Azure.",
+    "Inspected historical cached cloud.google.com/go/storage v1.68.0 reader implementation: this snapshot constructs the default XML-reading client, whose missing-object response returns the direct sentinel; did not report the skill generalization about wrapped GCS errors as a new defect.",
+    "Ran GOWORK=off GOPROXY=off with an isolated writable GOCACHE and cached automatic Go 1.27.1: focused TestListOrganizations, TestAdmin, TestOrganization and TestExistingConfig tests passed.",
+    "Ran the new organization-prefix/concurrency test with -race: passed.",
+    "Ran the new test with a read-only Go overlay substituting the base admin.go implementation: it failed as expected with organization listing scanned the archive, confirming the regression test distinguishes the changed behavior.",
+    "Ran node --test tests/*.test.cjs: all three tests passed; node --check src/admin-ui/app.js passed.",
+    "Attempted full go test ./src: blocked at TestTelemetryForwardsToTheDeploymentDefaultCollector when httptest could not bind a TCP port under sandbox restrictions."
+  ],
+  "limitations": [
+    "Adapted skill workflow to retrospective instructions: did not inspect historical reviews or evidence, score the withheld PR description, post to GitHub, create a PR or ask approval. No unavailable-description item was treated as a defect.",
+    "Full Go suite and make check were not completed: sandbox prevented local httptest listener creation; license checks require network access. Focused relevant tests and race check completed successfully.",
+    "No live cloud calls or deployment execution. Provider IAM compatibility and pagination were source-reviewed; cloud behavior was not end-to-end tested.",
+    "No routes, grants, stored-record fields, image pins, defaults or protocol fixtures changed. Skipped publishing, defaults, protocol migration and PR-description passes; retained cloud-call/IAM compatibility review because provider list behavior changed.",
+    "Browser behavior was inspected through source and syntax checks, without interactive browser testing. No shipper component files changed."
+  ]
+}

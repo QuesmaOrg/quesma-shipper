@@ -1,0 +1,56 @@
+[
+  {
+    "case": "f1",
+    "pr": 65,
+    "title": "fleet-manager: add install metadata and inventory import",
+    "head": "fd73b59e2e4f10da2727781c5aaa5f075610ec40",
+    "base": "124ce3c558eeb17fbc78da8e1916df8f53087fb9",
+    "revision": "Earliest inline-reviewed revision retained in current PR history; single-commit PR head if no inline review. Base is merge-base with GitHub baseRefOid.",
+    "component": "fleet-manager"
+  },
+  {
+    "case": "f2",
+    "pr": 67,
+    "title": "Speed up Fleet Manager Admin UI login",
+    "head": "c9a2f985017e6db351720f22ae9a7e87d5a09cf2",
+    "base": "1dfc30095855ed4a8e3e709a754686d593d9832b",
+    "revision": "Earliest inline-reviewed revision retained in current PR history; single-commit PR head if no inline review. Base is merge-base with GitHub baseRefOid.",
+    "component": "fleet-manager"
+  },
+  {
+    "case": "f3",
+    "pr": 78,
+    "title": "Fleet manager deploy script",
+    "head": "bed43fd61117cc321bd56dcb96d9f0a012cc21b0",
+    "base": "124ce3c558eeb17fbc78da8e1916df8f53087fb9",
+    "revision": "Earliest inline-reviewed revision retained in current PR history; single-commit PR head if no inline review. Base is merge-base with GitHub baseRefOid.",
+    "component": "fleet-manager"
+  },
+  {
+    "case": "s1",
+    "pr": 49,
+    "title": "Scrub compressed Codex rollouts and ship each Codex session as one object",
+    "head": "a7e39b1aee0ac5394261551cc8a252650c977cb9",
+    "base": "386f8e714ff0bca79ea1e7c6983bce59e2e503a3",
+    "revision": "Earliest inline-reviewed revision retained in current PR history; single-commit PR head if no inline review. Base is merge-base with GitHub baseRefOid.",
+    "component": "shipper"
+  },
+  {
+    "case": "s2",
+    "pr": 53,
+    "title": "Support per-user and MDM macOS package installation",
+    "head": "29596240ebfb85a153dd3fd7a30c7e49e5a1c445",
+    "base": "08274d85ae795edb66f31eebc7450421f4c43b50",
+    "revision": "Earliest inline-reviewed revision retained in current PR history; single-commit PR head if no inline review. Base is merge-base with GitHub baseRefOid.",
+    "component": "shipper"
+  },
+  {
+    "case": "s3",
+    "pr": 68,
+    "title": "Check only config-added include globs against files on disk",
+    "head": "a158efcf29b4fa377a4528c60b59b21c77404df5",
+    "base": "124ce3c558eeb17fbc78da8e1916df8f53087fb9",
+    "revision": "Earliest inline-reviewed revision retained in current PR history; single-commit PR head if no inline review. Base is merge-base with GitHub baseRefOid.",
+    "component": "shipper"
+  }
+]

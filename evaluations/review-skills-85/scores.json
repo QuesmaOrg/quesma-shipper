@@ -1,0 +1,230 @@
+{
+  "cases": [
+    {
+      "case": "f1",
+      "pr": 65,
+      "component": "fleet-manager",
+      "historical_denominator": 0,
+      "generic": {
+        "supported": 1,
+        "maintainability": 0,
+        "false_positive": 0,
+        "pre_existing": 0,
+        "uncertain": 0,
+        "reported": 1,
+        "historical_recovered": 0,
+        "historical_ids": []
+      },
+      "skill": {
+        "supported": 2,
+        "maintainability": 0,
+        "false_positive": 0,
+        "pre_existing": 0,
+        "uncertain": 0,
+        "reported": 2,
+        "historical_recovered": 0,
+        "historical_ids": []
+      }
+    },
+    {
+      "case": "f2",
+      "pr": 67,
+      "component": "fleet-manager",
+      "historical_denominator": 0,
+      "generic": {
+        "supported": 0,
+        "maintainability": 0,
+        "false_positive": 0,
+        "pre_existing": 0,
+        "uncertain": 0,
+        "reported": 0,
+        "historical_recovered": 0,
+        "historical_ids": []
+      },
+      "skill": {
+        "supported": 0,
+        "maintainability": 0,
+        "false_positive": 0,
+        "pre_existing": 0,
+        "uncertain": 0,
+        "reported": 0,
+        "historical_recovered": 0,
+        "historical_ids": []
+      }
+    },
+    {
+      "case": "f3",
+      "pr": 78,
+      "component": "fleet-manager",
+      "historical_denominator": 1,
+      "generic": {
+        "supported": 2,
+        "maintainability": 0,
+        "false_positive": 1,
+        "pre_existing": 0,
+        "uncertain": 0,
+        "reported": 3,
+        "historical_recovered": 0,
+        "historical_ids": []
+      },
+      "skill": {
+        "supported": 2,
+        "maintainability": 0,
+        "false_positive": 0,
+        "pre_existing": 0,
+        "uncertain": 0,
+        "reported": 2,
+        "historical_recovered": 0,
+        "historical_ids": []
+      }
+    },
+    {
+      "case": "s1",
+      "pr": 49,
+      "component": "shipper",
+      "historical_denominator": 2,
+      "generic": {
+        "supported": 1,
+        "maintainability": 0,
+        "false_positive": 0,
+        "pre_existing": 0,
+        "uncertain": 0,
+        "reported": 1,
+        "historical_recovered": 0,
+        "historical_ids": []
+      },
+      "skill": {
+        "supported": 2,
+        "maintainability": 0,
+        "false_positive": 0,
+        "pre_existing": 0,
+        "uncertain": 0,
+        "reported": 2,
+        "historical_recovered": 2,
+        "historical_ids": [
+          "s1-freshness",
+          "s1-stat"
+        ]
+      }
+    },
+    {
+      "case": "s2",
+      "pr": 53,
+      "component": "shipper",
+      "historical_denominator": 7,
+      "generic": {
+        "supported": 2,
+        "maintainability": 0,
+        "false_positive": 0,
+        "pre_existing": 0,
+        "uncertain": 0,
+        "reported": 2,
+        "historical_recovered": 0,
+        "historical_ids": []
+      },
+      "skill": {
+        "supported": 3,
+        "maintainability": 0,
+        "false_positive": 0,
+        "pre_existing": 0,
+        "uncertain": 0,
+        "reported": 3,
+        "historical_recovered": 3,
+        "historical_ids": [
+          "s2-home",
+          "s2-logs",
+          "s2-uninstall"
+        ]
+      }
+    },
+    {
+      "case": "s3",
+      "pr": 68,
+      "component": "shipper",
+      "historical_denominator": 0,
+      "generic": {
+        "supported": 0,
+        "maintainability": 0,
+        "false_positive": 0,
+        "pre_existing": 0,
+        "uncertain": 0,
+        "reported": 0,
+        "historical_recovered": 0,
+        "historical_ids": []
+      },
+      "skill": {
+        "supported": 0,
+        "maintainability": 0,
+        "false_positive": 0,
+        "pre_existing": 0,
+        "uncertain": 0,
+        "reported": 0,
+        "historical_recovered": 0,
+        "historical_ids": []
+      }
+    }
+  ],
+  "fleet-manager": {
+    "historical_denominator": 1,
+    "generic": {
+      "reported": 4,
+      "supported": 3,
+      "maintainability": 0,
+      "false_positive": 1,
+      "pre_existing": 0,
+      "uncertain": 0,
+      "historical_recovered": 0
+    },
+    "skill": {
+      "reported": 4,
+      "supported": 4,
+      "maintainability": 0,
+      "false_positive": 0,
+      "pre_existing": 0,
+      "uncertain": 0,
+      "historical_recovered": 0
+    }
+  },
+  "shipper": {
+    "historical_denominator": 9,
+    "generic": {
+      "reported": 3,
+      "supported": 3,
+      "maintainability": 0,
+      "false_positive": 0,
+      "pre_existing": 0,
+      "uncertain": 0,
+      "historical_recovered": 0
+    },
+    "skill": {
+      "reported": 5,
+      "supported": 5,
+      "maintainability": 0,
+      "false_positive": 0,
+      "pre_existing": 0,
+      "uncertain": 0,
+      "historical_recovered": 5
+    }
+  },
+  "all": {
+    "historical_denominator": 10,
+    "generic": {
+      "reported": 7,
+      "supported": 6,
+      "maintainability": 0,
+      "false_positive": 1,
+      "pre_existing": 0,
+      "uncertain": 0,
+      "historical_recovered": 0
+    },
+    "skill": {
+      "reported": 9,
+      "supported": 9,
+      "maintainability": 0,
+      "false_positive": 0,
+      "pre_existing": 0,
+      "uncertain": 0,
+      "historical_recovered": 5
+    }
+  }
+}

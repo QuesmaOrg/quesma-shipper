@@ -1,0 +1,154 @@
+{
+  "frozen_before_results": true,
+  "items": [
+    {
+      "id": "s1-stat",
+      "case": "s1",
+      "title": "Logical-session path change can skip hashing with unchanged size/mtime",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/49#discussion_r4119177503",
+      "kind": "defect",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s1-freshness",
+      "case": "s1",
+      "title": "Plaintext preference discards a newer compressed session",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/49#discussion_r4119178193",
+      "kind": "defect",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s2-retry",
+      "case": "s2",
+      "title": "Managed retry saves key but not exact enrollment body; hostname change conflicts after lost response",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#issuecomment-5832470467",
+      "kind": "defect",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s2-logs",
+      "case": "s2",
+      "title": "Managed startup validation fails before log opens, losing diagnostics",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#issuecomment-5832470467",
+      "kind": "defect",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s2-uninstall",
+      "case": "s2",
+      "title": "System plist makes personal installation unable to uninstall in mixed state",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#issuecomment-5832470467",
+      "kind": "defect",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s2-home",
+      "case": "s2",
+      "title": "Multiline dscl home values reject valid home paths containing spaces",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#issuecomment-5832470467",
+      "kind": "defect",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s2-cause",
+      "case": "s2",
+      "title": "Managed enrollment hides distinct actionable error causes",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#discussion_r4104494200",
+      "kind": "defect",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s2-doctor",
+      "case": "s2",
+      "title": "Doctor recommends self-update which managed package installation refuses",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#discussion_r4120349688",
+      "kind": "defect",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s2-host-test",
+      "case": "s2",
+      "title": "Login unit test depends on host system LaunchAgent installation",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#discussion_r4104494272",
+      "kind": "test",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "f3-age",
+      "case": "f3",
+      "title": "New key-generation walkthrough omits public/private custody and backup/no-commit guidance",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/78#discussion_r4144781207",
+      "kind": "docs",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s2-enumeration",
+      "case": "s2",
+      "title": "Three divergent owners of user enumeration",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#discussion_r4104494143",
+      "kind": "maintainability",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s2-plist",
+      "case": "s2",
+      "title": "Duplicate system and personal launchd templates",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#discussion_r4104494155",
+      "kind": "maintainability",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s2-gates",
+      "case": "s2",
+      "title": "Repeated validation gates across layers",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#discussion_r4104494222",
+      "kind": "maintainability",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s2-wait",
+      "case": "s2",
+      "title": "Shell removal timeout hardcodes Go-derived wait",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#discussion_r4104494294",
+      "kind": "maintainability",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    },
+    {
+      "id": "s2-key-lifecycle",
+      "case": "s2",
+      "title": "Pending enrollment key retained after successful enrollment",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#discussion_r4104494241",
+      "kind": "maintainability",
+      "validation": "Confirmed by selected-head/base source trace and historical follow-up"
+    }
+  ],
+  "excluded": [
+    {
+      "case": "f1",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/65#discussion_r4153337790",
+      "reason": "Revoked identities deliberately remain ambiguous; subsequent 6d53993 changes explanation and adds tests, not selection behavior. Do not credit filtering them out as a defect fix."
+    },
+    {
+      "case": "s2",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#discussion_r4120349694",
+      "reason": "Hidden CLI command concern was disproven in later reply; do not count."
+    },
+    {
+      "case": "s2",
+      "source": "https://github.com/QuesmaOrg/quesma-shipper/pull/53#discussion_r4120349678",
+      "reason": "Saved entire-body stale grant behavior appears after the selected revision; this snapshot saves a device key only. Do not count this later regression."
+    },
+    {
+      "case": "s2",
+      "reason": "Renaming a shadowed variable, runtime.GOOS convention, one-line forwarding files, and prose repetition excluded from main defect denominator as preferences."
+    },
+    {
+      "case": "f2",
+      "reason": "No substantive historical findings. This is absence of labels, not proof of correctness."
+    },
+    {
+      "case": "s3",
+      "reason": "No substantive historical findings. This is absence of labels, not proof of correctness."
+    }
+  ]
+}

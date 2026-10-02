@@ -1,0 +1,53 @@
+{
+  "case": "s2",
+  "arm": "skill",
+  "head": "29596240ebfb85a153dd3fd7a30c7e49e5a1c445",
+  "findings": [
+    {
+      "priority": "P1",
+      "title": "Identify managed installations by their executable, not any system plist",
+      "file": "src/packaging/macos/managed.go",
+      "line": 33,
+      "category": "bug",
+      "explanation": "When a user has both a personal LaunchAgent and the system installation (for example, a migrated user home arrives after MDM deployment), SystemManaged returns true even when running ~/Applications/Quesma Shipper.app. Both personal uninstall commands refuse and direct the user to an administrator. The administrator uninstall script also refuses while that user plist exists and the label is loaded. Neither supported removal path can resolve the mixed installation; ValidateRun also stops collection for the personal binary.",
+      "evidence": "New SystemManaged fallback at lines 33\u201334 treats the presence of /Library/LaunchAgents/com.quesma.shipper.plist as ownership. ValidateUserUninstall is newly called from CLI uninstall, app.Uninstall and macos.UninstallService. New mdm/uninstall.sh lines 36\u201341 refuses a loaded label with a personal plist. Base personal uninstall had no system-plist refusal and checked the service executable before removal.",
+      "fix": "Determine ownership from the resolved running executable and allow removal of the personal installation while preserving any system-owned service; ensure the administrator removal path can resolve mixed installs."
+    },
+    {
+      "priority": "P2",
+      "title": "Parse multiline dscl home-directory values",
+      "file": "src/packaging/macos/pkg/scripts/preinstall",
+      "line": 31,
+      "category": "bug",
+      "explanation": "A local account whose home path contains a space makes dscl print NFSHomeDirectory: followed by the value on the next line. Stripping only the literal prefix with a trailing space leaves the label in the value, so check_home rejects a valid home as non-absolute. Since preinstall checks every local UID >= 500, one such account prevents system installation and upgrades for the entire computer. The same parser in localUsers breaks postinstall, and the uninstaller uses the malformed path for its personal-install safety check.",
+      "evidence": "Reproduced the exact prefix operations with synthetic dscl output \"NFSHomeDirectory:\\n /Users/Test User\\n\": both shell-style prefix removal and Go TrimSpace(TrimPrefix(..., \"NFSHomeDirectory: \")) retain \"NFSHomeDirectory:\"; the result is not absolute. The parsers are new in this change; base installation did not enumerate all users. Matching Go parser is managed.go:127 and removal parser is mdm/uninstall.sh:38.",
+      "fix": "Normalize the dscl attribute label and surrounding whitespace independently of whether the value is inline; share the enumeration/parsing rule and cover a home path containing spaces."
+    },
+    {
+      "priority": "P2",
+      "title": "Keep managed startup errors connected to the process error output",
+      "file": "src/internal/cli/run.go",
+      "line": 145,
+      "category": "bug",
+      "explanation": "The system LaunchAgent has no StandardErrorPath, but the new log setup only changes Cobra writers. Fatal startup errors returned by runLoop (for example, an invalid local configuration) are printed by main to os.Stderr after this function closes the file, so the diagnostic never reaches agent.err.log. In addition, ValidateRun returns before this log is opened, making a mixed-install refusal completely silent. launchd keeps restarting the job, leaving operators without the error that explains the failed collection.",
+      "evidence": "New renderSystemPlist omits StandardErrorPath. run.go:129 validates before ManagedRunLog; lines 148\u2013150 close the file on return and set only cmd writers. cmd/quesma-shipper/main.go prints ExecuteContext errors and panic stacks directly to os.Stderr; cli.Root has SilenceErrors=true. The base personal renderPlist routed process stderr to agent.err.log, so this is exposed by the new system-agent path.",
+      "fix": "Open the per-user managed log before validation and keep process-level errors and panics connected to it through final error reporting, or explicitly report all returned failures to an open managed log."
+    }
+  ],
+  "checks": [
+    "Read the assigned target, diff, head/base lifecycle and enrollment sources, applicable AGENTS.md, CONSTITUTION.md, ARCHITECTURE.md, PR template and CONTRIBUTING compatibility section.",
+    "Read all three supplied review-shipper skill files; applied packaging lifecycle, CLI/error, documentation, code-shape, tests, security and fleet-scope passes against this historical snapshot.",
+    "Traced mixed-install run and uninstall guards through CLI, app, packaging and the new administrator removal script; compared personal removal with the base.",
+    "Reproduced new home-directory prefix parsing using synthetic multiline dscl output for /Users/Test User.",
+    "Traced managed logging through system plist, ManagedRunLog, runLoop, Cobra error handling and main process stderr.",
+    "Ran GOPROXY=off go test ./packaging/macos ./internal/controlplane ./app -run Test(System|Mixed|InstallCommand|CoreFoundation|ManagedEnrollment|EnrollmentLock) -count=1 with isolated GOCACHE. macOS and controlplane packages passed; app test was blocked by the local-listener sandbox restriction.",
+    "Confirmed no changed transcript scrub/seal path, upload path, fingerprint dedup logic or golden fixtures; performance hot-path pass was not applicable."
+  ],
+  "limitations": [
+    "Adapted the skill to the evaluation instructions: did not inspect historical review threads, score an unavailable PR description, or post/create a PR.",
+    "Did not perform live installation, MDM deployment, removal, or launchd mutations. Mixed-install and logging findings are source traces, not live system reproductions.",
+    "The managed-login httptest server failed to bind [::1]:0 with operation not permitted; its assertions did not execute.",
+    "Did not run full make check, make race, make perf, package builds, or cross-platform release smoke tests within the review time budget.",
+    "No Fleet Manager source existed in the snapshot; did not infer a new exact-body retry defect solely from the skill\u2019s current-behavior notes."
+  ]
+}

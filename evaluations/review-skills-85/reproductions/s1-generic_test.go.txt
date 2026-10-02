@@ -1,0 +1,9 @@
+package config_test
+import (
+ "testing"
+ "github.com/QuesmaOrg/quesma-shipper/internal/config"
+)
+func TestReviewRemovedCompressedSource(t *testing.T) {
+ _, err := config.Resolve(baseInput(t, fakeHome(t), config.LayeredDocument{Layer:config.LayerUser, Doc:doc(t, "sources:\n  - id: codex-rollouts-compressed\n    enabled: false\n")}))
+ if err != nil { t.Fatalf("previously valid config rejected: %v", err) }
+}

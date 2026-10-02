@@ -1,0 +1,51 @@
+{
+  "case": "f3",
+  "arm": "generic",
+  "head": "bed43fd61117cc321bd56dcb96d9f0a012cc21b0",
+  "findings": [
+    {
+      "priority": "P1",
+      "title": "Allow interactive approval when --yes is absent",
+      "file": "fleet-manager/deploy.sh",
+      "line": 72,
+      "category": "bug",
+      "explanation": "Both documented first-deployment commands omit --yes, but this call unconditionally disables Terraform input and does not supply either a saved plan or -auto-approve. Terraform cannot obtain approval for a nonempty plan in that mode, so the deployment is cancelled instead of asking for the promised yes. The destroy path has the same problem at line 105.",
+      "evidence": "A safe reproduction with cloud, download, and Terraform operations replaced by shell stubs recorded `apply -input=false` for the README AWS invocation. The old runbooks invoked terraform apply without -input=false. No live apply was performed.",
+      "fix": "Keep interactive input enabled for apply/destroy when --yes is absent; reserve -auto-approve and disabled input for the explicitly noninteractive path."
+    },
+    {
+      "priority": "P2",
+      "title": "Resolve a new image version before claiming reruns upgrade the service",
+      "file": "fleet-manager/deploy.sh",
+      "line": 67,
+      "category": "bug",
+      "explanation": "For the default deployment, rerunning the script after a new Fleet Manager image is published leaves the configured image at docker.io/quesma/fleet-manager:latest. init -upgrade upgrades provider selections, while apply sees the same image string and no service configuration change. There is no digest resolution or forced rollout here, so users following the newly documented upgrade command can remain on the old running service indefinitely.",
+      "evidence": "Both snapshot Terraform templates default to the fixed :latest string; AWS primary_container.image and GCP containers.image directly use that variable. The new wrapper only fetches .tf files, writes the same input variables, runs init, and applies; it never resolves or changes the image or requests a rollout. The templates are unchanged from base, but the new wrapper and README introduce same-command reruns as the upgrade mechanism.",
+      "fix": "Resolve the selected moving tag to an immutable digest for each intended upgrade, or add an explicit provider-appropriate rollout operation and document its behavior."
+    },
+    {
+      "priority": "P2",
+      "title": "Distinguish an omitted telemetry flag from an explicit empty value",
+      "file": "fleet-manager/deploy.sh",
+      "line": 115,
+      "category": "bug",
+      "explanation": "After deploying with --telemetry https://collector.example, passing --telemetry \"\" to stop forwarding is treated as an omitted option and restores the stored URL. The script succeeds while organizations inheriting the deployment default continue forwarding telemetry. Empty string is the Terraform variable's supported off setting, but the wrapper gives it no usable representation.",
+      "evidence": "Ran the script functions in an isolated temporary directory with all external operations stubbed: the first run stored https://collector.example; a second run with --telemetry \"\" returned zero and wrote the same nonempty default_telemetry_collector_url. In base, the direct Terraform interface accepts the empty value.",
+      "fix": "Track whether --telemetry was supplied independently of its value, and persist an explicit empty value, or add a documented --no-telemetry flag."
+    }
+  ],
+  "checks": [
+    "Read assigned target metadata, diff, stat, root and fleet-manager AGENTS.md, CONSTITUTION.md, and both ARCHITECTURE.md files from the head snapshot.",
+    "Compared deployment wrapper and new runbooks against base Terraform templates and previous runbooks; inspected AWS/GCP variables, resources, and outputs.",
+    "Ran sh -n fleet-manager/deploy.sh successfully.",
+    "Queried installed terraform apply -help without executing a deployment.",
+    "Ran an isolated shell reproduction using a copy of deploy.sh with all cloud, download, health, and Terraform operations stubbed; inspected emitted arguments and persisted telemetry variables.",
+    "Checked walkthrough invite request/response fields against admin_http.go and verified its referenced fixture exists."
+  ],
+  "limitations": [
+    "No cloud API calls, deployment commands, installation commands, or external source lookups were executed.",
+    "Full make check was not run: its license target installs tooling and uses the network; review focused on the added shell wrapper and changed documentation.",
+    "Terraform provider rollout behavior was assessed from the unchanged image inputs and script flow, not a live cloud deployment.",
+    "Generic arm: no review skills or checklists were accessed."
+  ]
+}

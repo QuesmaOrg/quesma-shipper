@@ -1,0 +1,409 @@
+[
+  {
+    "case": "f1",
+    "pr": 65,
+    "explicitly_referenced": true,
+    "references": [
+      {
+        "file": ".claude/skills/review-fleet-manager/gotchas.md",
+        "line": 27,
+        "text": "(#65)"
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/gotchas.md",
+        "line": 59,
+        "text": "writing the new field. The same held for a new telemetry configuration field. (#65)"
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/gotchas.md",
+        "line": 71,
+        "text": "re-enrolled machines are always ambiguous because the revoked record keeps the hostname. (#65)"
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/checklist.md",
+        "line": 41,
+        "text": "the UI says so (#65). Known gaps are not worsened: revocation is checked on entry to enrollment"
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/checklist.md",
+        "line": 43,
+        "text": "#65]"
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/checklist.md",
+        "line": 106,
+        "text": "path, and names the consumers of any list-endpoint shape change. [H, codified; #65]"
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/checklist.md",
+        "line": 111,
+        "text": "the README say who reads it. [H, codified since #65]"
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/SKILL.md",
+        "line": 183,
+        "text": "it, and the ETL copies it verbatim. `ARCHITECTURE.md` and the README say so (#65)."
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/SKILL.md",
+        "line": 201,
+        "text": "any list-endpoint shape change (#65)."
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/SKILL.md",
+        "line": 284,
+        "text": "against the latest record for administrator edits (#65, #67)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/gotchas.md",
+        "line": 109,
+        "text": "field, so a new field needs every replica upgraded first. (#65)"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 127,
+        "text": "new field needs an upgrade order. [M; #27, #49, #65]"
+      }
+    ]
+  },
+  {
+    "case": "f2",
+    "pr": 67,
+    "explicitly_referenced": true,
+    "references": [
+      {
+        "file": ".claude/skills/review-fleet-manager/gotchas.md",
+        "line": 86,
+        "text": "time grew with the archive; delimiter listings with bounded concurrency fixed it. (#67)"
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/checklist.md",
+        "line": 168,
+        "text": "time must not grow with the archive (#67). [M]"
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/SKILL.md",
+        "line": 284,
+        "text": "against the latest record for administrator edits (#65, #67)."
+      }
+    ]
+  },
+  {
+    "case": "f3",
+    "pr": 78,
+    "explicitly_referenced": true,
+    "references": [
+      {
+        "file": ".claude/skills/review-fleet-manager/checklist.md",
+        "line": 145,
+        "text": "when offline. [M; #78]"
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/checklist.md",
+        "line": 182,
+        "text": "decrypts, back it up, never commit it; show the command once with its output. [M; #78]"
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/SKILL.md",
+        "line": 245,
+        "text": "private identity decrypts, and the identity is backed up and never committed (#78)."
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/SKILL.md",
+        "line": 268,
+        "text": "that destroying leaves nothing behind only when that is true (#78)."
+      }
+    ]
+  },
+  {
+    "case": "s1",
+    "pr": 49,
+    "explicitly_referenced": true,
+    "references": [
+      {
+        "file": ".claude/skills/review-shipper/gotchas.md",
+        "line": 95,
+        "text": "path differs from the recorded one. (#49)"
+      },
+      {
+        "file": ".claude/skills/review-shipper/gotchas.md",
+        "line": 96,
+        "text": "- \"Prefer plaintext\" can select a stale copy; pick by freshness, with plaintext breaking ties. (#49)"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 31,
+        "text": "says so. Runtime configuration never removes scrub or encrypt. [H, codified; #49, #76]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 38,
+        "text": "inside it. [H; #49]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 70,
+        "text": "the catalog and engine, not by reading the code. [M; #49]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 120,
+        "text": "still naming it is rejected. The description names which side changes first. [M; #49, #50,"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 127,
+        "text": "new field needs an upgrade order. [M; #27, #49, #65]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 215,
+        "text": "reproduction is answered with a named regression test. [H; #49]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 237,
+        "text": "reviewer takes them from the description and says so. [H, codified; #49, #76]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 248,
+        "text": "65. **Decisions surfaced**: \"needs a human\", \"not in this PR\", \"found along the way\". [M; #33, #49]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 151,
+        "text": "it (#49)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 175,
+        "text": "the newest wins, with plaintext only breaking ties (#49)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 215,
+        "text": "note in the PR, and the order in which shipper, Fleet Manager and the ETL must upgrade (#49,"
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 267,
+        "text": "reproduction is answered with a named regression test (#49)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 295,
+        "text": "(#49, #76). Without Docker the numbers come from the description; say so."
+      }
+    ]
+  },
+  {
+    "case": "s2",
+    "pr": 53,
+    "explicitly_referenced": true,
+    "references": [
+      {
+        "file": ".claude/skills/review-fleet-manager/gotchas.md",
+        "line": 65,
+        "text": "nearby must not worsen them. (#53)"
+      },
+      {
+        "file": ".claude/skills/review-fleet-manager/checklist.md",
+        "line": 42,
+        "text": "only, and a retried grant enrollment matches only a byte-identical body (#58 is open). [M; #53,"
+      },
+      {
+        "file": ".claude/skills/review-shipper/gotchas.md",
+        "line": 48,
+        "text": "expression expected\" into the Installer log. (#53)"
+      },
+      {
+        "file": ".claude/skills/review-shipper/gotchas.md",
+        "line": 51,
+        "text": "saved exact body. (#53, #58)"
+      },
+      {
+        "file": ".claude/skills/review-shipper/gotchas.md",
+        "line": 53,
+        "text": "personal binary too; mixed installs are told apart by the running binary's own path. (#53)"
+      },
+      {
+        "file": ".claude/skills/review-shipper/gotchas.md",
+        "line": 55,
+        "text": "process opens `agent.err.log` fails invisibly and launchd restarts it every 60 seconds. (#53)"
+      },
+      {
+        "file": ".claude/skills/review-shipper/gotchas.md",
+        "line": 58,
+        "text": "- Removing an MDM profile does not unenroll; the install keeps its identity and state. (#53)"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 93,
+        "text": "and a test that replaces the path between check and open. [M; #51, #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 133,
+        "text": "attempts conflicts forever (#58 is open). A change here does not worsen that. [M; #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 147,
+        "text": "`StandardErrorPath` relies on the process opening its own log. [H; #7, #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 155,
+        "text": "and points at the package. The description states which applies. [M; #36, #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 160,
+        "text": "the renamed old binary are removed. [H; #7, #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 163,
+        "text": "[H; #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 166,
+        "text": "#53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 173,
+        "text": "Installer log; the one genuinely unobvious step has its one-line comment. [M; #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 176,
+        "text": "liveness, not registration. [H; #7, #10, #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 181,
+        "text": "a profile does not unenroll stated once. [M; #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 187,
+        "text": "captured when it matters. [M; #7, #38, #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 189,
+        "text": "instead and say so in a comment. [M; #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 206,
+        "text": "[M; #52, #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 211,
+        "text": "promises more than the assertion, is a finding. [M; #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 213,
+        "text": "branches. [M; #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 226,
+        "text": "fields. Bodies are truncated and never echo request fields. [M; #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 245,
+        "text": "redacted-versus-shipped output. [H, codified; #33, #53]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 183,
+        "text": "Two installer PRs drew more review than everything else combined (#7, #53). Neither CI nor a diff"
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 192,
+        "text": "fail; otherwise a silent restart loop is the only symptom (#7, #53)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 196,
+        "text": "install refuses them with `ErrSystemManaged` (#7, #36, #53, #82)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 200,
+        "text": "(#7, #53, #59)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 202,
+        "text": "managed install is never told to run a command it refuses (#33, #53)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 241,
+        "text": "#51, #52, #53)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 255,
+        "text": "app and packaging layers is a finding that names the single definition (#33, #51, #53)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 258,
+        "text": "`%w` unless the wrapped error could carry a secret; then classify, and say so (#7, #53)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 265,
+        "text": "`/Library/LaunchAgents`, no dependence on PATH, `runtime.GOOS` for platform branches (#53)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 275,
+        "text": "fields (#53)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 286,
+        "text": "and open (#51, #53)."
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 311,
+        "text": "scope after a rebase (#33, #53). Deferred defects get an issue number in the thread; conflicting"
+      }
+    ]
+  },
+  {
+    "case": "s3",
+    "pr": 68,
+    "explicitly_referenced": true,
+    "references": [
+      {
+        "file": ".claude/skills/review-shipper/gotchas.md",
+        "line": 89,
+        "text": "shows. (#64, #68)"
+      },
+      {
+        "file": ".claude/skills/review-shipper/checklist.md",
+        "line": 89,
+        "text": "an agent-named tree. [M; #51, #64, #68]"
+      },
+      {
+        "file": ".claude/skills/review-shipper/SKILL.md",
+        "line": 283,
+        "text": "a catalog diff (#64, #68)."
+      }
+    ]
+  }
+]

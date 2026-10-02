@@ -1,0 +1,41 @@
+{
+  "case": "s1",
+  "arm": "skill",
+  "head": "a7e39b1aee0ac5394261551cc8a252650c977cb9",
+  "findings": [
+    {
+      "priority": "P2",
+      "title": "Choose the freshest session before preferring plaintext",
+      "file": "src/internal/sources/gather.go",
+      "line": 386,
+      "category": "bug",
+      "explanation": "If an older plaintext rollout remains alongside a newer compressed copy of the same session (for example after restoring or copying an old live rollout), preferForm always selects plaintext before comparing modification times. The identity collapse discards the newer copy on every discovery pass, so events present only in that copy never reach the archive. Previously the two paths were collected separately.",
+      "evidence": "In a separate copy of this head, TestReviewNewerCompressedWins used the real Codex catalog, a plaintext rollout at time T, and a .zst rollout with an appended event at T+1 minute. The engine uploaded the older body; the test failed with \"newer compressed session's appended event was lost\". Base catalog has independent plaintext and compressed sources and no identity collapse.",
+      "fix": "Compare modification time first and prefer plaintext only when freshness is equal; add a catalog-to-engine regression test with different contents and mtimes."
+    },
+    {
+      "priority": "P2",
+      "title": "Rehash when a logical session switches physical paths",
+      "file": "src/internal/engine/file.go",
+      "line": 173,
+      "category": "bug",
+      "explanation": "A logical session can now reuse a fingerprint recorded for a different file, but unchangedByStat still compares only size and mtime. If a restored or archived copy has different content with the same size and preserved mtime, the engine skips reading it and even refreshes NativePath to the new file. The old archived content then remains indefinitely despite the new copy differing. This was not possible across paths when the fingerprint key was the native path.",
+      "evidence": "TestReviewDifferentPathSameStat in a separate copy of this head shipped a rollout, wrote an archived copy replacing the seven-character message \"resumed\" with \"changed\", preserved its mtime, and removed the live file. On the next real engine run it shipped zero objects and retained the old message. Base prepareFile keyed state by cand.Path, so the archived path was unseen.",
+      "fix": "For identity-keyed candidates, require the observed native path to match before taking the stat shortcut; otherwise load and compare the content hash. Keep memory admission using the same predicate."
+    }
+  ],
+  "checks": [
+    "Read supplied SKILL.md, checklist.md and gotchas.md, plus snapshot AGENTS.md, CONSTITUTION.md, ARCHITECTURE.md, PR template and CONTRIBUTING compatibility guidance.",
+    "Compared base and head catalog, discovery, loader, identity, engine state and dedup, scrub/JSON walker, seal and schema changes; traced deny validation and changed-source config rejection.",
+    "Verified both findings with new focused catalog-to-engine tests in /private/tmp/s1-skill-repro, a separate copy of the assigned head; both failed with the specific data-loss behavior described.",
+    "Ran GOEXPERIMENT=jsonv2 go test ./internal/sources ./internal/transforms ./internal/engine -run \"TestCodex|TestEveryCatalogSourceScrubsItsCanary|Test.*Zstd|Test.*State\" -count=1 with a temporary GOCACHE and GOPROXY=off; all three packages passed.",
+    "Reviewed legacy-state reading and identity serialization tests, compressed decoded-size limits, fail-closed opaque-payload checks, and typed scrub-to-seal handoff.",
+    "Inspected changed performance guard: existing guard was factored without widening its budget; a separate Codex scenario was added."
+  ],
+  "limitations": [
+    "Per evaluation instructions, adapted the skill by omitting historical reviews/comments, PR-description scoring and GitHub posting; no unavailable description material was treated as a defect.",
+    "Time-bounded focused review; did not run make check, make race, Docker performance scenarios, binary-size comparison, or an exhaustive full test suite.",
+    "Skipped installer/service and release-workflow passes because those components were not changed; no Fleet Manager implementation files were changed.",
+    "Reproduction tests ran against an isolated copy of the head; base behavior was established by source comparison rather than executing equivalent base tests."
+  ]
+}

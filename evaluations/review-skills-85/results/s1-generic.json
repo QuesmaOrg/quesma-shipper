@@ -1,0 +1,29 @@
+{
+  "case": "s1",
+  "arm": "generic",
+  "head": "a7e39b1aee0ac5394261551cc8a252650c977cb9",
+  "findings": [
+    {
+      "priority": "P2",
+      "title": "Preserve compatibility for configurations naming the compressed source",
+      "file": "src/internal/formats/catalogdata/codex.yaml",
+      "line": 60,
+      "category": "compatibility",
+      "explanation": "Removing codex-rollouts-compressed makes an existing local or served configuration containing that source ID invalid, including the ordinary restriction `sources: [{id: codex-rollouts-compressed, enabled: false}]`. config.Resolve rejects every override whose ID is absent from the compiled catalog, so upgrading such an installation prevents configuration resolution and collection for all sources. Merely ignoring the old override would also lose the operator's restriction now that compressed files are included in codex-rollouts.",
+      "evidence": "A focused test in a separate temporary copy called config.Resolve with the disabled compressed-source override. Head failed with 'config rejected: sources.codex-rollouts-compressed ... no such source in the compiled catalog'. Restoring only the base Codex catalog and its source-spec schema in that copy made the same test pass. The unchanged rejection is in src/internal/config/resolve.go:188-192.",
+      "fix": "Provide a backward-compatible migration or alias for the removed source ID that retains its enablement, roots and include restrictions when merging compressed collection into codex-rollouts, with upgrade tests for existing overrides."
+    }
+  ],
+  "checks": [
+    "Read snapshot AGENTS.md, CONSTITUTION.md and ARCHITECTURE.md.",
+    "Compared changed source loading, identity selection, state persistence, file preparation, memory admission and JSON scrubbing code against the supplied base.",
+    "Ran Go 1.27.0 with GOEXPERIMENT=jsonv2, isolated GOCACHE and GOPROXY=off: internal/transforms and internal/engine tests passed.",
+    "Ran focused internal/sources tests matching Zstd|Codex|Identity|Collapse; passed.",
+    "Reproduced rejection of a previously valid compressed-source configuration in a separate temporary copy, then confirmed the test passes with the base catalog and source-spec schema."
+  ],
+  "limitations": [
+    "The complete internal/sources suite stopped because sandbox permissions forbid httptest from binding a localhost port; focused relevant source tests passed.",
+    "Did not run Docker performance checks, race checks or the full repository suite within the review budget.",
+    "No PR description was supplied, so description checks were unavailable."
+  ]
+}

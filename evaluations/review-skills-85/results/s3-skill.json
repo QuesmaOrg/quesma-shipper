@@ -1,0 +1,21 @@
+{
+  "case": "s3",
+  "arm": "skill",
+  "head": "a158efcf29b4fa377a4528c60b59b21c77404df5",
+  "findings": [],
+  "checks": [
+    "Read all three supplied review-shipper skill files and snapshot AGENTS.md, CONSTITUTION.md, ARCHITECTURE.md, PR template, and CONTRIBUTING.md compatibility guidance.",
+    "Compared all three changed files with the base; inspected include override merging, catalog lookup, pickRoot and RefreshAbsentRoots, compiled source globs, CheckIncludes, and discovery-time denial of both literal and resolved paths.",
+    "Reviewed compatibility, security, test quality, code shape, documentation, and fleet implications. No schema, source ID, protocol, golden fixture, import edge, upload path, or durable state change was introduced.",
+    "GOPROXY=off GOCACHE=/private/tmp/review-s3-skill-gocache go test ./internal/config ./internal/sources: the complete config suite passed; the sources suite stopped at the sandbox loopback-listener restriction.",
+    "Focused head tests passed with loopback access: go test ./internal/config ./internal/sources ./e2e -run Test(ACompiledIncludeReachingADeniedNameIsNotRejected|ALayerGlobBesideTheCompiledOnesIsStillChecked|IncludeReachingAgentCredentialsIsRejected|AnAgentNamedDeniedFileDoesNotStopTheSync|.*Deny.*|.*Symlink.*|.*RefreshAbsent.*)$ -count=1.",
+    "Used a Go overlay mapping only head resolve.go to the base resolver, without changing either snapshot. TestACompiledIncludeReachingADeniedNameIsNotRejected failed because plans/.env rejected the entire configuration; TestALayerGlobBesideTheCompiledOnesIsStillChecked continued to pass. This verifies the new regression assertion fails without the fix.",
+    "Confirmed discovery and deny implementations are byte-identical between base and head; denied files remain excluded at discovery, independently of configuration validation."
+  ],
+  "limitations": [
+    "Adapted the skill to the retrospective protocol: no historical review threads, PR-description scoring, GitHub posting, or PR creation; reviewed supplied snapshots only.",
+    "The initial full sources test attempt could not open an httptest loopback listener in the sandbox. The relevant focused config, sources, and e2e tests subsequently passed with loopback access; the complete sources and e2e suites were not run.",
+    "Did not run make check, make race, or Docker performance tests. Skipped detailed state/dedup, installer/service, and performance passes because their implementations are unchanged; the pipeline pass confirmed no new scrub/seal, network, import, or write path.",
+    "No fleet-manager behavior changed, so no fleet-manager review or check was performed. No live cloud services or platform installation workflows were exercised."
+  ]
+}

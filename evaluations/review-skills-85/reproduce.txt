@@ -1,0 +1,63 @@
+Review-skills retrospective backtest, PR #85
+
+Scope and inputs
+  protocol.json records prompts, restrictions, scoring and limitations.
+  manifest.json pins the six code heads and their exact baselines.
+  contamination.json identifies explicit references to every selected PR in the skills.
+  historical-rubric.json was frozen before comparing review outputs.
+  results/ contains the original reviewer output, without editorial changes.
+  judgments.json records coordinator adjudication of every finding and history match.
+  scores.json is computed, not manually edited.
+
+Recompute and validate scores
+  python3 evaluations/review-skills-85/evaluate.py
+
+Re-create a review source snapshot (from a clone of QuesmaOrg/quesma-shipper)
+  Look up the PR number, head and base in manifest.json.
+  git fetch origin pull/PR_NUMBER/head
+  mkdir -p /tmp/backtest-case/head /tmp/backtest-case/base
+  git archive HEAD_SHA | tar -x -C /tmp/backtest-case/head
+  git archive BASE_SHA | tar -x -C /tmp/backtest-case/base
+  git diff BASE_SHA HEAD_SHA > /tmp/backtest-case/change.diff
+  Historical SHAs may require an explicit fetch if a PR is force-pushed later.
+
+Re-create the frozen skills
+  git fetch origin pull/85/head
+  mkdir -p /tmp/backtest-skills
+  git archive 7eb78e6a4bd8ae07b8858bccaff89dc7dd597726 .claude/skills |
+    tar -x -C /tmp/backtest-skills
+
+Review again
+  Give two separate reviewer contexts reviewer-instructions.txt and the same case.
+  One receives only the generic prompt; the other additionally receives the three
+  component skill files from the frozen SHA. Keep results, historical-rubric.json,
+  judgments.json, all PR discussions and the report unavailable to both reviewers.
+  Preserve the same model and reasoning effort for the pair. The original run used
+  the session default model/effort, not an independently recorded version identifier.
+  Fresh contexts for every case would improve isolation over this run's one reuse.
+  Approximate six-minute budgets were requested, not mechanically enforced. Re-runs
+  are stochastic and are not expected to reproduce every finding or count.
+
+Reproduce selected findings
+  node reproductions/f1-csv.cjs /tmp/backtest-case/head
+    Use case f1. Expects an accepted 985032-byte CSV and a 1210900-byte JSON body
+    exceeding the 1048576-byte server limit. Does not call a server.
+
+  For case s1, copy reproductions/s1-skill_test.go.txt into a PRIVATE COPY of
+  head/src/internal/engine/review_repro_test.go; from its src/ directory:
+    GOEXPERIMENT=jsonv2 GOPROXY=off go test ./internal/engine -run TestReview -count=1
+    Both tests are expected to FAIL on the selected pre-fix head with lost content.
+
+  For case s1, copy reproductions/s1-generic_test.go.txt into a PRIVATE COPY of
+  head/src/internal/config/review_repro_test.go; from its src/ directory:
+    GOEXPERIMENT=jsonv2 GOPROXY=off go test ./internal/config -run TestReview -count=1
+    Expects failure because the previously valid source ID has been removed.
+
+  Go requires the snapshot's toolchain/dependencies. Use writable temporary GOCACHE.
+  A successful defect reproduction can have a failing-test exit code: distinguish
+  the expected assertion from a compile, dependency or sandbox failure.
+
+No source code or review skills were changed. No review comments were posted to the
+historical PRs. Full make check, live cloud and packaging lifecycle tests were not
+performed; see each raw review for the exact checks and failures. No performance
+or binary-size conclusions follow from this documentation/evaluation-only change.

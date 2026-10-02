@@ -1,0 +1,41 @@
+{
+  "case": "f3",
+  "arm": "skill",
+  "head": "bed43fd61117cc321bd56dcb96d9f0a012cc21b0",
+  "findings": [
+    {
+      "priority": "P2",
+      "title": "Resolve a new image before treating a rerun as an upgrade",
+      "file": "fleet-manager/deploy.sh",
+      "line": 72,
+      "category": "bug",
+      "explanation": "After installing with the documented default image, rerunning the same command after a new Fleet Manager image is published leaves image_uri/image at docker.io/quesma/fleet-manager:latest. With otherwise unchanged Terraform configuration, apply has no service change to make and does not roll out the new image. The script nevertheless reports success and explicitly tells operators that this command upgrades, leaving their fleet on the old service version.",
+      "evidence": "The new script fetches only Terraform source, then calls init and apply; it neither resolves an image digest nor requests a service rollout. Both snapshots templates use a literal :latest default (AWS primary_container.image = var.image_uri, GCP containers.image = var.image). The base had no deploy.sh; the new automatic upgrade path exposes this existing template behavior. This conclusion is from source tracing, not a live deployment.",
+      "fix": "Resolve the intended published image to an immutable digest/tag and persist it before apply, or explicitly trigger a rollout; make the documented rerun behavior match the implementation."
+    },
+    {
+      "priority": "P2",
+      "title": "Allow an explicitly empty telemetry URL to disable forwarding",
+      "file": "fleet-manager/deploy.sh",
+      "line": 115,
+      "category": "bug",
+      "explanation": "Once an operator has deployed with --telemetry https://collector.example.com, running again with --telemetry \"\" cannot turn forwarding off. collect_vars treats the explicit empty value as an omitted flag and reloads the old collector from terraform.tfvars.json. The apply succeeds with the previous URL, continuing to forward telemetry for organizations that use the deployment default.",
+      "evidence": "Ran the head script main function in a temporary directory with Terraform, preflight, fetch, and health functions replaced by safe local stubs. Seeded a saved collector and passed gcp --telemetry \"\" --yes. The command exited 0 and the rewritten JSON retained https://collector.example.com. The base has no deploy.sh; its Terraform variable explicitly uses an empty URL for disabled forwarding.",
+      "fix": "Track whether --telemetry was supplied separately from its string value, and honor an explicit empty value (or provide a documented --no-telemetry option)."
+    }
+  ],
+  "checks": [
+    "Read all three supplied review-fleet-manager skill files and the snapshot root AGENTS.md, CONSTITUTION.md, architecture guidance, fleet-manager AGENTS.md/ARCHITECTURE.md/SECURITY.md, PR template, and relevant OPERATIONS.md guidance.",
+    "Reviewed the deployment script, walkthrough, rewritten operator documentation, changed-path diff, and the AWS/GCP Terraform input, service, output, and grant definitions against the base snapshot.",
+    "Traced walkthrough organization and invite fields against admin_http.go, health URLs against server.go, installer flags against the Linux installer, and confirmed the referenced synthetic session fixture exists.",
+    "sh -n fleet-manager/deploy.sh passed.",
+    "Reproduced inability to clear saved telemetry both through isolated collect_vars/write_vars calls and through main with all deployment and network functions replaced by safe stubs.",
+    "Applied skill compatibility/defaults/deployment/documentation passes; no route, grant, stored-record, wire-fixture, dependency, or runtime-code changes required the corresponding deeper passes."
+  ],
+  "limitations": [
+    "Adapted the skill to the retrospective instructions: no historical reviews, PR description scoring, GitHub posting, or approval requests; no review of other cases or outputs.",
+    "No deployment/install command or live cloud/registry request was run. Upgrade behavior was assessed by script/template tracing; provider behavior was not exercised live.",
+    "Full make -C fleet-manager check was not run: this change adds shell and documentation, and the gate installs/checks dependency tooling using network access. No Go runtime code changed.",
+    "Shipper documentation was checked for moved instructions and cross-component commands; no separate shipper-skill review or agent delegation was performed."
+  ]
+}

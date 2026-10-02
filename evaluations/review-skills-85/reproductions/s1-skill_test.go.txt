@@ -1,0 +1,37 @@
+package engine_test
+
+import (
+ "os"
+ "strings"
+ "testing"
+ "time"
+)
+
+func TestReviewNewerCompressedWins(t *testing.T) {
+ f := newCodexFixture(t)
+ old := codexRollout(codexUUID1)
+ live := f.write("sessions/2026/09/01/"+codexRolloutName(codexUUID1), []byte(old))
+ cold := f.write("archived_sessions/"+codexRolloutName(codexUUID1)+".zst", zstdOf(t, []byte(old+codexResumed)))
+ before := time.Now().Add(-time.Hour)
+ after := before.Add(time.Minute)
+ if err := os.Chtimes(live,before,before); err != nil {t.Fatal(err)}
+ if err := os.Chtimes(cold,after,after); err != nil {t.Fatal(err)}
+ f.run()
+ _, body := f.plaintext(f.keyFor("codex-session/"+codexUUID1))
+ if !strings.Contains(body, `"message":"resumed"`) {t.Fatal("newer compressed session's appended event was lost")}
+}
+func TestReviewDifferentPathSameStat(t *testing.T) {
+ f := newCodexFixture(t)
+ old := codexRollout(codexUUID1)+codexResumed
+ live := f.write("sessions/2026/09/01/"+codexRolloutName(codexUUID1), []byte(old))
+ stamp := time.Now().Add(-time.Hour)
+ if err := os.Chtimes(live,stamp,stamp); err != nil {t.Fatal(err)}
+ f.run()
+ changed := strings.Replace(old, `"message":"resumed"`, `"message":"changed"`, 1)
+ archived := f.write("archived_sessions/"+codexRolloutName(codexUUID1), []byte(changed))
+ if err := os.Chtimes(archived,stamp,stamp); err != nil {t.Fatal(err)}
+ if err := os.Remove(live); err != nil {t.Fatal(err)}
+ rep := f.run()
+ _, body := f.plaintext(f.keyFor("codex-session/"+codexUUID1))
+ if !strings.Contains(body, `"message":"changed"`) {t.Fatalf("different-path content was never hashed: shipped=%d",rep.Shipped)}
+}

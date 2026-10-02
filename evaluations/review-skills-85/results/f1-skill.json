@@ -1,0 +1,44 @@
+{
+  "case": "f1",
+  "arm": "skill",
+  "head": "fd73b59e2e4f10da2727781c5aaa5f075610ec40",
+  "findings": [
+    {
+      "priority": "P2",
+      "title": "Account for JSON expansion when accepting inventory CSV",
+      "file": "fleet-manager/src/admin-ui/app.js",
+      "line": 660,
+      "category": "bug",
+      "explanation": "The UI accepts CSV files up to 1 MiB but posts their expanded JSON through readAdminJSON, which also limits the request body to 1 MiB. A valid inventory within the advertised row, column, value and file-size limits can therefore fail entirely with request exceeds 1 MiB. Repeating the upload cannot fix it, and no per-row results are available.",
+      "evidence": "Executed the head parseInventoryCSV with 1000 distinct hostnames, 16 metadata columns and 60-character ASCII values: it successfully parsed a 985,032-byte CSV, but JSON.stringify({rows}) produced 1,210,900 bytes. The new import handler calls the existing readAdminJSON, whose 1,048,576-byte limit rejects it before ImportMetadata. The CSV import path is new in this change.",
+      "fix": "Make the advertised CSV limit and import request limit agree, accounting for serialized JSON overhead and escaping, and add a boundary test. Preserve whole-inventory duplicate detection if choosing batching."
+    },
+    {
+      "priority": "P2",
+      "title": "Update the upgrade runbook for incompatible metadata records",
+      "file": "fleet-manager/OPERATIONS.md",
+      "line": 58,
+      "category": "docs",
+      "explanation": "The operating runbook still unconditionally says a mixed fleet of replicas is safe. This change makes that advice unsafe once an administrator saves metadata through either the editor or import while an old replica remains: old replicas omit the affected install names from the tags listing and fail rename requests. The new README caveat is useful but conflicts with the canonical upgrade instructions and only specifically says to wait before importing.",
+      "evidence": "Compared the unchanged OPERATIONS.md upgrade paragraph to the new TagsRecord.Metadata field. The base TagsRecord has no metadata field and base strictDecode uses DisallowUnknownFields; base ListTags silently skips decode errors and base SetTag returns them. Head README lines 231-233 acknowledges older releases cannot read these records, confirming the newly exposed limitation.",
+      "fix": "Qualify the runbook and SECURITY.md rolling-upgrade claim: finish upgrading all replicas before any metadata writes, and state how metadata-bearing records must be handled before rolling back."
+    }
+  ],
+  "checks": [
+    "Read supplied SKILL.md, checklist.md and gotchas.md; applied authorization, readable-record disclosure, stored-record compatibility, operator documentation, UI/tooling and test passes against the assigned snapshots.",
+    "Read snapshot root and fleet-manager AGENTS.md, CONSTITUTION.md, fleet-manager ARCHITECTURE.md, SECURITY.md, OPERATIONS.md and repository PR template.",
+    "Compared base/head tags model and mutation/listing behavior; traced new routes through scopedAdmin and adminAuth, organization selection, import matching and conditional tags updates.",
+    "Reviewed import validation, duplicate-target handling, per-row error handling, metadata UI editing, CSV parser, embedded asset MIME/CSP handling and supplied Go tests.",
+    "Ran node --test tests/*.test.cjs in head/fleet-manager: all five tests passed.",
+    "Ran node --check on head admin-ui/app.js and metadata-import.js successfully.",
+    "Ran synthetic Node CSV-to-JSON expansion reproduction: 1000 rows, 985032 CSV bytes, 1210900 JSON bytes.",
+    "Attempted focused Go tests with GOTOOLCHAIN=local GOWORK=off GOPROXY=off; invocation stopped because the module requires Go 1.27.1 and installed Go is 1.25.1.",
+    "Searched head documentation and code for tags.json and mixed/rolling upgrade statements, and verified the old strict decoder and unchanged runbook against base."
+  ],
+  "limitations": [
+    "Adapted skill workflow to the retrospective instructions: no historical reviews, GitHub access/posting, PR-description scoring, permission questions or PR creation; withheld description was not treated as a defect.",
+    "Full make check and Go/race tests could not run with the installed Go 1.25.1; no toolchain download or source-snapshot modification was attempted.",
+    "No live cloud or deployment checks; grant exposure and storage compatibility were assessed by source trace. No Terraform, image pin, defaults, dependencies or shipper wire contract changed, so their publishing/default/protocol-specific passes were skipped.",
+    "UI verification used source inspection and Node tests, not an interactive browser session. The supplied time budget limited broader adversarial testing."
+  ]
+}

@@ -1,0 +1,156 @@
+[
+  {
+    "case": "f1",
+    "arm": "generic",
+    "index": 0,
+    "verdict": "supported",
+    "issue": "f1-csv-size",
+    "historical": [],
+    "rationale": "Accepted CSV expands beyond existing readAdminJSON body cap; reviewer supplied exact parser reproduction. Confirmed UI and handler trace."
+  },
+  {
+    "case": "f1",
+    "arm": "skill",
+    "index": 0,
+    "verdict": "supported",
+    "issue": "f1-csv-size",
+    "historical": [],
+    "rationale": "Same independently actionable CSV/JSON-size defect as generic arm, independently reproduced."
+  },
+  {
+    "case": "f1",
+    "arm": "skill",
+    "index": 1,
+    "verdict": "supported",
+    "issue": "f1-upgrade-runbook",
+    "historical": [],
+    "rationale": "OPERATIONS.md:57-58 still promises safe mixed replicas; new metadata field is rejected by the old strict decoder. README:231-233 documents this break but does not repair the conflicting runbook. Valid documentation defect newly exposed by change."
+  },
+  {
+    "case": "s1",
+    "arm": "generic",
+    "index": 0,
+    "verdict": "supported",
+    "issue": "s1-removed-source",
+    "historical": [],
+    "rationale": "The removed source ID makes a previously valid disabled-source override reject resolution. Reviewer reproduced head failure and base-catalog success. Credit as concrete compatibility risk, not proof that the intended source consolidation should be reversed; migration direction requires product judgment."
+  },
+  {
+    "case": "s1",
+    "arm": "skill",
+    "index": 0,
+    "verdict": "supported",
+    "issue": "s1-freshness",
+    "historical": [
+      "s1-freshness"
+    ],
+    "rationale": "Historical finding confirmed at selected revision; independent catalog-to-engine reproduction failed with precisely the lost-content outcome. Base had path-keyed records/separate sources."
+  },
+  {
+    "case": "s1",
+    "arm": "skill",
+    "index": 1,
+    "verdict": "supported",
+    "issue": "s1-stat",
+    "historical": [
+      "s1-stat"
+    ],
+    "rationale": "Historical finding confirmed at selected revision; independent catalog-to-engine reproduction failed with precisely the lost-content outcome. Base had path-keyed records/separate sources."
+  },
+  {
+    "case": "s2",
+    "arm": "generic",
+    "index": 0,
+    "verdict": "supported",
+    "issue": "s2-directory-sessions",
+    "historical": [],
+    "rationale": "New shared LaunchAgent runs per network-user login, while local dscl enumeration plus current console omits switched-away network users. Source trace supports missed stop; no live directory-service test. Apple documentation confirms concurrent user agents and network authentication. Sources: https://developer.apple.com/documentation/XPC and https://support.apple.com/en-ie/guide/directory-utility/diru978f56de/mac ."
+  },
+  {
+    "case": "s2",
+    "arm": "generic",
+    "index": 1,
+    "verdict": "supported",
+    "issue": "s2-managed-stderr",
+    "historical": [],
+    "rationale": "New managed plist has no process stderr destination; only Cobra streams are changed, but main prints returned errors and panic stacks to os.Stderr after RunE returns. Supported distinct mechanism. Related to historical missing startup logs, but does not identify the historical pre-log validation order; no exact historical-recall credit."
+  },
+  {
+    "case": "s2",
+    "arm": "skill",
+    "index": 0,
+    "verdict": "supported",
+    "issue": "s2-mixed-uninstall",
+    "historical": [
+      "s2-uninstall"
+    ],
+    "rationale": "SystemManaged newly keys ownership on any system plist. Personal CLI uninstall refuses despite being the personal executable; source and historical follow-up support this lifecycle defect."
+  },
+  {
+    "case": "s2",
+    "arm": "skill",
+    "index": 1,
+    "verdict": "supported",
+    "issue": "s2-multiline-home",
+    "historical": [
+      "s2-home"
+    ],
+    "rationale": "Prefix parser expects NFSHomeDirectory plus trailing space on one line; synthetic multiline value retains label and fails absolute-path check. Historical issue reproduced at the selected head."
+  },
+  {
+    "case": "s2",
+    "arm": "skill",
+    "index": 2,
+    "verdict": "supported",
+    "issue": "s2-managed-stderr",
+    "historical": [
+      "s2-logs"
+    ],
+    "rationale": "Same returned-error stderr defect as generic plus explicit historical validation-before-log failure. One consolidated managed logging finding; credit the historical pre-log guard issue only in this arm."
+  },
+  {
+    "case": "f3",
+    "arm": "generic",
+    "index": 0,
+    "verdict": "false_positive",
+    "issue": "f3-input-false",
+    "historical": [],
+    "rationale": "The stub proves emitted flags, not native Terraform approval semantics. Coordinator tested a local-only built-in terraform_data resource with supported Terraform 1.5.7 (templates require >=1.5): printf yes piped to apply -input=false prompted and applied successfully. Current HashiCorp docs say otherwise; do not infer behavior for other versions, but the unconditional P1 is contradicted on a supported version. No cloud resources used. See reproductions/terraform-input.txt."
+  },
+  {
+    "case": "f3",
+    "arm": "generic",
+    "index": 1,
+    "verdict": "supported",
+    "issue": "f3-moving-tag-upgrade",
+    "historical": [],
+    "rationale": "New wrapper promises upgrades by re-running, while templates retain identical :latest image strings and wrapper neither resolves digest nor forces rollout. Source trace supports new misleading upgrade path; no live cloud rollout performed."
+  },
+  {
+    "case": "f3",
+    "arm": "generic",
+    "index": 2,
+    "verdict": "supported",
+    "issue": "f3-clear-telemetry",
+    "historical": [],
+    "rationale": "Explicit empty telemetry argument is indistinguishable from omission; collect_vars reinstates saved URL and write_vars retains it. Stub execution supports deterministic configuration bug; no live telemetry endpoint contacted."
+  },
+  {
+    "case": "f3",
+    "arm": "skill",
+    "index": 0,
+    "verdict": "supported",
+    "issue": "f3-moving-tag-upgrade",
+    "historical": [],
+    "rationale": "Independently identified the same source-supported issue as generic arm. Telemetry disabling reproduced with safe stubs; moving-tag upgrade assessed by source trace, not live cloud. Google documents revision digest immutability: https://docs.cloud.google.com/run/docs/deploying ; AWS updates require a deployment: https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_UpdateExpressGatewayService.html ."
+  },
+  {
+    "case": "f3",
+    "arm": "skill",
+    "index": 1,
+    "verdict": "supported",
+    "issue": "f3-clear-telemetry",
+    "historical": [],
+    "rationale": "Independently identified the same source-supported issue as generic arm. Telemetry disabling reproduced with safe stubs; moving-tag upgrade assessed by source trace, not live cloud. Google documents revision digest immutability: https://docs.cloud.google.com/run/docs/deploying ; AWS updates require a deployment: https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_UpdateExpressGatewayService.html ."
+  }
+]

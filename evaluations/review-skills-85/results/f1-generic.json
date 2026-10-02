@@ -1,0 +1,29 @@
+{
+  "case": "f1",
+  "arm": "generic",
+  "head": "fd73b59e2e4f10da2727781c5aaa5f075610ec40",
+  "findings": [
+    {
+      "priority": "P2",
+      "title": "Account for JSON expansion when accepting inventory CSVs",
+      "file": "fleet-manager/src/admin-ui/app.js",
+      "line": 656,
+      "category": "bug",
+      "explanation": "The UI accepts up to 1 MiB of CSV, then sends all rows as JSON in one request. Repeated metadata property names and JSON syntax can push the request over the existing 1 MiB readAdminJSON limit even when the CSV satisfies every advertised size, row, key, and value limit. Such inventories fail with \"request exceeds 1 MiB\" and import no rows; retrying the same valid file cannot succeed.",
+      "evidence": "Executed the new parseInventoryCSV on a 1,000-row CSV with 16 valid 31/32-character metadata keys and 40-character values: parsing succeeded, CSV size was 664,416 bytes, and JSON.stringify({rows}) was 1,273,900 bytes. submitInventory sends that exact serialization at line 660. fleet-manager/src/admin_http.go:280-287 rejects bodies above 1,048,576 bytes. The base already had that HTTP limit; the new CSV upload path introduces the incompatible expansion.",
+      "fix": "Make the documented CSV limit and import transport agree, for example by applying an appropriately bounded import-specific request limit that accommodates JSON expansion; preserve duplicate-hostname/target checks across the complete inventory. Add coverage for a valid CSV whose JSON encoding exceeds 1 MiB."
+    }
+  ],
+  "checks": [
+    "Read target metadata, complete change diff, root and fleet-manager AGENTS.md, CONSTITUTION.md, and both architecture documents from the assigned snapshots.",
+    "Compared base and head tags persistence, admin routes, UI changes, and tests; traced admin authorization, conditional-write retries, organization membership, duplicate-hostname and duplicate-target handling, and metadata validation.",
+    "Ran node --test tests/metadata-import.test.cjs: 2 tests passed.",
+    "Ran node --test tests/*.test.cjs: 5 tests passed.",
+    "Ran focused Go tests with an isolated writable GOCACHE and GOPROXY=off: go test ./src -run TestMetadata|TestTags|TestSetTag|TestListTags|TestHostname|TestEmptyTags -count=1; passed.",
+    "Reproduced CSV-to-JSON byte expansion with the head parser in Node and compared it with readAdminJSON request-limit enforcement."
+  ],
+  "limitations": [
+    "Did not run make check, its network-dependent license verification, cloud integration tests, or a browser-driven end-to-end UI test.",
+    "An initial focused Go invocation with GOSUMDB=off failed during toolchain verification; rerunning with the normal checksum setting and GOPROXY=off passed."
+  ]
+}

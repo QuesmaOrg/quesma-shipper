@@ -1,0 +1,40 @@
+{
+  "case": "s2",
+  "arm": "generic",
+  "head": "29596240ebfb85a153dd3fd7a30c7e49e5a1c445",
+  "findings": [
+    {
+      "priority": "P2",
+      "title": "Stop agents in all active GUI sessions before deleting the system app",
+      "file": "src/packaging/macos/mdm/uninstall.sh",
+      "line": 27,
+      "category": "bug",
+      "explanation": "A directory-backed user can log in, start the shared LaunchAgent, and then switch to another user without logging out. Such an account need not appear in dscl . and is no longer the /dev/console owner. The removal script therefore never boots out that user's agent, yet removes the shared app and reports successful removal. The already-running collector can continue collecting and uploading after the administrator has uninstalled it. The same incomplete enumeration also leaves that session on the old process during system upgrades.",
+      "evidence": "The new script builds its entire stop list from local directory records plus only the current console account (lines 27\u201335), then unconditionally deletes the app at line 57. renderSystemPlist installs a shared per-login agent, including for directory-backed accounts, and there is no final check for remaining processes or GUI service instances. postInstallSystem/localUsers uses the same local-plus-current-console enumeration. This system-wide lifecycle did not exist in the base.",
+      "fix": "Enumerate every active GUI login/service instance, including switched-away directory accounts, and stop and verify all matching shipper services before deleting shared files; use the same complete session set for upgrades."
+    },
+    {
+      "priority": "P2",
+      "title": "Route fatal errors and panic output into the managed agent log",
+      "file": "src/internal/cli/run.go",
+      "line": 148,
+      "category": "bug",
+      "explanation": "For a system agent with a malformed local configuration, runLoop returns the startup error, the deferred Close closes the managed log, and main prints the error directly to os.Stderr. Setting Cobra's output/error writers does not redirect os.Stderr. The new shared plist has no StandardErrorPath, so the actual reason for the restart loop is lost from agent.err.log. Top-level panic stacks are lost through the same route. This defeats the documented startup diagnostics precisely when enrollment or collection cannot start.",
+      "evidence": "Trace: run.go sets only cmd.SetOut/SetErr, runLoop returns app.New errors, and cmd/quesma-shipper/main.go prints returned errors and recovered panic stacks to os.Stderr. renderSystemPlist omits StandardErrorPath, whereas the base per-user renderPlist redirects process stderr to agent.err.log. The startup-failure record is a separate artifact and does not preserve the missing process stderr/panic stack in the documented log.",
+      "fix": "Keep the managed log alive through top-level error/panic reporting and route those reporters to it, or redirect process stdout/stderr safely when starting the system agent. Add a test covering a fatal startup error under the managed-agent logging path."
+    }
+  ],
+  "checks": [
+    "Read target.json, change.diff, stat.txt and the head AGENTS.md, CONSTITUTION.md and ARCHITECTURE.md; reviewed relevant base code to distinguish new behavior.",
+    "Reviewed installer preinstall/postinstall, system-agent creation, managed preferences, enrollment retry persistence, update and uninstall guards, and administrator removal paths.",
+    "Ran focused Go tests with isolated GOCACHE and GOPROXY=off: packaging/macos and internal/controlplane passed (system plist, mixed installation, CLI link ownership, CoreFoundation bindings, enrollment locking, and persisted managed enrollment key).",
+    "Attempted app managed retry test; execution stopped at httptest.NewServer because sandbox denied localhost socket binding.",
+    "Ran sh -n successfully on macOS preinstall, postinstall and MDM uninstall scripts.",
+    "Traced fatal-error and panic routing from managed run setup through runLoop and main; compared shared and base per-user launchd stderr configuration."
+  ],
+  "limitations": [
+    "Did not install/uninstall packages or manipulate live launchd sessions, users or MDM profiles; GUI-session findings are source-level lifecycle traces.",
+    "HTTP-based managed enrollment retry test could not run because the sandbox denied listening sockets.",
+    "No review skills, other cases, historical PR material or other reviewer outputs were accessed."
+  ]
+}

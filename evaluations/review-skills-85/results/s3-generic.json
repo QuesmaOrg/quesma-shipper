@@ -1,0 +1,19 @@
+{
+  "case": "s3",
+  "arm": "generic",
+  "head": "a158efcf29b4fa377a4528c60b59b21c77404df5",
+  "findings": [],
+  "checks": [
+    "Read the assigned target metadata, entire change.diff, snapshot AGENTS.md, CONSTITUTION.md, and ARCHITECTURE.md.",
+    "Compared base and head config resolution; traced catalog lookup, cloned include overrides, root resolution and absent-root refresh. Verified default include subtraction does not mutate catalog or resolved source slices.",
+    "Inspected compiled catalog include patterns, CheckIncludes, discovery deny matching, root symlink handling, and app propagation of the deny list. Confirmed discovery deny enforcement is unchanged from base.",
+    "GOPROXY=off with isolated GOCACHE: go test ./internal/config passed, including both new config tests.",
+    "Focused discovery tests passed: TestDenyListAppliesAtDiscoveryTime, TestASymlinkedParentIntoADeniedTreeIsStillDenied, TestADeniedTreeIsNotWalked, and TestMatchPairChecksBothForms.",
+    "New TestAnAgentNamedDeniedFileDoesNotStopTheSync passed after allowing local httptest server binding.",
+    "Applied a temporary Go overlay containing the head config tests to the unchanged base tree: TestACompiledIncludeReachingADeniedNameIsNotRejected failed on base because plans/.env rejected the entire config, confirming the regression test exercises the intended fix."
+  ],
+  "limitations": [
+    "Review bounded to the assigned snapshot and approximately six-minute budget; no review skills, historical PR material, other cases, or external services consulted.",
+    "The initial full internal/sources run was interrupted by sandbox denial of a localhost listener in an account HTTP test. Relevant focused discovery tests and the new end-to-end test were subsequently verified; the entire source package suite and full repository checks were not rerun."
+  ]
+}
