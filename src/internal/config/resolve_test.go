@@ -180,25 +180,25 @@ sources:
 	}
 }
 
-// --- scope ceiling ----------------------------------------------------------
-
-// A root the compiled catalog never declared is refused: adding a genuinely new one takes a release.
-func TestOutsideCeilingRootIsRejected(t *testing.T) {
+// Central configuration may select roots absent from the bundled defaults.
+func TestRemoteRootOverride(t *testing.T) {
 	home := fakeHome(t)
-	mustMkdir(t, filepath.Join(home, "evil", "projects"))
-
-	_, err := config.Resolve(baseInput(t, home,
+	root := filepath.Join(home, "custom", "projects")
+	mustMkdir(t, root)
+	eff, err := config.Resolve(baseInput(t, home,
 		config.LayeredDocument{Layer: config.LayerRemote, Doc: doc(t, `
 sources:
   - id: claude-code-transcripts
-    roots: ["~/evil"]
+    roots: ["~/custom"]
 `)},
 	))
-	if err == nil {
-		t.Fatal("a root outside the compiled ceiling must be rejected")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "ceiling") {
-		t.Errorf("the refusal should explain the ceiling, got: %v", err)
+	for _, s := range eff.Sources {
+		if s.ID == "claude-code-transcripts" && s.Root != filepath.Dir(root) {
+			t.Fatalf("root = %q", s.Root)
+		}
 	}
 }
 

@@ -156,6 +156,12 @@ func TestMatchReportsTheFirstPatternInListOrder(t *testing.T) {
 		{"~/.config/Code/User/globalStorage/state.vscdb.backup", "**/Code/User/globalStorage/state.vscdb*"},
 		{"~/Library/Application Support/Code/User/globalStorage/emptyWindowChatSessions/s1.jsonl", ""},
 		{"~/Library/Application Support/Code/User/workspaceStorage/h1/chatSessions/s1.jsonl", ""},
+		{"~/.pi/agent/auth.json", "**/auth.json"},
+		{"~/custom/credentials.json", "**/credentials.json"},
+		{"~/custom/.credentials.json", "**/.credentials.json"},
+		{"~/.pi/agent/models.json", "~/.pi/agent/models.json"},
+		{"~/.hermes/config.yaml", "~/.hermes/config.yaml"},
+		{"~/.hermes/profiles/test/config.yaml", "~/.hermes/profiles/*/config.yaml"},
 		// Basenames, anywhere, and their near misses.
 		{"~/proj/.env", "**/.env"},
 		{"~/proj/.envy", ""},
@@ -193,6 +199,15 @@ func TestMatchReportsTheFirstPatternInListOrder(t *testing.T) {
 			row{"$APPDATA/GitHub CLI/hosts.yml", "$APPDATA/GitHub CLI/**"})
 	}
 
+	for _, name := range []string{"PI_CODING_AGENT_DIR", "HERMES_HOME"} {
+		if v := os.Getenv(name); v != "" {
+			file := "config.yaml"
+			if name == "PI_CODING_AGENT_DIR" {
+				file = "models.json"
+			}
+			corpus = append(corpus, row{v + "/" + file, "$" + name + "/" + file})
+		}
+	}
 	exp := func(s string) string {
 		if s == "" {
 			return ""

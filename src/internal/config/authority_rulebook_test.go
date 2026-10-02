@@ -265,7 +265,7 @@ func rulebookProbes(t *testing.T) map[string]rulebookProbe {
 					t.Errorf("include %v", src.Include)
 				}
 			},
-			reject: "sources:\n  - id: claude-code-transcripts\n    roots: [\"~/elsewhere\"]\n",
+			reject: "sources:\n  - id: claude-code-transcripts\n    roots: [\"~/.ssh\"]\n",
 		},
 
 		"sources[].max_file_bytes": {
