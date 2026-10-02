@@ -60,9 +60,6 @@ type Runtime struct {
 	// remote is the refresh outcome, kept so a verb can report a fallback.
 	remote controlplane.Remote
 
-	// A repeated telemetry submission must retain the rejection's identity for alert deduplication.
-	configRejectedAt string
-
 	// env expands an enricher's declared database candidates, with the same rules catalog roots use.
 	env sources.Env
 

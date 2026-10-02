@@ -201,37 +201,55 @@ func TestNoEndpointSendsNothing(t *testing.T) {
 }
 
 func TestConfigRejectionTelemetryContainsNoAuthoredValues(t *testing.T) {
-	r := telemetryRuntime(t, formats.FailureRecord{})
-	r.remote.Err = fmt.Errorf("%w: invalid secret-value", controlplane.ErrConfigRejected)
-	r.runID = "run-config"
-	_, body, err := r.installHealth(time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var event telemetryEvent
-	if err := json.Unmarshal(body, &event); err != nil {
-		t.Fatal(err)
-	}
-	if len(event.Faults) != 1 || event.Faults[0].Kind != "config_rejected" || event.Faults[0].RunID != r.runID {
-		t.Fatalf("missing rejection alert: %s", body)
-	}
-	if strings.Contains(string(body), "secret-value") || event.Consecutive != 0 {
-		t.Fatalf("rejection leaked values or counted as failed collection: %s", body)
-	}
-	_, body, err = r.installHealth(time.Now().Add(time.Hour).UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var later telemetryEvent
-	if err := json.Unmarshal(body, &later); err != nil {
-		t.Fatal(err)
-	}
-	if later.Faults[0] != event.Faults[0] {
-		t.Fatal("later tick changed the rejection identity, producing a duplicate alert")
-	}
-	r.remote.Err = errors.New("server offline")
-	_, body, err = r.installHealth(time.Now().UTC())
-	if err != nil || strings.Contains(string(body), "config_rejected") {
-		t.Fatalf("transport failure mislabeled as rejection: %s %v", body, err)
+	for _, fetchedAt := range []time.Time{time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC), {}} {
+		t.Run(fetchedAt.String(), func(t *testing.T) {
+			r := telemetryRuntime(t, formats.FailureRecord{})
+			r.remote.Err = fmt.Errorf("%w: invalid secret-value", controlplane.ErrConfigRejected)
+			r.runID = "run-config"
+			r.remote.FetchedAt = fetchedAt
+			_, body, err := r.installHealth(time.Now().UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var event telemetryEvent
+			if err := json.Unmarshal(body, &event); err != nil {
+				t.Fatal(err)
+			}
+			if len(event.Faults) != 1 || event.Faults[0].Kind != formats.FailureConfigRejected || event.Faults[0].RunID != "" {
+				t.Fatalf("missing rejection alert: %s", body)
+			}
+			if strings.Contains(string(body), "secret-value") || event.Consecutive != 0 {
+				t.Fatalf("rejection leaked values or counted as failed collection: %s", body)
+			}
+			_, body, err = r.installHealth(time.Now().Add(time.Hour).UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var later telemetryEvent
+			if err := json.Unmarshal(body, &later); err != nil {
+				t.Fatal(err)
+			}
+			if later.Faults[0] != event.Faults[0] {
+				t.Fatal("later tick changed the rejection identity, producing a duplicate alert")
+			}
+			restarted := telemetryRuntime(t, formats.FailureRecord{})
+			restarted.remote = r.remote
+			restarted.runID = "recycled-run"
+			_, body, err = restarted.installHealth(time.Now().Add(3 * time.Hour).UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(body, &later); err != nil {
+				t.Fatal(err)
+			}
+			if later.Faults[0] != event.Faults[0] {
+				t.Fatal("daemon restart changed the rejection identity")
+			}
+			r.remote.Err = errors.New("server offline")
+			_, body, err = r.installHealth(time.Now().UTC())
+			if err != nil || strings.Contains(string(body), "config_rejected") {
+				t.Fatalf("transport failure mislabeled as rejection: %s %v", body, err)
+			}
+		})
 	}
 }

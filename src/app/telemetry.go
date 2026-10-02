@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
+	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 )
 
 // telemetrySubmitter is the one call this package needs from a control-plane client, as an
@@ -57,7 +58,7 @@ type telemetryCrash struct {
 	Consecutive int    `json:"consecutive,omitempty"`
 }
 
-// telemetryFault names a stable failure category so the collector groups without parsing prose.
+// telemetryFault uses the closed set of Failure* kinds in formats so the collector groups without parsing prose.
 type telemetryFault struct {
 	At      string `json:"at"`
 	Kind    string `json:"kind"`
@@ -115,12 +116,9 @@ func (r *Runtime) installHealth(now time.Time) (batchID string, payload []byte, 
 		})
 	}
 	if errors.Is(r.remote.Err, controlplane.ErrConfigRejected) {
-		if r.configRejectedAt == "" {
-			r.configRejectedAt = now.Format(time.RFC3339)
-		}
-		// Validation errors can contain authored values, so only a fixed diagnostic leaves the machine.
+		// Cache time survives restarts; no process ID or authored values belong in this fault.
 		event.Faults = append(event.Faults, telemetryFault{
-			At: r.configRejectedAt, Kind: "config_rejected", RunID: r.runID,
+			At: r.remote.FetchedAt.UTC().Format(time.RFC3339Nano), Kind: formats.FailureConfigRejected,
 			Message: "remote configuration rejected; collection continues using the previous configuration or local defaults",
 		})
 	}

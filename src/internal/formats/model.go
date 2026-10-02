@@ -185,6 +185,9 @@ const (
 	// The run continues from an empty store, so this is reported without being counted.
 	FailureStoreCorrupt = "store_corrupt"
 
+	// Collection continues under an accepted configuration, so rejection is uncounted.
+	FailureConfigRejected = "config_rejected"
+
 	// Counted: an install that cannot start is not collecting at all.
 	FailureInit = "init_failed"
 
