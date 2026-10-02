@@ -184,7 +184,7 @@ func (c *Client) FetchConfig(ctx context.Context, req ConfigRequest) (Fetched, e
 
 	doc, err := config.ParseServedDocument(out.Config)
 	if err != nil {
-		return Fetched{}, fmt.Errorf("backend: %w", err)
+		return Fetched{}, fmt.Errorf("%w: %w", ErrConfigRejected, err)
 	}
 
 	return Fetched{

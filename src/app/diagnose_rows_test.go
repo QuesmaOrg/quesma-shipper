@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -505,5 +506,23 @@ func TestLastFailureRows(t *testing.T) {
 	rows := lastFailureRows(dir, now, true)
 	if len(rows) != 1 || rows[0].Sev != SevDim || !strings.Contains(rows[0].Detail, "tick_failed") {
 		t.Fatalf("verbose must still show the recovered failure, got %+v", rows)
+	}
+}
+
+func TestControlPlaneRowsDistinguishRejectedConfigFromUnreachableServer(t *testing.T) {
+	for _, origin := range []controlplane.Origin{controlplane.OriginCached, controlplane.OriginNone} {
+		rows := controlPlaneRows(&controlplane.Enrollment{}, nil, &config.Effective{}, controlplane.Remote{
+			Origin: origin, Err: fmt.Errorf("cached remote layer: %w", controlplane.ErrConfigRejected),
+		})
+		if len(rows) != 1 || rows[0].Sev != SevWarn || rows[0].Brief != "remote configuration rejected" {
+			t.Fatalf("rejection mislabeled: %+v", rows)
+		}
+		if strings.Contains(rows[0].Detail, "unreachable") || !strings.Contains(rows[0].Fix, "correct the remote configuration") {
+			t.Fatalf("rejection gives transport advice: %+v", rows[0])
+		}
+	}
+	rows := controlPlaneRows(&controlplane.Enrollment{}, nil, &config.Effective{}, controlplane.Remote{Err: errors.New("offline")})
+	if len(rows) != 1 || rows[0].Brief != "server unreachable" {
+		t.Fatalf("transport failure mislabeled: %+v", rows)
 	}
 }

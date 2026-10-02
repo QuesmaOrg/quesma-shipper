@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
+	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 )
 
 // telemetrySubmitter is the one call this package needs from a control-plane client, as an
@@ -57,8 +58,7 @@ type telemetryCrash struct {
 	Consecutive int    `json:"consecutive,omitempty"`
 }
 
-// telemetryFault is one failure, as the collector groups them. Kind comes from the closed set in
-// formats, so the far end groups on it without parsing prose.
+// telemetryFault uses the closed set of Failure* kinds in formats so the collector groups without parsing prose.
 type telemetryFault struct {
 	At      string `json:"at"`
 	Kind    string `json:"kind"`
@@ -113,6 +113,13 @@ func (r *Runtime) installHealth(now time.Time) (batchID string, payload []byte, 
 	for _, f := range record.Recent {
 		event.Faults = append(event.Faults, telemetryFault{
 			At: f.At, Kind: f.Kind, RunID: f.RunID, Message: telemetryMessage(f.Message),
+		})
+	}
+	if errors.Is(r.remote.Err, controlplane.ErrConfigRejected) {
+		// Cache time survives restarts; no process ID or authored values belong in this fault.
+		event.Faults = append(event.Faults, telemetryFault{
+			At: r.remote.FetchedAt.UTC().Format(time.RFC3339Nano), Kind: formats.FailureConfigRejected,
+			Message: "remote configuration rejected; collection continues using the previous configuration or local defaults",
 		})
 	}
 	payload, err = json.Marshal(event)

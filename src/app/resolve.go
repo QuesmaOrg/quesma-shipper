@@ -59,26 +59,30 @@ func resolve(ctx context.Context, offline bool) (*config.Effective, config.Paths
 		StateDir:   paths.StateDir,
 		Now:        time.Now(),
 		Offline:    offline,
+		Validate: func(doc *config.Document) (*config.Effective, error) {
+			candidate := append(append([]config.LayeredDocument(nil), layers...),
+				config.LayeredDocument{Layer: config.LayerRemote, Doc: doc})
+			return config.Resolve(config.Input{
+				Catalog: compiled, Layers: candidate, Env: env, StateDir: paths.StateDir,
+			})
+		},
 	})
 
-	if remote.Doc != nil {
-		// Fetched or read back from the cache; either way it came from the enrolled control plane.
-		layers = append(layers, config.LayeredDocument{
-			Layer: config.LayerRemote,
-			Doc:   remote.Doc,
+	var rejection *config.RejectionError
+	if errors.As(remote.Err, &rejection) && rejection.Layer != config.LayerRemote {
+		return nil, paths, remote, rejection
+	}
+	eff := remote.Effective
+	if eff == nil {
+		eff, err = config.Resolve(config.Input{
+			Catalog: compiled, Layers: layers, Env: env, StateDir: paths.StateDir,
 		})
 	}
 
-	eff, err := config.Resolve(config.Input{
-		Catalog:       compiled,
-		Layers:        layers,
-		ConfigExpired: remote.Expired,
-		Env:           env,
-		StateDir:      paths.StateDir,
-	})
 	if err != nil {
 		return nil, paths, remote, err
 	}
+	eff.ConfigExpired = remote.Expired
 	// paths.StateDir now means "the state directory in force": the identity unit and the
 	// fingerprint document persist together or not at all.
 	paths.StateDir = eff.StateDir
