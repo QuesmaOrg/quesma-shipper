@@ -57,8 +57,7 @@ type telemetryCrash struct {
 	Consecutive int    `json:"consecutive,omitempty"`
 }
 
-// telemetryFault is one failure, as the collector groups them. Kind comes from the closed set in
-// formats, so the far end groups on it without parsing prose.
+// telemetryFault names a stable failure category so the collector groups without parsing prose.
 type telemetryFault struct {
 	At      string `json:"at"`
 	Kind    string `json:"kind"`
@@ -113,6 +112,16 @@ func (r *Runtime) installHealth(now time.Time) (batchID string, payload []byte, 
 	for _, f := range record.Recent {
 		event.Faults = append(event.Faults, telemetryFault{
 			At: f.At, Kind: f.Kind, RunID: f.RunID, Message: telemetryMessage(f.Message),
+		})
+	}
+	if errors.Is(r.remote.Err, controlplane.ErrConfigRejected) {
+		if r.configRejectedAt == "" {
+			r.configRejectedAt = now.Format(time.RFC3339)
+		}
+		// Validation errors can contain authored values, so only a fixed diagnostic leaves the machine.
+		event.Faults = append(event.Faults, telemetryFault{
+			At: r.configRejectedAt, Kind: "config_rejected", RunID: r.runID,
+			Message: "remote configuration rejected; collection continues using the previous configuration or local defaults",
 		})
 	}
 	payload, err = json.Marshal(event)

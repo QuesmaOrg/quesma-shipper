@@ -13,6 +13,9 @@ import (
 // Origin says where the remote layer in force came from.
 type Origin string
 
+// ErrConfigRejected identifies invalid remote configuration without exposing its contents to telemetry.
+var ErrConfigRejected = errors.New("backend: remote configuration rejected")
+
 const (
 	// OriginFetched is a fresh fetch.
 	OriginFetched Origin = "fetched"
@@ -50,10 +53,13 @@ type RefreshOptions struct {
 	// Offline skips the network and resolves from the cache: what the read-only verbs use, since
 	// `config show` must explain the config in force without a round-trip that changes it.
 	Offline bool
+
+	// Validate resolves a candidate with the local layers before it can replace the working cache.
+	Validate func(*config.Document) error
 }
 
-// Refresh produces the remote layer for one run: a fetch that parses wins and is cached, and ANY
-// failure to obtain a config this client accepts falls back to the last one it did fetch, whose
+// Refresh produces the remote layer for one run: a fetch that validates wins and is cached, and ANY
+// failure to obtain a config this client accepts falls back to the last accepted one, whose
 // expiry does not stop collection. A transcript missed before its source store's reaper runs is gone.
 func Refresh(ctx context.Context, o RefreshOptions) Remote {
 	if o.Enrollment == nil || o.Enrollment.Endpoint == "" {
@@ -77,9 +83,11 @@ func Refresh(ctx context.Context, o RefreshOptions) Remote {
 		return Remote{Origin: OriginNone, Err: unusableCache(fetchErr, err)}
 	}
 
-	// Reparsed on load: a cache that no longer parses is damage like any other unreadable file, so
-	// it degrades to local config instead of stopping the run.
+	// Older clients may have cached a document that parses but cannot resolve.
 	doc, err := config.ParseServedDocument(cached.Config)
+	if err == nil && o.Validate != nil {
+		err = o.Validate(doc)
+	}
 	if err != nil {
 		return Remote{Origin: OriginNone, Err: unusableCache(fetchErr, err)}
 	}
@@ -101,7 +109,7 @@ func unusableCache(fetchErr, cacheErr error) error {
 		"Delete %s to clear it", fetchErr, cacheErr, CacheFile)
 }
 
-// fetch does one round-trip and caches what it gets.
+// fetch caches only a candidate the caller can resolve.
 func fetch(ctx context.Context, o RefreshOptions) (Remote, error) {
 	deviceKey, err := o.Enrollment.PrivateKey()
 	if err != nil {
@@ -127,6 +135,12 @@ func fetch(ctx context.Context, o RefreshOptions) (Remote, error) {
 	f, err := c.FetchConfig(ctx, req)
 	if err != nil {
 		return Remote{}, err
+	}
+
+	if o.Validate != nil {
+		if err := o.Validate(f.Doc); err != nil {
+			return Remote{}, fmt.Errorf("%w: %w", ErrConfigRejected, err)
+		}
 	}
 
 	if err := SaveCache(o.StateDir, Cached{

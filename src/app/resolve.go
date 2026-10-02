@@ -59,6 +59,14 @@ func resolve(ctx context.Context, offline bool) (*config.Effective, config.Paths
 		StateDir:   paths.StateDir,
 		Now:        time.Now(),
 		Offline:    offline,
+		Validate: func(doc *config.Document) error {
+			candidate := append(append([]config.LayeredDocument(nil), layers...),
+				config.LayeredDocument{Layer: config.LayerRemote, Doc: doc})
+			_, err := config.Resolve(config.Input{
+				Catalog: compiled, Layers: candidate, Env: env, StateDir: paths.StateDir,
+			})
+			return err
+		},
 	})
 
 	if remote.Doc != nil {
