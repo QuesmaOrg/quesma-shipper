@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
+	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/identity"
 )
 
 func TestManagedEnrollmentRetriesTheSameIdentityAfterALostResponse(t *testing.T) {
@@ -79,4 +81,177 @@ func TestManagedEnrollmentErrorKeepsServerBodyOutOfLogs(t *testing.T) {
 	if !strings.Contains(err.Error(), "HTTP 500") || strings.Contains(err.Error(), "private-secret") {
 		t.Fatalf("unsafe managed enrollment diagnostic: %v", err)
 	}
+	conflict := managedEnrollmentError(errors.Join(controlplane.ErrUnsupportedVersion, errors.New("grant=private-secret")))
+	if !strings.Contains(conflict.Error(), "HTTP 409") || !strings.Contains(conflict.Error(), "administrator") ||
+		strings.Contains(conflict.Error(), "private-secret") {
+		t.Fatalf("unsafe or unhelpful enrollment conflict diagnostic: %v", conflict)
+	}
+}
+
+func TestManagedEnrollmentAdoptsReplacementAfterCredentialRefusal(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			stateDir := managedEnrollmentTestState(t)
+			var original, replacement controlplane.EnrollRequest
+			oldServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&original); err != nil {
+					t.Error(err)
+				}
+				if original.Grant != "expired-grant" {
+					t.Error("replacement grant leaked to the previous policy endpoint")
+				}
+				w.WriteHeader(status)
+			}))
+			defer oldServer.Close()
+			newServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&replacement); err != nil {
+					t.Error(err)
+				}
+				_ = json.NewEncoder(w).Encode(controlplane.EnrollResponse{Organization: "example"})
+			}))
+			defer newServer.Close()
+			if _, err := testManagedLogin(oldServer.URL, "expired-grant"); !errors.Is(err, formats.ErrCredentialsRefused) {
+				t.Fatalf("initial refusal: %v", err)
+			}
+			identityBefore, err := os.ReadFile(filepath.Join(stateDir, identity.FileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, originalKey, err := controlplane.ManagedEnrollmentAttempt(stateDir, oldServer.URL, original)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := testManagedLogin(newServer.URL, "replacement-grant"); err != nil {
+				t.Fatal(err)
+			}
+			if replacement.Grant != "replacement-grant" {
+				t.Fatal("replacement grant was not adopted")
+			}
+			replacement.Grant = original.Grant
+			if replacement != original {
+				t.Fatal("replacing a refused grant changed enrollment identity or request material")
+			}
+			identityAfter, err := os.ReadFile(filepath.Join(stateDir, identity.FileName))
+			if err != nil || !bytes.Equal(identityBefore, identityAfter) {
+				t.Fatalf("replacing a refused grant changed the local identity: %v", err)
+			}
+			enrolled, err := controlplane.LoadEnrollment(stateDir)
+			if err != nil || enrolled.Endpoint != newServer.URL || enrolled.DeviceKey != controlplane.EncodeKey(originalKey) {
+				t.Fatalf("replacement enrollment lost its endpoint or device key: %v", err)
+			}
+		})
+	}
+}
+
+func TestManagedEnrollmentReplaysReplacementAfterAmbiguousFailure(t *testing.T) {
+	for _, lostResponse := range []bool{false, true} {
+		name := "HTTP 500"
+		if lostResponse {
+			name = "lost response"
+		}
+		t.Run(name, func(t *testing.T) {
+			stateDir := managedEnrollmentTestState(t)
+			var requests [][]byte
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				raw, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Error(err)
+				}
+				requests = append(requests, raw)
+				switch len(requests) {
+				case 1, 2:
+					w.WriteHeader(http.StatusForbidden)
+				case 3:
+					if lostResponse {
+						conn, _, err := w.(http.Hijacker).Hijack()
+						if err != nil {
+							t.Error(err)
+							return
+						}
+						_ = conn.Close()
+						return
+					}
+					w.WriteHeader(http.StatusInternalServerError)
+				default:
+					_ = json.NewEncoder(w).Encode(controlplane.EnrollResponse{Organization: "example"})
+				}
+			}))
+			defer srv.Close()
+			if _, err := testManagedLogin(srv.URL, "expired-grant"); !errors.Is(err, formats.ErrCredentialsRefused) {
+				t.Fatalf("initial refusal: %v", err)
+			}
+			if _, err := testManagedLogin(srv.URL, "replacement-grant"); err == nil {
+				t.Fatal("ambiguous replacement response was accepted")
+			}
+			if len(requests) != 3 {
+				t.Fatalf("replacement sent %d requests, want 3", len(requests))
+			}
+			var candidate controlplane.EnrollRequest
+			if err := json.Unmarshal(requests[2], &candidate); err != nil {
+				t.Fatal(err)
+			}
+			if candidate.Grant != "replacement-grant" {
+				t.Fatal("replacement request retained the refused grant")
+			}
+			_, persisted, _, err := controlplane.ManagedEnrollmentAttempt(stateDir, srv.URL, candidate)
+			if err != nil || !bytes.Equal(requests[2], persisted) {
+				t.Fatalf("ambiguous replacement was not saved for replay: %v", err)
+			}
+			if _, err := testManagedLogin(srv.URL, "another-policy-grant"); err != nil {
+				t.Fatal(err)
+			}
+			if len(requests) != 4 || !bytes.Equal(requests[2], requests[3]) {
+				t.Fatal("a further policy change discarded the pending replacement request")
+			}
+		})
+	}
+}
+
+func TestManagedEnrollmentConflictPreservesOriginalRecoveryRequest(t *testing.T) {
+	stateDir := managedEnrollmentTestState(t)
+	var requests [][]byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		requests = append(requests, raw)
+		if len(requests) < 3 {
+			w.WriteHeader(http.StatusForbidden)
+		} else {
+			http.Error(w, "private-grant conflicts", http.StatusConflict)
+		}
+	}))
+	defer srv.Close()
+	if _, err := testManagedLogin(srv.URL, "expired-grant"); !errors.Is(err, formats.ErrCredentialsRefused) {
+		t.Fatalf("initial refusal: %v", err)
+	}
+	pending := filepath.Join(stateDir, "managed-enrollment-attempt.json")
+	before, err := os.ReadFile(pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testManagedLogin(srv.URL, "replacement-grant"); !errors.Is(err, controlplane.ErrUnsupportedVersion) {
+		t.Fatalf("replacement conflict: %v", err)
+	}
+	after, err := os.ReadFile(pending)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("replacement conflict discarded the original recovery request: %v", err)
+	}
+	if _, ok := LoggedIn(); ok {
+		t.Fatal("conflicting replacement was saved as successful enrollment")
+	}
+}
+
+func managedEnrollmentTestState(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "state"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	return filepath.Join(home, "state", "trajectory-shipper")
+}
+
+func testManagedLogin(endpoint, grant string) (LoginResult, error) {
+	return loginWithRunCheck(context.Background(), endpoint, grant, true, func() error { return nil })
 }

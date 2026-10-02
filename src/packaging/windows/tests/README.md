@@ -24,6 +24,13 @@ Ordinary users receive read-only access to the task, matching production.
 ```
 
 The test invokes installation and removal through temporary SYSTEM tasks. It
+first creates an administrator-owned destination whose Users write permission
+applies only to new child files. A harmless probe proves that inheritance produces
+effective file write access. Setup must reject this directory during preparation,
+before copying payloads or creating machine registration. The same rejection is
+required during an upgrade even when the existing executables have protected ACLs;
+their hashes, task configuration, and running collector processes must remain unchanged.
+The test restores the fixture permissions before continuing normal installation. It
 checks the installed files' permissions, native machine registration, task
 configuration, collector identity and liveness, duplicate launches, refusal to
 switch scope in place, repair, version upgrade, and retention of user state. It

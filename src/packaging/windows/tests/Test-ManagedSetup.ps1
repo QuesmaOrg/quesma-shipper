@@ -94,6 +94,52 @@ function Invoke-Setup([string]$Path) {
     }
 }
 
+function Set-PathDacl([string]$Path, [string]$Sddl) {
+    $acl = Get-Acl -LiteralPath $Path
+    $acl.SetSecurityDescriptorSddlForm($Sddl, [Security.AccessControl.AccessControlSections]::Access)
+    Set-Acl -LiteralPath $Path -AclObject $acl
+}
+
+function Set-InheritedWriteFixture {
+    Set-PathDacl $installDir 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FRFX;;;BU)(A;OIIO;FW;;;BU)'
+    $acl = Get-Acl -LiteralPath $installDir
+    if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin @('S-1-5-32-544', 'S-1-5-18')) {
+        throw 'Inherited-write fixture is not owned by administrators or SYSTEM.'
+    }
+    $usersRules = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) |
+        Where-Object { $_.IdentityReference.Value -eq 'S-1-5-32-545' })
+    if (@($usersRules | Where-Object {
+        -not ($_.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -and
+        ([int]$_.FileSystemRights -band 0xD0156) -ne 0
+    }).Count) { throw 'Inherited-write fixture incorrectly grants effective directory write access.' }
+    $probe = Join-Path $installDir 'inheritance-probe.txt'
+    try {
+        Set-Content -LiteralPath $probe -Value 'Harmless ACL inheritance probe.'
+        $inheritedWrite = @((Get-Acl -LiteralPath $probe).GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) |
+            Where-Object {
+                $_.IdentityReference.Value -eq 'S-1-5-32-545' -and $_.IsInherited -and
+                $_.AccessControlType -eq 'Allow' -and
+                -not ($_.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -and
+                ([int]$_.FileSystemRights -band [int][Security.AccessControl.FileSystemRights]::WriteData) -ne 0
+            })
+        if (-not $inheritedWrite.Count) { throw 'Probe did not inherit effective Users write access.' }
+    } finally { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue }
+}
+
+function Assert-SetupRejectsInheritedWrite([string]$Path) {
+    $log = Join-Path $temp ('inherited-write-' + [guid]::NewGuid() + '.log')
+    $code = Invoke-SystemProcess $Path ('/ALLUSERS /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG="' + $log + '"')
+    if ($code -eq 0) { throw 'Setup accepted a directory that makes new executables user-writable.' }
+    $contents = Get-Content -LiteralPath $log -Raw
+    if ($contents -notmatch 'installation preparation failed' -or
+        $contents -notmatch 'modified by non-administrator S-1-5-32-545') {
+        throw 'Setup did not reject inherited Users write access during preparation.'
+    }
+    if ($contents -match ('Dest filename: ' + [regex]::Escape($installDir + '\'))) {
+        throw 'Setup began installing files before rejecting inherited write access.'
+    }
+}
+
 function Get-ManagedProcesses {
     @(Get-CimInstance Win32_Process -Filter "Name = 'quesma-shipper.exe' OR Name = 'quesma-shipper-supervisor.exe'" |
         Where-Object { $_.ExecutablePath -in @($shipperPath, $supervisorPath) })
@@ -199,7 +245,66 @@ try {
     New-Item -ItemType Directory -Path $temp, $stateDir -Force | Out-Null
     Set-Content -LiteralPath $stateMarker -Value 'preserve-user-state'
     $systemState = Get-SystemState
+    if (Test-Path -LiteralPath $installDir) { throw 'The installer test requires an absent machine installation directory.' }
+    New-Item -ItemType Directory -Path $installDir | Out-Null
+    $originalDirectoryAcl = (Get-Acl -LiteralPath $installDir).Sddl
+    try {
+        Set-InheritedWriteFixture
+        Assert-SetupRejectsInheritedWrite $InstallerPath
+        if (@(Get-ChildItem -LiteralPath $installDir -Force).Count -or @(Get-ManagedProcesses).Count -or
+            @($folder.GetTasks(0) | Where-Object Name -eq $taskName).Count) {
+            throw 'Rejected installation left program files, a managed task, or running payloads.'
+        }
+        $unexpectedRegistration = $nativeRegistry.OpenSubKey('Software\Quesma\Shipper')
+        if ($unexpectedRegistration) {
+            $unexpectedRegistration.Dispose()
+            throw 'Rejected installation created machine registration.'
+        }
+    } finally {
+        Set-PathDacl $installDir $originalDirectoryAcl
+        if (-not @(Get-ChildItem -LiteralPath $installDir -Force).Count) { Remove-Item -LiteralPath $installDir }
+    }
     Invoke-Setup $InstallerPath
+    Assert-Installed $InitialVersion
+
+    $originalDirectoryAcl = (Get-Acl -LiteralPath $installDir).Sddl
+    $protectedFiles = @(Get-ChildItem -LiteralPath $installDir -File | ForEach-Object {
+        [pscustomobject]@{ Path = $_.FullName; Acl = (Get-Acl -LiteralPath $_.FullName).Sddl
+            Hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+    })
+    try {
+        foreach ($file in $protectedFiles) {
+            $acl = Get-Acl -LiteralPath $file.Path
+            $acl.SetAccessRuleProtection($true, $true)
+            Set-Acl -LiteralPath $file.Path -AclObject $acl
+        }
+        Set-InheritedWriteFixture
+        foreach ($file in $protectedFiles) {
+            $acl = Get-Acl -LiteralPath $file.Path
+            $usersWrite = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | Where-Object {
+                $_.IdentityReference.Value -eq 'S-1-5-32-545' -and $_.AccessControlType -eq 'Allow' -and
+                ([int]$_.FileSystemRights -band 0xD0156) -ne 0
+            })
+            if (-not $acl.AreAccessRulesProtected -or $usersWrite.Count) {
+                throw "Upgrade fixture did not protect the existing installed file: $($file.Path)"
+            }
+        }
+        $processIDs = (@(Get-ManagedProcesses).ProcessId | Sort-Object) -join ','
+        $taskXML = $folder.GetTask($taskName).Xml
+        Assert-SetupRejectsInheritedWrite $UpgradeInstallerPath
+        foreach ($file in $protectedFiles) {
+            if ((Get-FileHash -LiteralPath $file.Path -Algorithm SHA256).Hash -ne $file.Hash) {
+                throw "Rejected upgrade replaced a protected installed file: $($file.Path)"
+            }
+        }
+        if (((@(Get-ManagedProcesses).ProcessId | Sort-Object) -join ',') -ne $processIDs -or
+            $folder.GetTask($taskName).Xml -ne $taskXML) {
+            throw 'Rejected upgrade changed managed startup or stopped existing collectors.'
+        }
+    } finally {
+        Set-PathDacl $installDir $originalDirectoryAcl
+        foreach ($file in $protectedFiles) { Set-PathDacl $file.Path $file.Acl }
+    }
     Assert-Installed $InitialVersion
 
     $recovery = Join-Path $installDir '.test-recovery.json'
@@ -297,7 +402,7 @@ try {
     if ((Get-Content -LiteralPath $stateMarker -Raw).Trim() -ne 'preserve-user-state') {
         throw 'Managed uninstall removed user state.'
     }
-    Write-Output 'Passed: SYSTEM install/detection, user collection, upgrade recovery, scope conflict, duplicate launch, repair, version upgrade, retryable SYSTEM uninstall, and state retention.'
+    Write-Output 'Passed: inherited-write preflight rejection, SYSTEM install/detection, user collection, upgrade recovery, scope conflict, duplicate launch, repair, version upgrade, retryable SYSTEM uninstall, and state retention.'
 } catch {
     Get-ChildItem -LiteralPath $temp -Filter '*.log' -ErrorAction SilentlyContinue | ForEach-Object {
         Write-Host "Installer log: $($_.Name)"

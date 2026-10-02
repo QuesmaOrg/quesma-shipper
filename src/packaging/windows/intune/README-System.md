@@ -78,6 +78,12 @@ and revoke or rotate it through the control plane. An expired grant prevents
 successful new enrollments; removing the policy stops new policy-driven enrollment
 attempts. Neither action revokes existing user credentials. Grant values are kept
 out of process arguments and script output.
+If enrollment is refused because the grant expired or was revoked, deploy a valid
+replacement grant. The shipper retries with the replacement while retaining that
+user's identity; reinstalling or deleting user state is unnecessary. A request whose
+response was lost is retried unchanged until the server accepts or refuses it.
+An existing-enrollment conflict requires an administrator to recover the server
+record; preserve the user's local identity and pending enrollment state.
 To remove the policy, deploy the same script with `-Remove` after withdrawing its
 installation assignment. This preserves enrollment and collected upload history.
 

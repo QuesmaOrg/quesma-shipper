@@ -56,6 +56,10 @@ func ValidateManagedInstallDir(dir string, requirePayload bool) error {
 	if !SameProgram(dir, expected) {
 		return fmt.Errorf("managed installation must use %s", expected)
 	}
+	return validateManagedProgramPaths(expected, requirePayload)
+}
+
+func validateManagedProgramPaths(expected string, requirePayload bool) error {
 	for _, path := range []string{filepath.Dir(expected), expected} {
 		if err := protectedProgramPath(path); err != nil {
 			if path == expected && !requirePayload && errors.Is(err, os.ErrNotExist) {
@@ -113,7 +117,9 @@ func validateManagedACL(sd *windows.SECURITY_DESCRIPTOR, mask uint32) error {
 		if err := windows.GetAce(acl, i, &entry); err != nil {
 			return fmt.Errorf("read managed installation ACL: %w", err)
 		}
-		if entry.Header.AceFlags&inheritOnlyACE != 0 || entry.Header.AceType == windows.ACCESS_DENIED_ACE_TYPE {
+		inheritOnly := entry.Header.AceFlags&inheritOnlyACE != 0
+		if entry.Header.AceType == windows.ACCESS_DENIED_ACE_TYPE ||
+			(inheritOnly && entry.Header.AceFlags&(windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE) == 0) {
 			continue
 		}
 		if entry.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
@@ -121,6 +127,10 @@ func validateManagedACL(sd *windows.SECURITY_DESCRIPTOR, mask uint32) error {
 		}
 		if uint32(entry.Mask)&mask != 0 {
 			sid := (*windows.SID)(unsafe.Pointer(&entry.SidStart)).String()
+			// New children must stay protected; CREATOR OWNER resolves to their privileged creator.
+			if sid == sidCreatorOwner && inheritOnly {
+				continue
+			}
 			if !trustedTrustee(sid, "") || sid == sidCreatorOwner {
 				return fmt.Errorf("managed installation can be modified by non-administrator %s", sid)
 			}
