@@ -1,6 +1,5 @@
 # A loopback RDP connection supplies a real standard-user desktop session on disposable Windows Server runners.
 Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 Add-Type -ReferencedAssemblies System, System.Windows.Forms, System.Drawing -TypeDefinition @'
 using System;
 using System.ComponentModel;
@@ -63,12 +62,14 @@ public static class QuesmaTestSessions {
             EnumChildWindows(window, delegate(IntPtr child, IntPtr ignored) {
                 string label = ControlText(child);
                 text.AppendLine(label);
-                if (GetDlgCtrlID(child) == 6 && WindowClass(child) == "Button" &&
-                    label.Replace("&", "") == "Yes" && IsWindowEnabled(child)) yes = child;
+                int id = GetDlgCtrlID(child);
+                if ((id == 6 || id == 14004) && WindowClass(child) == "Button" &&
+                    label.Replace("&", "") == "Yes" && IsWindowVisible(child) && IsWindowEnabled(child)) yes = child;
                 return true;
             }, IntPtr.Zero);
             string content = Regex.Replace(text.ToString(), @"\s+", " ");
-            if (yes == IntPtr.Zero || !content.Contains("The identity of the remote computer cannot be verified") ||
+            if (yes == IntPtr.Zero || !content.Contains("The remote computer could not be authenticated due to problems with its security certificate.") ||
+                !content.Contains("Do you want to connect despite these certificate errors?") ||
                 (content.IndexOf(computerName, StringComparison.OrdinalIgnoreCase) < 0 && !content.Contains("127.0.0.1"))) return true;
             if (!PostMessageW(yes, 0xF5, IntPtr.Zero, IntPtr.Zero)) throw new Win32Exception(Marshal.GetLastWin32Error());
             accepted = true;
@@ -146,29 +147,6 @@ public static class QuesmaTestSessions {
 function Confirm-TestCertificate([int]$ClientId) {
     if ([QuesmaTestSessions]::ConfirmCertificate($ClientId, $env:COMPUTERNAME)) {
         Write-Host "Accepted the local test certificate in mstsc process $ClientId using its native dialog."
-        return
-    }
-    $client = Get-Process -Id $ClientId -ErrorAction SilentlyContinue
-    if (-not $client -or $client.MainWindowHandle -eq [IntPtr]::Zero) { return }
-    $condition = New-Object Windows.Automation.PropertyCondition(
-        [Windows.Automation.AutomationElement]::ProcessIdProperty, $ClientId)
-    $windows = [Windows.Automation.AutomationElement]::RootElement.FindAll(
-        [Windows.Automation.TreeScope]::Children, $condition)
-    $mainWindow = [Windows.Automation.AutomationElement]::FromHandle($client.MainWindowHandle)
-    foreach ($window in @($mainWindow) + @($windows)) {
-        $elements = $window.FindAll([Windows.Automation.TreeScope]::Descendants,
-            [Windows.Automation.Condition]::TrueCondition)
-        $names = (@($elements | ForEach-Object { $_.Current.Name }) -join "`n") -replace '\s+', ' '
-        if ($names -notlike '*The identity of the remote computer cannot be verified*' -or
-            ($names -notmatch '127\.0\.0\.1' -and $names -notmatch [regex]::Escape($env:COMPUTERNAME))) { continue }
-        foreach ($element in $elements) {
-            if ($element.Current.ControlType -eq [Windows.Automation.ControlType]::Button -and
-                $element.Current.Name.Replace('&', '') -eq 'Yes') {
-                Write-Host "Accepting the local test certificate in mstsc process $ClientId."
-                $element.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
-                return
-            }
-        }
     }
 }
 
@@ -197,11 +175,6 @@ function Open-TestSession([string]$Name, [string]$Password) {
             $client.Refresh()
             Write-Host "RDP client PID=$($client.Id), window=$($client.MainWindowHandle); local computer=$env:COMPUTERNAME"
             Write-Host ([QuesmaTestSessions]::WindowDiagnostics($client.Id))
-            if ($client.MainWindowHandle -ne [IntPtr]::Zero) {
-                $window = [Windows.Automation.AutomationElement]::FromHandle($client.MainWindowHandle)
-                $window.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) |
-                    ForEach-Object { Write-Host "$($_.Current.ControlType.ProgrammaticName): $($_.Current.Name)" }
-            }
         }
         $bounds = [Windows.Forms.Screen]::PrimaryScreen.Bounds
         $bitmap = New-Object Drawing.Bitmap($bounds.Width, $bounds.Height)
