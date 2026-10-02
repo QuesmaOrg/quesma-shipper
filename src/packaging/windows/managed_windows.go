@@ -321,6 +321,9 @@ func checkNoManagedTask() error {
 	if err == nil {
 		return nil
 	}
+	if ctx.Err() != nil {
+		return fmt.Errorf("cannot verify absence of the managed scheduled task: %w", ctx.Err())
+	}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() == 10 {
 		return common.ErrSystemManaged

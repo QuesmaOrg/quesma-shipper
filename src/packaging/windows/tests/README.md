@@ -7,7 +7,7 @@ Windows PowerShell 5.1.
 `Test-ManagedTask.ps1` requires Windows Server and validates the task mechanism
 independently of the shipper. An administrator registers a `BUILTIN\Users` group
 task with an unrestricted logon trigger. A loopback RDP connection through the
-built-in Windows control creates a real desktop session for a temporary standard
+built-in Windows client creates a real desktop session for a temporary standard
 user. The test requires one logon-triggered child, then uses administrator
 `RunEx` to start a second child in that session. Both children must report the
 expected SID, profile, session, and ordinary token. The test restores the RDP

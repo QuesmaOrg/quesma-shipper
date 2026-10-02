@@ -70,7 +70,7 @@ jobs:
           retention-days: 30
 
   windows-task-session:
-    # Requires a second RDP desktop; the 2025 hosted image fails during CSRSS session initialization.
+    # Requires a second, genuine standard-user RDP desktop; main installer coverage also runs on Windows 2025.
     runs-on: windows-2022
     timeout-minutes: 5
     steps:
