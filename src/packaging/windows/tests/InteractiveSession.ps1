@@ -13,6 +13,17 @@ public static class QuesmaTestSessions {
     [DllImport("wtsapi32.dll", SetLastError=true)] static extern bool WTSQuerySessionInformationW(IntPtr server, int session, int info, out IntPtr buffer, out int bytes);
     [DllImport("wtsapi32.dll")] static extern void WTSFreeMemory(IntPtr memory);
     [DllImport("wtsapi32.dll", SetLastError=true)] static extern bool WTSLogoffSession(IntPtr server, int session, bool wait);
+    [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool CredReadW(string target, int type, int flags, out IntPtr credential);
+    [DllImport("advapi32.dll")] static extern void CredFree(IntPtr credential);
+    public static bool HasCredential(string target) {
+        foreach (int type in new[] { 1, 2 }) {
+            IntPtr credential;
+            if (CredReadW(target, type, 0, out credential)) { CredFree(credential); return true; }
+            int error = Marshal.GetLastWin32Error();
+            if (error != 1168) throw new Win32Exception(error);
+        }
+        return false;
+    }
     [StructLayout(LayoutKind.Sequential)] struct PolicyAttributes {
         public uint Length; public IntPtr Root, Name; public uint Attributes; public IntPtr Security, Quality;
     }
@@ -88,9 +99,8 @@ function Open-TestSession([string]$Name, [string]$Password) {
     $credentialCreated = $false
     $client = $null
     try {
-        $existing = & "$env:SystemRoot\System32\cmdkey.exe" "/list:$credentialTarget" | Out-String
-        if ($LASTEXITCODE -ne 0 -or $existing -match [regex]::Escape($credentialTarget)) {
-            throw 'Cannot safely create the temporary loopback RDP credential.'
+        if ([QuesmaTestSessions]::HasCredential($credentialTarget)) {
+            throw 'A credential already exists for the loopback RDP target.'
         }
         & "$env:SystemRoot\System32\cmdkey.exe" "/generic:$credentialTarget" "/user:$env:COMPUTERNAME\$Name" "/pass:$Password" | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'Could not create the temporary RDP credential.' }
