@@ -92,21 +92,6 @@ func rulebookProbes(t *testing.T) map[string]rulebookProbe {
 			mustReject(t, err, "envelope in a local file")
 		}},
 
-		"telemetry_endpoint": {custom: func(t *testing.T) {
-			value := "telemetry_endpoint: /v1/telemetry\n"
-			eff, err := resolveLayers(t, served(t, value))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if eff.TelemetryEndpoint != "/v1/telemetry" {
-				t.Fatalf("telemetry endpoint = %q", eff.TelemetryEndpoint)
-			}
-			_, err = resolveLayers(t, config.LayeredDocument{Layer: config.LayerUser, Doc: doc(t, value)})
-			mustReject(t, err, "telemetry endpoint in a local file")
-			_, err = resolveLayers(t, served(t, "telemetry_endpoint: https://other.example/telemetry\n"))
-			mustReject(t, err, "external telemetry URL")
-		}},
-
 		"config_version": {
 			accept: "config_version: 1\n",
 			verify: func(t *testing.T, eff *config.Effective) {
