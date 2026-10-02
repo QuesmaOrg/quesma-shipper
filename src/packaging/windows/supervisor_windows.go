@@ -144,6 +144,7 @@ func runChild(path, logDir string) (int, error) {
 	cmd.Env = append(os.Environ(), common.SupervisedEnv+"=1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 	// Reopened per launch so RotateLogs can move an oversized log aside between children.
+	common.RotateLogs(logDir)
 	if out, err := openLog(logDir, "agent.out.log"); err == nil {
 		defer out.Close()
 		cmd.Stdout = out
