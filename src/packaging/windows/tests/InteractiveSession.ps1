@@ -5,7 +5,77 @@ Add-Type -ReferencedAssemblies System, System.Windows.Forms, System.Drawing -Typ
 using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.RegularExpressions;
 public static class QuesmaTestSessions {
+    delegate bool EnumWindow(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindow callback, IntPtr parameter);
+    [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumWindow callback, IntPtr parameter);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out int processId);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowTextW(IntPtr window, StringBuilder text, int length);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr SendMessageTimeoutW(IntPtr window, uint message, IntPtr wparam, StringBuilder text, uint flags, uint timeout, out IntPtr result);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassNameW(IntPtr window, StringBuilder text, int length);
+    [DllImport("user32.dll")] static extern int GetDlgCtrlID(IntPtr window);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll", SetLastError=true)] static extern bool PostMessageW(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
+    static string WindowText(IntPtr window) {
+        var text = new StringBuilder(4096);
+        GetWindowTextW(window, text, text.Capacity);
+        return text.ToString();
+    }
+    static string WindowClass(IntPtr window) {
+        var text = new StringBuilder(256);
+        GetClassNameW(window, text, text.Capacity);
+        return text.ToString();
+    }
+    static string ControlText(IntPtr window) {
+        var text = new StringBuilder(4096);
+        IntPtr result;
+        if (SendMessageTimeoutW(window, 0xD, new IntPtr(text.Capacity), text, 2, 500, out result) == IntPtr.Zero) return "";
+        return text.ToString();
+    }
+    public static string WindowDiagnostics(int processId) {
+        var output = new StringBuilder();
+        EnumWindows(delegate(IntPtr window, IntPtr unused) {
+            int owner;
+            GetWindowThreadProcessId(window, out owner);
+            if (owner != processId) return true;
+            output.AppendLine("Window PID=" + owner + " class=" + WindowClass(window) + " title=" + WindowText(window));
+            EnumChildWindows(window, delegate(IntPtr child, IntPtr ignored) {
+                string kind = WindowClass(child);
+                output.AppendLine("  Child ID=" + GetDlgCtrlID(child) + " class=" + kind + " text=" + (kind == "Edit" ? "<redacted>" : ControlText(child)));
+                return true;
+            }, IntPtr.Zero);
+            return true;
+        }, IntPtr.Zero);
+        return output.Length == 0 ? "No native windows found for PID=" + processId : output.ToString();
+    }
+    public static bool ConfirmCertificate(int processId, string computerName) {
+        bool accepted = false;
+        EnumWindows(delegate(IntPtr window, IntPtr unused) {
+            int owner;
+            GetWindowThreadProcessId(window, out owner);
+            if (owner != processId || !IsWindowVisible(window) || WindowClass(window) != "#32770" ||
+                WindowText(window) != "Remote Desktop Connection") return true;
+            var text = new StringBuilder();
+            IntPtr yes = IntPtr.Zero;
+            EnumChildWindows(window, delegate(IntPtr child, IntPtr ignored) {
+                string label = ControlText(child);
+                text.AppendLine(label);
+                if (GetDlgCtrlID(child) == 6 && WindowClass(child) == "Button" &&
+                    label.Replace("&", "") == "Yes" && IsWindowEnabled(child)) yes = child;
+                return true;
+            }, IntPtr.Zero);
+            string content = Regex.Replace(text.ToString(), @"\s+", " ");
+            if (yes == IntPtr.Zero || !content.Contains("The identity of the remote computer cannot be verified") ||
+                (content.IndexOf(computerName, StringComparison.OrdinalIgnoreCase) < 0 && !content.Contains("127.0.0.1"))) return true;
+            if (!PostMessageW(yes, 0xF5, IntPtr.Zero, IntPtr.Zero)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            accepted = true;
+            return false;
+        }, IntPtr.Zero);
+        return accepted;
+    }
     [StructLayout(LayoutKind.Sequential)] struct Session {
         public int Id; public IntPtr Station; public int State;
     }
@@ -74,19 +144,27 @@ public static class QuesmaTestSessions {
 '@
 
 function Confirm-TestCertificate([int]$ClientId) {
+    if ([QuesmaTestSessions]::ConfirmCertificate($ClientId, $env:COMPUTERNAME)) {
+        Write-Host "Accepted the local test certificate in mstsc process $ClientId using its native dialog."
+        return
+    }
+    $client = Get-Process -Id $ClientId -ErrorAction SilentlyContinue
+    if (-not $client -or $client.MainWindowHandle -eq [IntPtr]::Zero) { return }
     $condition = New-Object Windows.Automation.PropertyCondition(
         [Windows.Automation.AutomationElement]::ProcessIdProperty, $ClientId)
     $windows = [Windows.Automation.AutomationElement]::RootElement.FindAll(
         [Windows.Automation.TreeScope]::Children, $condition)
-    foreach ($window in $windows) {
+    $mainWindow = [Windows.Automation.AutomationElement]::FromHandle($client.MainWindowHandle)
+    foreach ($window in @($mainWindow) + @($windows)) {
         $elements = $window.FindAll([Windows.Automation.TreeScope]::Descendants,
             [Windows.Automation.Condition]::TrueCondition)
-        $names = @($elements | ForEach-Object { $_.Current.Name }) -join "`n"
+        $names = (@($elements | ForEach-Object { $_.Current.Name }) -join "`n") -replace '\s+', ' '
         if ($names -notlike '*The identity of the remote computer cannot be verified*' -or
             ($names -notmatch '127\.0\.0\.1' -and $names -notmatch [regex]::Escape($env:COMPUTERNAME))) { continue }
         foreach ($element in $elements) {
             if ($element.Current.ControlType -eq [Windows.Automation.ControlType]::Button -and
                 $element.Current.Name.Replace('&', '') -eq 'Yes') {
+                Write-Host "Accepting the local test certificate in mstsc process $ClientId."
                 $element.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
                 return
             }
@@ -115,6 +193,16 @@ function Open-TestSession([string]$Name, [string]$Password) {
         } while ((Get-Date) -lt $deadline)
         throw "No desktop session for the test user; mstsc exited=$($client.HasExited)"
     } catch {
+        if ($client -and -not $client.HasExited) {
+            $client.Refresh()
+            Write-Host "RDP client PID=$($client.Id), window=$($client.MainWindowHandle); local computer=$env:COMPUTERNAME"
+            Write-Host ([QuesmaTestSessions]::WindowDiagnostics($client.Id))
+            if ($client.MainWindowHandle -ne [IntPtr]::Zero) {
+                $window = [Windows.Automation.AutomationElement]::FromHandle($client.MainWindowHandle)
+                $window.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) |
+                    ForEach-Object { Write-Host "$($_.Current.ControlType.ProgrammaticName): $($_.Current.Name)" }
+            }
+        }
         $bounds = [Windows.Forms.Screen]::PrimaryScreen.Bounds
         $bitmap = New-Object Drawing.Bitmap($bounds.Width, $bounds.Height)
         $graphics = [Drawing.Graphics]::FromImage($bitmap)
