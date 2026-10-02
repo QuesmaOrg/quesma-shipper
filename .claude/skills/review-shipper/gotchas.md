@@ -34,9 +34,6 @@ surfaced.
 - The update channel replaces `quesma-shipper.exe` only; the supervisor is frozen at install time,
   so its restart policy must be conservative, because a permanent give-up can only be undone by
   re-running setup. (#7)
-- Compiled include globs can reach agent-written files named like secrets, and the startup deny
-  check then rejects the whole configuration; the check runs on configuration-added globs only.
-  (#64, #68)
 - Go's monotonic clock steps about half a millisecond on the Windows runner; a small scrub can
   measure zero. (#48)
 - An npm `.cmd` launcher needs a command interpreter; killing the immediate process leaves a
@@ -80,7 +77,18 @@ surfaced.
 - Container registries move: a pinned image tag must be re-verified when a workflow or compose file
   changes it. (#15, #22)
 
-## Engine, scrub and state
+## Engine, configuration and state
+
+- A served document that names a source id the running binary's catalog lacks is rejected in
+  full, and collection continues under the last valid configuration. Every new agent therefore
+  needs an upgrade-order note: older clients reject a served document that adjusts the new source
+  until they upgrade. (#64)
+- Compiled include globs over agent-named trees can reach files named like secrets. The
+  whole-configuration deny check runs on configuration-added globs only, and lives in
+  `src/internal/config/resolve.go` and `src/internal/sources/deny.go`, which a catalog diff never
+  shows. (#64, #68)
+- A root outside the compiled catalog is rejected with "a new root requires a release"; a
+  configuration layer can add include globs and switch a source off, not add a root. (#51)
 
 - The size-and-mtime stat shortcut is unsafe when one logical identity spans several paths, such as
   a live transcript, its archived copy and its compressed copy. Read and hash whenever the observed
@@ -94,7 +102,8 @@ surfaced.
   guard that `run` applies, so `doctor` explains first. (#27, #33)
 - Doctor's warning rows never change the exit code; `TestAdvisoryRowsNeverFail` pins it, so a fully
   stopped install still exits 0. Changing that is a human decision. (#33)
-- Conformance vectors and golden output are edited by hand; `-update` is never run, and a vector
-  that would change format is deferred for confirmation. (#50, #62, #66, #69, #76)
+- Conformance vectors and golden output are regenerated with `-update` flags in `src/e2e`,
+  `src/internal/formats` and `src/internal/transforms`, only after a maintainer has agreed to the
+  diff; a vector that would change format is deferred for confirmation. (#50, #62, #66, #69, #76)
 - Fleet Manager decodes `tags.json` strictly: an older replica drops any record that carries a new
   field, so a new field needs every replica upgraded first. (#65)

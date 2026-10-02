@@ -6,17 +6,36 @@ fixed before merge; **L** came up once. Numbers are quesma-shipper pull requests
 check was learned. "Codified" means `CONTRIBUTING.md`, `CONSTITUTION.md`, `AGENTS.md` or
 `ARCHITECTURE.md` already states the rule; the rest is known only from review history.
 
-Use it area by area: open the areas the diff touches, run each check against the diff and the base
-version, and report only what the PR introduced or made worse.
+Open the areas the changed paths map to, in the order given, run each check against the diff and
+the base version, and report only what the PR introduced or made worse.
+
+| Changed path | Areas, in order |
+| --- | --- |
+| `src/internal/formats/catalogdata/`, `src/internal/sources/` | C, J, D, H, K |
+| `src/internal/transforms/`, `src/internal/transforms/packs/`, `src/conformance/` | A, D, K |
+| `src/internal/engine/`, `src/internal/formats/fingerprint-state.schema.json` | B, A, D |
+| `src/internal/config/`, `src/internal/controlplane/` | D, E, J |
+| `src/internal/upload/`, `src/internal/platform/` | A, J |
+| `src/packaging/`, `src/cmd/quesma-shipper-supervisor/` | F, G, H |
+| `src/internal/cli/`, `src/app/` | G, F, B |
+| `src/e2e/`, any `_test.go` | I, D |
+| `src/perf/` | K |
+| `README.md`, `RELEASE_DOWNLOADS.md`, `src/README.md`, `src/packaging/**/README.md` | H |
+| `.github/workflows/`, `scripts/`, `Makefile`, `VERSION` | M |
+| any renamed or redefined term | H.49 |
 
 ## A. Scrub, seal, upload, write path
 
 1. **Scrub cannot be bypassed.** Grep the diff for `Unscrubbed(` and `scrub: false`. Every new use
    is a compiled account or usage source whose bytes were never a transcript, and the catalog entry
    says so. Runtime configuration never removes scrub or encrypt. [H, codified; #49, #76]
-2. **Opaque payloads are decoded or refused.** Compressed, archived or database files reaching the
-   scrubber as bytes report a clean density and ship their secrets. The loader decodes `.zst` so it
-   is scrubbed as plaintext; anything else opaque is refused with a stated reason. [H; #49]
+2. **Binary and compressed files do not reach the text scrubber as bytes.** The loader decodes
+   `.zst` so it is scrubbed as plaintext; a source whose `sniff` kind is `jsonl` refuses a NUL byte
+   in the head; a source with no sniff has only the catalog `exclude` list between a database,
+   archive or compressed file and the scrubber. For a new tree of agent-copied files, check that
+   list against what the tree realistically holds and name the gap when the list is the only
+   guard. A compressed transcript scanned as text reports a clean density and ships every secret
+   inside it. [H; #49]
 3. **Seal always, to the served recipients.** No path writes plaintext to the sink. The client needs
    no decrypt capability. [H, codified]
 4. **No cloud SDK, no second network path.** `go list -deps ./cmd/quesma-shipper` shows nothing from
@@ -57,35 +76,49 @@ version, and report only what the PR introduced or made worse.
 
 ## C. Sources and catalog
 
-14. **New sources are centrally configurable.** Roots and includes can be set by the control plane
-    without a client release; no compiled-in ceiling. [M, codified; #51]
+14. **New sources declare what the served document may adjust.** A configuration layer can add
+    include globs and switch a source off, but a root outside the compiled catalog is rejected with
+    "a new root requires a release" (`resolveRoots` in `src/internal/config/resolve.go`). A new
+    source therefore declares every root an operator could plausibly need, and the description says
+    which parts the control plane can change without a release. [M; #51]
 15. **Deny list on the resolved path, before existence.** A root pointed into a secrets directory is
-    refused whether or not it exists. The whole-configuration deny check runs on globs the
-    configuration added, never on compiled globs that reach agent-written `.env` or key files.
-    [M; #51, #64, #68]
+    refused whether or not it exists. The whole-configuration deny check (`pickRoot` in
+    `src/internal/config/resolve.go` calling `CheckIncludes` in `src/internal/sources/deny.go`)
+    runs on include globs a configuration layer added, never on compiled globs over names the
+    agent chooses; a catalog diff never shows this code, so open it for any new compiled glob over
+    an agent-named tree. [M; #51, #64, #68]
 16. **One collector per agent, shared helpers not copied.** A copied walk helper has already drifted
     by the time it is reviewed; an all-agents collector full of switches is a shape finding. [M; #51]
 17. **Symlink and check-then-open races.** Opening with no symlink following, regular-file checks,
     and a test that replaces the path between check and open. [M; #51, #53]
-18. **Hot-path order.** Per-file probes run after the seen check, or they run for every transcript
-    on every tick. [M; #51]
+18. **Hot-path order.** Discovery (`walkGlobs` in `src/internal/sources/gather.go`: deny,
+    repository filter, sampled sniff) runs for every candidate on every tick; the fingerprint check
+    runs later in the engine. Per-file work added to discovery runs for every transcript on every
+    tick. [M; #51]
 19. **Credential-bearing agent files are deny-listed.** Agent credential stores, token-bearing
-    config files, local state databases and secret directories never match an include glob.
-    [M; #64]
-20. **Non-dogfooded agents are labelled experimental** in the README. [L; #51]
+    config files, local state databases and secret directories never match an include glob. Check
+    the files the author names against the deny entries; completeness is the author's claim, so
+    ask what else the tree holds. [M; #64]
+20. **Agents the team does not run itself are labelled experimental** in the README; whether anyone
+    runs it is not in the repository, so ask when the description does not say. [L; #51]
 
 ## D. Configuration, served document, compatibility, golden output
 
 21. **Compatibility surfaces.** File formats, the wire protocol, configuration keys, the served
     document and the object-key grammar. A change needs a test that old inputs still work and a
     note in the PR. [H, codified]
-22. **Golden and conformance vectors change by hand.** Additions are explained in the description;
-    `-update` is not run until a maintainer agrees; a vector whose format would change is deferred.
-    Files: `src/e2e/golden_test.go`, `src/conformance/`, the wire fixtures behind
-    `src/internal/controlplane/wire_contract_test.go`. [H, codified; #50, #66, #69, #76]
-23. **Removing or renaming a source id.** A served config still naming it is rejected in full; the
-    description names which side changes first and how an older client reads the new served
-    document. [M; #49, #50, #62]
+22. **Golden and conformance vectors change as agreed additions.** They are regenerated by the
+    `-update` flags in `src/e2e/golden_test.go`, `src/internal/formats/conformance_test.go` and
+    `src/internal/transforms/scrub_conformance_test.go`, only after a maintainer has agreed to the
+    diff; the description explains every added or changed vector; a vector whose format would
+    change is deferred. The wire fixtures behind `src/internal/controlplane/wire_contract_test.go`
+    change only through a shipper-protocol release. [H, codified; #50, #66, #69, #76]
+23. **Source ids in both directions.** A served document naming an id the running binary lacks is
+    rejected in full and collection continues under the last valid configuration (`RejectionError`
+    in `src/internal/config/resolve.go`). Adding a source means an older client rejects any served
+    document that adjusts it until it upgrades; removing or renaming one means a served document
+    still naming it is rejected. The description names which side changes first. [M; #49, #50,
+    #62, #64]
 24. **Served-document authority.** A field the shipper-protocol rulebook says the control plane may
     not set is still refused; `src/internal/config/authority_rulebook_test.go` covers it. [M,
     codified]
@@ -165,8 +198,10 @@ version, and report only what the PR introduced or made worse.
     the download route map covers it. [M; #7]
 48. **Placeholders fail closed.** Variables that fail when unset, never example values that would
     work if pasted. [M; #52]
-49. **Statements the PR made stale are fixed in the PR.** Schema notes, package comments, READMEs,
-    the root README. Fix here, not in a follow-up. [H; #79]
+49. **Statements the PR made stale are fixed in the PR.** For every term the PR renames, redefines
+    or removes, `git grep -n -i -e '<term>' <head> -- . ':!*_test.go'`; each hit is updated here or
+    named in the description with a reason. Past misses sat in schema notes, package comments, the
+    packaging READMEs and the root README. Not in a follow-up. [H; #79]
 50. **No filler.** Repeated sentences, generic vendor steps and docs for unshipped features are cut.
     [M; #52, #53]
 
@@ -176,8 +211,8 @@ version, and report only what the PR introduced or made worse.
     promises more than the assertion, is a finding. [M; #53]
 52. **Host-independent.** No stat of system paths, no PATH dependence, `runtime.GOOS` for platform
     branches. [M; #53]
-53. **Does it fail without the fix?** Expect the answer in the PR; a reviewer's reproduction is
-    answered with a named regression test. [H; #49]
+53. **For a fix, does the test fail without it?** Expect the answer in the PR; a reviewer's
+    reproduction is answered with a named regression test. [H; #49]
 54. **Pinned invariants stay pinned.** `TestAdvisoryRowsNeverFail`, the write-path and exec lint,
     the wire contract, the golden tests, the perf budgets. [H, codified]
 55. **Removal is covered elsewhere.** A deleted test is named with the test that still covers the
@@ -198,7 +233,8 @@ version, and report only what the PR introduced or made worse.
 ## K. Performance and size
 
 60. **Numbers for scrub, seal, engine and gather changes.** Binary size in bytes with the delta; a
-    perf table with the budget, a laptop sample and the CI-runner sample. [H, codified; #49, #76]
+    perf table with the budget, a laptop sample and the CI-runner sample. Without Docker the
+    reviewer takes them from the description and says so. [H, codified; #49, #76]
 61. **Budgets come from the runner.** A budget derived from a laptop fails on the shared runner;
     the convention is headroom over the runner sample. Never widen a budget to pass. [H, codified]
 62. **State what was not run** when `make perf` or `make race` is irrelevant to the change. [M; #74]

@@ -9,12 +9,21 @@ allowed-tools:
   - Bash(git diff:*)
   - Bash(git log:*)
   - Bash(git show:*)
+  - Bash(git grep:*)
   - Bash(git merge-base:*)
   - Bash(git status:*)
+  - Bash(git cat-file:*)
+  - Bash(git fetch origin pull/:*)
+  - Bash(git archive:*)
+  - Bash(tar -x:*)
+  - Bash(mktemp:*)
   - Bash(gh pr view:*)
   - Bash(gh pr diff:*)
   - Bash(gh pr checks:*)
   - Bash(gh issue view:*)
+  - Bash(gh run list:*)
+  - Bash(gh api repos/QuesmaOrg/quesma-shipper/pulls:*)
+  - Bash(go env:*)
   - Bash(go test:*)
   - Bash(go vet:*)
 ---
@@ -36,40 +45,67 @@ threat model is the Scope section of `fleet-manager/SECURITY.md`, and the gate i
 
 `$ARGUMENTS` is one of:
 
-- A number: a pull request. `gh pr view <n> --json title,body,headRefOid,baseRefName,isDraft,files`
-  and `gh pr diff <n>`. The base is `origin/<baseRefName>`.
-- A branch name: `git diff $(git merge-base origin/main <branch>) <branch>`.
+- A number: a pull request.
+  `gh pr view <n> --json title,body,state,mergedAt,isDraft,headRefOid,baseRefOid,baseRefName,files`
+  and `gh pr diff <n>`. The base is `baseRefOid`, not `origin/<baseRefName>`, which may have moved
+  on. Record `state`: for a merged PR the findings are issues to file, not change requests.
+- A branch name: `git diff $(git merge-base origin/main <branch>) <branch>`; the base is that
+  merge-base.
 - A path: that path's diff against `origin/main`, plus uncommitted changes under it.
 - Nothing: the commits ahead of the upstream plus uncommitted changes (`git log @{u}..`,
   `git diff @{u}`).
 
-Record the head SHA you review; the summary names it.
+Record the head SHA you review; the summary names it. Line numbers in findings are head line
+numbers as `gh pr diff` shows them on the `+` side; a removed line is cited with its base number
+and marked `(base)`.
 
 Fleet Manager territory is `fleet-manager/`, `.github/workflows/fleet-manager-*.yml` and the root
-documents where they describe the control plane. When most changed files are under `src/`, stop
-and say the diff belongs to `/review-shipper`. A PR that spans both components gets both skills,
-each on its own files, plus one check that both sides read the same wire contract (pass 3).
+documents where they describe the control plane. Decide ownership by where the behaviour changes,
+not by counting files: when the behaviour lives in `src/` and the `fleet-manager/` files only
+follow it, stop and say the diff belongs to `/review-shipper`. When behaviour changes on both
+sides, review the `fleet-manager/` files here, list the `src/` files under "Handed to
+/review-shipper" in the report, keep the cross-contract check from pass 3 in this report, and then
+run `/review-shipper <target>` as its own review.
+
+**Short path.** When the diff changes no route, grant, template, stored-record field, image pin,
+default or protocol fixture, say so, read only the `ARCHITECTURE.md` paragraph the diff touches,
+and run passes 3, 5 and 8.
 
 ## 2. Before reviewing
 
-Read, in this order: `fleet-manager/AGENTS.md`, then the root `AGENTS.md` it defers to;
+Read once per session: `fleet-manager/AGENTS.md` and the root `AGENTS.md` it defers to;
 `fleet-manager/ARCHITECTURE.md`; the Scope section of `fleet-manager/SECURITY.md`;
-`CONSTITUTION.md`; `fleet-manager/OPERATIONS.md` when the diff touches deployment, records or
-telemetry; `.github/PULL_REQUEST_TEMPLATE.md`. Then the PR description and every comment already
-on it: `gh pr view <n> --comments`, and the inline threads with
-`gh api repos/QuesmaOrg/quesma-shipper/pulls/<n>/comments --paginate`. A finding someone already
-raised is not raised again. If it is still open at this head, leave it; if the new commits fixed
-it, say so in the summary.
+`.github/PULL_REQUEST_TEMPLATE.md`. Later in the session, grep them for the terms in the diff and
+reread only those paragraphs. Read `CONSTITUTION.md` and `fleet-manager/OPERATIONS.md` when the
+diff touches a record, a grant, deployment or telemetry.
 
-For every file the diff touches, read the base version with `git show origin/main:<path>` and
-enough of the surrounding code to judge the change. The service is one package under
-`fleet-manager/src/`, so follow a route from `server.go` or `admin_http.go` through `manager.go`
-to `store.go` rather than judging a handler on its own. A bug that was already there is
-pre-existing: list it once at the end, never as a finding.
+Read the PR description and everything already said on it:
 
-Load [checklist.md](checklist.md) for the complete checks per area. Load [gotchas.md](gotchas.md)
-when the diff touches `terraform/`, a provider file, `deploy.sh`, the Dockerfile, a stored record
-or the admin UI; it holds the cloud and tooling facts reviewers had to supply before.
+```sh
+gh pr view <n> --comments
+gh api repos/QuesmaOrg/quesma-shipper/pulls/<n>/reviews --paginate --jq '.[] | "\(.commit_id[0:7]) \(.state) \(.user.login): \(.body)"'
+gh api repos/QuesmaOrg/quesma-shipper/pulls/<n>/comments --paginate --jq '.[] | "\(.path):\(.line // .original_line) @\(.original_commit_id[0:7]) \(.user.login): \(.body)"'
+```
+
+`original_commit_id` says which commit a thread was raised on, which decides whether a later commit
+answered it. A finding someone already raised is not raised again: if it is still open at this
+head, name it in one line as open from the earlier review; if a later commit fixed it, say so in
+one line.
+
+For every file the diff touches, read the base version with `git show <base>:<path>` and enough of
+the surrounding code to judge the change. The service is one package under `fleet-manager/src/`,
+so follow a route from `server.go` or `admin_http.go` through `manager.go` to `store.go` rather
+than judging a handler alone. A bug that was already there is pre-existing: list it once at the
+end, never as a finding.
+
+Load [checklist.md](checklist.md); its first table maps changed paths to the areas to open. Load
+[gotchas.md](gotchas.md); it holds the cloud, record and tooling facts reviewers had to supply
+before, and it is short enough to read every time.
+
+The wire contract is the shipper-protocol module at the version in `fleet-manager/go.mod`, readable
+offline at `$(go env GOMODCACHE)/github.com/!quesma!org/shipper-protocol@<version>`: `PROTOCOL.md`
+for the prose, `authority.json` for which served fields the control plane may set, `schemas/` and
+`schemas/v2/` for the message shapes, `fixtures/` for the pinned bytes.
 
 ## 3. What counts as a finding
 
@@ -84,16 +120,27 @@ Only a problem this PR introduces, makes worse or newly exposes. Before reportin
 5. Give the fix or its direction when it is short.
 
 If you are not sure it is a bug, it is not a finding. A few findings you are sure of beat many you
-are not. When the claim is about behaviour, reproduce it: run `go test ./...` from
-`fleet-manager/src` against the in-memory store, write a throwaway test, or trace the Terraform
-statement to the key grammar in `store.go`. The summary says what you ran and what you did not;
-nobody can apply a template during review, so say so when a grant change is reasoned rather than
-observed.
+are not.
+
+Tests and reproductions run on the head you review, never on whatever the working tree has
+checked out. `git cat-file -t <headRefOid>` tells you whether the commit is local; if not,
+`git fetch origin pull/<n>/head`. Then unpack it beside the repository and run from there:
+
+```sh
+dir=$(mktemp -d) && git archive <headRefOid> | tar -x -C "$dir" && (cd "$dir/fleet-manager/src" && go test ./...)
+```
+
+Run the new tests against the base the same way when a claim is "this fails on main". Some checks
+cannot be made from a checkout: whether a Docker Hub tag exists is answered by
+`gh run list -w fleet-manager-image.yml --json headSha,conclusion`, the vulnerability scan by the
+`govulncheck` job in `gh pr checks <n>`, and a live cloud behaviour only by the author. Say which
+of these you used, and say when a grant change was reasoned about rather than observed.
 
 ## 4. Review passes, heaviest first
 
-Review attention here has gone to changes in who may do what, what a default customer gets, what a
-grant discloses, and what an operator will paste. Do every pass whose area the diff touches.
+Heaviest means consequence, not frequency: passes 1 and 2 hold the findings that reverse a merge,
+pass 5 holds the most frequent ones. Do every pass whose area the diff touches and name the ones you
+skipped.
 
 ### Pass 1: who may do what
 
@@ -108,8 +155,8 @@ The reflex P1. Read the permission, the route and the record together.
 - An invite is single-use; a revoked install is served no configuration and no tickets. Known gaps
   are not worsened: completion checks revocation on entry only, and a retried grant enrollment is
   recognised only when the body is byte-identical (#58).
-- The served document changes only fields the shipper-protocol rulebook lets the control plane set.
-  The recipient list holds what the organization set plus the Quesma recipient only while
+- The served document changes only fields `authority.json` lets the control plane set. The
+  recipient list holds what the organization set plus the Quesma recipient only while
   `allow_quesma_etl` is on; `FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL` decides the default for a new
   organization and nothing else.
 - A ticket names one key inside the requesting install's own prefix; `s3TicketHeaders` in `aws.go`
@@ -123,7 +170,10 @@ The templates are where the least-privilege argument is made; `src/terraform_tes
   resource, its prefix or condition. The runtime identity reads nothing below `install=` beyond
   the documented exceptions: `tags.json`, and object metadata for the dedup probe, which S3 and GCS
   authorize as a full read. An external reader is bounded to install objects and
-  `control/config.json`.
+  `control/config.json`, current versions only.
+- When a provider file gains a read, a HEAD, a list or a write and the templates do not change,
+  check the new call against the existing statements: the need for a grant can change while the
+  grant does not, and the first failure is a generic error in production.
 - A `terraform_test.go` assertion that moves from forbidding to requiring, or a test renamed to
   drop a word like "WriteOnly", is a widening. `fleet-manager/AGENTS.md` makes that a change that
   needs a human's explicit yes: the description states the trade-off and the Constitution article
@@ -154,13 +204,18 @@ stored-record and configuration changes, and for a human to confirm any diff in
   unconditional, tagged ephemeral, and never fail a request; nothing is written below `install=`
   except `tags.json`; there is no delete path and no empty object.
 - A bucket is versioned, so "replaced" means a new version: a secret written by mistake lives on in
-  the old one, and the docs say so (#79).
-- A change to `probeStored` or the upload path says what `state reset` on a shipper does after a
-  scrub-rule or recipient change; `already_present` on the pre-scrub hash alone keeps stale
-  ciphertext (#77 is open) (#74, #79).
+  the old one, sealed to the recipients of that time, and the docs say so (#79).
+- For a change to `probeStored` or the upload path, the description states what a shipper's
+  `state reset` does after a scrub-rule change, after a recipient change, and during a rolling
+  upgrade while old and new replicas answer side by side (#74, #79; recipient rotation is open as
+  #77).
 - A new shipper-facing behaviour starts in shipper-protocol and arrives as a module bump plus a
-  handler. A diff under `src/protocol_test.go` or in a fixture is a claim that the contract should
-  change: read it and ask for confirmation.
+  handler. In `src/protocol_test.go` or a fixture, a diff that changes an asserted wire shape,
+  header, status or fixture bytes is a contract claim: read it and ask for confirmation. A diff
+  that only changes which inputs earn an existing answer is behaviour: review it under the probe
+  bullet, and still list it under "Needs a human's yes", because `fleet-manager/AGENTS.md` makes
+  every diff there one. When the PR spans both components, check that `src/` and `fleet-manager/`
+  read the same contract version and the same field names.
 
 ### Pass 4: defaults and posture
 
@@ -175,9 +230,9 @@ stored-record and configuration changes, and for a human to confirm any diff in
   a log or an error is a finding; `TestProbeFailureAuthorizesAsNewAndScrubsTheLog` shows the
   expected shape.
 
-### Pass 5: operator docs and copy-paste safety
+### Pass 5: operator docs and statements the PR made stale
 
-The largest theme by count, and the one maintainers fix themselves when the author is slow.
+The most frequent finding, and the one maintainers fix themselves when the author is slow.
 
 - Enrollment instructions show the command the admin UI shows,
   `quesma-shipper login --server <url> <token>`, and point at per-platform installation, never a
@@ -188,18 +243,26 @@ The largest theme by count, and the one maintainers fix themselves when the auth
   steps are not repeated across sections; no documentation for an unshipped feature (#52).
 - Wherever a document tells someone to run `age-keygen`, it says that recipients encrypt, only the
   private identity decrypts, and the identity is backed up and never committed (#78).
-- Every statement the PR makes stale is fixed in the same PR: a code comment, `OPERATIONS.md`, the
-  other cloud's `variables.tf`, the shipper-side schema note (#79).
+- Stale statements: for every term the PR renames, redefines or removes, grep the head tree
+  outside tests and the shipper-protocol module in the module cache, and check each hit was updated
+  or is named in the description with a reason. Comments, `OPERATIONS.md`, the other cloud's
+  `variables.tf` and shipper-side schema notes are where past misses sat (#79):
+
+  ```sh
+  git grep -n -i -e '<term>' <headRefOid> -- . ':!*_test.go'
+  grep -rn -i -e '<term>' "$(go env GOMODCACHE)/github.com/!quesma!org/shipper-protocol@<version>"
+  ```
 
 ### Pass 6: publishing, pins and deployment
 
-- Both templates default to the `:latest` image, so pushing it is a customer deploy. The publishing
-  workflow declares the `fleet-manager-publishing` environment, the Docker Hub secrets live there,
+- Both templates default to the `:latest` image, so pushing it is a customer deploy.
+  `fleet-manager-image.yml` publishes on every push to `main` that touches `fleet-manager/`; it
+  declares the `fleet-manager-publishing` environment, the Docker Hub secrets live there,
   `fleet-manager-check` stays a required status check, and only one publisher moves `latest` (#52).
-- A PR that pins an image names a tag that exists on Docker Hub and contains the change; the
-  comment beside the tag stays true; the AWS module's `data "http"` postcondition on
-  `/v1/telemetry/public-key` is satisfied by that image; the description lists the checks to run
-  after the apply.
+- A PR that pins an image names a tag whose publishing run succeeded
+  (`gh run list -w fleet-manager-image.yml`) and contains the change; the comment beside the tag
+  stays true; the AWS module's `data "http"` postcondition on `/v1/telemetry/public-key` is
+  satisfied by that image; the description lists the checks to run after the apply.
 - `deploy.sh` and the Makefile refuse a dirty tree, stop on a registry lookup failure rather than
   rebuilding over an existing tag, refuse the default bucket name against a real account, and warn
   that destroying leaves nothing behind only when that is true (#78).
@@ -210,8 +273,8 @@ The largest theme by count, and the one maintainers fix themselves when the auth
 
 - A `go.mod` change regenerates `third_party/` with `make -C fleet-manager licenses` and the
   description argues any new dependency (#55).
-- The `go` directive in `go.mod`, the Dockerfile base image and the workspace agree;
-  `make -C fleet-manager vulncheck` is clean.
+- The `go` directive in `go.mod`, the Dockerfile base image and the workspace agree; the
+  `govulncheck` job in `gh pr checks` is green.
 - Nothing under `fleet-manager/` duplicates a root file; workflow files are prefixed
   `fleet-manager-`; no plans in the module.
 - Admin UI: a new embedded asset type is pinned in `contentTypes` in `ui.go` and asserted in
@@ -222,14 +285,9 @@ The largest theme by count, and the one maintainers fix themselves when the auth
 
 ### Pass 8: the PR itself
 
-- Before and after, concretely: a request and its response, a table of cases, the operator's
-  command count before and after.
-- Compatibility answered for each surface: wire protocol, stored record, object-key grammar,
-  served-configuration authority. Permissions answered: does any grant widen, does
-  `src/terraform_test.go` still pin what matters. Security effect stated.
-- After-merge checks when production runs it; an honest Verified and Not verified list, including
-  "the GCP path is not tested" when that is the case; "deliberately not in this PR"; an issue filed
-  for each deferred correctness item; "review commit by commit" when a commit is a verbatim copy.
+Check the description against the list in section 7 and report what is missing. The two items
+reviewers most often had to ask for: a concrete before and after, and the honest "Not verified"
+line, including "the GCP path is not tested" when that is the case.
 
 ## 5. Do not report
 
@@ -259,15 +317,21 @@ Notes, not as a finding.
 
 ## 7. Report
 
-Open with `Reviewed <sha>` and the counts per priority. Then one line per P1 and P2:
-`[P1] path:line - what is wrong, when it happens, what it breaks, the fix if short`. Then:
+Open with `Reviewed <sha>` and the counts per priority, or `No P1 or P2 findings.` Then one line
+per P1 and P2: `[P1] path:line - what is wrong, when it happens, what it breaks, the fix if short`.
+Then:
 
-- **Description check**: before-and-after example, compatibility answers, permissions answer with
-  the test named, what was not run, scope matches title. One line each, present or missing.
+- **Description check**, one line each, present or missing: before and after; compatibility for
+  the wire protocol, stored records, the object-key grammar and served-configuration authority;
+  permissions, with `src/terraform_test.go` named; security effect; after-merge checks when the
+  change reaches the published image; verified and not verified; deliberately not in this PR;
+  issues filed for deferred items; scope matches title.
+- **Needs a human's yes**: any grant, contract, default or pinned-test change, stated as the
+  question a maintainer must answer.
 - **Checked and holds**: at most five mechanisms you verified and how, by test run, trace or base
   comparison. Coverage, not praise.
-- **Needs a human's yes**: any grant, contract or default change the description flags or that you
-  found, stated as the question a maintainer must answer.
+- **Ran / not run**: tests and reproductions, with the SHA they ran on; passes skipped and why.
+- **Handed to /review-shipper**: the `src/` files you left to the other skill, if any.
 - **Notes**: P3s and polish, at most five.
 - **Pre-existing**: anything you found that the PR did not introduce, one line each, so it can be
   filed.

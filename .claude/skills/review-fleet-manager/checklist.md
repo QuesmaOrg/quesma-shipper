@@ -8,8 +8,22 @@ number. "Codified" means `fleet-manager/AGENTS.md`, `fleet-manager/ARCHITECTURE.
 `fleet-manager/SECURITY.md`, `CONSTITUTION.md` or the PR template already states the rule; the
 rest is known only from review history.
 
-Use it area by area: open the areas the diff touches, run each check against the diff and the base
-version, and report only what the PR introduced or made worse.
+Open the areas the changed paths map to, run each check against the diff and the base version,
+and report only what the PR introduced or made worse.
+
+| Changed path | Areas |
+| --- | --- |
+| `src/server.go`, `src/admin_http.go`, `src/manager.go`, `src/model.go`, `src/health.go` | A, C, K |
+| `src/upload.go`, `src/aws.go`, `src/gcp.go`, `src/azure.go` | B, D, E |
+| `src/store.go`, `src/seen.go`, `src/tags.go`, `src/metadata.go` | D, J |
+| `src/telemetry*.go` | A, G |
+| `src/main.go`, `src/defaults_test.go` | C |
+| `src/ui.go`, `admin-ui/`, `tests/` | H |
+| `terraform/` | E, F, I |
+| `deploy.sh`, `Dockerfile`, `Makefile`, `go.mod`, `third_party/`, `.github/workflows/fleet-manager-*` | F, M |
+| `src/protocol_test.go`, `src/terraform_test.go`, fixtures | J, K |
+| `README.md`, `OPERATIONS.md`, `WALKTHROUGH.md`, `ARCHITECTURE.md`, `SECURITY.md`, `terraform/*/README.md` | I |
+| any renamed or redefined term | I.48 |
 
 ## A. Authentication and authorization
 
@@ -41,9 +55,11 @@ version, and report only what the PR introduced or made worse.
 8. **Closed header contract.** `s3TicketHeaders` in `aws.go` admits tagging and `x-amz-meta-*`
    only and refuses anything else rather than passing it through; the lifetime is what was asked
    for. [H, codified]
-9. **The probe trusts the right hash.** `probeStored` answering `already_present` on the pre-scrub
-   hash alone keeps an object scrubbed under old rules or sealed to old recipients; the change
-   states what a shipper's `state reset` does after a policy change (#77 is open). [M; #74, #79]
+9. **The probe trusts the right hash.** For a change to `probeStored` or the upload path, the
+   description states what a shipper's `state reset` does after a scrub-rule change, after a
+   recipient change, and during a rolling upgrade with old and new replicas answering side by
+   side; `already_present` on the pre-scrub hash alone keeps stale ciphertext (#77 is open).
+   [M; #74, #79]
 10. **Probe failures authorize as new and scrub the log.** A storage error during the probe never
     blocks an upload and never prints the key list; `TestProbeFailureAuthorizesAsNewAndScrubsTheLog`
     pins the shape. [M; #74]
@@ -105,7 +121,8 @@ version, and report only what the PR introduced or made worse.
 27. **Test direction.** A `terraform_test.go` assertion that moves from forbidding to requiring,
     or a test renamed to drop "WriteOnly" or similar, is a widening: the description states the
     trade-off and the Constitution article kept, and the review asks for a human's explicit yes.
-    Run the new test against `main` to confirm it fails there. [H, codified; #74]
+    Run the new test against the base tree, unpacked with `git archive`, to confirm it fails
+    there. [H, codified; #74]
 28. **Parity in words and grants.** A statement added to one template has its counterpart in the
     other or an explanation; a variable description never names a variable that exists only in
     the other module. [M]
@@ -118,7 +135,8 @@ version, and report only what the PR introduced or made worse.
 31. **`latest` is a customer deploy.** Both templates default to it. The publishing workflow
     declares the `fleet-manager-publishing` environment and the Docker Hub secrets live in it;
     `fleet-manager-check` is a required status check; exactly one publisher moves `latest`. [H; #52]
-32. **Pin PRs.** The tag exists on Docker Hub and contains the change, or the PR waits; the comment
+32. **Pin PRs.** The tag's publishing run succeeded (`gh run list -w fleet-manager-image.yml`) and
+    contains the change, or the PR waits; the comment
     beside it stays true about which repository's commit it names; the `data "http"` postcondition
     on `/v1/telemetry/public-key` is satisfied by that image; post-apply checks are listed. [M]
 33. **`deploy.sh` and Makefile safety.** Dirty tree refused; a registry lookup failure stops the
@@ -126,7 +144,7 @@ version, and report only what the PR introduced or made worse.
     a real account; destroy paths say what remains; a dev target falls back to the built binary
     when offline. [M; #78]
 34. **Toolchain alignment.** The `go` directive, the Dockerfile base image and the workspace agree;
-    `make -C fleet-manager vulncheck` runs with the workspace off and is clean. [M]
+    the `govulncheck` job in `gh pr checks` is green. [M]
 35. **Dependencies.** A `go.mod` change regenerates `third_party/` with `make -C fleet-manager
     licenses`; a new dependency is argued in the description. [M, codified; #55]
 36. **Docker context.** `.dockerignore` patterns are recursive where they must be; no local
@@ -162,8 +180,11 @@ version, and report only what the PR introduced or made worse.
 46. **No docs for unshipped features.** [M; #52]
 47. **Age custody explained at every `age-keygen`.** Recipients encrypt, only the private identity
     decrypts, back it up, never commit it; show the command once with its output. [M; #78]
-48. **Stale statements fixed here.** Code comments, `OPERATIONS.md`, the other cloud's
-    `variables.tf`, the shipper-side schema note. Not in a follow-up. [M; #79]
+48. **Stale statements fixed here.** For every term the PR renames, redefines or removes, grep the
+    head tree outside tests (`git grep -n -i -e '<term>' <head> -- . ':!*_test.go'`) and the
+    shipper-protocol module in the module cache; each hit is updated in this PR or named in the
+    description with a reason. Past misses sat in code comments, `OPERATIONS.md`, the other
+    cloud's `variables.tf` and a shipper-side schema note. Not in a follow-up. [M; #79]
 49. **Guarantee wording.** The service cannot decrypt, but its identity can download ciphertext
     where the probe grant applies; `tags.json` is readable; an install id does not identify a
     person, while sealed content may. Say exactly that. [M]
