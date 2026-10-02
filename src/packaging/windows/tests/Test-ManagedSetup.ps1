@@ -268,8 +268,25 @@ try {
     Set-Content -LiteralPath $shipperPath -Value 'damaged executable'
     Remove-Item -LiteralPath $supervisorPath
     $uninstallScript = (Resolve-Path (Join-Path $PSScriptRoot '..\intune\Uninstall-System.ps1')).Path
+    $uninstallArguments = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $uninstallScript + '"'
+    $lockedPayload = [IO.File]::Open($shipperPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    try {
+        $code = Invoke-SystemProcess "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" $uninstallArguments
+        if ($code -eq 0) { throw 'Uninstall reported success while the main executable could not be deleted.' }
+        if (-not (Test-Path -LiteralPath $shipperPath) -or -not (Test-Path -LiteralPath (Join-Path $installDir 'unins000.exe'))) {
+            throw 'Failed uninstall did not retain the files needed for retry.'
+        }
+        $retryRegistration = $nativeRegistry.OpenSubKey('Software\Quesma\Shipper')
+        if (-not $retryRegistration) { throw 'Failed uninstall removed the machine registration.' }
+        try {
+            if ($retryRegistration.GetValue('InstallDir') -ne $installDir -or
+                $retryRegistration.GetValue('Version') -ne $ExpectedVersion) {
+                throw 'Failed uninstall changed the machine registration.'
+            }
+        } finally { $retryRegistration.Dispose() }
+    } finally { $lockedPayload.Dispose() }
     $code = Invoke-SystemProcess "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
-        ('-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $uninstallScript + '"')
+        $uninstallArguments
     if ($code -ne 0) { throw "Machine uninstaller exited $code" }
     $remainingTask = @($folder.GetTasks(0) | Where-Object Name -eq $taskName)
     if ($remainingTask.Count -or (Test-Path -LiteralPath $shipperPath) -or (Test-Path -LiteralPath $supervisorPath) -or
@@ -280,7 +297,7 @@ try {
     if ((Get-Content -LiteralPath $stateMarker -Raw).Trim() -ne 'preserve-user-state') {
         throw 'Managed uninstall removed user state.'
     }
-    Write-Output 'Passed: SYSTEM install/detection, user collection, upgrade recovery, scope conflict, duplicate launch, repair, version upgrade, SYSTEM uninstall, and state retention.'
+    Write-Output 'Passed: SYSTEM install/detection, user collection, upgrade recovery, scope conflict, duplicate launch, repair, version upgrade, retryable SYSTEM uninstall, and state retention.'
 } catch {
     Get-ChildItem -LiteralPath $temp -Filter '*.log' -ErrorAction SilentlyContinue | ForEach-Object {
         Write-Host "Installer log: $($_.Name)"

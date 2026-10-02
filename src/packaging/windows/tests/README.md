@@ -29,7 +29,11 @@ configuration, collector identity and liveness, duplicate launches, refusal to
 switch scope in place, repair, version upgrade, and retention of user state. It
 exercises the upgrade recovery commands with initially enabled and disabled tasks,
 checks Intune detection as SYSTEM, and checks that setup did not create shipper
-state in service-account profiles.
+state in service-account profiles. It corrupts the main executable and removes
+the supervisor before uninstalling. With a file handle blocking main-executable
+deletion, uninstall must return nonzero and preserve the uninstaller and exact
+machine registration. Releasing the handle and retrying must remove the program
+while retaining user state.
 
 The Windows CI jobs run both scripts and retain the existing personal-installer
 smoke test. These checks cannot establish all of the following behaviors.

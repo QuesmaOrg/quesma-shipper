@@ -70,7 +70,8 @@ jobs:
           retention-days: 30
 
   windows-task-session:
-    runs-on: windows-latest
+    # Requires a second RDP desktop; the 2025 hosted image fails during CSRSS session initialization.
+    runs-on: windows-2022
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7

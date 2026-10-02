@@ -84,6 +84,12 @@ function Open-TestSession([string]$Name, [string]$Password) {
             Get-WinEvent -LogName $log -MaxEvents 5 -ErrorAction SilentlyContinue |
                 Select-Object TimeCreated, Id, Message | Format-List | Out-String | Write-Host
         }
+        Get-WinEvent -FilterHashtable @{ LogName = 'System'; StartTime = (Get-Date).AddMinutes(-3); Level = 1, 2, 3 } `
+            -MaxEvents 10 -ErrorAction SilentlyContinue |
+            Select-Object TimeCreated, Id, Message | Format-List | Out-String | Write-Host
+        Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4625; StartTime = (Get-Date).AddMinutes(-3) } `
+            -MaxEvents 5 -ErrorAction SilentlyContinue |
+            Select-Object TimeCreated, Id, Message | Format-List | Out-String | Write-Host
         $form.Dispose()
         throw
     }

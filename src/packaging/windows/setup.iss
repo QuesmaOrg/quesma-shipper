@@ -243,6 +243,26 @@ begin
                    IntToStr(ExitCode) + ').');
 end;
 
+procedure RemovePayloadForUninstall;
+var
+  ProgramPath, SupervisorPath: String;
+  ProgramRemoved, SupervisorRemoved: Boolean;
+  Attempt: Integer;
+begin
+  ProgramPath := ExpandConstant('{app}\quesma-shipper.exe');
+  SupervisorPath := ExpandConstant('{app}\quesma-shipper-supervisor.exe');
+  { Task Scheduler can report a stop before Windows releases the executable mappings. }
+  for Attempt := 1 to 300 do
+  begin
+    ProgramRemoved := not FileExists(ProgramPath) or DeleteFile(ProgramPath);
+    SupervisorRemoved := not FileExists(SupervisorPath) or DeleteFile(SupervisorPath);
+    if ProgramRemoved and SupervisorRemoved then
+      Exit;
+    Sleep(100);
+  end;
+  RaiseException('Quesma Shipper program files are still in use. Close remaining collectors and retry uninstall.');
+end;
+
 function NormalizedPath(const Value: String): String;
 begin
   Result := RemoveBackslashUnlessRoot(Trim(Value));
@@ -360,6 +380,7 @@ begin
   if CurUninstallStep = usUninstall then
   begin
     StopShipperForUninstall;
+    RemovePayloadForUninstall;
     RemoveFromPath;
   end;
 end;
