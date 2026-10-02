@@ -77,6 +77,14 @@ jobs:
       - name: Verify managed task session behavior
         shell: powershell
         run: ./src/packaging/windows/tests/Test-ManagedTask.ps1
+      - name: Upload desktop-session failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-task-session-diagnostics
+          path: ${{ runner.temp }}/quesma-rdp.png
+          if-no-files-found: ignore
+          retention-days: 3
 
   windows:
     runs-on: windows-latest
@@ -144,9 +152,29 @@ jobs:
             throw "scheduled task was not installed; direct postinstall exited $postinstallExit"
           }
           $uninstaller = "$env:LOCALAPPDATA\Programs\Quesma Shipper\unins000.exe"
+          $uninstallLog = "$env:RUNNER_TEMP\quesma-uninstall.log"
           $uninstallProcess = Start-Process -FilePath $uninstaller -Wait -PassThru -ArgumentList `
-            @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
-          if ($uninstallProcess.ExitCode -ne 0) { throw "uninstaller exited $($uninstallProcess.ExitCode)" }
+            @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=$uninstallLog")
+          if ($uninstallProcess.ExitCode -ne 0) {
+            if (Test-Path $uninstallLog) { Get-Content $uninstallLog }
+            throw "uninstaller exited $($uninstallProcess.ExitCode)"
+          }
+          $personalDir = Split-Path $uninstaller
+          $deadline = (Get-Date).AddSeconds(15)
+          do {
+            $remaining = @('quesma-shipper.exe', 'quesma-shipper-supervisor.exe', 'unins000.exe') |
+              Where-Object { Test-Path (Join-Path $personalDir $_) }
+            if (-not $remaining) { break }
+            Start-Sleep -Milliseconds 250
+          } while ((Get-Date) -lt $deadline)
+          if ($remaining) {
+            if (Test-Path $setupLog) { Get-Content $setupLog }
+            if (Test-Path $uninstallLog) { Get-Content $uninstallLog }
+            Get-ChildItem -LiteralPath $personalDir -Recurse | Format-List FullName, Length
+            Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like "$personalDir\*" } |
+              Format-List ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine
+            throw "Personal uninstall left program files behind: $remaining"
+          }
           schtasks /Query /TN $taskName 2>$null | Out-Null
           if ($LASTEXITCODE -eq 0) { throw "scheduled task survived uninstall" }
           $global:LASTEXITCODE = 0

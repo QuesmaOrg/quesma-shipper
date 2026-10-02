@@ -18,6 +18,7 @@ $testUser = $null
 $testSession = $null
 $terminalServerKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'
 $previousDeny = (Get-ItemProperty -LiteralPath $terminalServerKey).fDenyTSConnections
+$firewallRule = 'quesma-rdp-test-' + [guid]::NewGuid()
 try {
     New-Item -ItemType Directory -Path $temp | Out-Null
     $name = 'quesmatest' + [guid]::NewGuid().ToString('N').Substring(0, 10)
@@ -62,6 +63,8 @@ Start-Sleep -Seconds 90
     $task = $folder.RegisterTaskDefinition($taskName, $definition, 22, $null, $null, 4,
         'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GR;;;IU)')
     Set-ItemProperty -LiteralPath $terminalServerKey -Name fDenyTSConnections -Value 0
+    New-NetFirewallRule -Name $firewallRule -DisplayName $firewallRule -Direction Inbound -Action Allow `
+        -Protocol TCP -LocalPort 3389 -LocalAddress 127.0.0.1 -RemoteAddress 127.0.0.1 | Out-Null
     Start-Service TermService
     $testSession = Open-TestSession $name $plainPassword
     $deadline = (Get-Date).AddSeconds(30)
@@ -100,6 +103,7 @@ Start-Sleep -Seconds 90
     }
     Close-TestSession $testSession
     Set-ItemProperty -LiteralPath $terminalServerKey -Name fDenyTSConnections -Value $previousDeny
+    Remove-NetFirewallRule -Name $firewallRule -ErrorAction SilentlyContinue
     if ($testUser) {
         Remove-LocalUser -SID $testUser.SID
         Get-CimInstance Win32_UserProfile -Filter "SID='$($testUser.SID.Value)'" |

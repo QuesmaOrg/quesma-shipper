@@ -176,15 +176,9 @@ func runningFromManagedLocation() bool {
 }
 
 func ValidateUserUninstall() error {
-	if runningFromManagedLocation() {
-		return common.ErrSystemManaged
-	}
-	dir, err := registeredInstallDir()
+	dir, err := DefaultManagedInstallDir()
 	if err != nil {
 		return err
-	}
-	if dir == "" {
-		return nil
 	}
 	exe, err := common.CurrentExecutable()
 	if err != nil {

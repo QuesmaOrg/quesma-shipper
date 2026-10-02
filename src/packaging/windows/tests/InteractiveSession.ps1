@@ -69,6 +69,21 @@ function Open-TestSession([string]$Name, [string]$Password) {
         } while ((Get-Date) -lt $deadline)
         throw "No desktop session for the test user; RDP state=$($client.Connected), reason=$($client.ExtendedDisconnectReason)"
     } catch {
+        $bounds = [Windows.Forms.Screen]::PrimaryScreen.Bounds
+        $bitmap = New-Object Drawing.Bitmap($bounds.Width, $bounds.Height)
+        $graphics = [Drawing.Graphics]::FromImage($bitmap)
+        try {
+            $graphics.CopyFromScreen($bounds.Location, [Drawing.Point]::Empty, $bounds.Size)
+            $diagnosticDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
+            $bitmap.Save((Join-Path $diagnosticDir 'quesma-rdp.png'))
+        } finally { $graphics.Dispose(); $bitmap.Dispose() }
+        Get-NetTCPConnection -LocalPort 3389 -ErrorAction SilentlyContinue | Format-Table | Out-String | Write-Host
+        & "$env:SystemRoot\System32\query.exe" user
+        foreach ($log in @('Microsoft-Windows-TerminalServices-LocalSessionManager/Operational',
+            'Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational')) {
+            Get-WinEvent -LogName $log -MaxEvents 5 -ErrorAction SilentlyContinue |
+                Select-Object TimeCreated, Id, Message | Format-List | Out-String | Write-Host
+        }
         $form.Dispose()
         throw
     }

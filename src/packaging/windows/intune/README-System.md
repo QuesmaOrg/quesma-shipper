@@ -73,9 +73,11 @@ not move enrolled users to another organization. Use an explicit enrollment
 migration process when changing organizations.
 
 These values are readable by ordinary users. Intune packages and scripts are not
-secret stores. Use a grant with the scope, expiry, and enrollment limit appropriate
-to the deployment, and revoke or rotate it through the control plane. An expired grant prevents successful new enrollments; removing the policy stops
-new policy-driven enrollment attempts. Neither action revokes existing user credentials. Grant values are kept out of process arguments and script output.
+secret stores. Use an enrollment grant with an expiry appropriate to the deployment,
+and revoke or rotate it through the control plane. An expired grant prevents
+successful new enrollments; removing the policy stops new policy-driven enrollment
+attempts. Neither action revokes existing user credentials. Grant values are kept
+out of process arguments and script output.
 To remove the policy, deploy the same script with `-Remove` after withdrawing its
 installation assignment. This preserves enrollment and collected upload history.
 

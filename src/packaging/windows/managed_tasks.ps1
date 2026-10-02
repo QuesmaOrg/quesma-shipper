@@ -4,6 +4,7 @@ param(
     [string]$RecoveryFile
 )
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $taskName = 'Quesma Shipper Managed'
 $scheduler = New-Object -ComObject 'Schedule.Service'
 $scheduler.Connect()
@@ -38,7 +39,7 @@ function Assert-NoPersonalInstall {
             $personal = Join-Path $homePath 'AppData\Local\Programs\Quesma Shipper'
             if ((Test-Path -LiteralPath (Join-Path $personal 'quesma-shipper.exe')) -or
                 (Test-Path -LiteralPath (Join-Path $personal 'unins000.exe'))) {
-                throw 'A personal Quesma Shipper installation exists. Uninstall it without purging state before switching scope.'
+                throw "A personal Quesma Shipper installation exists in $personal. Uninstall it without purging state before switching scope."
             }
         }
     }
