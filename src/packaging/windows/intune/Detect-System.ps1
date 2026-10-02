@@ -12,6 +12,9 @@ function Get-SystemRegistration {
         $windows = $base.OpenSubKey('Software\Microsoft\Windows\CurrentVersion')
         try {
             if (-not $installation -or -not $windows) { return $null }
+            foreach ($name in @('InstallDir', 'Version')) {
+                if ($installation.GetValueKind($name) -ne [Microsoft.Win32.RegistryValueKind]::String) { return $null }
+            }
             return [pscustomobject]@{
                 Directory = [string]$installation.GetValue('InstallDir')
                 Version = [string]$installation.GetValue('Version')

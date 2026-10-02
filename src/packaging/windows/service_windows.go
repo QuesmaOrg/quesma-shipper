@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/sys/windows"
+
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
@@ -249,17 +251,33 @@ func SameProgram(a, b string) bool {
 func ProgramRemovalDeferred() bool { return true }
 
 func schtasks(args ...string) ([]byte, error) {
-	return exec.Command("schtasks.exe", args...).CombinedOutput()
+	return schtasksContext(context.Background(), args...)
 }
 
 func schtasksContext(ctx context.Context, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, "schtasks.exe", args...).CombinedOutput()
+	cmd, err := schtasksCommand(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return cmd.CombinedOutput()
 }
 
 // schtasksStdout keeps a machine-readable listing clear of the per-task warnings schtasks writes
 // to stderr when it meets a task it cannot read.
 func schtasksStdout(ctx context.Context, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, "schtasks.exe", args...).Output()
+	cmd, err := schtasksCommand(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return cmd.Output()
+}
+
+func schtasksCommand(ctx context.Context, args ...string) (*exec.Cmd, error) {
+	system, err := windows.GetSystemDirectory()
+	if err != nil {
+		return nil, err
+	}
+	return exec.CommandContext(ctx, filepath.Join(system, "schtasks.exe"), args...), nil
 }
 
 // taskExists enumerates all tasks after a targeted operation failed. A successful enumeration can

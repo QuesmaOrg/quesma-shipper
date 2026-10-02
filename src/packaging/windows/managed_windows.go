@@ -144,7 +144,8 @@ func ManagedExecutable() (string, error) {
 }
 
 func validateExistingManagedRegistry() error {
-	for _, path := range []string{`Software`, `Software\Quesma`, ManagedInstallKey} {
+	// Windows owns the Software hive's inheritance templates; validate the application-owned subtree.
+	for _, path := range []string{`Software\Quesma`, ManagedInstallKey} {
 		key, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.QUERY_VALUE|registry.WOW64_64KEY)
 		if errors.Is(err, registry.ErrNotExist) {
 			continue

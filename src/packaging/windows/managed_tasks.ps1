@@ -90,7 +90,7 @@ public static class QuesmaSessions {
             finally { [QuesmaSessions]::WTSFreeMemory($buffer) }
             if (-not $userName) { continue }
             try { $null = $Task.RunEx($null, 4, $session.Id, $null) }
-            catch { Write-Warning "Could not start Quesma Shipper in session $($session.Id); it will start at the next logon." }
+            catch { [Console]::Error.WriteLine("Could not start Quesma Shipper in session $($session.Id); it will start at the next logon.") }
         }
     } finally { [QuesmaSessions]::WTSFreeMemory($sessions) }
 }

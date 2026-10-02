@@ -3,11 +3,26 @@
 package windows
 
 import (
+	"errors"
 	"testing"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
+
+func TestManagedRegistryPreflightAcceptsWindowsDefaultParent(t *testing.T) {
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, `Software\Quesma`, registry.QUERY_VALUE|registry.WOW64_64KEY)
+	if err == nil {
+		key.Close()
+		t.Skip("read-only preflight test requires no existing Quesma registry subtree")
+	}
+	if !errors.Is(err, registry.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if err := validateExistingManagedRegistry(); err != nil {
+		t.Fatalf("fresh installation rejected the Windows registry defaults: %v", err)
+	}
+}
 
 func TestManagedProgramRequiresProtectedOwnersAndWriters(t *testing.T) {
 	for _, tc := range []struct {

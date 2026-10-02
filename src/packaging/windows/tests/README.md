@@ -4,16 +4,15 @@ Run these scripts only on a disposable Windows VM from an elevated shell. They
 register scheduled tasks and install or remove Quesma Shipper. Both support
 Windows PowerShell 5.1.
 
-`Test-ManagedTask.ps1` validates the task mechanism independently of the shipper:
-an administrator registers a `BUILTIN\Users` group task with an unrestricted logon
-trigger, then `RunEx` starts two parallel instances as a temporary standard user
-with a logon token in the current session. Each child reports its SID, user
-profile, session, and elevation. The test requires an ordinary token and rejects
-service-account identities. A separate account is necessary because hosted
-runners use the built-in Administrator, for which Windows ignores `RunLevel`.
-The prototype grants the test user execute access for `RunEx(AS_SELF)`. The real
-managed task grants ordinary users read access only; the installer test checks
-that restriction and starts it with administrator-controlled session targeting.
+`Test-ManagedTask.ps1` requires Windows Server and validates the task mechanism
+independently of the shipper. An administrator registers a `BUILTIN\Users` group
+task with an unrestricted logon trigger. A loopback RDP connection through the
+built-in Windows control creates a real desktop session for a temporary standard
+user. The test requires one logon-triggered child, then uses administrator
+`RunEx` to start a second child in that session. Both children must report the
+expected SID, profile, session, and ordinary token. The test restores the RDP
+enablement setting and removes the temporary account, session, profile, and task.
+Ordinary users receive read-only access to the task, matching production.
 
 `Test-ManagedSetup.ps1` takes two installers and their release versions:
 
@@ -33,8 +32,8 @@ checks Intune detection as SYSTEM, and checks that setup did not create shipper
 state in service-account profiles.
 
 The Windows CI jobs run both scripts and retain the existing personal-installer
-smoke test. Its one logged-in administrator session cannot establish all of the
-following behaviors. Validate these on enterprise Windows VMs before rollout:
+smoke test. These checks cannot establish all of the following behaviors.
+Validate these on enterprise Windows VMs before rollout:
 
 | Scenario | Expected result |
 | --- | --- |

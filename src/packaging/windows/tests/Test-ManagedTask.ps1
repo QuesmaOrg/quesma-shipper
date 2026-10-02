@@ -1,5 +1,6 @@
 # Prove a group task preserves the standard user's identity, profile, session, and ordinary token.
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'InteractiveSession.ps1')
 $sessionId = (Get-Process -Id $PID).SessionId
 if ($sessionId -le 0) { throw 'This test requires a logged-in Windows session, not session zero.' }
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -14,54 +15,24 @@ $scheduler.Connect()
 $folder = $scheduler.GetFolder('\')
 $task = $null
 $testUser = $null
-$holder = $null
+$testSession = $null
+$terminalServerKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'
+$previousDeny = (Get-ItemProperty -LiteralPath $terminalServerKey).fDenyTSConnections
 try {
     New-Item -ItemType Directory -Path $temp | Out-Null
     $name = 'quesmatest' + [guid]::NewGuid().ToString('N').Substring(0, 10)
-    $password = ConvertTo-SecureString ([guid]::NewGuid().ToString('N') + 'aA1!') -AsPlainText -Force
+    $plainPassword = [guid]::NewGuid().ToString('N') + 'aA1!'
+    $password = ConvertTo-SecureString $plainPassword -AsPlainText -Force
     $testUser = New-LocalUser -Name $name -Password $password -AccountNeverExpires -PasswordNeverExpires
     $users = Get-LocalGroup -SID 'S-1-5-32-545'
     if (-not (Get-LocalGroupMember -Group $users | Where-Object { $_.SID -eq $testUser.SID })) {
         Add-LocalGroupMember -Group $users -Member $testUser
     }
+    Add-LocalGroupMember -Group (Get-LocalGroup -SID 'S-1-5-32-555') -Member $testUser
     $acl = Get-Acl -LiteralPath $temp
     $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
         $testUser.SID, 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
     Set-Acl -LiteralPath $temp -AclObject $acl
-    $account = "$env:COMPUTERNAME\$name"
-    $credential = New-Object Management.Automation.PSCredential($account, $password)
-    $launchScript = Join-Path $temp 'launch.ps1'
-    @'
-param([string]$TaskName)
-$ErrorActionPreference = 'Stop'
-try {
-    $deadline = (Get-Date).AddSeconds(60)
-    while (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'start'))) {
-        if ((Get-Date) -ge $deadline) { throw 'Task registration did not complete.' }
-        Start-Sleep -Milliseconds 100
-    }
-    $scheduler = New-Object -ComObject 'Schedule.Service'
-    $scheduler.Connect()
-    $task = $scheduler.GetFolder('\').GetTask($TaskName)
-    $null = $task.RunEx($null, 1, 0, $null)
-    $null = $task.RunEx($null, 1, 0, $null)
-    Set-Content -LiteralPath (Join-Path $PSScriptRoot 'launch.result') -Value 'started'
-    Start-Sleep -Seconds 90
-} catch {
-    Set-Content -LiteralPath (Join-Path $PSScriptRoot 'launch.result') -Value $_.ToString()
-    exit 1
-}
-'@ | Set-Content -LiteralPath $launchScript -Encoding UTF8
-    # Hosted runners use the built-in Administrator, for which Windows ignores RunLevel.
-    $holder = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
-        -Credential $credential -LoadUserProfile -PassThru -WorkingDirectory $temp `
-        -ArgumentList ('-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $launchScript +
-            '" -TaskName "' + $taskName + '"')
-    if ($holder.HasExited -or $holder.SessionId -ne $sessionId) {
-        throw 'Could not establish a standard-user logon token in the interactive session.'
-    }
-    $profile = Get-ItemProperty -LiteralPath ("HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\" + $testUser.SID.Value)
-    $expectedProfile = [Environment]::ExpandEnvironmentVariables($profile.ProfileImagePath)
     $childScript = Join-Path $temp 'identity.ps1'
     @'
 $ErrorActionPreference = 'Stop'
@@ -88,33 +59,47 @@ Start-Sleep -Seconds 90
     $action = $definition.Actions.Create(0)
     $action.Path = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
     $action.Arguments = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $childScript + '"'
-    $task = $folder.RegisterTaskDefinition($taskName, $definition, 6, $null, $null, 4,
-        'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;IU)')
-    Set-Content -LiteralPath (Join-Path $temp 'start') -Value 'registered'
+    $task = $folder.RegisterTaskDefinition($taskName, $definition, 22, $null, $null, 4,
+        'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GR;;;IU)')
+    Set-ItemProperty -LiteralPath $terminalServerKey -Name fDenyTSConnections -Value 0
+    Start-Service TermService
+    $testSession = Open-TestSession $name $plainPassword
     $deadline = (Get-Date).AddSeconds(30)
     do {
+        [Windows.Forms.Application]::DoEvents()
+        $reports = @(Get-ChildItem -LiteralPath $temp -Filter '*.json')
+        if ($reports.Count -eq 1) { break }
+        Start-Sleep -Milliseconds 250
+    } while ((Get-Date) -lt $deadline)
+    if ($reports.Count -ne 1) { throw 'The group logon trigger did not start exactly one standard-user child.' }
+    $profile = Get-ItemProperty -LiteralPath ("HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\" + $testUser.SID.Value)
+    $expectedProfile = [Environment]::ExpandEnvironmentVariables($profile.ProfileImagePath)
+    $null = $task.RunEx($null, 4, $testSession.Id, $null)
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+        [Windows.Forms.Application]::DoEvents()
         $reports = @(Get-ChildItem -LiteralPath $temp -Filter '*.json')
         if ($reports.Count -eq 2) { break }
         Start-Sleep -Milliseconds 250
     } while ((Get-Date) -lt $deadline)
     if ($reports.Count -ne 2) {
-        $launchResult = Get-Content -LiteralPath (Join-Path $temp 'launch.result') -ErrorAction SilentlyContinue
-        throw "Expected two parallel task children, got $($reports.Count); task result=$($task.LastTaskResult); launcher=$launchResult"
+        throw "Expected two parallel task children, got $($reports.Count); task result=$($task.LastTaskResult)"
     }
     foreach ($reportFile in $reports) {
         $report = Get-Content -LiteralPath $reportFile.FullName -Raw | ConvertFrom-Json
         if ($report.SID -ne $testUser.SID.Value -or $report.SID -in @('S-1-5-18', 'S-1-5-19', 'S-1-5-20') -or
-            $report.Profile -ne $expectedProfile -or $report.Session -ne $sessionId -or $report.Elevated) {
+            $report.Profile -ne $expectedProfile -or $report.Session -ne $testSession.Id -or $report.Elevated) {
             throw "Task did not use the unelevated interactive user: $($report | ConvertTo-Json -Compress)"
         }
     }
-    Write-Output 'Passed: interactive group task, standard-user RunEx, parallel children, user SID/profile/session, and least privilege.'
+    Write-Output 'Passed: real standard-user logon trigger, administrator session-targeted RunEx, parallel children, user SID/profile/session, and least privilege.'
 } finally {
     if ($task) {
         $task.Stop(0)
         $folder.DeleteTask($taskName, 0)
     }
-    if ($holder -and -not $holder.HasExited) { Stop-Process -Id $holder.Id -Force }
+    Close-TestSession $testSession
+    Set-ItemProperty -LiteralPath $terminalServerKey -Name fDenyTSConnections -Value $previousDeny
     if ($testUser) {
         Remove-LocalUser -SID $testUser.SID
         Get-CimInstance Win32_UserProfile -Filter "SID='$($testUser.SID.Value)'" |

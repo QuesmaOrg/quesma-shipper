@@ -86,14 +86,18 @@ the machine PATH, and registers `\Quesma Shipper Managed`. Its logon trigger run
 `quesma-shipper-supervisor.exe --managed` as each interactive user, including users
 created after installation. The supervisor resolves each user's own log and state
 locations. Multiple user sessions can run concurrently; duplicate supervisors for
-one user are prevented.
+one user are prevented. Interactive users can inspect the shared task; administrators
+and SYSTEM own its startup and removal. Users retain their own pause/resume controls.
 
 MDM owns upgrades and removal. Automatic and explicit self-update are disabled for
 this installation. Deploy a new installer and change the required detection version
 together. Setup disables task launches, stops managed collectors before replacing
 files, and restores startup after installation. If an upgrade fails, setup attempts
 to restore the previous task's enabled state. Rerun the all-users installer when
-setup logs report that recovery failed. Interrupted uploads resume from user state.
+setup logs report that recovery failed. Recovery runs when setup exits normally
+after a failure or cancellation. Abrupt termination or power loss can leave the task
+disabled; rerun the all-users installer to repair it. Interrupted uploads resume from
+user state.
 
 The personal installer remains the default for a fresh interactive installation;
 `/CURRENTUSER` explicitly selects it for unattended deployment. Its existing AppId,

@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -108,6 +109,9 @@ func managedTaskAction(action, dir, recoveryFile string) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("managed installation %s: %s", strings.ToLower(action), commandError(err, out))
+	}
+	if len(out) != 0 {
+		fmt.Fprint(os.Stderr, string(out))
 	}
 	return nil
 }
