@@ -1,5 +1,5 @@
 # The commit gate for fleet-manager/, the control plane. Its own workflow rather than a job in
-# trajectory-shipper.yml: the two components share a repository and nothing else -- separate Go
+# quesma-shipper.yml: the two components share a repository and nothing else -- separate Go
 # modules, Makefiles and release lines -- so a failure here names the component it belongs to.
 name: fleet-manager-check
 

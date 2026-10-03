@@ -143,15 +143,17 @@ type SeenRecord struct {
 	LastSeenAt    time.Time  `json:"last_seen_at"`
 }
 
-// TagsRecord names an install for a human reader. It sits in the install's own root rather than
-// under control/ so whatever reads the objects can read the name beside them, and it is separate
-// from InstallRecord for the reason SeenRecord is: renaming a machine must not rewrite the record
-// that carries its device key and revocation status.
+// TagsRecord names an install for a human reader and carries what an administrator says about the
+// machine: inventory metadata such as an owner's email. It sits in the install's own root rather
+// than under control/ so whatever reads the objects can read the name beside them, and it is
+// separate from InstallRecord for the reason SeenRecord is: renaming a machine must not rewrite the
+// record that carries its device key and revocation status.
 type TagsRecord struct {
-	Schema    int       `json:"schema"`
-	InstallID string    `json:"install_id"`
-	Name      string    `json:"name,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Schema    int               `json:"schema"`
+	InstallID string            `json:"install_id"`
+	Name      string            `json:"name,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+	UpdatedAt time.Time         `json:"updated_at"`
 }
 
 type GrantRecord struct {

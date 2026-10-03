@@ -1,4 +1,4 @@
-name: trajectory-shipper
+name: Quesma Shipper
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
       - "scripts/**"
       - "VERSION"
       - "Makefile"
-      - ".github/workflows/trajectory-shipper.yml"
+      - ".github/workflows/quesma-shipper.yml"
   # Required checks must be reported for every PR. Filtering the entire workflow
   # leaves unmatched PRs permanently waiting for statuses that can never arrive.
   pull_request: {}

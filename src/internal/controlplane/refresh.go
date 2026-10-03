@@ -13,6 +13,9 @@ import (
 // Origin says where the remote layer in force came from.
 type Origin string
 
+// ErrConfigRejected identifies invalid remote configuration without exposing its contents to telemetry.
+var ErrConfigRejected = errors.New("backend: remote configuration rejected")
+
 const (
 	// OriginFetched is a fresh fetch.
 	OriginFetched Origin = "fetched"
@@ -33,6 +36,11 @@ type Remote struct {
 	// Doc is the served config. Nil when Origin is OriginNone.
 	Doc *config.Document
 
+	Effective *config.Effective
+
+	// FetchedAt anchors rejection alerts across restarts; zero means no readable cache.
+	FetchedAt time.Time
+
 	// Expired is true when a cached config past its expiry is in use; it does not stop collection.
 	Expired bool
 
@@ -50,11 +58,13 @@ type RefreshOptions struct {
 	// Offline skips the network and resolves from the cache: what the read-only verbs use, since
 	// `config show` must explain the config in force without a round-trip that changes it.
 	Offline bool
+
+	// Validate resolves a candidate with the local layers before it can replace the working cache.
+	Validate func(*config.Document) (*config.Effective, error)
 }
 
-// Refresh produces the remote layer for one run: a fetch that parses wins and is cached, and ANY
-// failure to obtain a config this client accepts falls back to the last one it did fetch, whose
-// expiry does not stop collection. A transcript missed before its source store's reaper runs is gone.
+// Refresh falls back to the last accepted remote layer when a fetch fails or is rejected.
+// Local configuration errors remain fatal; neither fallback nor expiry can repair them.
 func Refresh(ctx context.Context, o RefreshOptions) Remote {
 	if o.Enrollment == nil || o.Enrollment.Endpoint == "" {
 		return Remote{Origin: OriginNone}
@@ -65,6 +75,9 @@ func Refresh(ctx context.Context, o RefreshOptions) Remote {
 		fetched, err := fetch(ctx, o)
 		if err == nil {
 			return fetched
+		}
+		if localRejection(err) {
+			return Remote{Origin: OriginNone, Err: err}
 		}
 		fetchErr = err
 	} else {
@@ -77,31 +90,43 @@ func Refresh(ctx context.Context, o RefreshOptions) Remote {
 		return Remote{Origin: OriginNone, Err: unusableCache(fetchErr, err)}
 	}
 
-	// Reparsed on load: a cache that no longer parses is damage like any other unreadable file, so
-	// it degrades to local config instead of stopping the run.
+	// Older clients may have cached a document that parses but cannot resolve.
 	doc, err := config.ParseServedDocument(cached.Config)
+	var eff *config.Effective
+	if err == nil && o.Validate != nil {
+		eff, err = o.Validate(doc)
+		if localRejection(err) {
+			return Remote{Origin: OriginNone, Err: err}
+		}
+	}
 	if err != nil {
-		return Remote{Origin: OriginNone, Err: unusableCache(fetchErr, err)}
+		return Remote{Origin: OriginNone, FetchedAt: cached.FetchedAt,
+			Err: unusableCache(fetchErr, fmt.Errorf("%w: %w", ErrConfigRejected, err))}
 	}
 
 	return Remote{
-		Origin:  OriginCached,
-		Doc:     doc,
-		Expired: cached.Expired(o.Now),
-		Err:     fetchErr,
+		Origin:    OriginCached,
+		Doc:       doc,
+		Effective: eff,
+		FetchedAt: cached.FetchedAt,
+		Expired:   cached.Expired(o.Now),
+		Err:       fetchErr,
 	}
 }
 
-// unusableCache explains a run with neither a fresh config nor a usable cached one. Both halves:
-// a cache that no longer parses is a file to delete, unguessable from "backend unreachable".
-// Both errors are non-nil by construction: Refresh reaches the cache only after a fetch failure
-// (or the offline sentinel), and calls this only on a cache error.
+// Both causes survive so credential refusals and cached remote rejections remain distinguishable.
 func unusableCache(fetchErr, cacheErr error) error {
-	return fmt.Errorf("%w; the cached config is unusable (%v); collecting under local config only. "+
-		"Delete %s to clear it", fetchErr, cacheErr, CacheFile)
+	return fmt.Errorf("%w; cached remote layer in %s is invalid or unreadable (%w); "+
+		"collecting under local config only. Correct the remote configuration or cache read error",
+		fetchErr, CacheFile, cacheErr)
 }
 
-// fetch does one round-trip and caches what it gets.
+func localRejection(err error) bool {
+	var rejection *config.RejectionError
+	return errors.As(err, &rejection) && rejection.Layer != config.LayerRemote
+}
+
+// fetch caches only a candidate the caller can resolve.
 func fetch(ctx context.Context, o RefreshOptions) (Remote, error) {
 	deviceKey, err := o.Enrollment.PrivateKey()
 	if err != nil {
@@ -129,6 +154,17 @@ func fetch(ctx context.Context, o RefreshOptions) (Remote, error) {
 		return Remote{}, err
 	}
 
+	var eff *config.Effective
+	if o.Validate != nil {
+		eff, err = o.Validate(f.Doc)
+		if err != nil {
+			if localRejection(err) {
+				return Remote{}, err
+			}
+			return Remote{}, fmt.Errorf("%w: %w", ErrConfigRejected, err)
+		}
+	}
+
 	if err := SaveCache(o.StateDir, Cached{
 		Config:    f.Raw,
 		FetchedAt: o.Now,
@@ -138,8 +174,10 @@ func fetch(ctx context.Context, o RefreshOptions) (Remote, error) {
 	}
 
 	return Remote{
-		Origin: OriginFetched,
-		Doc:    f.Doc,
+		Origin:    OriginFetched,
+		Doc:       f.Doc,
+		Effective: eff,
+		FetchedAt: o.Now,
 		// A server handing out an already-expired config is misbehaving, and the flag says so.
 		Expired: !f.ExpiresAt.IsZero() && o.Now.After(f.ExpiresAt),
 	}, nil

@@ -27,10 +27,75 @@
       "toolUseId",
       "sourceToolUseID",
       "attachment.toolUseID",
-      "cwd"
+      "cwd",
+      "wireToolInputs.*",
+      "wireIngestContext.*"
     ],
     "codex": [
-      "payload.call_id"
+      "payload.call_id",
+      "payload.item.changes.*"
+    ],
+    "copilot": [
+      "id",
+      "parentId",
+      "data.toolCallId",
+      "data.toolRequests[].toolCallId",
+      "data.parentToolCallId",
+      "data.permissionRequest.toolCallId",
+      "data.promptRequest.toolCallId",
+      "data.apiCallId",
+      "data.message.apiCallId",
+      "data.messages[].apiCallId",
+      "data.modelCall.api_id",
+      "data.responseChunk.id",
+      "data.toolTelemetry.properties.hashedUrl",
+      "data.context.cwd",
+      "data.encryptedContent",
+      "data.reasoningOpaque",
+      "data.reasoningBlocks.blocks[].encrypted_content",
+      "data.reasoningBlocks.blocks[].id",
+      "v.requests[].requestId",
+      "v[].requestId",
+      "v.requests[].responseId",
+      "v[].responseId",
+      "v.requests[].response[].id",
+      "v[].response[].id",
+      "v[].id",
+      "v.requests[].response[].toolCallId",
+      "v[].response[].toolCallId",
+      "v[].toolCallId",
+      "v.metadata.toolCallRounds[].toolCalls[].id",
+      "v.metadata.toolCallRounds[].thinking.id",
+      "v.metadata.toolCallRounds[].thinking.encrypted",
+      "v.metadata.toolCallRounds[].statefulMarker",
+      "v[].result.metadata.toolCallRounds[].toolCalls[].id",
+      "v[].result.metadata.toolCallRounds[].thinking.id",
+      "v[].result.metadata.toolCallRounds[].thinking.encrypted",
+      "v[].result.metadata.toolCallRounds[].statefulMarker",
+      "v.requests[].result.metadata.toolCallRounds[].toolCalls[].id",
+      "v.requests[].result.metadata.toolCallRounds[].thinking.id",
+      "v.requests[].result.metadata.toolCallRounds[].thinking.encrypted",
+      "v.requests[].result.metadata.toolCallRounds[].statefulMarker",
+      "v.metadata.toolCallResults.*",
+      "v[].result.metadata.toolCallResults.*",
+      "v.requests[].result.metadata.toolCallResults.*",
+      "v[].invocationMessage.uris.*",
+      "v[].pastTenseMessage.uris.*",
+      "v[].response[].invocationMessage.uris.*",
+      "v[].response[].pastTenseMessage.uris.*",
+      "v.requests[].response[].invocationMessage.uris.*",
+      "v.requests[].response[].pastTenseMessage.uris.*",
+      "requests[].requestId",
+      "requests[].responseId",
+      "requests[].response[].id",
+      "requests[].response[].toolCallId",
+      "requests[].result.metadata.toolCallRounds[].toolCalls[].id",
+      "requests[].result.metadata.toolCallRounds[].thinking.id",
+      "requests[].result.metadata.toolCallRounds[].thinking.encrypted",
+      "requests[].result.metadata.toolCallRounds[].statefulMarker",
+      "requests[].result.metadata.toolCallResults.*",
+      "requests[].response[].invocationMessage.uris.*",
+      "requests[].response[].pastTenseMessage.uris.*"
     ],
     "cursor": [
       "composerId",
@@ -327,6 +392,43 @@
       },
       "scan_mode": "decoded_json_values",
       "note": "A run holding the username is skipped so a project slug survives, and a secret glued to the name used to ship with it. Each word of a skipped run is still scored on its own: a slug's words are too short to clear, a secret's is not."
+    },
+    {
+      "name": "copilot cli tool output keeps its call id and loses the token",
+      "family": "copilot",
+      "jsonl": true,
+      "before": "{\"type\":\"tool.execution_complete\",\"data\":{\"toolCallId\":\"call_r4KeDgjw3zhljpnAV4CdlZT0\",\"success\":true,\"result\":{\"content\":\"$ env\\nGITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789\\nHOME=/Users/jane\"}},\"id\":\"t2\",\"timestamp\":\"2026-09-28T11:14:30.000Z\",\"parentId\":\"t1\"}\n",
+      "after": "{\"type\":\"tool.execution_complete\",\"data\":{\"toolCallId\":\"call_r4KeDgjw3zhljpnAV4CdlZT0\",\"success\":true,\"result\":{\"content\":\"$ env\\nGITHUB_TOKEN=__REDACTED:github-pat__\\nHOME=/Users/__USER__\"}},\"id\":\"t2\",\"timestamp\":\"2026-09-28T11:14:30.000Z\",\"parentId\":\"t1\"}\n",
+      "rule_hits": {
+        "github-pat": 1,
+        "path-user": 1
+      },
+      "scan_mode": "decoded_json_values",
+      "note": "The Copilot CLI and Copilot Chat share this event schema. The tool call id is the join between tool.execution_start, tool.execution_complete and assistant.message toolRequests, so it is structurally exempt; the result is scrubbed like any tool output."
+    },
+    {
+      "name": "copilot chat tool results keep their tool call id keys",
+      "family": "copilot",
+      "jsonl": true,
+      "before": "{\"kind\":1,\"k\":[\"requests\",0,\"result\"],\"v\":{\"metadata\":{\"toolCallRounds\":[{\"toolCalls\":[{\"id\":\"call_r4KeDgjw3zhljpnAV4CdlZT0\",\"name\":\"run_in_terminal\"}]}],\"toolCallResults\":{\"call_r4KeDgjw3zhljpnAV4CdlZT0\":{\"content\":[{\"value\":\"AKIAIOSFODNN7EXAMPLE\"}]}}}}}\n",
+      "after": "{\"kind\":1,\"k\":[\"requests\",0,\"result\"],\"v\":{\"metadata\":{\"toolCallRounds\":[{\"toolCalls\":[{\"id\":\"call_r4KeDgjw3zhljpnAV4CdlZT0\",\"name\":\"run_in_terminal\"}]}],\"toolCallResults\":{\"call_r4KeDgjw3zhljpnAV4CdlZT0\":{\"content\":[{\"value\":\"__REDACTED:aws-access-key-id__\"}]}}}}}\n",
+      "rule_hits": {
+        "aws-access-key-id": 1
+      },
+      "scan_mode": "decoded_json_values",
+      "note": "VS Code keys tool results by tool call id, and the key is the only join to the call. A toolCallResults.* entry keeps the keys of that map away from the entropy backstop; the values under them are scrubbed as usual."
+    },
+    {
+      "name": "a token used as a copilot map key is still redacted",
+      "family": "copilot",
+      "jsonl": true,
+      "before": "{\"kind\":1,\"k\":[\"requests\",0,\"result\"],\"v\":{\"metadata\":{\"toolCallResults\":{\"ghp_abcdefghijklmnopqrstuvwxyz0123456789\":{\"content\":[]}}}}}\n",
+      "after": "{\"kind\":1,\"k\":[\"requests\",0,\"result\"],\"v\":{\"metadata\":{\"toolCallResults\":{\"__REDACTED:github-pat__\":{\"content\":[]}}}}}\n",
+      "rule_hits": {
+        "github-pat": 1
+      },
+      "scan_mode": "decoded_json_values",
+      "note": "A key exemption stands down only the entropy backstop: the pattern rules still run on every key, so a known token shape is removed even where ids are expected."
     }
   ]
 }

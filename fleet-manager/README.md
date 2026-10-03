@@ -11,8 +11,9 @@ The service exposes shipper endpoints, a bearer-authenticated administration API
 and a self-contained administration UI at `/admin/`. Static UI assets are embedded in the binary and
 make no third-party requests.
 
-To deploy it together with the shippers, on one machine or in your own cloud, follow
-[Get started](../README.md#get-started) in the repository README; once it runs,
+To deploy it in your own cloud, follow [Run Fleet Manager](../README.md#operator-set-up-fleet-manager-once) in the
+repository README, which is one script over the templates under [terraform/](terraform/); for
+everything on a laptop, [On one machine](#on-one-machine) below. Once it runs,
 [OPERATIONS.md](OPERATIONS.md) covers operating it. This README covers what the service does and
 how to work on it.
 
@@ -81,6 +82,68 @@ reach, which makes it the one that can prove an upload end to end.
 | `DEV_PORT` | `8099` | |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `localadmin` / `localadmin-secret` | ignored against real AWS |
 
+## On one machine
+
+MinIO, Fleet Manager and a shipper on a single machine, built from this repository, for evaluating
+the system, developing against it, or demonstrating it. Nothing connects to a cloud provider. You
+need Docker (for MinIO), Go 1.27 or newer, the AWS CLI, `age` and `age-keygen`, `openssl` and
+`curl`, on macOS or Linux.
+
+```sh
+git clone https://github.com/QuesmaOrg/quesma-shipper
+cd quesma-shipper
+make -C fleet-manager run
+```
+
+This is [Run it](#run-it) above: a MinIO container named `fleet-minio` on `127.0.0.1:9000`, the
+`trajectories` bucket with versioning on, an administrator credential, and Fleet Manager on port
+8099 in the foreground, printing the credential and the admin UI address. It listens on every
+interface over plain HTTP, so use a trusted network. Leave it running and continue in a second
+terminal. Create the organization and an invite as in
+[Operator: set up Fleet Manager](../README.md#operator-set-up-fleet-manager-once), steps 2, 4 and 5.
+
+**Pin the upload target before enrolling.** The local MinIO is plain HTTP and addressed path-style,
+and the shipper refuses an upload ticket that is not HTTPS unless told otherwise, in its user
+configuration, `~/.config/trajectory-shipper/config.yaml`:
+
+```yaml
+upload_targets:
+  - origin: http://127.0.0.1:9000
+    addressing: path-style
+    path_prefix: /trajectories
+    allow_loopback_http: true
+```
+
+Then build the shipper, install your build with its background service, and enroll, in one
+command; `--from` uses your binary instead of downloading a release, on Linux and on macOS:
+
+```sh
+make build
+sh src/packaging/linux/install.sh --from bin/quesma-shipper fmi2.… --server http://127.0.0.1:8099
+~/.local/bin/quesma-shipper doctor
+```
+
+`doctor` confirms enrollment, not an upload. The service ships on start and then every 15 minutes;
+list what it uploaded with the local store's credentials, then open one object with a custodian's
+identity:
+
+```sh
+export AWS_ACCESS_KEY_ID=localadmin AWS_SECRET_ACCESS_KEY=localadmin-secret AWS_REGION=us-east-1
+aws s3 ls --recursive --endpoint-url http://127.0.0.1:9000 s3://trajectories/v1/organization=acme/install=
+aws s3 cp --endpoint-url http://127.0.0.1:9000 "s3://trajectories/<key from the listing>" object.age
+age -d -i acme-security.agekey object.age | zstd -d | tar -t     # manifest.json, payload
+```
+
+When you are done, remove the shipper and its service first, so it stops trying to upload, then
+the pin, then the control plane and its storage:
+
+```sh
+~/.local/bin/quesma-shipper uninstall --purge     # --purge also deletes enrollment and local state
+rm ~/.config/trajectory-shipper/config.yaml        # the pin, if nothing else is in the file
+docker rm -f fleet-minio                           # after Ctrl-C in the Fleet Manager terminal
+rm -rf fleet-manager/data/
+```
+
 ## Executable mode
 
 Run the service explicitly:
@@ -146,37 +209,97 @@ start. Turning it off removes the recipient from future configurations and makes
 dashboards, and dependent features unavailable for those uploads; objects already sealed to it stay
 openable by it.
 
-Deployment runbooks:
-
-- [Google Cloud](terraform/gcp/README.md)
-- [AWS](terraform/aws/README.md)
+The templates, for running them by hand: [AWS](terraform/aws/README.md) and
+[Google Cloud](terraform/gcp/README.md).
 
 ## Install names
 
 An install id is a UUID baked into every object key, and nothing a shipper uploads says who holds
-the machine. The administration UI therefore carries a name per install, stored as
+the machine. The administration UI carries a name and optional administrator-managed metadata per install, stored as
 
 ```
 v1/organization=<org>/install=<install-id>/tags.json
 ```
 
 ```json
-{"schema": 1, "install_id": "…", "name": "Rafal's laptop", "updated_at": "…"}
+{"schema": 1, "install_id": "…", "name": "Rafal's laptop", "metadata": {"email": "rafal@example.com", "mdm": "jamf"}, "updated_at": "…"}
 ```
 
 It sits in the install's own root, beside the objects it names, so a tool walking the bucket can
 resolve an id without asking this service or holding a database credential. That is the whole
 reason it is not another record under `control/`.
 
-`GET /v1/admin/orgs/{org}/installs/tags` returns the fleet's names, read the way the seen records
-are: one request, fanned out over the installs list, off the critical path so the table renders
-first. `PUT /v1/admin/orgs/{org}/installs/{id}/tags` sets one, and an empty name clears it back to
-the id. A revoked install can still be named — the objects it already wrote still want a label.
+`GET /v1/admin/orgs/{org}/installs/tags` returns every existing tags record, read the way the seen
+records are: one request, fanned out over the installs list, off the critical path so the table
+renders first. Before metadata, the list held only named installs; now a record may carry metadata
+and no name, so `name` is optional and a client must not assume a listed install has one.
+`PUT /v1/admin/orgs/{org}/installs/{id}/tags` sets one, and an empty name clears it back to the id.
+Send `{"name":"Rafal's laptop","if_missing":true}` to fill a missing name while preserving a custom
+name atomically. A revoked install can still be named — the objects it already wrote still want a
+label.
+
+### Metadata and MDM inventory
+
+Use **Installs → Metadata** to add, edit, or remove fields. Only administrator credentials may
+write these fields; shipper and reporter credentials cannot. Metadata has at most 16 keys matching
+`^[a-z][a-z0-9_]{0,31}$`; values are strings of at most 256 Unicode characters without control
+characters. `email`, `department`, and `mdm` are useful conventions, not reserved fields.
+
+`PATCH /v1/admin/orgs/{org}/installs/{id}/metadata` accepts a partial update:
+
+```json
+{"metadata":{"email":"rafal@example.com","department":"Engineering","old_field":null}}
+```
+
+A string sets one key and `null` removes it; omitted keys stay intact. Naming and metadata updates
+use conditional writes with retries, preserving concurrent changes to other fields. Conflicting
+edits to the same field follow the order of successful writes. Clearing all fields retains the
+existing tags record. Identity records and shipper protocol messages remain separate.
+
+Use **Import MDM inventory** to upload or paste CSV, with `hostname` first and metadata keys as the
+remaining headers. Up to 1000 rows and 1 MiB are accepted. Quote CSV fields containing commas:
+
+```csv
+hostname,email,department,mdm
+Rafal-MacBook,rafal@example.com,Engineering,jamf
+```
+
+The API equivalent is `POST /v1/admin/orgs/{org}/installs/metadata/import`:
+
+```json
+{"rows":[{"hostname":"Rafal-MacBook","metadata":{"email":"rafal@example.com","department":"Engineering","mdm":"jamf"}}]}
+```
+
+Imports merge the supplied keys. A row is matched to installs of the selected organization by
+hostname, compared case-insensitively on the first DNS label: a shipper enrolls with what
+`os.Hostname()` reports, which on a Mac is the Bonjour name (`Alices-MacBook.local`) and on a
+managed network can be a full DNS name, while an MDM export carries the computer name as the
+device manager kept it (`alices-macbook`). A row imports automatically only when exactly one install
+matches and the inventory contains one row for that hostname; two machines whose names fold to the
+same key are ambiguous, never guessed. Pending and revoked identities count as matches, so a
+replaced install or several users sharing a hostname cannot silently select an identity. The
+response contains `results`, each with its one-based `row`, `hostname`, `status` (`imported`, `unmatched`, `ambiguous`, or
+`error`), and optional `install_id`, matching `candidates`, and `message`.
+
+The UI reports each result and provides install selectors for unresolved rows. Choose distinct
+installs and click **Apply selected rows**, or leave a row unselected to skip it. The API supports the
+same manual choice by including `install_id` in a resubmitted row; that ID must belong to the
+organization. Multiple rows targeting the same install in a request are reported as ambiguous.
+Imported names and unrelated metadata are retained. An import is not a transaction across installs:
+only retry rows that did not succeed. Invalid row data is rejected before any writes; storage errors
+are reported per row.
+
+Existing tags without metadata remain valid. Older fleet-manager releases use a strict tags decoder
+and cannot read records containing metadata; upgrade all replicas before importing and keep this in
+mind when rolling back.
 
 The read shares a grant with upload deduplication, which HEADs mirror objects for their
 `source-hash` and `shipped-hash`: `InstallRead` on AWS and the `data` role on GCP cover the whole
 install prefix, because S3 and GCS authorize a HEAD as a full read. The runtime can therefore
-fetch every sealed payload; it holds no age identity, so it cannot open one.
+fetch every sealed payload; it holds no age identity, so it cannot open one. Unlike sealed payloads,
+`tags.json` carries readable personal data such as an owner's email, and whoever holds the read (an
+organization's own tooling, ingest-etl, and Quesma where an organization has granted it the read)
+reads that too. Put into metadata what you are content for every holder of that grant to see.
 
 ## Install telemetry
 

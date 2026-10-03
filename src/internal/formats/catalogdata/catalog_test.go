@@ -130,7 +130,7 @@ sources:
 	}
 }
 
-// SQLite is enricher input only: no catalog entry may name a database as a shipping source.
+// Database input patterns are allowed only for the dedicated JSONL session exporters.
 func TestNoDatabaseShippingSources(t *testing.T) {
 	files, err := catalogdata.Files()
 	if err != nil {
@@ -148,6 +148,7 @@ func TestNoDatabaseShippingSources(t *testing.T) {
 			Sources []struct {
 				ID      string   `yaml:"id"`
 				Gather  string   `yaml:"gather"`
+				Emit    string   `yaml:"emit"`
 				Include []string `yaml:"include"`
 			} `yaml:"sources"`
 		}
@@ -160,9 +161,19 @@ func TestNoDatabaseShippingSources(t *testing.T) {
 					t.Errorf("%s/%s: gather %q is not a primitive — SQLite is enricher input only", name, s.ID, b)
 				}
 			}
+			sessionExport := s.Gather == "sidecar" && ((s.ID == "opencode-sessions" && s.Emit == "opencode_sessions") || (s.ID == "hermes-sessions" && s.Emit == "hermes_sessions"))
+			if sessionExport {
+				want := []string{"opencode.db"}
+				if s.ID == "hermes-sessions" {
+					want = []string{"state.db", "profiles/*/state.db"}
+				}
+				if strings.Join(s.Include, ",") != strings.Join(want, ",") {
+					t.Errorf("%s: unexpected database input scope %v", s.ID, s.Include)
+				}
+			}
 			for _, g := range s.Include {
 				for _, ext := range dbGlobs {
-					if strings.Contains(g, ext) {
+					if strings.Contains(g, ext) && !sessionExport {
 						t.Errorf("%s/%s: include %q would ship database bytes; no rows ship", name, s.ID, g)
 					}
 				}

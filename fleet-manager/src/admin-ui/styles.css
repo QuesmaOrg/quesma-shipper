@@ -1365,3 +1365,21 @@ dialog label {
     transition-duration: 0.01ms !important;
   }
 }
+
+#metadata-dialog, #inventory-dialog {
+  width: min(1000px, calc(100vw - 32px));
+  max-width: 1000px;
+}
+
+.metadata-field {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(140px, 2fr) auto;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: end;
+}
+
+#inventory-results { margin-top: 24px; }
+#inventory-results td { white-space: normal; min-width: 120px; }
+#inventory-results select { max-width: 340px; }
+#metadata-error, #inventory-error { color: var(--vermilion-deep); }

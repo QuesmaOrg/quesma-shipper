@@ -1,10 +1,10 @@
-# Releases for the trajectory shipper: every push to main that touches the shipper publishes one
+# Releases for Quesma Shipper: every push to main that touches the shipper publishes one
 # through TUF in R2, then announces it on GitHub.
 #
 # VERSION is the reviewed release line. The script appends <commit-count>.<hash>, keeping builds
 # within that line ordered and carrying provenance that buildinfo verifies before trusting.
 
-name: trajectory-shipper-release
+name: Quesma Shipper Release
 
 on:
   push:
@@ -16,7 +16,7 @@ on:
       - "scripts/release-version.sh"
       - "VERSION"
       - "Makefile"
-      - ".github/workflows/trajectory-shipper-release.yml"
+      - ".github/workflows/quesma-shipper-release.yml"
   schedule:
     # Refresh short-lived TUF metadata even when no shipper release was published.
     - cron: "17 3 * * *"

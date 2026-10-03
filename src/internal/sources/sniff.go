@@ -78,6 +78,15 @@ func versionFrom(rec map[string]json.RawMessage) string {
 			return versionFrom(nested)
 		}
 	}
+	// Copilot names its own under data, beside an integer schema version.
+	if raw, ok := rec["data"]; ok {
+		var nested struct {
+			CopilotVersion string `json:"copilotVersion"`
+		}
+		if err := json.Unmarshal(raw, &nested); err == nil {
+			return nested.CopilotVersion
+		}
+	}
 	return ""
 }
 

@@ -142,6 +142,26 @@ func TestMatchReportsTheFirstPatternInListOrder(t *testing.T) {
 		{"~/.codex/auth.json", "~/.codex/auth.json"},
 		{"~/.config/opencode/auth.json", "~/.config/opencode/auth.json"},
 		{"~/.local/share/opencode/auth.json", "~/.local/share/opencode/auth.json"},
+		{"~/.copilot/config.json", "~/.copilot/config.json"},
+		{"~/.copilot/mcp-config.json", "~/.copilot/mcp-config*"},
+		{"~/.copilot/mcp-config/servers.json", "~/.copilot/mcp-config*/**"},
+		{"~/.copilot/mcp-oauth-config.json", "~/.copilot/mcp-oauth-config*"},
+		{"~/.copilot/mcp-oauth-config/github.json", "~/.copilot/mcp-oauth-config*/**"},
+		{"~/.copilot/mcp-secrets/github/token", "~/.copilot/mcp-secrets/**"},
+		{"~/.copilot/mcp-secrets", "~/.copilot/mcp-secrets/**"},
+		{"~/.copilot/ide/20d3f075-702b-4422-ac5a-55509cf3d337.lock", "~/.copilot/ide/**"},
+		{"~/.copilot/session-state/s1/events.jsonl", ""},
+		{"~/.copilot/session-state/s1/files/config.json", ""},
+		{"~/Library/Application Support/Code/User/globalStorage/state.vscdb", "**/Code/User/globalStorage/state.vscdb*"},
+		{"~/.config/Code/User/globalStorage/state.vscdb.backup", "**/Code/User/globalStorage/state.vscdb*"},
+		{"~/Library/Application Support/Code/User/globalStorage/emptyWindowChatSessions/s1.jsonl", ""},
+		{"~/Library/Application Support/Code/User/workspaceStorage/h1/chatSessions/s1.jsonl", ""},
+		{"~/.pi/agent/auth.json", "**/auth.json"},
+		{"~/custom/credentials.json", "**/credentials.json"},
+		{"~/custom/.credentials.json", "**/.credentials.json"},
+		{"~/.pi/agent/models.json", "~/.pi/agent/models.json"},
+		{"~/.hermes/config.yaml", "~/.hermes/config.yaml"},
+		{"~/.hermes/profiles/test/config.yaml", "~/.hermes/profiles/*/config.yaml"},
 		// Basenames, anywhere, and their near misses.
 		{"~/proj/.env", "**/.env"},
 		{"~/proj/.envy", ""},
@@ -179,6 +199,15 @@ func TestMatchReportsTheFirstPatternInListOrder(t *testing.T) {
 			row{"$APPDATA/GitHub CLI/hosts.yml", "$APPDATA/GitHub CLI/**"})
 	}
 
+	for _, name := range []string{"PI_CODING_AGENT_DIR", "HERMES_HOME"} {
+		if v := os.Getenv(name); v != "" {
+			file := "config.yaml"
+			if name == "PI_CODING_AGENT_DIR" {
+				file = "models.json"
+			}
+			corpus = append(corpus, row{v + "/" + file, "$" + name + "/" + file})
+		}
+	}
 	exp := func(s string) string {
 		if s == "" {
 			return ""

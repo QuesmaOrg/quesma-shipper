@@ -50,6 +50,35 @@ var CompiledDeny = []string{
 	"~/.codex/auth.json",
 	"~/.config/opencode/auth.json",
 	"~/.local/share/opencode/auth.json",
+
+	// Copilot CLI: config.json can hold the OAuth token (storeTokenPlaintext), the MCP files hold
+	// server secrets and OAuth grants, mcp-secrets/ is the fallback store for MCP secrets, and
+	// each ide/*.lock carries the IDE bridge's Authorization header.
+	"~/.copilot/config.json",
+	"~/.copilot/mcp-config*",
+	"~/.copilot/mcp-config*/**",
+	"~/.copilot/mcp-oauth-config*",
+	"~/.copilot/mcp-oauth-config*/**",
+	"~/.copilot/mcp-secrets/**",
+	"~/.copilot/ide/**",
+	"$COPILOT_HOME/config.json",
+	"$COPILOT_HOME/mcp-config*",
+	"$COPILOT_HOME/mcp-config*/**",
+	"$COPILOT_HOME/mcp-oauth-config*",
+	"$COPILOT_HOME/mcp-oauth-config*/**",
+	"$COPILOT_HOME/mcp-secrets/**",
+	"$COPILOT_HOME/ide/**",
+
+	// VS Code secret storage, which holds the GitHub session Copilot Chat signs in with.
+	"**/Code/User/globalStorage/state.vscdb*",
+	"**/auth.json",
+	"**/credentials.json",
+	"**/.credentials.json",
+	"~/.pi/agent/models.json",
+	"$PI_CODING_AGENT_DIR/models.json",
+	"~/.hermes/config.yaml",
+	"$HERMES_HOME/config.yaml",
+	"~/.hermes/profiles/*/config.yaml",
 }
 
 type List struct {

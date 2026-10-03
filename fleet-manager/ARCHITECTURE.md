@@ -40,12 +40,16 @@ testable against an in-memory store and what makes a fourth provider a new file 
 change to the service.
 
 **The service never reads a trajectory.** It has no decrypt path, and it holds no identity that
-could decrypt one. Below `install=` it reads `tags.json`, the human name for an install, and the
-metadata of mirror objects, which the upload deduplication probe HEADs for their `source-hash`
-and `shipped-hash`: an object is already present only when both match, so one scrubbed under
-older rules is uploaded again as a new version. S3 and GCS authorize that HEAD as a full read, so
-the templates grant read on the whole prefix: the runtime can fetch every sealed payload, and still
-cannot open one.
+could decrypt one. Below `install=` it reads `tags.json`, the install's name and administrator-managed
+inventory metadata, and the metadata of mirror objects, which the upload deduplication probe HEADs
+for their `source-hash` and `shipped-hash`: an object is already present only when both match, so
+one scrubbed under older rules is uploaded again as a new version. S3 and GCS authorize that HEAD
+as a full read, so the templates grant read on the whole prefix: the runtime can fetch every sealed
+payload, and still cannot open one.
+Unlike sealed payloads, `tags.json` carries readable personal data such as an owner's email.
+Everyone with that grant reads it, including Quesma where an organization has granted Quesma the
+read; ingest-etl copies the object into the lake verbatim. Widening what `tags.json` holds is
+widening what that grant exposes, and gets the same confirmation a grant change does.
 
 **There is no delete.** No route deletes an object, and no organization can be removed. GCS is
 granted `storage.objects.delete` only because replacing object bytes there requires
@@ -59,8 +63,8 @@ organization cannot be created in a bucket without object versioning.
 **Disposable records are unconditional, and never fail a request.** `seen/` uses `Put`, is tagged
 `lifecycle=ephemeral` so its superseded versions can be expired, and collapses repeated check-ins
 within a minute into one write. A failed write is logged and dropped. The hot path must never
-rewrite a security record. `tags.json`, the install's name, is off the hot path but written like a
-control record: conditionally, and an admin sees a failed write.
+rewrite a security record. Administrator-managed `tags.json` uses conditional writes and retries
+against the latest record so renaming and metadata edits preserve each other.
 
 **The ticket contract is closed.** A presigned upload ticket may carry `x-amz-tagging` and
 `x-amz-meta-*` and nothing else; `s3TicketHeaders` in `src/aws.go` refuses any other signed header

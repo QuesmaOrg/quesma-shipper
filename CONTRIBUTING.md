@@ -36,6 +36,74 @@ same branch. Put a larger follow-up in a stacked pull request.
 In the description, state what changed and why. Give a concrete example of the behaviour before
 and after. Include a binary-size or performance diff when the change can affect either.
 
+## Build, installers and releases
+
+```sh
+make build       # bin/quesma-shipper
+make test        # unit suite and local end-to-end tests
+make race        # the same under the race detector
+make check       # the commit gate: fmt, vet, version, dead code, licenses, race
+make perf-smoke  # PR-sized performance gates, needs Docker
+make perf        # full performance suite, needs Docker
+make help        # every target
+```
+
+CI runs `make check` and `make perf-smoke`. `make perf` runs the full performance tier against a
+local MinIO and Toxiproxy. Both perf targets need Docker and are skipped without it. Tests that run
+the shipper against a live Fleet Manager are not part of this repository yet.
+
+To test the Linux installer and the background service with a local build, `make build` and then
+`sh src/packaging/linux/install.sh --from bin/quesma-shipper`; it installs into `~/.local/bin` for
+your user, so do not run it as root. `make install` puts the binary in GOBIN instead, with no
+service. Neither self-updates: development builds report their commit and never fetch a release.
+
+Installers come from the same tree. `make macos-pkg RELEASE_VERSION=<version>` builds the macOS
+package, on macOS only, and `make dist RELEASE_VERSION=<version>` cross-compiles both Windows
+binaries. On Windows with Inno Setup installed:
+
+```powershell
+src/packaging/windows/build-setup.ps1 -ReleaseVersion <version> -Architecture amd64 `
+  -BinaryPath <binary> -SupervisorPath <supervisor-binary> -OutputDir bin/dist
+```
+
+`VERSION` contains the reviewed `MAJOR.MINOR.PATCH` release line. Change it only to start a new
+line. `make version-check` validates it. Release builds are stamped
+`<VERSION>-<commit count>.<short sha>` by `scripts/release-version.sh`; `make release-version`
+prints the stamp.
+
+A push to `main` that touches the shipper builds six platform binaries and the macOS package, signs
+TUF metadata, and publishes to `https://updates.quesma.dev`; the public repository and the stable
+download endpoints are described in [RELEASE_DOWNLOADS.md](RELEASE_DOWNLOADS.md). It then creates
+a [GitHub release](https://github.com/QuesmaOrg/quesma-shipper/releases) linking the stable
+downloads. A maintainer approves each publication. Each release also carries a `quesma-shipper.rb`
+cask pinned to the published macOS binaries, which the
+[Homebrew tap](https://github.com/QuesmaOrg/homebrew-tap) imports hourly or on a manual workflow
+run; see [Homebrew packaging](src/packaging/homebrew/README.md). A push to `main` that touches
+`fleet-manager/` publishes `quesma/fleet-manager:<sha>` and `:latest` to Docker Hub, which the
+deployment templates pull.
+
+The dependency notices ship inside the binaries: `quesma-shipper licenses` prints them, and they
+are kept in `src/internal/legal/third_party/` with an inventory in `licenses.csv` that covers
+Linux, macOS and Windows builds. `make licenses` regenerates them after a dependency change, and
+`make -C fleet-manager licenses` does the same for `fleet-manager/third_party/`.
+
+Repository layout:
+
+```
+src/           Go module root
+  cmd/quesma-shipper/   main
+  app/           composes a run
+  internal/      pipeline stages, config, control-plane client, platform floor
+  packaging/     install, service, and update mechanics per OS
+  internal/legal embedded LICENSE, NOTICE, and third-party license texts
+  e2e/           hermetic end-to-end and golden tests
+Makefile       repository-level build and test entry points
+fleet-manager/ the control plane: its own Go module, Makefile, VERSION, NOTICE and third_party/
+  src/           the service and its embedded administration UI
+  terraform/     deployment templates for AWS and Google Cloud
+  deploy.sh      applies a template into a cloud account without a clone
+```
+
 ## Design rules
 
 [CONSTITUTION.md](CONSTITUTION.md) is the design authority. A change that conflicts with an

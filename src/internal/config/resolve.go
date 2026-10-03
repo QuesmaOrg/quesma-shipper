@@ -23,7 +23,7 @@ import (
 // ResolvedSource is sources.Resolved, aliased because this is the package that produces one.
 type ResolvedSource = sources.Resolved
 
-// Effective is the resolved configuration: the compiled ceiling, narrowed by every config layer in precedence order.
+// Effective is the resolved configuration after applying layers in precedence order.
 type Effective struct {
 	ConfigVersion int
 
@@ -487,22 +487,10 @@ func checkEncryption(eff *Effective) error {
 
 // resolveRoots expands each source's root candidates, then applies the deny list to the symlink-resolved path and require_subdir.
 func resolveRoots(eff *Effective, in Input) error {
-	compiled := in.Catalog
-
 	for i := range eff.Sources {
 		src := &eff.Sources[i]
 		if !src.Enabled {
 			continue
-		}
-
-		spec, _ := compiled.Source(src.ID)
-		rootsField := "sources." + src.ID + ".roots"
-
-		// The scope ceiling: a root must be one the compiled catalog declared for this source.
-		for _, candidate := range src.Roots {
-			if !slices.Contains(spec.Roots, candidate) {
-				return eff.reject(rootsField, "%q is outside the compiled scope ceiling %v: a new root requires a release", candidate, spec.Roots)
-			}
 		}
 
 		root, reasons, rej := pickRoot(eff, src, in.Env)
@@ -515,6 +503,20 @@ func resolveRoots(eff *Effective, in Input) error {
 		}
 	}
 	return nil
+}
+
+// layerIncludes are the include globs a config layer set that the compiled catalog does not have.
+// Only those are checked against files on disk: a compiled glob over names the agent chooses
+// (plans, notes, session files) would otherwise let one file named .env reject the whole config,
+// and discovery still skips each denied file it reaches.
+func layerIncludes(eff *Effective, src *ResolvedSource) []string {
+	if eff.Catalog == nil {
+		return src.Include
+	}
+	spec, _ := eff.Catalog.Source(src.ID)
+	return slices.DeleteFunc(slices.Clone(src.Include), func(glob string) bool {
+		return slices.Contains(spec.Include, glob)
+	})
 }
 
 // pickRoot returns the first candidate that expands, exists and satisfies require_subdir, or the
@@ -555,7 +557,7 @@ func pickRoot(eff *Effective, src *ResolvedSource, env sources.Env) (string, []s
 			reasons = append(reasons, err.Error())
 			continue
 		}
-		if err := eff.Deny.CheckIncludes(expanded, src.Include); err != nil {
+		if err := eff.Deny.CheckIncludes(expanded, layerIncludes(eff, src)); err != nil {
 			return "", reasons, eff.reject("sources."+src.ID+".include", "%v", err)
 		}
 

@@ -487,7 +487,11 @@ func controlPlaneRows(enr *controlplane.Enrollment, enrErr error,
 		return nil
 	}
 	var rows []Row
-	if remote.Err != nil {
+	if errors.Is(remote.Err, controlplane.ErrConfigRejected) {
+		rows = append(rows, Row{Sev: SevWarn, Label: "server", Brief: "remote configuration rejected",
+			Detail: fmt.Sprintf("remote configuration refused: %v", remote.Err),
+			Fix:    "correct the remote configuration; collection continues using previous settings or local defaults"})
+	} else if remote.Err != nil {
 		rows = append(rows, Row{Sev: SevWarn, Label: "server", Brief: "server unreachable",
 			Detail: fmt.Sprintf("unreachable, running on cached settings: %v", remote.Err),
 			Fix:    "collecting continues, settings changes wait until it answers"})

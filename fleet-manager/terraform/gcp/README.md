@@ -1,147 +1,105 @@
-# Deploy fleet manager on Google Cloud
+# Fleet Manager on Google Cloud
 
-This guide deploys one multi-tenant fleet manager and its storage bucket, creates an
-organization, and enrolls the first shipper. Run the commands from this directory. It is the Google
-Cloud counterpart of [Run it in your own cloud](../../../README.md#run-it-in-your-own-cloud), which
-sets out what to decide first and the whole sequence around it.
+This template is what [`deploy.sh gcp`](../../deploy.sh) applies in your project. Run it by hand
+when you want an image from your own registry, Terraform state kept somewhere other than a
+directory on a laptop, or a change to the template. The steps around it, deciding the recipients,
+creating the organization and enrolling the shippers, are
+[Run Fleet Manager](../../../README.md#operator-set-up-fleet-manager-once) in the repository README.
 
-## Before you begin
+## What it creates
 
-You need:
+- The IAM, IAM Credentials, Cloud Run and Cloud Storage APIs, enabled in the project.
+- A Cloud Storage bucket with versioning on, uniform bucket-level access and public-access
+  prevention enforced. GCS has no tag-based lifecycle condition, so superseded check-in records
+  accumulate; expire them with an out-of-band job if that matters for the fleet's size.
+- A runtime service account with custom roles bound by condition: read, write and delete below
+  every organization's `control/` prefix; create, delete and read below `install=` (read only to
+  name installs and to deduplicate uploads; it can fetch ciphertext, never decrypt it); read of the
+  two credential digests; and `signBlob` on itself, because GCS presigned URLs are signed through
+  the IAM API. Delete is included because GCS requires delete-plus-create to replace object bytes;
+  versioning preserves the displaced version.
+- The administrator and reporter credentials, as random values whose SHA-256 digests are written to
+  the bucket. Only the digests leave Terraform; the values are sensitive outputs.
+- A publicly invocable Cloud Run service. Shippers authenticate at the application layer after
+  enrollment, so the organization policy must permit
+  [public invocation](https://cloud.google.com/run/docs/authenticating/public).
 
-- a Google Cloud project with billing enabled;
-- permission to enable APIs and create Cloud Run, Cloud Storage, service account,
-  IAM role, and IAM policy resources in that project;
-- [Terraform](https://developer.hashicorp.com/terraform/install) 1.5 or later,
-  the [`gcloud` CLI](https://cloud.google.com/sdk/docs/install),
-  [`age`](https://age-encryption.org/) (for `age-keygen`), and `curl`; and
-- an organization policy that permits
-  [public invocation](https://cloud.google.com/run/docs/authenticating/public) of
-  the Cloud Run service; shippers authenticate at the application layer after
-  enrollment.
+`../../src/terraform_test.go` pins what this template may grant.
 
-## 1. Authenticate and select the deployment
+## Run it by hand
 
-Set these deployment values.
-
-```sh
-export PROJECT_ID='your-gcp-project-id'
-export REGION='europe-central2'
-
-gcloud auth login
-gcloud auth application-default login
-gcloud config set project "$PROJECT_ID"
-```
-
-Terraform uses Application Default Credentials. Confirm
-that the selected account and project are correct before continuing:
-
-```sh
-gcloud auth list --filter=status:ACTIVE
-gcloud config get-value project
-```
-
-## 2. Deploy
+You need a project with billing enabled and permission to enable APIs and create Cloud Run, Cloud
+Storage, service account, IAM role and IAM policy resources in it; Terraform 1.5 or later, or
+OpenTofu; and credentials Terraform's Google provider can use, for example Application Default
+Credentials from `gcloud auth application-default login`. If you have none yet,
+[Google Cloud's Terraform authentication guide](https://cloud.google.com/docs/terraform/authentication)
+covers the options. The `gcloud` CLI itself is needed only by `deploy.sh`, for its preflight.
 
 ```sh
+export PROJECT_ID='acme-prod'               # the project you are about to change
+
 terraform init
-terraform apply \
-  -var="project=$PROJECT_ID" \
-  -var="region=$REGION" \
-  -var="image=$REGISTRY/fleet-manager@sha256:…"     # your image, by digest
-```
+terraform apply -var="project=$PROJECT_ID" -var="region=europe-central2"
 
-Build and push the image first, as in
-[Build and push your image](../../../README.md#1-build-and-push-your-image), to a registry Cloud
-Run can pull from. The variable is `image` here, `image_uri` in the AWS template. Without it the
-service runs `docker.io/quesma/fleet-manager:latest`, a moving tag Quesma publishes.
-
-`tofu` works in place of `terraform` throughout. The committed `.terraform.lock.hcl` pins the
-providers as OpenTofu resolves them (`registry.opentofu.org`). Terraform resolves them from
-`registry.terraform.io` instead, so `terraform init` rewrites that file with its own entries.
-
-Unless overridden with `-var='bucket=...'`, the bucket is named
-`<project-id>-trajectories`. Terraform enables object versioning and public-access
-prevention on the bucket, creates the runtime service account and scoped IAM
-roles, and deploys a publicly reachable Cloud Run service.
-
-Record the outputs and verify the service:
-
-```sh
 export FLEET_MANAGER_URL="$(terraform output -raw service_url)"
-terraform output bucket
-curl --fail --silent --show-error "${FLEET_MANAGER_URL%/}/health"
-```
-
-The health request must return `ok`. Cloud Run reserves `/healthz`; this deployment
-uses the equivalent `/health` endpoint.
-
-## 3. Create the organization
-
-Ask each custodian to generate a private identity outside fleet manager and send
-you only its printed `age1...` public recipient:
-
-```sh
-age-keygen -o acme-security.agekey
-age-keygen -y acme-security.agekey
-```
-
-Never place a private identity in this repository, Terraform variables, or Terraform state.
-
-Retrieve the sensitive administrator credential explicitly, open the administration
-URL, and paste the credential into the login form:
-
-```sh
+curl --fail --silent --show-error "${FLEET_MANAGER_URL%/}/health"     # ok; Cloud Run reserves /healthz
 terraform output -raw admin_url
 terraform output -raw admin_credential
 ```
 
-Create an organization with an immutable lowercase slug, a display name, and at least two
-independently held public recipients. The optional authored YAML field controls that
-organization's collection settings. Use the selector to create or switch organizations.
+`tofu` works in place of `terraform` throughout. The committed `.terraform.lock.hcl` pins the
+providers as OpenTofu resolves them; Terraform rewrites it with its own registry's entries.
 
-## 4. Install and enroll the first shipper
+## Variables
 
-Create one invite per machine in the administration UI. The invite can be used
-once, and its secret is shown only when created. Send it and `FLEET_MANAGER_URL` to the
-machine operator through an approved secret-sharing channel.
+| Variable | Default | |
+| --- | --- | --- |
+| `project` | required | |
+| `region` | `europe-central2` | |
+| `name` | `fleet-manager` | the service, its service account and the prefix of its roles |
+| `bucket` | `<project>-trajectories` | |
+| `image` | `docker.io/quesma/fleet-manager:latest` | a moving tag Quesma publishes; see below |
+| `default_allow_quesma_etl` | `true` | seal uploads to Quesma's recipient for organizations that never chose |
+| `default_telemetry_collector_url` | empty | forward shipper telemetry there for organizations that name nowhere |
 
-On the target machine, install the shipper for its platform as in
-[Install](../../../README.md#1-install), then enroll it. This is the command the administration UI
-shows next to a new invite:
+There is no ETL reader grant here yet: nothing outside the project can read the bucket unless you
+grant it yourself.
+
+## Your own image
+
+The template deploys Quesma's published image unless you name one. Build from a clone and push to
+a registry Cloud Run can pull from, then deploy by digest rather than by tag:
 
 ```sh
-export SHIPPER_AUTH_KEY='fmi2.acme.invite-from-the-fleet-operator'
-export FLEET_MANAGER_URL='https://fleet-manager-service-url'
+cd fleet-manager
+make check                                  # the gate: formatting, vet, licenses, tests
 
-quesma-shipper login --server "$FLEET_MANAGER_URL" "$SHIPPER_AUTH_KEY"
-unset SHIPPER_AUTH_KEY
+export REGISTRY='europe-central2-docker.pkg.dev/acme-prod/images'
+rev=$(git rev-parse --short=12 HEAD)
+gcloud auth configure-docker europe-central2-docker.pkg.dev
+docker buildx build --platform linux/amd64 --target cloud-run \
+  --build-arg VERSION="$(cat VERSION)+$rev" -t "$REGISTRY/fleet-manager:$rev" --push .
+docker buildx imagetools inspect "$REGISTRY/fleet-manager:$rev" \
+  --format '{{json .Manifest.Digest}}' | tr -d '"'
 
-quesma-shipper doctor
+terraform apply … -var="image=$REGISTRY/fleet-manager@sha256:…"
 ```
 
-Release builds of the shipper keep themselves current from Quesma's signed update channel, a
-[TUF](https://theupdateframework.io/) repository; see the [shipper README](../../../README.md).
-
-Confirm the enrollment on the UI's Installs page. The new install must appear
-with status `active`. Repeat this section with a new
-invite for each additional machine.
+`linux/amd64` is the architecture Cloud Run accepts. Without `--build-arg VERSION` the running
+service reports `dev`.
 
 ## Operations
 
-Use the administration UI to update configuration; create, list, and revoke grants
-or invites; release recoverable invite reservations; and list or revoke installs.
-
-Rotate the administrator credential by replacing its random resource and applying:
+Rotate the administrator credential by replacing its random resource and applying; the digest
+object changes during the apply, immediately invalidating the old credential:
 
 ```sh
 terraform apply -replace=random_bytes.admin_credential
+terraform output -raw admin_credential
 ```
 
-The digest object changes during the apply, immediately invalidating the old credential. Retrieve
-the replacement with `terraform output -raw admin_credential`. Protect that credential, Terraform
-state, and the two private `age` identities according to your organization's backup and
-access-control requirements. Do not run
-`terraform destroy` after enrollment without a reviewed data-retention plan; the
-bucket contains fleet state and encrypted trajectory data, and a non-empty bucket
-prevents normal destruction.
+Protect that credential, the Terraform state, and the private `age` identities according to your
+organization's backup and access-control requirements. Do not run `terraform destroy` after
+enrollment without a reviewed data-retention plan: the bucket contains fleet state and encrypted
+trajectory data, and a non-empty bucket prevents normal destruction. The rest is in
+[OPERATIONS.md](../../OPERATIONS.md).

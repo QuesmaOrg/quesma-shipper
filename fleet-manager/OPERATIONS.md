@@ -2,7 +2,7 @@
 
 What to know once Fleet Manager is running: why the installation order matters, the day-to-day
 operations, and how to prepare storage by hand when you use neither `make run` nor the Terraform
-templates. The installation itself is in the repository [README](../README.md#get-started).
+templates. The installation itself is in the repository [README](../README.md#operator-set-up-fleet-manager-once).
 
 ## Why the order is what it is
 
