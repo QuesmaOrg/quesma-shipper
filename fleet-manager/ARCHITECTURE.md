@@ -43,8 +43,9 @@ change to the service.
 could decrypt one. Below `install=` it reads `tags.json`, the human name for an install, and the
 metadata of mirror objects, which the upload deduplication probe HEADs for their `source-hash`
 and `shipped-hash`: an object is already present only when both match, so one scrubbed under
-older rules is replaced. S3 and GCS authorize that HEAD as a full read, so the templates grant
-read on the whole prefix: the runtime can fetch every sealed payload, and still cannot open one.
+older rules is uploaded again as a new version. S3 and GCS authorize that HEAD as a full read, so
+the templates grant read on the whole prefix: the runtime can fetch every sealed payload, and still
+cannot open one.
 
 **There is no delete.** No route deletes an object, and no organization can be removed. GCS is
 granted `storage.objects.delete` only because replacing object bytes there requires
