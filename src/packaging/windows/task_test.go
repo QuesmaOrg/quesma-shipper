@@ -40,6 +40,27 @@ func TestTaskRunsAsTheInteractiveUserAndSurvivesUpdates(t *testing.T) {
 	}
 }
 
+func TestTaskRunLevelUsesTheWindowsDefault(t *testing.T) {
+	for _, tc := range []struct {
+		runLevel string
+		least    bool
+	}{
+		{"", true},
+		{"<RunLevel></RunLevel>", false},
+		{"<RunLevel>LeastPrivilege</RunLevel>", true},
+		{"<RunLevel>HighestAvailable</RunLevel>", false},
+		{"<RunLevel>unknown</RunLevel>", false},
+	} {
+		doc, err := parseTask([]byte(`<Task><Principals><Principal><GroupId>S-1-5-32-545</GroupId>` + tc.runLevel + `</Principal></Principals></Task>`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if doc.leastPrivilege() != tc.least {
+			t.Fatalf("RunLevel %q: least privilege = %v, want %v", tc.runLevel, doc.leastPrivilege(), tc.least)
+		}
+	}
+}
+
 func TestParseTaskAcceptsSchtasksUTF16Output(t *testing.T) {
 	raw := `<?xml version="1.0" encoding="UTF-16"?><Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><Settings><Enabled>true</Enabled></Settings><Actions><Exec><Command>C:\shipper.exe</Command></Exec></Actions></Task>`
 	units := utf16.Encode([]rune(raw))

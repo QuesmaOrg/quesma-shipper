@@ -25,22 +25,26 @@ released binaries are also available directly for
 [AMD64](https://updates.quesma.dev/download/quesma-shipper-linux-amd64) and
 [ARM64](https://updates.quesma.dev/download/quesma-shipper-linux-arm64).
 
-**Windows.** Run the setup as your normal user. It installs under `%LOCALAPPDATA%`, adds the
-command to your user `PATH`, and registers a scheduled task that starts immediately and at login,
-without administrator rights. Re-running setup repairs that integration without changing
-enrollment. For Intune, see the [Intune guide](packaging/windows/intune/README.md): user-context
-installation and unattended enrollment, a platform-script route, and a Win32 app package route.
+**Windows.** The setup offers personal and all-users installation. Personal installation uses
+`%LOCALAPPDATA%`, updates your user `PATH`, and starts a scheduled task without administrator
+rights. All-users installation requires an administrator, uses native `%ProgramFiles%`, and
+starts a separate collector as each interactive user. Administrators or MDM own its updates and
+removal; enrollment and upload history remain per user. Re-running setup repairs the same scope
+without changing enrollment. Uninstall the previous scope without purging state before switching.
+For Intune, see the [Intune guide](packaging/windows/intune/README.md), including
+[System deployment before first login](packaging/windows/intune/README-System.md).
 Release signing is temporarily disabled while the publisher identity is validated, so Microsoft
 Defender SmartScreen may warn about the download, and devices whose application-control policy
 requires a trusted publisher may block it. The raw `quesma-shipper-windows-<arch>.exe` files remain
 available for portable use and are what the self-updater installs; a portable copy has no
 scheduled task or uninstaller.
 
-**Updates.** Released builds keep themselves current from Quesma's signed
+**Updates.** Personal installations of released builds keep themselves current from Quesma's signed
 [TUF](https://theupdateframework.io/) repository; `quesma-shipper update` updates at once. The
 public repository and the stable download endpoints are described in
 [RELEASE_DOWNLOADS.md](../RELEASE_DOWNLOADS.md). `quesma-shipper uninstall` removes the service
-and program on any platform and keeps local state; `--purge` deletes enrollment and state too.
+and program for a personal installation and keeps local state; `--purge` deletes enrollment and
+state too. An administrator or MDM updates and removes all-users macOS and Windows installations.
 
 ## How it works
 
@@ -66,7 +70,7 @@ agent session files ──► discover ──► detect change ──► read �
   is linked. The upload path is `net/http` only.
 - **Commit.** A local record of shipped files is updated after the sink confirms the write. That
   record is the authority for resume.
-- **Update.** Release builds check a [TUF](https://theupdateframework.io/) repository. They replace
+- **Update.** Personally installed release builds check a [TUF](https://theupdateframework.io/) repository. They replace
   themselves when a newer signed release exists. Development builds do not self-update.
 
 The design rules are in [CONSTITUTION.md](../CONSTITUTION.md). The code layout is in

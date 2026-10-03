@@ -9,6 +9,9 @@ import (
 
 // PostInstallPackage registers the installed program as a per-user scheduled task.
 func PostInstallPackage() (string, error) {
+	if packaging.SystemManaged() {
+		return "", packaging.PostInstallSystem()
+	}
 	eff, paths, err := ResolveEffective()
 	if err != nil {
 		return "", err

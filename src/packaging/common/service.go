@@ -104,7 +104,7 @@ type Status struct {
 var ErrRoot = errors.New("supervise: refusing to install as root: this is a per-user agent, " +
 	"and running as root would resolve ~ to root's home and read the wrong user's files")
 
-var ErrSystemManaged = errors.New("this macOS installation is managed by an administrator; use the Quesma Shipper package to update or remove it")
+var ErrSystemManaged = errors.New("this installation is managed by an administrator; ask your administrator to update or remove Quesma Shipper")
 
 // ValidateInstall checks the invariants shared by every platform service installer.
 func ValidateInstall(spec Spec) error {

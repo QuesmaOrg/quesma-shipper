@@ -15,10 +15,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/sys/windows"
+
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
 func InstallService(spec Spec) error {
+	if err := PrepareUserInstall(filepath.Dir(spec.Executable)); err != nil {
+		return err
+	}
 	if err := common.ValidateInstall(spec); err != nil {
 		return err
 	}
@@ -64,6 +69,9 @@ func InstallService(spec Spec) error {
 }
 
 func UninstallService() error {
+	if err := ValidateUserUninstall(); err != nil {
+		return err
+	}
 	sid, err := currentUserSID()
 	if err != nil {
 		return err
@@ -151,6 +159,9 @@ func queryOwnTask(ctx context.Context, userSID string) (string, []byte, error) {
 var ErrTaskDeleteUnverified = errors.New("supervise: delete scheduled task, outcome unverified")
 
 func ServiceState(ctx context.Context) Status {
+	if SystemManaged() {
+		return managedServiceState(ctx)
+	}
 	sid, err := currentUserSID()
 	if err != nil {
 		return Status{Kind: common.KindWindowsTask, Detail: err.Error()}
@@ -189,6 +200,9 @@ func ServiceState(ctx context.Context) Status {
 }
 
 func RestartService(ctx context.Context) error {
+	if SystemManaged() {
+		return common.ErrSystemManaged
+	}
 	sid, err := currentUserSID()
 	if err != nil {
 		return err
@@ -204,6 +218,9 @@ func RestartService(ctx context.Context) error {
 
 // RestartCommand is a hint printed for the user; the caller drops it when it is empty.
 func RestartCommand() string {
+	if SystemManaged() {
+		return ""
+	}
 	sid, err := currentUserSID()
 	if err != nil {
 		return ""
@@ -213,6 +230,9 @@ func RestartCommand() string {
 }
 
 func RemoveProgram(executable string) (string, error) {
+	if err := ValidateUserUninstall(); err != nil {
+		return "", err
+	}
 	uninstaller := filepath.Join(filepath.Dir(executable), "unins000.exe")
 	if _, err := os.Stat(uninstaller); err == nil {
 		cmd := exec.Command(uninstaller, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
@@ -231,17 +251,33 @@ func SameProgram(a, b string) bool {
 func ProgramRemovalDeferred() bool { return true }
 
 func schtasks(args ...string) ([]byte, error) {
-	return exec.Command("schtasks.exe", args...).CombinedOutput()
+	return schtasksContext(context.Background(), args...)
 }
 
 func schtasksContext(ctx context.Context, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, "schtasks.exe", args...).CombinedOutput()
+	cmd, err := schtasksCommand(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return cmd.CombinedOutput()
 }
 
 // schtasksStdout keeps a machine-readable listing clear of the per-task warnings schtasks writes
 // to stderr when it meets a task it cannot read.
 func schtasksStdout(ctx context.Context, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, "schtasks.exe", args...).Output()
+	cmd, err := schtasksCommand(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return cmd.Output()
+}
+
+func schtasksCommand(ctx context.Context, args ...string) (*exec.Cmd, error) {
+	system, err := windows.GetSystemDirectory()
+	if err != nil {
+		return nil, err
+	}
+	return exec.CommandContext(ctx, filepath.Join(system, "schtasks.exe"), args...), nil
 }
 
 // taskExists enumerates all tasks after a targeted operation failed. A successful enumeration can

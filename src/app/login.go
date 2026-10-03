@@ -54,6 +54,9 @@ func managedEnrollmentError(err error) error {
 	if errors.Is(err, formats.ErrCredentialsRefused) {
 		return fmt.Errorf("managed enrollment grant was refused; ask an administrator to replace an expired or revoked grant")
 	}
+	if errors.Is(err, controlplane.ErrUnsupportedVersion) {
+		return fmt.Errorf("managed enrollment conflicts with an existing server record (HTTP 409); ask an administrator to recover this installation's enrollment")
+	}
 	var httpErr *controlplane.HTTPStatusError
 	if errors.As(err, &httpErr) {
 		return fmt.Errorf("managed enrollment failed: server returned HTTP %d", httpErr.Status)
@@ -71,7 +74,7 @@ func managedEnrollmentError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("managed enrollment failed: connection timed out")
 	}
-	return fmt.Errorf("managed enrollment did not complete; check server reachability and the Server/Grant profile")
+	return fmt.Errorf("managed enrollment did not complete; check server reachability and the Server/Grant policy")
 }
 
 func login(ctx context.Context, server, token string, managed bool) (LoginResult, error) {
@@ -109,33 +112,28 @@ func loginWithRunCheck(ctx context.Context, server, token string, managed bool, 
 		Platform:     runtime.GOOS + "/" + runtime.GOARCH,
 	}
 	endpoint := server
-	var body []byte
 	var priv []byte
+	var resp *controlplane.EnrollResponse
 	if managed {
 		req.Grant = token
-		endpoint, body, priv, err = controlplane.ManagedEnrollmentAttempt(paths.StateDir, server, req)
+		resp, endpoint, priv, err = controlplane.EnrollManaged(ctx, paths.StateDir, server, req)
 	} else {
 		var pub []byte
 		pub, priv, err = controlplane.NewDeviceKey()
+		if err != nil {
+			return LoginResult{}, err
+		}
 		req.DevicePublicKey = controlplane.EncodeKey(pub)
 		req.Invite = token
-	}
-	if err != nil {
-		return LoginResult{}, err
-	}
-	c, err := controlplane.New(controlplane.Options{Endpoint: endpoint})
-	if err != nil {
-		return LoginResult{}, err
-	}
-	var resp *controlplane.EnrollResponse
-	if managed {
-		resp, err = c.EnrollJSON(ctx, body)
-	} else {
+		c, clientErr := controlplane.New(controlplane.Options{Endpoint: endpoint})
+		if clientErr != nil {
+			return LoginResult{}, clientErr
+		}
 		resp, err = c.Enroll(ctx, req)
-	}
-	if !managed && errors.Is(err, formats.ErrCredentialsRefused) {
-		req.Invite, req.Grant = "", token
-		resp, err = c.Enroll(ctx, req)
+		if errors.Is(err, formats.ErrCredentialsRefused) {
+			req.Invite, req.Grant = "", token
+			resp, err = c.Enroll(ctx, req)
+		}
 	}
 	if err != nil {
 		return LoginResult{}, err
