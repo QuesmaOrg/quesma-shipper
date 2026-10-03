@@ -42,8 +42,10 @@ change to the service.
 **The service never reads a trajectory.** It has no decrypt path, and it holds no identity that
 could decrypt one. Below `install=` it reads `tags.json`, the install's name and administrator-managed
 inventory metadata, and the metadata of mirror objects, which the upload deduplication probe HEADs
-for their `source-hash`. S3 and GCS authorize that HEAD as a full read, so the templates grant read
-on the whole prefix: the runtime can fetch every sealed payload, and still cannot open one.
+for their `source-hash` and `shipped-hash`: an object is already present only when both match, so
+one scrubbed under older rules is uploaded again as a new version. S3 and GCS authorize that HEAD
+as a full read, so the templates grant read on the whole prefix: the runtime can fetch every sealed
+payload, and still cannot open one.
 Unlike sealed payloads, `tags.json` carries readable personal data such as an owner's email.
 Everyone with that grant reads it, including Quesma where an organization has granted Quesma the
 read; ingest-etl copies the object into the lake verbatim. Widening what `tags.json` holds is

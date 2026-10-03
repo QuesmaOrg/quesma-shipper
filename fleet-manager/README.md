@@ -294,10 +294,10 @@ and cannot read records containing metadata; upgrade all replicas before importi
 mind when rolling back.
 
 The read shares a grant with upload deduplication, which HEADs mirror objects for their
-`source-hash`: `InstallRead` on AWS and the `data` role on GCP cover the whole install prefix,
-because S3 and GCS authorize a HEAD as a full read. The runtime can therefore fetch every sealed
-payload; it holds no age identity, so it cannot open one. Unlike sealed payloads, `tags.json`
-carries readable personal data such as an owner's email, and whoever holds the read (an
+`source-hash` and `shipped-hash`: `InstallRead` on AWS and the `data` role on GCP cover the whole
+install prefix, because S3 and GCS authorize a HEAD as a full read. The runtime can therefore
+fetch every sealed payload; it holds no age identity, so it cannot open one. Unlike sealed payloads,
+`tags.json` carries readable personal data such as an owner's email, and whoever holds the read (an
 organization's own tooling, ingest-etl, and Quesma where an organization has granted it the read)
 reads that too. Put into metadata what you are content for every holder of that grant to see.
 

@@ -94,7 +94,7 @@ var (
 
 	// ErrAlreadyPresent commits the fingerprint like a confirmed PUT but marks the audit line, so an
 	// operator can tell a commit resting on the plane's word from one this machine sent.
-	ErrAlreadyPresent = errors.New("engine: the archive already held this object under the same source hash")
+	ErrAlreadyPresent = errors.New("engine: the control plane answered that the archive already holds this object")
 )
 
 // stagedUpload is a prepared object waiting for its authorization group; the accumulator that

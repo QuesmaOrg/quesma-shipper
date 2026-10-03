@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -385,16 +386,18 @@ func TestUploadAuthorizationAnswersAlreadyPresent(t *testing.T) {
 	server, manager, key, installID := enrolledServer(t)
 	store := manager.store.(*memoryStore)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	hash := strings.Repeat("a", 64)
+	hash, shipped := strings.Repeat("a", 64), strings.Repeat("d", 64)
 	mirrorKey := func(c string) string {
 		return "v1/organization=acme/install=" + installID + "/mirror/source=claude/" + strings.Repeat(c, 64) + ".age"
 	}
 	object := func(id, objectKey string) uploadObject {
 		return uploadObject{ObjectID: id, Key: objectKey, Size: 10, SourceHash: hash, Metadata: map[string]string{
-			"manifest-version": "1", "source-id": "claude", "shipped-hash": strings.Repeat("d", 64), "artifact-class": "trajectory"}}
+			"manifest-version": "1", "source-id": "claude", "shipped-hash": shipped, "artifact-class": "trajectory"}}
 	}
-	store.setSourceHash(mirrorKey("b"), hash)
-	store.setSourceHash(mirrorKey("e"), strings.Repeat("f", 64))
+	store.setStoredHashes(mirrorKey("b"), StoredHashes{Source: hash, Shipped: shipped})
+	store.setStoredHashes(mirrorKey("e"), StoredHashes{Source: strings.Repeat("f", 64), Shipped: shipped})
+	store.setStoredHashes(mirrorKey("f"), StoredHashes{Source: hash, Shipped: strings.Repeat("c", 64)})
+	store.setStoredHashes(mirrorKey("1"), StoredHashes{Source: hash})
 
 	authorize := func(req uploadAuthorizeRequest) *httptest.ResponseRecorder {
 		body, _ := json.Marshal(req)
@@ -406,9 +409,10 @@ func TestUploadAuthorizationAnswersAlreadyPresent(t *testing.T) {
 		return recorder
 	}
 
-	// Only an exact source-hash match settles; a grown file under the same key re-uploads.
+	// Only a match on both hashes settles; every other stored shape is handed a ticket.
 	recorder := authorize(uploadAuthorizeRequest{WriterID: uuid.NewString(), IssuedAt: now,
-		Objects: []uploadObject{object("stored", mirrorKey("b")), object("fresh", mirrorKey("c")), object("grown", mirrorKey("e"))}})
+		Objects: []uploadObject{object("stored", mirrorKey("b")), object("fresh", mirrorKey("c")), object("grown", mirrorKey("e")),
+			object("rescrubbed", mirrorKey("f")), object("unhashed", mirrorKey("1"))}})
 	var response uploadAuthorizeResponse
 	if err := strictDecode(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
@@ -417,11 +421,13 @@ func TestUploadAuthorizationAnswersAlreadyPresent(t *testing.T) {
 	for _, ticket := range response.Tickets {
 		byID[ticket.ObjectID] = ticket
 	}
-	if len(byID) != 3 || !byID["stored"].AlreadyPresent || byID["fresh"].AlreadyPresent || byID["grown"].AlreadyPresent {
+	if len(byID) != 5 || !byID["stored"].AlreadyPresent {
 		t.Fatalf("tickets: %#v", response.Tickets)
 	}
-	if byID["fresh"].URL == "" || byID["grown"].URL == "" {
-		t.Fatalf("unsettled objects carry no ticket: %#v", response.Tickets)
+	for _, id := range []string{"fresh", "grown", "rescrubbed", "unhashed"} {
+		if byID[id].AlreadyPresent || byID[id].URL == "" {
+			t.Fatalf("%s was not handed a ticket: %#v", id, byID[id])
+		}
 	}
 	var raw struct {
 		Tickets []map[string]any `json:"tickets"`
@@ -448,7 +454,7 @@ func TestUploadAuthorizationAnswersAlreadyPresent(t *testing.T) {
 	// A state object is never asked about, even one the store holds under the offered hash: the
 	// heartbeat is rewritten every tick, so the answer is a plain ticket and the store sees nothing.
 	heartbeatKey := "v1/organization=acme/install=" + installID + "/state/heartbeat.json.age"
-	store.setSourceHash(heartbeatKey, hash)
+	store.setStoredHashes(heartbeatKey, StoredHashes{Source: hash, Shipped: shipped})
 	store.mu.Lock()
 	store.hashReads = 0
 	store.mu.Unlock()
@@ -468,8 +474,8 @@ func TestUploadAuthorizationAnswersAlreadyPresent(t *testing.T) {
 
 type failingHashStore struct{ ObjectStore }
 
-func (failingHashStore) SourceHash(context.Context, string) (string, error) {
-	return "", errorsNew("store answered 500 for https://bucket.example/k?sig=secret")
+func (failingHashStore) StoredHashes(context.Context, string) (StoredHashes, error) {
+	return StoredHashes{}, errorsNew("store answered 500 for https://bucket.example/k?sig=secret")
 }
 
 // A probe failure is advisory (the object is authorized as new) and the log never carries URLs.
@@ -482,6 +488,17 @@ func TestProbeFailureAuthorizesAsNewAndScrubsTheLog(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "1 of 1") || strings.Contains(buf.String(), "sig=") {
 		t.Fatalf("probe log: %s", buf.String())
+	}
+}
+
+// Validation never lets an empty shipped hash through, and the probe does not rest on that alone.
+func TestProbeNeverMatchesOnAnAbsentShippedHash(t *testing.T) {
+	store, hash := newMemoryStore(), strings.Repeat("a", 64)
+	store.setStoredHashes("k", StoredHashes{Source: hash})
+	objects := []UploadObjectRequest{{ObjectID: "a", Key: "k", Mirror: true, Metadata: map[string]string{"source-hash": hash}}}
+	needed, settled := splitAlreadyStored(context.Background(), store, log.New(io.Discard, "", 0), "install", objects)
+	if len(needed) != 1 || settled != nil {
+		t.Fatalf("needed %d, settled %v", len(needed), settled)
 	}
 }
 

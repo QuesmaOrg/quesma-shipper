@@ -128,12 +128,12 @@ func (s *gcsStore) ListPrefixes(ctx context.Context, prefix, delimiter string) (
 	}
 }
 
-func (s *gcsStore) SourceHash(ctx context.Context, key string) (string, error) {
+func (s *gcsStore) StoredHashes(ctx context.Context, key string) (StoredHashes, error) {
 	attrs, err := s.bucket.Object(key).Attrs(ctx)
 	if err != nil {
-		return "", mapGCSError(err)
+		return StoredHashes{}, mapGCSError(err)
 	}
-	return attrs.Metadata["source-hash"], nil
+	return StoredHashes{Source: attrs.Metadata["source-hash"], Shipped: attrs.Metadata["shipped-hash"]}, nil
 }
 
 func (s *gcsStore) VersioningEnabled(ctx context.Context) (bool, error) {
