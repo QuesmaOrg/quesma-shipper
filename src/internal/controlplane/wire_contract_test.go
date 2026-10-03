@@ -33,6 +33,7 @@ var wireSchemas = []string{
 	"enroll-response.schema.json",
 	"config-request.schema.json",
 	"config-response.schema.json",
+	"config-document.schema.json",
 	"v2/uploads-authorize-request.schema.json",
 	"v2/uploads-authorize-response.schema.json",
 }
