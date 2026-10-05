@@ -142,3 +142,47 @@ func TestLegacyCollectionKeepsTolerantReadSemantics(t *testing.T) {
 		t.Fatalf("legacy collection blocked organization listing: %d %s", w.Code, w.Body)
 	}
 }
+
+func TestStoredCollectionOutsideTheWriteSchemaStaysServable(t *testing.T) {
+	server, store := testAdminServer(t)
+	manager, _ := server.manager.ForOrganization("acme")
+	raw, version, _ := store.Get(context.Background(), configKey("acme"))
+	var record map[string]any
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	// What a later, stricter schema makes of a value an earlier one accepted.
+	record["collection"] = map[string]any{"mode": map[string]any{"schedule": "30s"}}
+	raw, _ = json.Marshal(record)
+	if err := store.Replace(context.Background(), configKey("acme"), version, raw); err != nil {
+		t.Fatal(err)
+	}
+	loaded, version, err := manager.LoadConfig(context.Background())
+	if err != nil || loaded.CollectionError != "" || !strings.Contains(renderConfig(loaded), "schedule: 30s") {
+		t.Fatalf("stored collection no longer served: %+v %v", loaded, err)
+	}
+	if w := serveAdmin(t, server, adminRequest("GET", "/v1/admin/orgs/acme/config", "", testAdminCredential)); w.Code != http.StatusOK {
+		t.Fatalf("admin cannot load the config to repair it: %d %s", w.Code, w.Body)
+	}
+	err = manager.ApplyConfig(context.Background(), loaded, version)
+	if err == nil || !strings.Contains(err.Error(), "mode.schedule") || strings.Contains(err.Error(), "file://") {
+		t.Fatalf("write must name the field to correct: %v", err)
+	}
+}
+
+func TestLegacyCollectionServesWithoutKeysTheShipperIgnores(t *testing.T) {
+	server, store := testAdminServer(t)
+	manager, _ := server.manager.ForOrganization("acme")
+	cfg, version, _ := manager.LoadConfig(context.Background())
+	cfg.Collection, cfg.AuthoredYAML = nil, "sources: [{id: claude-code, future_key: 1}]"
+	if err := replaceRecord(context.Background(), store, configKey("acme"), version, cfg); err != nil {
+		t.Fatal(err)
+	}
+	loaded, version, err := manager.LoadConfig(context.Background())
+	if err != nil || loaded.CollectionError != "" || strings.Contains(renderConfig(loaded), "future_key") {
+		t.Fatalf("unknown legacy key blocked serving: %+v %v", loaded, err)
+	}
+	if err := manager.ApplyConfig(context.Background(), loaded, version); err != nil {
+		t.Fatalf("a write of the served settings must succeed: %v", err)
+	}
+}

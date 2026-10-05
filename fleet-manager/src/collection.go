@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	protocol "github.com/QuesmaOrg/shipper-protocol"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,17 +39,39 @@ type CollectionScrub struct {
 	SecretKeyNames []string `json:"secret_key_names,omitempty" yaml:"secret_key_names,omitempty"`
 }
 
-func (c *CollectionConfig) UnmarshalJSON(raw []byte) error {
+// validateCollectionJSON checks a collection as the administrator sent it, before decoding drops
+// what the schema refuses but a Go struct cannot see, such as an explicit null.
+func validateCollectionJSON(raw []byte) error {
 	if err := protocol.ValidateConfigDocument(raw); err != nil {
-		return fmt.Errorf("collection: %w", err)
+		return schemaError("collection", err)
 	}
-	type plain CollectionConfig
-	var decoded plain
-	if err := strictDecode(raw, &decoded); err != nil {
-		return err
-	}
-	*c = CollectionConfig(decoded)
 	return nil
+}
+
+// schemaError names the offending field instead of the validator's schema URL, so the admin knows
+// what to correct.
+func schemaError(prefix string, err error) error {
+	var invalid *jsonschema.ValidationError
+	if !errors.As(err, &invalid) {
+		return fmt.Errorf("%s: %w", prefix, err)
+	}
+	var problems []string
+	for _, line := range strings.Split(err.Error(), "\n")[1:] {
+		line = strings.TrimPrefix(strings.TrimSpace(line), "- ")
+		if at, rest, found := strings.Cut(strings.TrimPrefix(line, "at '"), "': "); found && strings.HasPrefix(line, "at '") {
+			if field := strings.ReplaceAll(strings.TrimPrefix(at, "/"), "/", "."); field != "" {
+				rest = field + ": " + rest
+			}
+			line = rest
+		}
+		if line != "" {
+			problems = append(problems, line)
+		}
+	}
+	if len(problems) == 0 {
+		return fmt.Errorf("%s: %w", prefix, err)
+	}
+	return fmt.Errorf("%s: %s", prefix, strings.Join(problems, "; "))
 }
 
 func normalizeCollection(cfg *FleetConfig) error { return normalizeCollectionMode(cfg, true) }
@@ -71,11 +94,12 @@ func normalizeCollectionMode(cfg *FleetConfig, strict bool) error {
 				return fmt.Errorf("authored_yaml migration: %w", err)
 			}
 			if err := protocol.ValidateConfigDocument(raw); err != nil {
-				return fmt.Errorf("authored_yaml migration: %w", err)
+				return schemaError("authored_yaml", err)
 			}
 		}
 		dec := yaml.NewDecoder(bytes.NewBufferString(cfg.AuthoredYAML))
-		dec.KnownFields(true)
+		// A key no field holds is one the shipper ignores too: dropped when served and on the next write.
+		dec.KnownFields(strict)
 		if err := dec.Decode(collection); err != nil && !errors.Is(err, io.EOF) {
 			return fmt.Errorf("authored_yaml migration: %w", err)
 		}
@@ -92,7 +116,7 @@ func normalizeCollectionMode(cfg *FleetConfig, strict bool) error {
 	}
 	if strict {
 		if err := protocol.ValidateConfigDocument(raw); err != nil {
-			return fmt.Errorf("collection: %w", err)
+			return schemaError("collection", err)
 		}
 	}
 	cfg.Collection, cfg.AuthoredYAML, cfg.CollectionError = collection, "", ""

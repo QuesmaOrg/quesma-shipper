@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -297,8 +296,11 @@ func readAdminJSON[T any](w http.ResponseWriter, r *http.Request, out *T) bool {
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(body, &fields) == nil {
 			for name, value := range fields {
-				if strings.EqualFold(name, "collection") && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-					writeAdminError(w, http.StatusBadRequest, "collection must be an object")
+				if !strings.EqualFold(name, "collection") {
+					continue
+				}
+				if err := validateCollectionJSON(value); err != nil {
+					writeAdminError(w, http.StatusBadRequest, err.Error())
 					return false
 				}
 			}

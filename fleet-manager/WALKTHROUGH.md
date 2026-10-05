@@ -183,9 +183,15 @@ transitional `authored_yaml` request field is still accepted and receives the sa
 validation; a request must not provide both fields. GET includes a generated
 `authored_yaml` view for older dashboard clients during rollout.
 
-Existing stored YAML is read without a write and retains the shipper's tolerant
-read semantics (for example, an old `5s` schedule remains readable). A successful
-write migrates it to `collection`. If the old document cannot be represented, GET
+Stored settings are read without a write and keep the shipper's tolerant read
+semantics: an old `5s` schedule is still served, and a key the shipper ignores is
+dropped from the served document rather than refused. Typed records are read the
+same way, so a later, stricter schema never makes a stored configuration
+unreadable. The schema applies to writes only, so a stored configuration the
+schema rejects must be corrected before any other setting of the organization can
+be saved; the error names the field, for example `collection: mode.schedule: '5s'
+is not valid go-schedule-duration: must be at least 1m0s`. A successful write
+migrates YAML to `collection`. If the old document cannot be represented, GET
 retains its original YAML and ETag, sets `collection_error`, and leaves the record
 untouched. The admin form displays the original and offers **Rebuild collection
 settings**; replacement happens only when Apply succeeds. Organization listing,
@@ -194,4 +200,8 @@ telemetry, and upload authorization remain available while it is repaired.
 Deploy the shipper fallback release first, then fleet-manager, then the dashboard.
 Once configs have been saved in typed form, rolling back to an older fleet-manager
 binary requires restoring the corresponding versioned `config.json` objects first:
-older strict record decoders do not recognize the new `collection` field.
+older strict record decoders do not recognize the new `collection` field. Any
+write stores that field, including one that only changes recipients, so the same
+applies during a rolling deployment: old replicas still running answer that
+organization's config requests with an error, and a shipper whose request reaches
+one keeps its cached configuration.
