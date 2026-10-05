@@ -102,6 +102,19 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	if len(f.port.keys()) != 2 {
 		t.Fatal("remote history overwritten")
 	}
+	f.wipeState()
+	now = now.Add(5 * time.Minute)
+	if rep = runEnrich(t, f, o); rep.Shipped != 1 || len(f.port.keys()) != 3 {
+		t.Fatalf("a lost state file must ship the current snapshot again: %+v", rep)
+	}
+	now = now.Truncate(24 * time.Hour).Add(24 * time.Hour)
+	if rep = runEnrich(t, f, o); rep.Shipped != 1 || len(f.port.keys()) != 4 {
+		t.Fatalf("a new day must ship an unchanged account once: %+v", rep)
+	}
+	now = now.Add(5 * time.Minute)
+	if rep = runEnrich(t, f, o); rep.Shipped != 0 || rep.Unchanged != 1 {
+		t.Fatalf("the daily upload must not repeat within the day: %+v", rep)
+	}
 }
 
 func TestAccountNewBucketRetriesDespiteBackoff(t *testing.T) {

@@ -69,6 +69,8 @@ func (p *Accounts) load(ctx context.Context, req Request, bucket time.Time) (Pay
 	payload := Payload{MTime: bucket}
 	var raw, compare bytes.Buffer
 	encoder, compareEncoder := json.NewEncoder(&raw), json.NewEncoder(&compare)
+	// The UTC day joins the comparison, so an unchanged account still ships once a day.
+	compare.WriteString(bucket.Truncate(24*time.Hour).Format(time.DateOnly) + "\n")
 	for _, obs := range observations {
 		if err := encoder.Encode(struct {
 			BucketStart time.Time `json:"bucket_start"`

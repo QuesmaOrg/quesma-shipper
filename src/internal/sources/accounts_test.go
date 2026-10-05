@@ -301,6 +301,9 @@ func TestAccountCompareIgnoresReadTimeAndCountdowns(t *testing.T) {
 	if used := load(start.Add(2*time.Hour), window("24", "499059", "2026-10-05T16:20:00.5+00:00", "2026-10-05T14:00:00Z")); bytes.Equal(first.Compare, used.Compare) {
 		t.Fatal("a usage change compared equal")
 	}
+	if nextDay := load(start.Add(24*time.Hour), window("23", "419859", "2026-10-05T16:20:00.5+00:00", "2026-10-06T12:00:00Z")); bytes.Equal(first.Compare, nextDay.Compare) {
+		t.Fatal("an unchanged account on the next day compared equal")
+	}
 	if rolled := load(start.Add(3*time.Hour), window("23", "495459", "2026-10-05T21:20:00.5+00:00", "2026-10-05T15:00:00Z")); bytes.Equal(first.Compare, rolled.Compare) {
 		t.Fatal("a new window compared equal")
 	}
