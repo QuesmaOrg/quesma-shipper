@@ -91,9 +91,7 @@ func (m *Manager) LoadConfig(ctx context.Context) (FleetConfig, string, error) {
 		return FleetConfig{}, "", err
 	}
 	collectionErr := normalizeCollectionMode(&cfg, false)
-	checked := cfg
-	checked.AuthoredYAML, checked.Collection = "", &CollectionConfig{}
-	if err := validateConfig(checked); err != nil {
+	if err := validateConfig(cfg); err != nil {
 		return FleetConfig{}, "", fmt.Errorf("stored config is invalid: %w", err)
 	}
 	if collectionErr != nil {

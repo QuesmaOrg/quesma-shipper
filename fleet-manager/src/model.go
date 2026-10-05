@@ -261,9 +261,6 @@ func validateConfig(c FleetConfig) error {
 		}
 		seen[recipient] = true
 	}
-	if err := normalizeCollection(&c); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -287,6 +284,10 @@ func validateHumanName(label, name string) error {
 
 func validateConfigForWrite(c FleetConfig) error {
 	if err := validateConfig(c); err != nil {
+		return err
+	}
+	// Here rather than in validateConfig, which every config and telemetry request runs on a read.
+	if err := normalizeCollection(&c); err != nil {
 		return err
 	}
 	if len(c.AgeRecipients) < 2 {

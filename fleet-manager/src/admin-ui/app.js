@@ -186,6 +186,10 @@ function lockConfig(locked) {
   form.elements['quesma-etl'].disabled = locked;
   form.elements['telemetry-enabled'].disabled = locked;
   all('.add-recipient,.remove-recipient', form).forEach((button) => { button.disabled = locked; });
+  // readOnly does not stop a number input, a select or a button, and Rebuild would arm an empty collection.
+  all('input[type="number"],select,[data-add-source],[data-remove-source],[data-rebuild-collection]', form).forEach((control) => { control.disabled = locked; });
+  // An existing override's source stays fixed, as addCollectionSource made it.
+  all('[data-collection-source]', form).forEach((row) => { if (row._source.id) row.querySelector('[data-source-id]').readOnly = true; });
   if (!locked) updateRecipientButtons(form.querySelector('[data-recipient-list]'));
   $('#edit-config').classList.toggle('hidden', !locked);
   $('#cancel-config').classList.toggle('hidden', locked);

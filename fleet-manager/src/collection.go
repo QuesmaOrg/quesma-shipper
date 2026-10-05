@@ -89,6 +89,9 @@ func normalizeCollectionMode(cfg *FleetConfig, strict bool) error {
 			if err := yaml.Unmarshal([]byte(cfg.AuthoredYAML), &document); err != nil {
 				return fmt.Errorf("authored_yaml migration: %w", err)
 			}
+			if document == nil {
+				document = map[string]any{} // only comments: no settings, as the read path takes it
+			}
 			raw, err := json.Marshal(document)
 			if err != nil {
 				return fmt.Errorf("authored_yaml migration: %w", err)

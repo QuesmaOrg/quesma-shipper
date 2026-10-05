@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"filippo.io/age"
@@ -36,6 +37,9 @@ type Server struct {
 	telemetry *telemetryProxy
 	// defaults fills the settings an organization never stated, wherever one is used.
 	defaults OrganizationDefaults
+	// collectionErrors holds the last unservable-collection error logged per organization, so
+	// every install's poll does not log it again.
+	collectionErrors sync.Map
 }
 
 func NewServer(manager *Manager, signer UploadSigner, logger *log.Logger) (*Server, error) {
@@ -249,18 +253,28 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request, rec Instal
 	}
 	scoped, _ := s.manager.ForOrganization(rec.Organization)
 	cfg, _, err := scoped.LoadConfig(r.Context())
-	if err == nil && cfg.CollectionError != "" {
-		err = errors.New(cfg.CollectionError)
-	}
 	if err != nil {
 		s.logger.Printf("config state read failed for install %s: %v", rec.InstallID, err)
 		http.Error(w, "config unavailable", http.StatusInternalServerError)
 		return
 	}
+	// The install did check in; only the configuration is unservable until an admin repairs it.
 	s.touch(r, rec, seenConfig)
+	if cfg.CollectionError != "" {
+		s.logCollectionError(rec.Organization, cfg.CollectionError)
+		http.Error(w, "config unavailable", http.StatusInternalServerError)
+		return
+	}
+	s.collectionErrors.Delete(rec.Organization)
 	cfg = s.defaults.resolve(cfg)
 	doc := renderConfig(cfg)
 	writeJSON(w, configResponse{Config: []byte(doc), ExpiresAt: s.manager.time().Add(s.configTTL)})
+}
+
+func (s *Server) logCollectionError(org, message string) {
+	if previous, loaded := s.collectionErrors.Swap(org, message); !loaded || previous != message {
+		s.logger.Printf("config for organization %s is unservable until an admin repairs it: %s", org, message)
+	}
 }
 
 func renderConfig(cfg FleetConfig) string {

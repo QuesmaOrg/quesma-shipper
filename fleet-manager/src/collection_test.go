@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -184,5 +187,83 @@ func TestLegacyCollectionServesWithoutKeysTheShipperIgnores(t *testing.T) {
 	}
 	if err := manager.ApplyConfig(context.Background(), loaded, version); err != nil {
 		t.Fatalf("a write of the served settings must succeed: %v", err)
+	}
+}
+
+func TestConfigPutWithoutCollectionKeepsTheStoredOne(t *testing.T) {
+	server, _ := testAdminServer(t)
+	manager, _ := server.manager.ForOrganization("acme")
+	put := func(body any) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(body)
+		_, version, _ := manager.LoadConfig(context.Background())
+		req := adminRequest("PUT", "/v1/admin/orgs/acme/config", string(raw), testAdminCredential)
+		req.Header.Set("If-Match", encodeETag(version))
+		return serveAdmin(t, server, req)
+	}
+	recipients := twoRecipients(t)
+	if w := put(map[string]any{"age_recipients": recipients, "collection": map[string]any{"drain_deadline": "30s"}}); w.Code != http.StatusNoContent {
+		t.Fatalf("seed: %d %s", w.Code, w.Body)
+	}
+	if w := put(map[string]any{"age_recipients": recipients}); w.Code != http.StatusNoContent {
+		t.Fatalf("recipients-only write: %d %s", w.Code, w.Body)
+	}
+	cfg, _, _ := manager.LoadConfig(context.Background())
+	if cfg.Collection == nil || cfg.Collection.DrainDeadline == nil || *cfg.Collection.DrainDeadline != "30s" {
+		t.Fatalf("a write that did not mention collection erased it: %+v", cfg.Collection)
+	}
+}
+
+func TestConfigPutWithoutCollectionCannotEraseOneAwaitingRepair(t *testing.T) {
+	server, store := testAdminServer(t)
+	manager, _ := server.manager.ForOrganization("acme")
+	cfg, version, _ := manager.LoadConfig(context.Background())
+	cfg.Collection, cfg.AuthoredYAML = nil, "mode: daemon"
+	if err := replaceRecord(context.Background(), store, configKey("acme"), version, cfg); err != nil {
+		t.Fatal(err)
+	}
+	before, version, _ := store.Get(context.Background(), configKey("acme"))
+	raw, _ := json.Marshal(map[string]any{"age_recipients": cfg.AgeRecipients})
+	req := adminRequest("PUT", "/v1/admin/orgs/acme/config", string(raw), testAdminCredential)
+	req.Header.Set("If-Match", encodeETag(version))
+	if w := serveAdmin(t, server, req); w.Code != http.StatusBadRequest {
+		t.Fatalf("an unrepaired collection must be repaired, not dropped: %d %s", w.Code, w.Body)
+	}
+	if after, _, _ := store.Get(context.Background(), configKey("acme")); string(after) != string(before) {
+		t.Fatal("refused write changed the stored config")
+	}
+}
+
+func TestLegacyCollectionOfOnlyCommentsIsEmpty(t *testing.T) {
+	cfg := FleetConfig{AuthoredYAML: "# defaults\n"}
+	if err := normalizeCollection(&cfg); err != nil {
+		t.Fatalf("comments-only YAML refused on write: %v", err)
+	}
+	if cfg.Collection == nil || cfg.Collection.Mode != nil || cfg.Collection.Sources != nil {
+		t.Fatalf("comments-only YAML is not an empty collection: %+v", cfg.Collection)
+	}
+}
+
+func TestUnservableCollectionStillRecordsTheCheckInAndLogsOnce(t *testing.T) {
+	server, manager, key, installID := enrolledServer(t)
+	var logged bytes.Buffer
+	server.logger = log.New(&logged, "", 0)
+	cfg, version, _ := manager.LoadConfig(context.Background())
+	cfg.Collection, cfg.AuthoredYAML = nil, "mode: daemon"
+	if err := replaceRecord(context.Background(), manager.store, configKey(manager.org), version, cfg); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(configRequest{AgentVersion: "v1", ConfigVersions: []int{1}})
+	for range 3 {
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, shipperFacts(signedRequest(http.MethodPost, "/v1/config", body, installID, key, "")))
+		if recorder.Code != http.StatusInternalServerError {
+			t.Fatalf("unservable collection served: %d", recorder.Code)
+		}
+	}
+	if rec := loadSeen(t, manager, installID); rec.LastConfigAt == nil {
+		t.Fatal("the install's check-in was not recorded")
+	}
+	if n := strings.Count(logged.String(), "unservable"); n != 1 {
+		t.Fatalf("logged %d times for one error:\n%s", n, logged.String())
 	}
 }

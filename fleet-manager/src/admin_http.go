@@ -447,6 +447,10 @@ func (s *Server) handleAdminPutConfig(w http.ResponseWriter, r *http.Request) {
 	if req.AllowQuesmaETL == nil {
 		cfg.AllowQuesmaETL = current.AllowQuesmaETL
 	}
+	// Like the fields above: a client that does not mention collection must not erase it.
+	if req.Collection == nil && req.AuthoredYAML == "" {
+		cfg.Collection, cfg.AuthoredYAML = current.Collection, current.AuthoredYAML
+	}
 	if !s.validateAdminConfig(w, manager, cfg) {
 		return
 	}
