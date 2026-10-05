@@ -111,7 +111,8 @@ One more record is produced by the shipper itself:
 
 - **Account and usage history.** Independent Claude Code, Codex, and Cursor collectors upload
   account metadata and provider usage JSON in UTC buckets matching the collection interval (default
-  15 minutes). Unknown fields are preserved; these records skip scrubbing and ship encrypted.
+  15 minutes), only when it changed since the last upload, and at least once per UTC day. Unknown
+  fields are preserved; these records skip scrubbing and ship encrypted.
 
 All other files above pass through the scrub stage before encryption. The control plane receives no
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.

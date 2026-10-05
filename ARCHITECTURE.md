@@ -151,5 +151,8 @@ the generic collection deny rules. macOS Keychain access invokes only `/usr/bin/
 timeout, using the system reader’s existing permissions.
 Account discovery returns a bucket filename; `Candidate.Load` fetches its content only
 after the engine checks upload state. Successful uploads skip later fetches in that bucket.
+A later bucket fetches again but uploads only when the snapshot differs from the last one shipped,
+ignoring read times, countdowns and seconds of timestamp jitter, or on the first bucket of a UTC day
+(`Candidate.Series`, `Payload.Compare`; 2026-10-05).
 Filesystem reads use the same loading method. Account catalog entries set `scrub: false`;
 encryption and upload use the normal pipeline. Sources do not import transforms or engine.
