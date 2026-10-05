@@ -66,6 +66,7 @@ type Fingerprint struct {
 
 	// Size and mtime are the cheap pre-filter; the content hash is the authority. SourceHash also
 	// marks a completed ship: only the post-verified-PUT commit may write it, never a failure path.
+	// For a payload with Compare set it is the hash of Compare, not of the shipped content.
 	SourceSize  int64
 	SourceMTime time.Time
 	SourceHash  string

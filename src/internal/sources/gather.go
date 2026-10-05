@@ -61,8 +61,7 @@ type Candidate struct {
 	// and compressed paths); empty means the path is the identity.
 	Identity string
 
-	// Series is the change-detection identity of generated snapshots that each keep their own
-	// object key: a snapshot equal to the last one shipped in its series is not uploaded.
+	// Series shares change detection across generated snapshots that each keep their own object key.
 	Series string
 
 	Load func(context.Context) (Payload, error)
@@ -76,8 +75,7 @@ type Payload struct {
 	MTime   time.Time
 	Warning string
 
-	// Compare, when set, is what change detection hashes instead of Bytes: the content without
-	// fields that differ on every read.
+	// Compare, when set, is what change detection hashes instead of Bytes.
 	Compare []byte
 }
 

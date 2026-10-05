@@ -47,8 +47,7 @@ func (o Options) prepareFile(
 	key := KeyOf(src.ID, cand)
 	fp, seen := job.fp, job.seen
 
-	// A parked entry waits out its backoff. Never an unconditional retry, except that a new snapshot
-	// in a series is a new object and gets its own first attempt.
+	// A parked entry waits out its backoff, except a new snapshot in a series, which is a new object.
 	newSnapshot := cand.Series != "" && cand.Path != observedPath(key, fp)
 	if fp.Parked && o.Now().Before(fp.BackoffUntil) && !newSnapshot {
 		out.Decision = auditlog.DecisionSkipped
