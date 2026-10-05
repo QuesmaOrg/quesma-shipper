@@ -70,7 +70,7 @@ sources:
       kind: none
 
   - id: cursor-account
-    description: Account and raw provider usage snapshots each collection interval.
+    description: Account and raw provider usage snapshots, uploaded when they change.
     gather: account
     scrub: false
     roots:

@@ -262,3 +262,46 @@ func TestCandidateLoadLimitsAndCancellation(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountCompareIgnoresReadTimeAndCountdowns(t *testing.T) {
+	req := accountFixture(t)
+	accountFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture-access"}}`)
+	var body string
+	p := Accounts{client: &http.Client{Transport: accountTransport(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}}, nil
+	})}}
+	load := func(at time.Time, usage string) Payload {
+		t.Helper()
+		req.Now = func() time.Time { return at }
+		body = usage
+		d, err := p.Discover(req)
+		if err != nil || len(d.Candidates) != 1 || d.Candidates[0].Series != "codex-account" {
+			t.Fatalf("discover: %+v %v", d, err)
+		}
+		payload, err := d.Candidates[0].Load(req.Context)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+	start := time.Date(2026, 9, 16, 14, 17, 3, 0, time.UTC)
+	// Shapes seen live: a Codex countdown, and Claude's read time and jittered window timestamps.
+	window := func(used, reset, resetsAt, asOf string) string {
+		return `{"total":9007199254740993,"rate_limit":{"primary_window":{"used_percent":` + used + `,"reset_after_seconds":` + reset + `}},` +
+			`"five_hour":{"resets_at":"` + resetsAt + `"},"seven_day_breakdown":{"as_of":"` + asOf + `"}}`
+	}
+	first := load(start, window("23", "506259", "2026-10-05T16:20:00.821987+00:00", "2026-10-05T12:34:59.844282+00:00"))
+	later := load(start.Add(time.Hour), window("23", "502659", "2026-10-05T16:20:01.396746+00:00", "2026-10-05T13:35:20.417662+00:00"))
+	if bytes.Equal(first.Bytes, later.Bytes) || !bytes.Equal(first.Compare, later.Compare) {
+		t.Fatalf("an idle account must ship different bytes but compare equal:\n%s\n%s", first.Compare, later.Compare)
+	}
+	if !bytes.Contains(later.Bytes, []byte(`"reset_after_seconds":502659`)) || !bytes.Contains(later.Compare, []byte(`9007199254740993`)) {
+		t.Fatalf("countdown dropped from the object or a large integer rounded:\n%s\n%s", later.Bytes, later.Compare)
+	}
+	if used := load(start.Add(2*time.Hour), window("24", "499059", "2026-10-05T16:20:00.5+00:00", "2026-10-05T14:00:00Z")); bytes.Equal(first.Compare, used.Compare) {
+		t.Fatal("a usage change compared equal")
+	}
+	if rolled := load(start.Add(3*time.Hour), window("23", "495459", "2026-10-05T21:20:00.5+00:00", "2026-10-05T15:00:00Z")); bytes.Equal(first.Compare, rolled.Compare) {
+		t.Fatal("a new window compared equal")
+	}
+}

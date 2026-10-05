@@ -52,7 +52,7 @@ type Key struct {
 
 // KeyOf is the state key a discovered candidate is recorded under.
 func KeyOf(sourceID string, c sources.Candidate) Key {
-	return Key{SourceID: sourceID, ID: cmp.Or(c.Identity, c.Path)}
+	return Key{SourceID: sourceID, ID: cmp.Or(c.Identity, c.Series, c.Path)}
 }
 
 // observedPath is where the file behind k was last seen.

@@ -58,7 +58,7 @@ sources:
       max_scan_bytes: 65536
 
   - id: codex-account
-    description: Account and raw provider usage snapshots each collection interval.
+    description: Account and raw provider usage snapshots, uploaded when they change.
     gather: account
     scrub: false
     roots:

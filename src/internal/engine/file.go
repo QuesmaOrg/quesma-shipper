@@ -47,8 +47,10 @@ func (o Options) prepareFile(
 	key := KeyOf(src.ID, cand)
 	fp, seen := job.fp, job.seen
 
-	// A parked entry waits out its backoff. Never an unconditional retry.
-	if fp.Parked && o.Now().Before(fp.BackoffUntil) {
+	// A parked entry waits out its backoff. Never an unconditional retry, except that a new snapshot
+	// in a series is a new object and gets its own first attempt.
+	newSnapshot := cand.Series != "" && cand.Path != observedPath(key, fp)
+	if fp.Parked && o.Now().Before(fp.BackoffUntil) && !newSnapshot {
 		out.Decision = auditlog.DecisionSkipped
 		out.Reason = "parked until " + fp.BackoffUntil.Format(time.RFC3339) + ": " + fp.LastError
 		return res, nil
@@ -72,6 +74,10 @@ func (o Options) prepareFile(
 	out.Reason = payload.Warning
 	out.BytesIn = int64(len(raw))
 	sourceHash := transforms.Hash(raw)
+	changeHash := sourceHash
+	if payload.Compare != nil {
+		changeHash = transforms.Hash(payload.Compare)
+	}
 
 	// The enricher sees exactly the bytes that shipped, never a file it re-opened mid-append.
 	if staging {
@@ -83,7 +89,7 @@ func (o Options) prepareFile(
 	}
 
 	// The content hash is the authority: an mtime-only change refreshes the stat and ships nothing.
-	if seen && sourceHash == fp.SourceHash {
+	if seen && changeHash == fp.SourceHash {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "content hash unchanged"
 		if !o.DryRun {
@@ -156,7 +162,7 @@ func (o Options) prepareFile(
 			NativePath:  cand.Path,
 			SourceSize:  cand.Size,
 			SourceMTime: cand.MTime,
-			SourceHash:  sourceHash,
+			SourceHash:  changeHash,
 		},
 	}
 }

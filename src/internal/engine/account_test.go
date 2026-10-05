@@ -88,11 +88,52 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	}
 	now = now.Add(5 * time.Minute)
 	rep = runEnrich(t, f, o)
+	if rep.Shipped != 0 || rep.Unchanged != 1 || len(f.port.keys()) != 1 {
+		t.Fatalf("unchanged account in a new bucket should not upload: %+v", rep)
+	}
+	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(`{"auth_mode":"changed"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(5 * time.Minute)
+	rep = runEnrich(t, f, o)
 	if rep.Shipped != 1 {
-		t.Fatalf("new bucket %+v", rep)
+		t.Fatalf("changed account in a new bucket %+v", rep)
 	}
 	if len(f.port.keys()) != 2 {
 		t.Fatal("remote history overwritten")
+	}
+}
+
+func TestAccountNewBucketRetriesDespiteBackoff(t *testing.T) {
+	f := newFixture(t)
+	// A Cursor root without its database fails every load, which parks the source.
+	root := filepath.Join(f.home, "cursor")
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := sources.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, _ := catalog.Source("cursor-account")
+	o := f.opts()
+	o.Plan.Interval = 5 * time.Minute
+	o.Env = sources.Env{Home: f.home, Lookup: func(string) (string, bool) { return "", false }}
+	o.Plan.Sources = []sources.Resolved{{Source: spec, Root: root, Enabled: true, SpecFingerprint: sources.SpecFingerprint(spec)}}
+	now := o.Now().Truncate(5 * time.Minute)
+	o.Now = func() time.Time { return now }
+	// Repeated failures in one bucket grow the backoff past the bucket's end.
+	for range 4 {
+		runEnrich(t, f, o)
+		f.reopen()
+		now = now.Add(time.Minute)
+	}
+	if err := os.WriteFile(filepath.Join(root, "state.vscdb"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Truncate(5 * time.Minute).Add(5 * time.Minute)
+	if rep := runEnrich(t, f, o); rep.Shipped != 1 {
+		t.Fatalf("a new bucket must not wait out the previous bucket's backoff: %+v", rep)
 	}
 }
 
