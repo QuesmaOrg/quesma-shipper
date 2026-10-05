@@ -3,11 +3,11 @@
 [![version](https://img.shields.io/badge/version-0.0.3-blue)](#developer-install-the-shipper-each-machine)
 
 Quesma Shipper collects the session files that AI coding agents write on developer machines,
-removes secrets and personal data from each file, encrypts it, and uploads the ciphertext to object
-storage your organisation controls. It is two parts: **the shipper** ([`src/`](src/README.md)), a
-background service on each developer machine, and **[Fleet Manager](fleet-manager/)**, the control
-plane you run in your own cloud, which enrolls shippers and signs each upload but never sees file
-contents.
+redacts the secrets and personal data its rules detect in transcripts and context files, encrypts
+everything, and uploads the ciphertext to object storage your organisation controls. It is two
+parts: **the shipper** ([`src/`](src/README.md)), a background service on each developer machine,
+and **[Fleet Manager](fleet-manager/)**, the control plane you run in your own cloud, which enrolls
+shippers and signs each upload but never sees file contents.
 
 ```mermaid
 flowchart LR
@@ -21,11 +21,14 @@ flowchart LR
     S ==>|"ciphertext, direct to storage"| B
 ```
 
-Only the holders of the organisation's [age](https://age-encryption.org/) keys can read what was
-uploaded. Supported agents: Claude Code, Codex, Cursor, GitHub Copilot (the Copilot CLI and
-Copilot Chat in VS Code), Pi\*, OpenCode\*, Hermes\*. Supported platforms: macOS 13 or newer, Linux, Windows 10 1809 or newer.
-The project is pre-1.0: the wire protocol, the configuration format and the object naming are
-pinned by tests but can still change between minor releases.
+Each upload is sealed to the organisation's [age](https://age-encryption.org/) recipients, and any
+one of their private keys can decrypt it: your custodians' and, unless you turn Quesma ETL off,
+Quesma's. Account and usage records are encrypted but not scrubbed.
+
+Supported agents: Claude Code, Codex, Cursor, GitHub Copilot (the Copilot CLI and Copilot Chat in
+VS Code), Pi\*, OpenCode\*, Hermes\*. Supported platforms: macOS 13 or newer, Linux, Windows 10
+1809 or newer. The project is pre-1.0: the wire protocol, the configuration format and the object
+naming are pinned by tests but can still change between minor releases.
 
 \* Experimental. We actively run and test Claude Code, Codex, and Cursor.
 Pi, OpenCode, and Hermes support may change or be withdrawn.
@@ -41,27 +44,28 @@ Pi, OpenCode, and Hermes support may change or be withdrawn.
 ## Operator: set up Fleet Manager (once)
 
 1. **Have ready:** an AWS account or Google Cloud project you can create resources in, and on your
-   laptop Terraform or OpenTofu, `curl`, `age-keygen`, and the `aws` or `gcloud` CLI signed in. On
-   AWS the Region needs a default VPC.
+   laptop Terraform or OpenTofu, `curl`, `age`, `age-keygen`, `zstd`, and the `aws` CLI signed in,
+   or `gcloud` with `gcloud auth application-default login`. On AWS the Region needs a default VPC.
 
 2. **Decide two things** before anything enrolls. Ask two custodians to each run `age-keygen -o
    name.agekey` and send you only their `age1…` public recipient (`age-keygen -y name.agekey`
-   prints it); their private identities are the only way to read what is uploaded, so they must
-   be kept and backed up. Decide whether Quesma may decrypt uploads, for its dashboards; it is on
-   unless you say `--no-quesma-etl` below, and cannot be added to files already uploaded.
+   prints it); their private identities are your only way to read what is uploaded, so they
+   must be kept and backed up. Decide whether Quesma may decrypt uploads, for its dashboards; it is
+   on unless you say `--no-quesma-etl` below, and cannot be added to files already uploaded.
 
 3. **Deploy:**
 
    ```sh
    curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/fleet-manager/deploy.sh
 
-   sh deploy.sh aws --bucket globally-unique-acme-trajectories --region eu-central-1
-   sh deploy.sh gcp --project acme-prod --region europe-central2
+   sh deploy.sh aws --bucket globally-unique-acme-trajectories --region eu-central-1   # AWS, or
+   sh deploy.sh gcp --project acme-prod --region europe-central2                        # Google Cloud
    ```
 
    It shows the plan, asks for `yes`, and after a few minutes prints the service URL, the admin UI
    address and the admin credential. Keep `~/.quesma/fleet-manager/<cloud>/` backed up, since the
-   Terraform state is there. Running the same command again upgrades; `sh deploy.sh aws output
+   Terraform state is there. Running the same command again applies the latest template; upgrading
+   the service image is in [OPERATIONS.md](fleet-manager/OPERATIONS.md). `sh deploy.sh aws output
    admin_credential` prints the credential again; `sh deploy.sh --help` lists the rest.
 
 4. **Open the admin UI**, paste the credential, and create the organisation: a slug such as `acme`
@@ -73,18 +77,24 @@ Pi, OpenCode, and Hermes support may change or be withdrawn.
    age -d -i name.agekey test.age                    # a custodian, with their private identity
    ```
 
-5. **On the Invites page**, create one invite per developer machine; its `fmi2.…` token is shown
-   once. Send the token and the service URL to each developer through a secret-sharing channel.
-   A grant, on the Grants page, is the same for any number of machines.
+5. **On the Invites page**, create one invite per developer; its `fmi2.…` token is shown once.
+   Send the token and the service URL to each developer through a secret-sharing channel. Each OS
+   user on a machine enrolls separately, as its own install. A grant, on the Grants page, enrolls
+   any number of installs until it expires or is revoked, which suits shared machines and MDM
+   rollouts.
 
-6. **Later, check uploads arrived** with `aws s3 ls` (or `gcloud storage ls`) on the bucket and
-   decrypt one with a custodian key. The Installs page shows each machine as `active`.
+6. **Later, check a session arrived** and decrypt it with a custodian key. `active` on the
+   Installs page means a machine enrolled, not that it has shipped anything.
 
    ```sh
-   aws s3 ls --recursive "s3://$(sh deploy.sh aws output bucket)/v1/organization=acme/install=" | head
-   aws s3 cp "s3://<bucket>/<key from the listing>" object.age
+   B=$(sh deploy.sh aws output bucket)
+   KEY=$(aws s3api list-objects-v2 --bucket "$B" --prefix 'v1/organization=acme/install=' \
+     --query "Contents[?contains(Key, 'claude-code-transcripts')].Key | [0]" --output text)
+   aws s3 cp "s3://$B/$KEY" object.age
    age -d -i name.agekey object.age | zstd -d | tar -t     # manifest.json, payload
    ```
+
+   On Google Cloud, `gcloud storage ls --recursive` on the bucket lists the same keys.
 
 What the script creates, and running the template by hand with your own image or your own
 state: [fleet-manager/terraform/aws](fleet-manager/terraform/aws/README.md),
