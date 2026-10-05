@@ -55,6 +55,8 @@ Validate these on enterprise Windows VMs before rollout:
 | One account logged in to two sessions | At most one collector owns that account's state; duplicate triggers do not leave competing supervisors. |
 | Logoff, reconnect, supervisor crash, collector crash | No service-account fallback; collection recovers without duplicate uploads. |
 | MDM upgrade with two users collecting | Both old instances stop; both restart from the replacement executable; upload history remains intact. |
+| Managed collector with a custom `state_dir` | Supervisor output and collector errors use the configured directory; the CI lifecycle fixture checks this. |
+| Failed task stop during uninstall | Previously enabled startup is restored; previously disabled startup stays disabled. If payload removal has begun, retry uninstall or rerun setup to restore collection. |
 | Failed or interrupted upgrade | Previously enabled startup is restored; a task disabled before the attempt remains disabled. |
 | Personal installation in another or unloaded user profile | Setup or that user's first managed startup reports the scope conflict; there is no second collector and state is retained. |
 | ARM64 Windows | Repeat installation, repair, upgrade, removal, and session tests with the ARM64 installer. |

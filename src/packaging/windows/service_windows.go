@@ -34,9 +34,6 @@ func InstallService(spec Spec) error {
 	if err != nil {
 		return err
 	}
-	if err := verifyInstallDir(filepath.Dir(spec.Executable), current.Uid); err != nil {
-		return err
-	}
 	// Retired before the new task is registered: the two would otherwise both be live, and the
 	// second shipper would spend its life failing to take the state lock.
 	if err := retireLegacyTask(current.Uid); err != nil {

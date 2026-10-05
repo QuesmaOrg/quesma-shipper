@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
@@ -68,6 +70,16 @@ func firstStackFrame(stack string) string {
 const recycleAfter = 3 * time.Hour
 const enrollmentPollInterval = 5 * time.Second
 
+func managedEnrollmentDelay(err error, conflicts *int) time.Duration {
+	if !errors.Is(err, controlplane.ErrEnrollmentConflict) {
+		*conflicts = 0
+		return time.Minute
+	}
+	*conflicts = min(*conflicts+1, 4)
+	cap := min(time.Minute<<*conflicts, 15*time.Minute)
+	return cap/2 + time.Duration(rand.Int64N(int64(cap/2)))
+}
+
 func recycleDue(started, now time.Time, serviceLoaded func() bool) bool {
 	return now.Sub(started) >= recycleAfter && serviceLoaded()
 }
@@ -112,6 +124,13 @@ func flushBeforeExit(cmd *cobra.Command, env *app.Runtime) error {
 	return nil
 }
 
+func runLogStateDir(paths config.Paths) (string, error) {
+	if paths.StateDir != "" {
+		return paths.StateDir, nil
+	}
+	return app.StateDirWithoutConfig()
+}
+
 func runCmd(build app.Build) *cobra.Command {
 	var once, drain, quiet bool
 
@@ -135,10 +154,7 @@ func runCmd(build app.Build) *cobra.Command {
 			// and cannot repair itself between polls, so waiting on it waits forever. A resolve
 			// error skips the wait and the gates below, and lets app.New report the real reason.
 			eff, paths, resolveErr := app.ResolveEffective()
-			logStateDir := paths.StateDir
-			if logStateDir == "" {
-				logStateDir, _ = app.StateDirWithoutConfig()
-			}
+			logStateDir, _ := runLogStateDir(paths)
 			log, err := packaging.ManagedRunLog(logStateDir)
 			if err != nil {
 				return err
@@ -155,13 +171,13 @@ func runCmd(build app.Build) *cobra.Command {
 				return err
 			}
 			waiting := false
-			var lastManagedAttempt time.Time
+			var nextManagedAttempt time.Time
+			var enrollmentConflicts int
 			for resolveErr == nil {
 				if _, err := controlplane.LoadEnrollment(paths.StateDir); err == nil {
 					break
 				}
-				if time.Since(lastManagedAttempt) >= time.Minute {
-					lastManagedAttempt = time.Now()
+				if !time.Now().Before(nextManagedAttempt) {
 					attemptCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 					enrolled, err := app.ManagedLogin(attemptCtx)
 					cancel()
@@ -169,8 +185,10 @@ func runCmd(build app.Build) *cobra.Command {
 						eff, paths, resolveErr = app.ResolveEffective()
 						break
 					}
+					delay := managedEnrollmentDelay(err, &enrollmentConflicts)
+					nextManagedAttempt = time.Now().Add(delay)
 					if err != nil {
-						fmt.Fprintf(cmd.ErrOrStderr(), "managed enrollment: %v; retrying in one minute\n", err)
+						fmt.Fprintf(cmd.ErrOrStderr(), "managed enrollment: %v; retrying in %s\n", err, delay.Round(time.Second))
 					}
 				}
 				if !waiting {

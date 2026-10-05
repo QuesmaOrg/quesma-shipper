@@ -183,7 +183,8 @@ procedure StopManagedTaskForUninstall;
 var
   Scheduler, Folder, Tasks, Task, Definition, Actions, Action, Instances: Variant;
   Index, Attempt: Integer;
-  ExpectedRunner: String;
+  ExpectedRunner, FailureMessage: String;
+  PreviouslyEnabled: Boolean;
 begin
   if CompareText(RemoveBackslashUnlessRoot(ExpandConstant('{app}')),
                  ExpandConstant('{commonpf64}\Quesma Shipper')) <> 0 then
@@ -206,19 +207,31 @@ begin
       if (CompareText(Action.Path, ExpectedRunner) <> 0) or
          (Action.Arguments <> '--managed') then
         RaiseException('The managed task name belongs to another installation.');
-      Task.Enabled := False;
-      Task.Stop(0);
-      for Attempt := 1 to 300 do
-      begin
-        Instances := Task.GetInstances(0);
-        if Instances.Count = 0 then
+      PreviouslyEnabled := Task.Enabled;
+      try
+        Task.Enabled := False;
+        Task.Stop(0);
+        for Attempt := 1 to 300 do
         begin
-          Folder.DeleteTask('Quesma Shipper Managed', 0);
-          Exit;
+          Instances := Task.GetInstances(0);
+          if Instances.Count = 0 then
+          begin
+            Folder.DeleteTask('Quesma Shipper Managed', 0);
+            Exit;
+          end;
+          Sleep(100);
         end;
-        Sleep(100);
+        RaiseException('Managed collectors did not stop. Retry uninstall after closing user sessions.');
+      except
+        FailureMessage := GetExceptionMessage;
+        { No payload has been removed yet; preserve the administrator's startup setting. }
+        try
+          Task.Enabled := PreviouslyEnabled;
+        except
+          Log('Could not restore managed startup. Rerun the all-users installer to repair collection.');
+        end;
+        RaiseException(FailureMessage);
       end;
-      RaiseException('Managed collectors did not stop. Retry uninstall after closing user sessions.');
     end;
   end;
 end;

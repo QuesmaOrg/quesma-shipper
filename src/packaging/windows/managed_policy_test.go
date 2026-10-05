@@ -144,3 +144,31 @@ func TestPersonalInstallRejectsManagedPayloadWithoutRegistration(t *testing.T) {
 		})
 	}
 }
+
+func TestPersonalSetupAllowsUserLogonsButRejectsServiceIdentities(t *testing.T) {
+	for _, tc := range []struct {
+		name, sid string
+		groups    []string
+		wantErr   bool
+	}{
+		{"network", "S-1-5-21-1234", []string{"S-1-5-2"}, false},
+		{"batch", "S-1-5-21-1234", []string{"S-1-5-3"}, false},
+		{"interactive", "S-1-5-21-1234", []string{"S-1-5-4"}, false},
+		{"SYSTEM", sidLocalSystem, nil, true},
+		{"LocalService", "S-1-5-19", nil, true},
+		{"NetworkService", "S-1-5-20", nil, true},
+		{"virtual service", "S-1-5-80-1234", nil, true},
+		{"domain service", "S-1-5-21-1234", []string{"S-1-5-6"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateInstallIdentity(tc.sid, tc.groups); (err != nil) != tc.wantErr {
+				t.Fatalf("personal setup identity: %v", err)
+			}
+			if tc.name == "network" || tc.name == "batch" {
+				if err := validateIdentity(tc.sid, tc.groups); err == nil {
+					t.Fatal("managed collector accepted a noninteractive token")
+				}
+			}
+		})
+	}
+}

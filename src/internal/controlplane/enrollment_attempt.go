@@ -71,7 +71,7 @@ func EnrollManaged(ctx context.Context, stateDir, endpoint string, req EnrollReq
 		return nil, "", nil, err
 	}
 	resp, err = send(endpoint, candidate)
-	if errors.Is(err, ErrUnsupportedVersion) {
+	if errors.Is(err, ErrEnrollmentConflict) {
 		// Enrollment's 409 can mean the original request already created this install.
 		if restoreErr := saveManagedEnrollmentAttempt(stateDir, savedEndpoint, body, priv); restoreErr != nil {
 			return nil, "", nil, errors.Join(err, restoreErr)

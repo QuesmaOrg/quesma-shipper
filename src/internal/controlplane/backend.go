@@ -51,6 +51,8 @@ var (
 	// and says so, instead of serving one that would partly apply.
 	ErrUnsupportedVersion = errors.New("backend: server has no config this client can execute")
 
+	ErrEnrollmentConflict = errors.New("backend: enrollment conflicts with an existing server record (HTTP 409)")
+
 	// ErrAuthorizeUnavailable is authorize answering 429 or 5xx: the batch commits nothing and a
 	// later run retries it. No in-run retry, no backoff loop.
 	ErrAuthorizeUnavailable = errors.New("backend: upload authorization is unavailable")
@@ -212,7 +214,13 @@ func (c *Client) postJSON(ctx context.Context, path string, payload []byte, out 
 	switch status {
 	case http.StatusOK, http.StatusCreated:
 	case http.StatusConflict:
-		return fmt.Errorf("%w: %s", ErrUnsupportedVersion, strings.TrimSpace(string(raw)))
+		if path == "/v1/enroll" {
+			return ErrEnrollmentConflict
+		}
+		if path == "/v1/config" {
+			return fmt.Errorf("%w: %s", ErrUnsupportedVersion, strings.TrimSpace(string(raw)))
+		}
+		return &HTTPStatusError{Status: status, Body: truncate(strings.TrimSpace(string(raw)), 200)}
 	case http.StatusUnauthorized, http.StatusForbidden:
 		// Wrapped, not just described: the engine stops the run on this and cannot match on prose.
 		return fmt.Errorf("backend: %s refused this install's credentials (HTTP %d): %w",

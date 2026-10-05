@@ -83,7 +83,14 @@ replacement grant. The shipper retries with the replacement while retaining that
 user's identity; reinstalling or deleting user state is unnecessary. A request whose
 response was lost is retried unchanged until the server accepts or refuses it.
 An existing-enrollment conflict requires an administrator to recover the server
-record; preserve the user's local identity and pending enrollment state.
+record; preserve the user's local identity and pending enrollment state. Repeated
+conflicts use randomized exponential backoff capped at 15 minutes, and continue
+retrying so server-side recovery does not require restarting every collector.
+Pending requests retain their original server as well as their grant. Changing
+`Server` alone does not redirect them, and an unreachable original server cannot
+approve replacement credentials. Restore access to that server and recover its
+record before migrating; do not delete pending state to force a new enrollment.
+Automatic migration of pending requests needs a separate recovery policy.
 To remove the policy, deploy the same script with `-Remove` after withdrawing its
 installation assignment. This preserves enrollment and collected upload history.
 
@@ -108,7 +115,10 @@ disabled; rerun the all-users installer to repair it. Interrupted uploads resume
 user state.
 
 The personal installer remains the default for a fresh interactive installation;
-`/CURRENTUSER` explicitly selects it for unattended deployment. Its existing AppId,
+`/CURRENTUSER` explicitly selects it for unattended deployment. Personal setup may
+run in a noninteractive user session; the scheduled collector starts when that user
+has an interactive session. SYSTEM and service identities must use `/ALLUSERS`.
+Its existing AppId,
 uninstall registration, task naming, and self-updates are retained.
 
 Before switching scope, uninstall the previous installation without purging state.
@@ -120,7 +130,13 @@ Do not target the same device with both the personal and System deployment route
 
 Remove the **Required** assignment before assigning **Uninstall**. Machine removal
 stops managed tasks and removes shared binaries, registration, and PATH integration.
-It retains all users' enrollment and upload history. Managed enrollment policy has
+If stopping the task fails before payload removal, uninstall attempts to restore
+its previous enabled state; already stopped sessions resume at a later task trigger.
+A failure after the task is deleted or payload removal begins can leave collection
+stopped. Retry uninstall, or rerun the all-users installer to restore collection.
+The hidden `preuninstall-system` command only stops and removes startup; it is a
+lifecycle helper, not a replacement for the installer uninstaller.
+Removal retains all users' enrollment and upload history. Managed enrollment policy has
 its own lifecycle; remove it separately with `Configure-System.ps1 -Remove`.
 
 ## Validate the deployment

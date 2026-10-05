@@ -267,6 +267,40 @@ try {
     Invoke-Setup $InstallerPath
     Assert-Installed $InitialVersion
 
+    $configHome = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $env:USERPROFILE '.config' }
+    $configPath = Join-Path $configHome 'trajectory-shipper\config.yaml'
+    $hadConfig = Test-Path -LiteralPath $configPath
+    $savedConfig = if ($hadConfig) { [IO.File]::ReadAllBytes($configPath) } else { $null }
+    $customState = Join-Path $temp 'custom state'
+    $task = $folder.GetTask($taskName)
+    $task.Enabled = $false
+    $task.Stop(0)
+    Wait-Stopped
+    try {
+        New-Item -ItemType Directory -Path (Split-Path $configPath) -Force | Out-Null
+        [IO.File]::WriteAllText($configPath, ('state_dir: ' + ($customState | ConvertTo-Json -Compress)))
+        $task.Enabled = $true
+        $null = $task.RunEx($null, 4, $sessionId, $null)
+        $deadline = (Get-Date).AddSeconds(30)
+        do {
+            $hasLogs = (Test-Path -LiteralPath (Join-Path $customState 'logs\agent.out.log')) -and
+                (Test-Path -LiteralPath (Join-Path $customState 'logs\agent.err.log'))
+            if ($hasLogs) { break }
+            Start-Sleep -Milliseconds 250
+        } while ((Get-Date) -lt $deadline)
+        if (-not $hasLogs) { throw 'Supervisor ignored the configured state_dir for its output logs.' }
+        Assert-Live
+    } finally {
+        $task.Enabled = $false
+        $task.Stop(0)
+        Wait-Stopped
+        if ($hadConfig) { [IO.File]::WriteAllBytes($configPath, $savedConfig) }
+        else { Remove-Item -LiteralPath $configPath -Force }
+        $task.Enabled = $true
+        $null = $task.RunEx($null, 4, $sessionId, $null)
+    }
+    Assert-Live
+
     $originalDirectoryAcl = (Get-Acl -LiteralPath $installDir).Sddl
     $protectedFiles = @(Get-ChildItem -LiteralPath $installDir -File | ForEach-Object {
         [pscustomobject]@{ Path = $_.FullName; Acl = (Get-Acl -LiteralPath $_.FullName).Sddl

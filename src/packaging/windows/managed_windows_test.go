@@ -4,6 +4,7 @@ package windows
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -140,5 +141,45 @@ func TestManagedMissingDestinationRequiresProtectedParentInheritance(t *testing.
 func TestManagedInstallerRejectsUserProfileTargets(t *testing.T) {
 	if err := ValidateManagedInstallDir(t.TempDir(), false); err == nil {
 		t.Fatal("managed installation accepted a user-owned profile location")
+	}
+}
+
+func TestPersonalSetupIgnoresEmptyManagedDirectoryOwner(t *testing.T) {
+	if !windows.GetCurrentProcessToken().IsElevated() {
+		t.Skip("creating a Program Files fixture requires elevation")
+	}
+	if SystemManaged() {
+		t.Skip("requires no managed installation")
+	}
+	if err := checkNoManagedTask(); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := DefaultManagedInstallDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dir, 0o755); errors.Is(err, os.ErrExist) {
+		t.Skip("requires an absent managed directory")
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Remove(dir); err != nil {
+			t.Error(err)
+		}
+	})
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION, user.User.Sid, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateManagedInstallDir(dir, false); err == nil {
+		t.Fatal("fixture unexpectedly satisfies managed ownership requirements")
+	}
+	if err := PrepareUserInstall(t.TempDir()); err != nil {
+		t.Fatalf("unrelated empty machine directory blocked personal setup: %v", err)
 	}
 }

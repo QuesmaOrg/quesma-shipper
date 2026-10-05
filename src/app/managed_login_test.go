@@ -82,8 +82,8 @@ func TestManagedEnrollmentErrorKeepsServerBodyOutOfLogs(t *testing.T) {
 	if !strings.Contains(err.Error(), "HTTP 500") || strings.Contains(err.Error(), "private-secret") {
 		t.Fatalf("unsafe managed enrollment diagnostic: %v", err)
 	}
-	conflict := managedEnrollmentError(errors.Join(controlplane.ErrUnsupportedVersion, errors.New("grant=private-secret")))
-	if !strings.Contains(conflict.Error(), "HTTP 409") || !strings.Contains(conflict.Error(), "administrator") ||
+	conflict := managedEnrollmentError(errors.Join(controlplane.ErrEnrollmentConflict, errors.New("grant=private-secret")))
+	if !errors.Is(conflict, controlplane.ErrEnrollmentConflict) || !strings.Contains(conflict.Error(), "HTTP 409") || !strings.Contains(conflict.Error(), "administrator") ||
 		strings.Contains(conflict.Error(), "private-secret") {
 		t.Fatalf("unsafe or unhelpful enrollment conflict diagnostic: %v", conflict)
 	}
@@ -248,7 +248,7 @@ func TestManagedEnrollmentConflictPreservesOriginalRecoveryRequest(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := testManagedLogin(srv.URL, "replacement-grant"); !errors.Is(err, controlplane.ErrUnsupportedVersion) {
+	if _, err := testManagedLogin(srv.URL, "replacement-grant"); !errors.Is(err, controlplane.ErrEnrollmentConflict) {
 		t.Fatalf("replacement conflict: %v", err)
 	}
 	after, err := os.ReadFile(pending)

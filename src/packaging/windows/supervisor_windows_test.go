@@ -39,3 +39,12 @@ func TestSupervisorRotatesLogsBeforeOpeningChildHandles(t *testing.T) {
 		}
 	}
 }
+
+func TestSupervisorKeepsDiagnosticsWhenPayloadCannotStart(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	dir, err := supervisorLogDir(filepath.Join(t.TempDir(), "missing.exe"))
+	if want := filepath.Join(state, "trajectory-shipper", "logs"); err != nil || dir != want {
+		t.Fatalf("damaged payload diagnostics = %q, %v; want %q", dir, err, want)
+	}
+}

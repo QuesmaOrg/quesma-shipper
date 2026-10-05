@@ -1,6 +1,7 @@
 package windows
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -58,18 +59,33 @@ func managedSupervisorLogDir() (string, error) {
 	if err := validateUserIdentity(); err != nil {
 		return "", err
 	}
+	exe, err := ManagedExecutable()
+	if err != nil || exe == "" {
+		return "", fmt.Errorf("locate managed program for log resolution: %v", err)
+	}
+	return supervisorLogDir(exe)
+}
+
+func supervisorLogDir(exe string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, "supervisor-log-dir")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
+	out, queryErr := cmd.Output()
+	dir := string(out)
+	if queryErr == nil && filepath.IsAbs(dir) {
+		return dir, nil
+	}
+	// A damaged payload must still leave supervisor launch failures in the default diagnostics log.
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	stateHome := os.Getenv("XDG_STATE_HOME")
-	if stateHome == "" {
-		stateHome = filepath.Join(home, ".local", "state")
-	}
-	if !filepath.IsAbs(stateHome) {
+	dir = platform.DefaultStateDir(home, os.LookupEnv)
+	if !filepath.IsAbs(dir) {
 		return "", fmt.Errorf("managed supervisor requires an absolute user state directory")
 	}
-	return filepath.Join(stateHome, "trajectory-shipper", "logs"), nil
+	return filepath.Join(dir, "logs"), nil
 }
 
 func managedSupervisorLock() (*os.File, error) {

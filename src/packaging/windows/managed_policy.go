@@ -68,42 +68,60 @@ func managedEnrollment(read func(string) (string, error)) (string, string, error
 	return server, grant, nil
 }
 
-func validateIdentity(sid string, groups []string) error {
+func validateInstallIdentity(sid string, groups []string) error {
 	if sid == sidLocalSystem || sid == "S-1-5-19" || sid == "S-1-5-20" || strings.HasPrefix(sid, "S-1-5-80-") {
 		return errors.New("refusing to collect or enroll as SYSTEM or a Windows service account; run as the signed-in user")
 	}
-	interactive := false
 	for _, group := range groups {
 		if group == "S-1-5-6" {
 			return errors.New("refusing to collect or enroll in a Windows service session")
 		}
-		interactive = interactive || group == "S-1-5-4"
-	}
-	if !interactive {
-		return errors.New("Quesma Shipper requires a signed-in user's interactive session")
 	}
 	return nil
 }
 
-func checkNoPersonalProgram(dir string) error {
-	for _, name := range []string{"quesma-shipper.exe", "unins000.exe"} {
-		path := filepath.Join(dir, name)
-		if _, err := os.Lstat(path); err == nil {
-			return fmt.Errorf("a personal installation exists at %s; uninstall it without purging local state", path)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
+func validateIdentity(sid string, groups []string) error {
+	if err := validateInstallIdentity(sid, groups); err != nil {
+		return err
+	}
+	for _, group := range groups {
+		if group == "S-1-5-4" {
+			return nil
 		}
+	}
+	return errors.New("Quesma Shipper requires a signed-in user's interactive session")
+}
+
+func checkNoPersonalProgram(dir string) error {
+	path, err := existingProgram(dir)
+	if err != nil {
+		return err
+	}
+	if path != "" {
+		return fmt.Errorf("a personal installation exists at %s; uninstall it without purging local state", path)
 	}
 	return nil
 }
 
 func checkNoManagedProgram(dir string) error {
-	for _, name := range []string{"quesma-shipper.exe", "unins000.exe"} {
-		if _, err := os.Lstat(filepath.Join(dir, name)); err == nil {
-			return common.ErrSystemManaged
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("inspect managed installation: %w", err)
-		}
+	path, err := existingProgram(dir)
+	if err != nil {
+		return fmt.Errorf("inspect managed installation: %w", err)
+	}
+	if path != "" {
+		return common.ErrSystemManaged
 	}
 	return nil
+}
+
+func existingProgram(dir string) (string, error) {
+	for _, name := range []string{"quesma-shipper.exe", "unins000.exe"} {
+		path := filepath.Join(dir, name)
+		if _, err := os.Lstat(path); err == nil {
+			return path, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+	}
+	return "", nil
 }

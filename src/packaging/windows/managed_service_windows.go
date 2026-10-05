@@ -61,6 +61,7 @@ func PostInstallSystem() error {
 	return managedTaskAction("Install", dir, "")
 }
 
+// The hidden preuninstall-system CLI uses this; Inno removes damaged payloads independently.
 func PreUninstallSystem() error {
 	dir, err := currentManagedDirectory()
 	if err != nil {

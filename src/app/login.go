@@ -54,8 +54,8 @@ func managedEnrollmentError(err error) error {
 	if errors.Is(err, formats.ErrCredentialsRefused) {
 		return fmt.Errorf("managed enrollment grant was refused; ask an administrator to replace an expired or revoked grant")
 	}
-	if errors.Is(err, controlplane.ErrUnsupportedVersion) {
-		return fmt.Errorf("managed enrollment conflicts with an existing server record (HTTP 409); ask an administrator to recover this installation's enrollment")
+	if errors.Is(err, controlplane.ErrEnrollmentConflict) {
+		return fmt.Errorf("%w; ask an administrator to recover this installation's enrollment", controlplane.ErrEnrollmentConflict)
 	}
 	var httpErr *controlplane.HTTPStatusError
 	if errors.As(err, &httpErr) {

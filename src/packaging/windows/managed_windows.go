@@ -201,6 +201,10 @@ func ValidateUserUninstall() error {
 }
 
 func validateUserIdentity() error {
+	return validateProcessIdentity(validateIdentity)
+}
+
+func validateProcessIdentity(validate func(string, []string) error) error {
 	token := windows.GetCurrentProcessToken()
 	identity, err := token.GetTokenUser()
 	if err != nil {
@@ -214,7 +218,7 @@ func validateUserIdentity() error {
 	for _, group := range groups.AllGroups() {
 		sids = append(sids, group.Sid.String())
 	}
-	return validateIdentity(identity.User.Sid.String(), sids)
+	return validate(identity.User.Sid.String(), sids)
 }
 
 func ValidateRun() error {
@@ -274,7 +278,7 @@ func CheckNoUserInstallation() error {
 }
 
 func PrepareUserInstall(dir string) error {
-	if err := validateUserIdentity(); err != nil {
+	if err := validateProcessIdentity(validateInstallIdentity); err != nil {
 		return err
 	}
 	if SystemManaged() {
@@ -282,9 +286,6 @@ func PrepareUserInstall(dir string) error {
 	}
 	managed, err := DefaultManagedInstallDir()
 	if err != nil {
-		return err
-	}
-	if err := ValidateManagedInstallDir(managed, false); err != nil {
 		return err
 	}
 	if err := checkNoManagedProgram(managed); err != nil {

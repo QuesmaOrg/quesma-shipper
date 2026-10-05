@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -55,6 +56,19 @@ func postinstallCmd() *cobra.Command {
 			return err
 		},
 	}
+}
+
+func supervisorLogDirCmd() *cobra.Command {
+	return &cobra.Command{Use: "supervisor-log-dir", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			_, paths, _ := app.ResolveEffective()
+			dir, err := runLogStateDir(paths)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprint(cmd.OutOrStdout(), filepath.Join(dir, "logs"))
+			return err
+		}}
 }
 
 func preuninstallSystemCmd() *cobra.Command {
