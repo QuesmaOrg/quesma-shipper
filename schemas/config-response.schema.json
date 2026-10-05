@@ -8,7 +8,7 @@
   "additionalProperties": false,
   "properties": {
     "config": {
-      "description": "The served YAML document, standard base64. The stored bytes are served verbatim and cached verbatim.",
+      "description": "The served YAML document, standard base64. The stored bytes are served verbatim. The client caches those exact bytes only after parsing and resolving them successfully; rejection preserves the last working cache.",
       "$ref": "#/$defs/base64"
     },
     "expires_at": {

@@ -150,7 +150,7 @@ sequenceDiagram
     S->>CP: POST /v1/config, Shipper-Device signed
     Note over CP: verify the device signature against the record read fresh<br/>409 if no requested config_version is served<br/>re-render the document only when material changed
     CP-->>S: 200 config + expires_at
-    Note over S: parse, cache the exact bytes, resolve.<br/>Any failure falls back to the cached config; collection continues.
+    Note over S: parse and resolve; then cache the exact bytes.<br/>Any failure preserves the last working cache; collection continues.
 ```
 
 ### C. Authorize and upload
@@ -234,6 +234,20 @@ are bearer credentials. Neither peer logs them. When present, S3's `x-amz-taggin
 `x-ms-tags` carry exactly `class=trajectory` or `class=context`. GCS has no object tags. Azure
 tickets also require `x-ms-blob-type: BlockBlob`. Successful responses carry
 `Cache-Control: no-store`.
+
+## Served configuration validation
+
+[`config-document.schema.json`](schemas/config-document.schema.json) describes the decoded
+served YAML object. Control planes should use `protocol.ValidateConfigDocument(rawJSON)` on new
+writes before rendering YAML. It checks types, allowed fields, and Go durations: a positive
+`drain_deadline` and `mode.schedule` of at least one minute. The helper asserts the schema's
+custom duration formats; generic validators must register those formats too.
+
+New writes reject the legacy `send` and `crash_report` fields, which clients still read and
+ignore. This does not change the wire format or tighten legacy reads. Source catalogs, rule packs,
+recipient keys, and local-layer restrictions still require client resolution. A client must
+resolve successfully before replacing its last working cache, and report rejection through
+telemetry when enabled by the working configuration, without including configuration contents.
 
 ## V2 upload authorization rules
 
