@@ -149,7 +149,7 @@ func selfUpdateGate(build app.Build, getenv func(string) string, persistedHop st
 // autoupdate.enabled, true when the config did not resolve.
 func maybeSelfUpdate(ctx context.Context, build app.Build, autoupdate bool, errOut io.Writer) {
 	if packaging.SystemManaged() {
-		fmt.Fprintln(errOut, "self-update: managed by an administrator through the macOS package")
+		fmt.Fprintln(errOut, "self-update: managed by an administrator through the installation package")
 		return
 	}
 	stateDir, stateErr := app.StateDirWithoutConfig()

@@ -2,7 +2,11 @@ package controlplane
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -59,5 +63,34 @@ func TestManagedEnrollmentAttemptPreservesTheExactRequest(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, managedAttemptFile)); !os.IsNotExist(err) {
 		t.Fatalf("pending request survived cleanup: %v", err)
+	}
+}
+
+func TestConflictErrorsDistinguishEnrollmentFromConfiguration(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "private-grant", http.StatusConflict)
+	}))
+	defer srv.Close()
+	client, err := New(Options{Endpoint: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		path string
+		want error
+	}{
+		{"/v1/enroll", ErrEnrollmentConflict},
+		{"/v1/config", ErrUnsupportedVersion},
+	} {
+		err := client.postJSON(context.Background(), tc.path, []byte(`{}`), nil, false)
+		if !errors.Is(err, tc.want) {
+			t.Fatalf("%s: %v", tc.path, err)
+		}
+		if errors.Is(err, ErrEnrollmentConflict) && errors.Is(err, ErrUnsupportedVersion) {
+			t.Fatal("conflict meanings overlap")
+		}
+		if tc.path == "/v1/enroll" && err.Error() != ErrEnrollmentConflict.Error() {
+			t.Fatal("enrollment conflict leaked server body")
+		}
 	}
 }

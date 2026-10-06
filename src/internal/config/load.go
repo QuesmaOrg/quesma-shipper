@@ -24,13 +24,9 @@ func DefaultPaths(home string, lookup func(string) (string, bool)) Paths {
 	if v, ok := lookup("XDG_CONFIG_HOME"); ok && v != "" {
 		configHome = v
 	}
-	stateHome := filepath.Join(home, ".local", "state")
-	if v, ok := lookup("XDG_STATE_HOME"); ok && v != "" {
-		stateHome = v
-	}
 	return Paths{
 		User:     filepath.Join(configHome, "trajectory-shipper", "config.yaml"),
-		StateDir: filepath.Join(stateHome, "trajectory-shipper"),
+		StateDir: platform.DefaultStateDir(home, lookup),
 	}
 }
 

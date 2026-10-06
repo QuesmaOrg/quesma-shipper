@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
+	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
 
 const (
@@ -72,7 +73,9 @@ func Root(b app.Build, out, errOut io.Writer) *cobra.Command {
 	root.AddCommand(login)
 
 	for _, c := range []*cobra.Command{
-		preuninstallSystemCmd(), postinstallCmd(), serviceCmd(), runCmd(b), previewCmd(b), logCmd(), configCmd(), stateCmd(), localDevCmd(),
+		preuninstallSystemCmd(), supervisorLogDirCmd(), postinstallCmd(), serviceCmd(), runCmd(b), previewCmd(b), logCmd(), configCmd(), stateCmd(), localDevCmd(),
+		prepareUserInstallCmd(), systemInstallCmd("prepare-system-install", packaging.PrepareSystemInstall),
+		systemInstallCmd("resume-system-install", packaging.ResumeSystemInstall),
 	} {
 		c.Hidden = true
 		root.AddCommand(c)

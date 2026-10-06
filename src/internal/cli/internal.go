@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -57,9 +58,42 @@ func postinstallCmd() *cobra.Command {
 	}
 }
 
+func supervisorLogDirCmd() *cobra.Command {
+	return &cobra.Command{Use: "supervisor-log-dir", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			_, paths, _ := app.ResolveEffective()
+			dir, err := runLogStateDir(paths)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprint(cmd.OutOrStdout(), filepath.Join(dir, "logs"))
+			return err
+		}}
+}
+
 func preuninstallSystemCmd() *cobra.Command {
 	return &cobra.Command{Use: "preuninstall-system", Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error { return packaging.PreUninstallSystem() }}
+}
+
+func systemInstallCmd(name string, action func(string, string) error) *cobra.Command {
+	var dir, recovery string
+	cmd := &cobra.Command{Use: name, Args: cobra.NoArgs, Hidden: true,
+		RunE: func(*cobra.Command, []string) error { return action(dir, recovery) }}
+	cmd.Flags().StringVar(&dir, "install-dir", "", "Machine installation directory")
+	cmd.Flags().StringVar(&recovery, "recovery-file", "", "Setup task recovery file")
+	_ = cmd.MarkFlagRequired("install-dir")
+	_ = cmd.MarkFlagRequired("recovery-file")
+	return cmd
+}
+
+func prepareUserInstallCmd() *cobra.Command {
+	var dir string
+	cmd := &cobra.Command{Use: "prepare-user-install", Args: cobra.NoArgs, Hidden: true,
+		RunE: func(*cobra.Command, []string) error { return packaging.PrepareUserInstall(dir) }}
+	cmd.Flags().StringVar(&dir, "install-dir", "", "Personal installation directory")
+	_ = cmd.MarkFlagRequired("install-dir")
+	return cmd
 }
 
 func reportRemote(w io.Writer, r *app.Runtime) {

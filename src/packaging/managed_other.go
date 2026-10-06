@@ -1,4 +1,4 @@
-//go:build !darwin
+//go:build !darwin && !windows
 
 package packaging
 
@@ -14,5 +14,5 @@ func SystemManaged() bool                                  { return false }
 func ValidateUserUninstall() error                         { return nil }
 func ValidateRun() error                                   { return nil }
 func PreUninstallSystem() error {
-	return errors.New("system package removal is only available on macOS")
+	return errors.New("system package removal is only available on macOS and Windows")
 }
