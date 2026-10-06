@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	mathrand "math/rand"
 	"os"
@@ -291,6 +292,24 @@ func TestResealedObjectRewrites(t *testing.T) {
 	a.wantSidecar(out(installA, claude, "a/2.jsonl"), "/a/2.jsonl", t0)
 }
 
+// S3 LastModified has one-second precision, so a key resealed within that second keeps its mtime.
+func TestResealedSameMtimeRewrites(t *testing.T) {
+	a := newArchive(t)
+	key := objectKey(installA, claude, "11aa")
+	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v1\n", t0)
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+
+	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v2 longer\n", t0)
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "v2 longer\n", t0)
+
+	// Same size too: only the sidecar's shipped_hash tells them apart.
+	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v3 longer\n", t0)
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "v3 longer\n", t0)
+	a.wantSummary(a.run(), 0, 0, 1, 0)
+}
+
 func TestInstallRenameKeepsOldDir(t *testing.T) {
 	a := newArchive(t)
 	a.tags(installA, "old name")
@@ -508,6 +527,31 @@ func TestCoarseMtimeFilesystem(t *testing.T) {
 	a.wantSummary(a.run(), 0, 1, 0, 0)
 	a.wantFile(out(installA, claude, "a/1.jsonl"), "v2\n", t0.Add(time.Second))
 	a.wantPlain(out(installA, claude, "a/1.jsonl"))
+
+	// Rounds to the same stored second as v2.
+	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v3\n", t0.Add(1700*time.Millisecond))
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "v3\n", t0.Add(time.Second))
+}
+
+// A probe that cannot show the stored mtime fails the object rather than guessing.
+func TestMtimeProbeFailureFails(t *testing.T) {
+	orig := setMtime
+	t.Cleanup(func() { setMtime = orig })
+	setMtime = func(root *os.Root, name string, mtime time.Time) error {
+		if strings.HasSuffix(name, ".probe") {
+			return errors.New("probe refused")
+		}
+		mtime = mtime.Truncate(time.Second)
+		return root.Chtimes(name, mtime, mtime)
+	}
+
+	a := newArchive(t)
+	key := objectKey(installA, claude, "11aa")
+	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v1\n", t0.Add(500*time.Millisecond))
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+	a.wantSummary(a.run(), 1, 0, 0, 1)
+	a.wantStderr("unseal " + key + ": mtime probe: probe refused")
 }
 
 // Symlinks that cannot hide an object, a tags.json or a directory of them are not failures.

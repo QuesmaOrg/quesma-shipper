@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -174,6 +175,11 @@ func (u *unsealer) collect() []object {
 			return nil
 		}
 		if !d.IsDir() && tailMatches(segs, objectLayout) {
+			// Opening a FIFO blocks until a writer appears, so it must never reach object.
+			if !d.Type().IsRegular() {
+				u.fail(p, errors.New("not a regular file"))
+				return nil
+			}
 			n := len(segs)
 			objects = append(objects, object{
 				rel:        p,
@@ -253,8 +259,8 @@ func (u *unsealer) object(o object) (bool, error) {
 		u.claimed[key] = o.rel
 	}
 
-	if u.upToDate(out, info.ModTime()) {
-		return false, nil
+	if ok, err := u.upToDate(out, info.ModTime(), m); err != nil || ok {
+		return false, err
 	}
 	return true, u.write(obj, out, info.ModTime())
 }
@@ -270,8 +276,12 @@ func (u *unsealer) outputPath(o object, m transforms.Manifest) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	dir, err := u.installDir(o.installRel, o.installID)
+	if err != nil {
+		return "", err
+	}
 	// The ids are safe segments: the manifest schema constrains them and they match the key.
-	return u.installDir(o.installRel, o.installID) + "/" + m.SourceID + "/" + native, nil
+	return dir + "/" + m.SourceID + "/" + native, nil
 }
 
 // nativeRelPath turns a native path from any OS into a relative path under the source directory.
@@ -299,37 +309,53 @@ func nativeRelPath(native string) (string, error) {
 func isASCIILetter(c byte) bool { return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' }
 
 // installDir names an install's output directory once per run, warning once about a bad name.
-func (u *unsealer) installDir(installRel, installID string) string {
+// An unreadable tags.json fails the object instead, so no output lands under the wrong directory.
+func (u *unsealer) installDir(installRel, installID string) (string, error) {
 	if dir, ok := u.installDirs[installRel]; ok {
-		return dir
+		return dir, nil
+	}
+	tagsPath := installRel + "/tags.json"
+	raw, err := u.readTags(tagsPath)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", tagsPath, err)
 	}
 	dir := installID
-	name, err := u.installName(installRel)
+	name, err := installName(raw)
 	if err != nil {
-		fmt.Fprintf(u.stderr, "warning %s/tags.json: %s; using the install id\n", oneLine(installRel), oneLine(err.Error()))
+		fmt.Fprintf(u.stderr, "warning %s: %s; using the install id\n", oneLine(tagsPath), oneLine(err.Error()))
 	}
 	if name != "" {
 		dir = fmt.Sprintf("%s (%s)", name, installID[:min(8, len(installID))])
 	}
 	u.installDirs[installRel] = dir
-	return dir
+	return dir, nil
 }
 
-// installName is "" with no error when tags.json is absent, not a regular file (collect reports a
-// symlink there), or has no name.
-func (u *unsealer) installName(installRel string) (string, error) {
-	tagsPath := installRel + "/tags.json"
-	if info, err := u.enc.Lstat(tagsPath); err != nil || !info.Mode().IsRegular() {
-		return "", nil
+// readTags is nil with no error when tags.json is absent or not a regular file (collect reports a
+// symlink there), and reads at most one byte past maxTagsBytes.
+func (u *unsealer) readTags(tagsPath string) ([]byte, error) {
+	info, err := u.enc.Lstat(tagsPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, nil
 	}
 	f, err := u.enc.Open(tagsPath)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, maxTagsBytes+1))
-	if err != nil {
-		return "", err
+	return io.ReadAll(io.LimitReader(f, maxTagsBytes+1))
+}
+
+// installName is "" with no error when there is no tags.json or it has no name.
+func installName(raw []byte) (string, error) {
+	if raw == nil {
+		return "", nil
 	}
 	if len(raw) > maxTagsBytes {
 		return "", fmt.Errorf("over %d bytes", maxTagsBytes)
@@ -351,34 +377,49 @@ func (u *unsealer) installName(installRel string) (string, error) {
 	return name, nil
 }
 
-func (u *unsealer) upToDate(out string, mtime time.Time) bool {
+// upToDate also compares the sidecar with the manifest, since a key resealed within the mtime's
+// precision (one second on S3, coarser on FAT) keeps its mtime but not its shipped_hash.
+func (u *unsealer) upToDate(out string, mtime time.Time, m transforms.Manifest) (bool, error) {
 	p, err := u.plain.Stat(out)
-	if err != nil || !p.Mode().IsRegular() || !p.ModTime().Equal(mtime) && !p.ModTime().Equal(u.stored(mtime)) {
-		return false
+	if err != nil || !p.Mode().IsRegular() || p.Size() != m.PayloadSize {
+		return false, nil
 	}
-	s, err := u.plain.Stat(out + sidecarSuffix)
-	return err == nil && s.Mode().IsRegular()
+	if !p.ModTime().Equal(mtime) {
+		stored, err := u.stored(mtime)
+		if err != nil {
+			return false, err
+		}
+		if !p.ModTime().Equal(stored) {
+			return false, nil
+		}
+	}
+	want, err := sidecarJSON(m)
+	if err != nil {
+		return false, err
+	}
+	got, err := u.plain.ReadFile(out + sidecarSuffix)
+	return err == nil && bytes.Equal(got, want), nil
 }
 
 // stored is mtime as PLAIN_DIR keeps it, since FAT, HFS+ and some mounts round what Chtimes sets.
-func (u *unsealer) stored(mtime time.Time) time.Time {
+func (u *unsealer) stored(mtime time.Time) (time.Time, error) {
 	if u.probe == "" {
 		name := tempName("probe")
 		f, err := u.plain.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if err != nil {
-			return mtime
+			return time.Time{}, fmt.Errorf("mtime probe: %w", err)
 		}
 		f.Close()
 		u.probe = name
 	}
 	if err := setMtime(u.plain, u.probe, mtime); err != nil {
-		return mtime
+		return time.Time{}, fmt.Errorf("mtime probe: %w", err)
 	}
 	info, err := u.plain.Stat(u.probe)
 	if err != nil {
-		return mtime
+		return time.Time{}, fmt.Errorf("mtime probe: %w", err)
 	}
-	return info.ModTime()
+	return info.ModTime(), nil
 }
 
 func (u *unsealer) removeProbe() {
@@ -420,14 +461,15 @@ func (u *unsealer) write(obj *io.SectionReader, out string, mtime time.Time) (er
 		return err
 	}
 	if sidecar, err = u.stage(dir, mtime, func(w io.Writer) error {
-		enc := json.NewEncoder(w)
-		enc.SetEscapeHTML(false)
-		enc.SetIndent("", "  ")
-		return enc.Encode(m)
+		b, err := sidecarJSON(m)
+		if err == nil {
+			_, err = w.Write(b)
+		}
+		return err
 	}); err != nil {
 		return err
 	}
-	// Sidecar first: the payload's mtime is what marks the pair complete for the next run.
+	// Sidecar first: its longer name fails before the payload is replaced.
 	if err = u.plain.Rename(sidecar, out+sidecarSuffix); err != nil {
 		return err
 	}
@@ -436,6 +478,15 @@ func (u *unsealer) write(obj *io.SectionReader, out string, mtime time.Time) (er
 	}
 	u.syncDir(dir)
 	return nil
+}
+
+func sidecarJSON(m transforms.Manifest) ([]byte, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	err := enc.Encode(m)
+	return b.Bytes(), err
 }
 
 // stage writes a synced temp file in dir stamped with mtime; its fixed-length name fits beside any leaf.
