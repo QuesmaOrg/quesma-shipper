@@ -40,9 +40,6 @@ const SuggestedPrefixBytes = 256 * 1024
 // input, not data this code wrote.
 const maxManifestBytes = 4 << 20
 
-// MaxPrefixBytes is where prefix doubling stops: a valid manifest plus sealing overhead fits.
-const MaxPrefixBytes = maxManifestBytes + SuggestedPrefixBytes
-
 // maxDecompressedBytes bounds zstd expansion so a crafted object cannot exhaust memory.
 const maxDecompressedBytes = 8 << 30
 
@@ -245,18 +242,22 @@ func OpenTo(r io.Reader, w io.Writer, identities ...age.Identity) (Manifest, err
 // ALWAYS ends in a truncation error from age or zstd, which must be swallowed once the
 // first tar entry is whole; a failure before that is ErrPrefixTooShort instead.
 func ReadManifestPrefix(prefix []byte, identities ...age.Identity) (Manifest, error) {
-	tr, closeFn, err := tarReader(bytes.NewReader(prefix), identities...)
-	if err != nil {
-		// A prefix too short to hold even the age header fails here.
-		return Manifest{}, fmt.Errorf("%w: %v", ErrPrefixTooShort, err)
-	}
-	defer closeFn()
-
-	m, err := readManifestEntry(tr)
+	m, err := ReadManifest(bytes.NewReader(prefix), identities...)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("%w: %v", ErrPrefixTooShort, err)
 	}
 	return m, nil
+}
+
+// ReadManifest decodes the manifest from the head of a whole object, reading no further than
+// the manifest needs, so its errors are the real cause rather than truncation.
+func ReadManifest(r io.Reader, identities ...age.Identity) (Manifest, error) {
+	tr, closeFn, err := tarReader(r, identities...)
+	if err != nil {
+		return Manifest{}, err
+	}
+	defer closeFn()
+	return readManifestEntry(tr)
 }
 
 // readManifestEntry validates that the first tar entry is the manifest; if it is not, the

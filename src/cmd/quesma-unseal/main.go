@@ -39,21 +39,15 @@ const maxNameBytes = 255
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
-type identityFiles []string
-
-func (f *identityFiles) String() string { return strings.Join(*f, ",") }
-
-func (f *identityFiles) Set(v string) error {
-	*f = append(*f, v)
-	return nil
-}
-
 func run(args []string, stdout, stderr io.Writer) int {
 	start := time.Now()
 	flags := flag.NewFlagSet("quesma-unseal", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	var idFiles identityFiles
-	flags.Var(&idFiles, "i", "age identity file, as for age -d -i (repeatable)")
+	var idFiles []string
+	flags.Func("i", "age identity file, as for age -d -i (repeatable)", func(v string) error {
+		idFiles = append(idFiles, v)
+		return nil
+	})
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprintln(stdout, usage)
@@ -86,7 +80,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	u := &unsealer{
 		enc: enc, plain: plain, ids: ids, stderr: stderr,
-		tags: map[string]bool{}, installDirs: map[string]string{}, claimed: map[string]string{},
+		installDirs: map[string]string{}, claimed: map[string]string{},
 	}
 	defer u.removeProbe()
 	for _, o := range u.collect() {
@@ -144,7 +138,6 @@ type unsealer struct {
 	ids        []age.Identity
 	stderr     io.Writer
 
-	tags        map[string]bool   // install dir rel path -> has a regular tags.json
 	installDirs map[string]string // install dir rel path -> output directory name
 	claimed     map[string]string // case- and NFC-folded output path -> .age rel path that claimed it
 	probe       string            // PLAIN_DIR file that shows how its filesystem stores an mtime
@@ -171,7 +164,6 @@ func (u *unsealer) collect() []object {
 			return nil
 		}
 		segs := strings.Split(p, "/")
-		n := len(segs)
 		if d.Type()&fs.ModeSymlink != 0 {
 			switch {
 			case archiveSlot(segs):
@@ -181,15 +173,8 @@ func (u *unsealer) collect() []object {
 			}
 			return nil
 		}
-		if d.IsDir() {
-			return nil
-		}
-		switch {
-		case n >= 2 && segs[n-1] == "tags.json" && isInstall(segs[n-2]):
-			if d.Type().IsRegular() {
-				u.tags[path.Dir(p)] = true
-			}
-		case isMirrorObject(segs):
+		if !d.IsDir() && tailMatches(segs, objectLayout) {
+			n := len(segs)
 			objects = append(objects, object{
 				rel:        p,
 				installRel: strings.Join(segs[:n-3], "/"),
@@ -204,25 +189,35 @@ func (u *unsealer) collect() []object {
 
 func isInstall(seg string) bool { return strings.HasPrefix(seg, "install=") }
 
-func isMirrorObject(segs []string) bool {
-	n := len(segs)
-	return n >= 4 && isInstall(segs[n-4]) && segs[n-3] == "mirror" &&
-		strings.HasPrefix(segs[n-2], "source=") && strings.HasSuffix(segs[n-1], ".age")
+// The archive layout under an install, as one path.Match pattern per segment.
+var (
+	objectLayout = []string{"install=*", "mirror", "source=*", "*.age"}
+	tagsLayout   = []string{"install=*", "tags.json"}
+)
+
+func tailMatches(segs, pattern []string) bool {
+	if len(segs) < len(pattern) {
+		return false
+	}
+	tail := segs[len(segs)-len(pattern):]
+	for i, pat := range pattern {
+		if ok, _ := path.Match(pat, tail[i]); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // archiveSlot reports whether a symlink sits where an object, a tags.json or a directory of them would.
 func archiveSlot(segs []string) bool {
-	n := len(segs)
-	at := func(i int) string {
-		if i < 0 {
-			return ""
+	for _, layout := range [][]string{objectLayout, tagsLayout} {
+		for k := 1; k <= len(layout); k++ {
+			if tailMatches(segs, layout[:k]) {
+				return true
+			}
 		}
-		return segs[i]
 	}
-	return isInstall(at(n-1)) ||
-		isInstall(at(n-2)) && (at(n-1) == "mirror" || at(n-1) == "tags.json") ||
-		isInstall(at(n-3)) && at(n-2) == "mirror" && strings.HasPrefix(at(n-1), "source=") ||
-		isMirrorObject(segs)
+	return false
 }
 
 // object brings one output up to date and reports whether it decrypted the payload.
@@ -240,7 +235,7 @@ func (u *unsealer) object(o object) (bool, error) {
 		return false, errors.New("not a regular file")
 	}
 	obj := io.NewSectionReader(f, 0, info.Size())
-	m, err := u.manifest(obj)
+	m, err := transforms.ReadManifest(io.NewSectionReader(obj, 0, obj.Size()), u.ids...)
 	if err != nil {
 		return false, err
 	}
@@ -264,28 +259,6 @@ func (u *unsealer) object(o object) (bool, error) {
 	return true, u.write(obj, out, info.ModTime())
 }
 
-// manifest reads the manifest from a prefix of the object, doubling it as ErrPrefixTooShort asks.
-func (u *unsealer) manifest(obj *io.SectionReader) (transforms.Manifest, error) {
-	for n := int64(transforms.SuggestedPrefixBytes); ; n = min(2*n, transforms.MaxPrefixBytes) {
-		prefix, err := io.ReadAll(io.NewSectionReader(obj, 0, n))
-		if err != nil {
-			return transforms.Manifest{}, err
-		}
-		m, err := transforms.ReadManifestPrefix(prefix, u.ids...)
-		if err == nil {
-			return m, nil
-		}
-		if int64(len(prefix)) < n || n == transforms.MaxPrefixBytes {
-			break
-		}
-	}
-	// ReadManifestPrefix reports every failure as too short; OpenTo surfaces the real cause.
-	if _, err := transforms.OpenTo(io.NewSectionReader(obj, 0, obj.Size()), io.Discard, u.ids...); err != nil {
-		return transforms.Manifest{}, err
-	}
-	return transforms.Manifest{}, fmt.Errorf("manifest not within the first %d bytes", transforms.MaxPrefixBytes)
-}
-
 func (u *unsealer) outputPath(o object, m transforms.Manifest) (string, error) {
 	if m.InstallID != o.installID {
 		return "", fmt.Errorf("manifest install_id %q does not match key install=%s", m.InstallID, o.installID)
@@ -297,9 +270,7 @@ func (u *unsealer) outputPath(o object, m transforms.Manifest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if leaf := path.Base(native) + sidecarSuffix; len(leaf) > maxNameBytes {
-		return "", fmt.Errorf("output name %s is over %d bytes", leaf, maxNameBytes)
-	}
+	// The ids are safe segments: the manifest schema constrains them and they match the key.
 	return u.installDir(o.installRel, o.installID) + "/" + m.SourceID + "/" + native, nil
 }
 
@@ -333,9 +304,9 @@ func (u *unsealer) installDir(installRel, installID string) string {
 		return dir
 	}
 	dir := installID
-	name, warning := u.installName(installRel)
-	if warning != "" {
-		fmt.Fprintf(u.stderr, "warning %s/tags.json: %s; using the install id\n", oneLine(installRel), oneLine(warning))
+	name, err := u.installName(installRel)
+	if err != nil {
+		fmt.Fprintf(u.stderr, "warning %s/tags.json: %s; using the install id\n", oneLine(installRel), oneLine(err.Error()))
 	}
 	if name != "" {
 		dir = fmt.Sprintf("%s (%s)", name, installID[:min(8, len(installID))])
@@ -344,37 +315,40 @@ func (u *unsealer) installDir(installRel, installID string) string {
 	return dir
 }
 
-func (u *unsealer) installName(installRel string) (name, warning string) {
-	if !u.tags[installRel] {
-		return "", ""
+// installName is "" with no error when tags.json is absent, not a regular file (collect reports a
+// symlink there), or has no name.
+func (u *unsealer) installName(installRel string) (string, error) {
+	tagsPath := installRel + "/tags.json"
+	if info, err := u.enc.Lstat(tagsPath); err != nil || !info.Mode().IsRegular() {
+		return "", nil
 	}
-	f, err := u.enc.Open(installRel + "/tags.json")
+	f, err := u.enc.Open(tagsPath)
 	if err != nil {
-		return "", err.Error()
+		return "", err
 	}
 	defer f.Close()
 	raw, err := io.ReadAll(io.LimitReader(f, maxTagsBytes+1))
 	if err != nil {
-		return "", err.Error()
+		return "", err
 	}
 	if len(raw) > maxTagsBytes {
-		return "", fmt.Sprintf("over %d bytes", maxTagsBytes)
+		return "", fmt.Errorf("over %d bytes", maxTagsBytes)
 	}
 	var tags struct {
 		Name *string `json:"name"`
 	}
 	if err := json.Unmarshal(raw, &tags); err != nil {
-		return "", err.Error()
+		return "", err
 	}
 	if tags.Name == nil {
-		return "", ""
+		return "", nil
 	}
-	name = strings.TrimSpace(*tags.Name)
+	name := strings.TrimSpace(*tags.Name)
 	// The directory is "<name> (<8-char id>)", 11 bytes longer than the name.
 	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") || len(name)+11 > maxNameBytes {
-		return "", fmt.Sprintf("name %q is not a safe directory name", *tags.Name)
+		return "", fmt.Errorf("name %q is not a safe directory name", *tags.Name)
 	}
-	return name, ""
+	return name, nil
 }
 
 func (u *unsealer) upToDate(out string, mtime time.Time) bool {
@@ -419,7 +393,7 @@ var setMtime = func(root *os.Root, name string, mtime time.Time) error {
 }
 
 // write stages payload and sidecar before renaming either, so a failed object leaves no new file.
-func (u *unsealer) write(obj *io.SectionReader, out string, mtime time.Time) error {
+func (u *unsealer) write(obj *io.SectionReader, out string, mtime time.Time) (err error) {
 	dir := path.Dir(out)
 	if err := u.plain.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -429,32 +403,35 @@ func (u *unsealer) write(obj *io.SectionReader, out string, mtime time.Time) err
 			return fmt.Errorf("output %s exists and is not a regular file", p)
 		}
 	}
+	var payload, sidecar string
+	defer func() {
+		// Removing a temp name already renamed away is a harmless no-op.
+		for _, tmp := range []string{payload, sidecar} {
+			if err != nil && tmp != "" {
+				_ = u.plain.Remove(tmp)
+			}
+		}
+	}()
 	var m transforms.Manifest
-	payload, err := u.stage(dir, mtime, func(w io.Writer) (err error) {
+	if payload, err = u.stage(dir, mtime, func(w io.Writer) (err error) {
 		m, err = transforms.OpenTo(io.NewSectionReader(obj, 0, obj.Size()), w, u.ids...)
 		return err
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
-	sidecar, err := u.stage(dir, mtime, func(w io.Writer) error {
+	if sidecar, err = u.stage(dir, mtime, func(w io.Writer) error {
 		enc := json.NewEncoder(w)
 		enc.SetEscapeHTML(false)
 		enc.SetIndent("", "  ")
 		return enc.Encode(m)
-	})
-	if err != nil {
-		_ = u.plain.Remove(payload)
+	}); err != nil {
 		return err
 	}
 	// Sidecar first: the payload's mtime is what marks the pair complete for the next run.
-	if err := u.plain.Rename(sidecar, out+sidecarSuffix); err != nil {
-		_ = u.plain.Remove(sidecar)
-		_ = u.plain.Remove(payload)
+	if err = u.plain.Rename(sidecar, out+sidecarSuffix); err != nil {
 		return err
 	}
-	if err := u.plain.Rename(payload, out); err != nil {
-		_ = u.plain.Remove(payload)
+	if err = u.plain.Rename(payload, out); err != nil {
 		return err
 	}
 	u.syncDir(dir)

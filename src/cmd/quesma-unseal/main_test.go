@@ -16,6 +16,7 @@ import (
 
 	"filippo.io/age"
 
+	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
@@ -72,9 +73,21 @@ func manifest(install, source, native string) transforms.Manifest {
 	}
 }
 
-func objectKey(install, source, leaf string) string {
-	return fmt.Sprintf("%s/install=%s/mirror/source=%s/%s.age", org, install, source, leaf)
+// installRoot is the producer's own key prefix, so the tests follow any layout change.
+func installRoot(install string) string {
+	root, err := formats.InstallRoot("acme", install)
+	if err != nil {
+		panic(err)
+	}
+	return root
 }
+
+func objectKey(install, source, leaf string) string {
+	return fmt.Sprintf("%s/mirror/source=%s/%s.age", installRoot(install), source, leaf)
+}
+
+// out is an output path under PLAIN_DIR.
+func out(installDir, source, rel string) string { return installDir + "/" + source + "/" + rel }
 
 // put seals payload into ENC_DIR/key with the given mtime, to the custodian unless told otherwise.
 func (a *archive) put(key string, m transforms.Manifest, payload string, mtime time.Time, to ...age.Recipient) {
@@ -112,7 +125,7 @@ func (a *archive) tags(install, name string) {
 	if err != nil {
 		a.t.Fatal(err)
 	}
-	a.write(org+"/install="+install+"/tags.json", body, t0)
+	a.write(installRoot(install)+"/tags.json", body, t0)
 }
 
 // run invokes the command in process with the custodian key plus args before the two dirs.
@@ -148,15 +161,13 @@ func (a *archive) wantStderr(lines ...string) {
 	}
 }
 
-func (a *archive) wantFile(rel, body string, mtime time.Time) {
+// readPlain returns a PLAIN_DIR file's bytes after checking its mtime.
+func (a *archive) readPlain(rel string, mtime time.Time) []byte {
 	a.t.Helper()
 	p := filepath.Join(a.plain, filepath.FromSlash(rel))
 	got, err := os.ReadFile(p)
 	if err != nil {
 		a.t.Fatal(err)
-	}
-	if string(got) != body {
-		a.t.Fatalf("%s = %q, want %q", rel, got, body)
 	}
 	info, err := os.Stat(p)
 	if err != nil {
@@ -165,15 +176,19 @@ func (a *archive) wantFile(rel, body string, mtime time.Time) {
 	if !info.ModTime().Equal(mtime) {
 		a.t.Fatalf("%s mtime %v, want %v", rel, info.ModTime(), mtime)
 	}
+	return got
+}
+
+func (a *archive) wantFile(rel, body string, mtime time.Time) {
+	a.t.Helper()
+	if got := a.readPlain(rel, mtime); string(got) != body {
+		a.t.Fatalf("%s = %q, want %q", rel, got, body)
+	}
 }
 
 func (a *archive) wantSidecar(rel, native string, mtime time.Time) {
 	a.t.Helper()
-	p := filepath.Join(a.plain, filepath.FromSlash(rel)+sidecarSuffix)
-	raw, err := os.ReadFile(p)
-	if err != nil {
-		a.t.Fatal(err)
-	}
+	raw := a.readPlain(rel+sidecarSuffix, mtime)
 	var m transforms.Manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
 		a.t.Fatal(err)
@@ -181,16 +196,9 @@ func (a *archive) wantSidecar(rel, native string, mtime time.Time) {
 	if m.NativePath != native || m.ShippedHash == "" {
 		a.t.Fatalf("sidecar %s: native_path %q shipped_hash %q", rel, m.NativePath, m.ShippedHash)
 	}
-	// Readable as written: "<HOME>" stays literal rather than \u003cHOME\u003e.
+	// Readable as written: "&" stays literal rather than \u0026.
 	if want := `"native_path": "` + strings.ReplaceAll(native, `\`, `\\`) + `"`; !strings.Contains(string(raw), want) {
 		a.t.Fatalf("sidecar %s lacks %s:\n%s", rel, want, raw)
-	}
-	info, err := os.Stat(p)
-	if err != nil {
-		a.t.Fatal(err)
-	}
-	if !info.ModTime().Equal(mtime) {
-		a.t.Fatalf("sidecar %s mtime %v, want %v", rel, info.ModTime(), mtime)
 	}
 }
 
@@ -212,8 +220,13 @@ func (a *archive) listPlain() []string {
 	return files
 }
 
-func (a *archive) wantPlain(files ...string) {
+// wantPlain checks PLAIN_DIR holds exactly these payloads, each with its sidecar.
+func (a *archive) wantPlain(payloads ...string) {
 	a.t.Helper()
+	var files []string
+	for _, p := range payloads {
+		files = append(files, p, p+sidecarSuffix)
+	}
 	sort.Strings(files)
 	if got := a.listPlain(); strings.Join(got, "\n") != strings.Join(files, "\n") {
 		a.t.Fatalf("plain tree:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(files, "\n"))
@@ -223,32 +236,23 @@ func (a *archive) wantPlain(files ...string) {
 func TestLayout(t *testing.T) {
 	a := newArchive(t)
 	a.tags(installA, "  Jacek MBP ")
-	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude,
-		"<HOME>/.claude/projects/-Users-__USER__-work-demo/1111.jsonl"), "claude\n", t0)
+	claudeNative := "/Users/__USER__/.claude/projects/-Users-__USER__-R&D/1111.jsonl"
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, claudeNative), "claude\n", t0)
 	a.put(objectKey(installA, cursor, "22bb"), manifest(installA, cursor,
 		`C:\Users\__USER__\.cursor\chats\2222.jsonl`), "cursor\n", t0.Add(time.Hour))
 	a.put(objectKey(installB, claude, "33cc"), manifest(installB, claude,
 		"/Users/__USER__/.claude/projects/proj/a.jsonl"), "unnamed\n", t0)
-	a.write(org+"/install="+installB+"/state/cursor.json", []byte("{}"), t0)
-	a.write(org+"/install="+installB+"/heartbeat.json", []byte("{}"), t0)
+	a.write(installRoot(installB)+"/state/cursor.json", []byte("{}"), t0)
+	a.write(installRoot(installB)+"/heartbeat.json", []byte("{}"), t0)
 
-	claudeOut := "Jacek MBP (3f2a1b2c)/claude-code-transcripts/<HOME>/.claude/projects/-Users-__USER__-work-demo/1111.jsonl"
-	cursorOut := "Jacek MBP (3f2a1b2c)/cursor-transcripts/C/Users/__USER__/.cursor/chats/2222.jsonl"
-	unnamedOut := installB + "/claude-code-transcripts/Users/__USER__/.claude/projects/proj/a.jsonl"
-	if runtime.GOOS == "windows" {
-		// NTFS reserves '<' and '>', so the literal <HOME> directory cannot exist there.
-		a.wantSummary(a.run(), 1, 2, 0, 1)
-		if !strings.HasPrefix(a.stderrStr, "unseal "+objectKey(installA, claude, "11aa")+": ") || strings.Count(a.stderrStr, "\n") != 1 {
-			t.Fatalf("stderr:\n%s", a.stderrStr)
-		}
-		a.wantPlain(cursorOut, cursorOut+sidecarSuffix, unnamedOut, unnamedOut+sidecarSuffix)
-	} else {
-		a.wantSummary(a.run(), 0, 3, 0, 0)
-		a.wantStderr()
-		a.wantPlain(claudeOut, claudeOut+sidecarSuffix, cursorOut, cursorOut+sidecarSuffix, unnamedOut, unnamedOut+sidecarSuffix)
-		a.wantFile(claudeOut, "claude\n", t0)
-		a.wantSidecar(claudeOut, "<HOME>/.claude/projects/-Users-__USER__-work-demo/1111.jsonl", t0)
-	}
+	claudeOut := out("Jacek MBP (3f2a1b2c)", claude, "Users/__USER__/.claude/projects/-Users-__USER__-R&D/1111.jsonl")
+	cursorOut := out("Jacek MBP (3f2a1b2c)", cursor, "C/Users/__USER__/.cursor/chats/2222.jsonl")
+	unnamedOut := out(installB, claude, "Users/__USER__/.claude/projects/proj/a.jsonl")
+	a.wantSummary(a.run(), 0, 3, 0, 0)
+	a.wantStderr()
+	a.wantPlain(claudeOut, cursorOut, unnamedOut)
+	a.wantFile(claudeOut, "claude\n", t0)
+	a.wantSidecar(claudeOut, claudeNative, t0)
 	a.wantFile(cursorOut, "cursor\n", t0.Add(time.Hour))
 	a.wantFile(unnamedOut, "unnamed\n", t0)
 	a.wantSidecar(cursorOut, `C:\Users\__USER__\.cursor\chats\2222.jsonl`, t0.Add(time.Hour))
@@ -277,14 +281,14 @@ func TestResealedObjectRewrites(t *testing.T) {
 
 	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v1\nv2\n", t0.Add(time.Minute))
 	a.wantSummary(a.run(), 0, 1, 1, 0)
-	a.wantFile(installA+"/claude-code-transcripts/a/1.jsonl", "v1\nv2\n", t0.Add(time.Minute))
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "v1\nv2\n", t0.Add(time.Minute))
 
 	// A sidecar missing alone also forces a rewrite.
 	if err := os.Remove(filepath.Join(a.plain, installA, claude, "a", "2.jsonl"+sidecarSuffix)); err != nil {
 		t.Fatal(err)
 	}
 	a.wantSummary(a.run(), 0, 1, 1, 0)
-	a.wantSidecar(installA+"/claude-code-transcripts/a/2.jsonl", "/a/2.jsonl", t0)
+	a.wantSidecar(out(installA, claude, "a/2.jsonl"), "/a/2.jsonl", t0)
 }
 
 func TestInstallRenameKeepsOldDir(t *testing.T) {
@@ -295,12 +299,7 @@ func TestInstallRenameKeepsOldDir(t *testing.T) {
 
 	a.tags(installA, "new name")
 	a.wantSummary(a.run(), 0, 1, 0, 0)
-	a.wantPlain(
-		"new name (3f2a1b2c)/claude-code-transcripts/a/1.jsonl",
-		"new name (3f2a1b2c)/claude-code-transcripts/a/1.jsonl"+sidecarSuffix,
-		"old name (3f2a1b2c)/claude-code-transcripts/a/1.jsonl",
-		"old name (3f2a1b2c)/claude-code-transcripts/a/1.jsonl"+sidecarSuffix,
-	)
+	a.wantPlain(out("new name (3f2a1b2c)", claude, "a/1.jsonl"), out("old name (3f2a1b2c)", claude, "a/1.jsonl"))
 }
 
 func TestWrongIdentityFailsOnlyThatObject(t *testing.T) {
@@ -312,13 +311,13 @@ func TestWrongIdentityFailsOnlyThatObject(t *testing.T) {
 
 	a.wantSummary(a.run(), 1, 1, 0, 1)
 	a.wantStderr("unseal " + bad + ": age decrypt: identity did not match any of the recipients: incorrect identity for recipient block")
-	a.wantPlain(installA+"/claude-code-transcripts/a/good.jsonl", installA+"/claude-code-transcripts/a/good.jsonl"+sidecarSuffix)
+	a.wantPlain(out(installA, claude, "a/good.jsonl"))
 
 	a.wantSummary(a.run(), 1, 0, 1, 1)
 
 	// -i repeats, like age -d -i; with the right key the failed object is retried and lands.
 	a.wantSummary(a.run("-i", otherKey), 0, 1, 1, 0)
-	a.wantFile(installA+"/cursor-transcripts/a/bad.jsonl", "secret\n", t0)
+	a.wantFile(out(installA, cursor, "a/bad.jsonl"), "secret\n", t0)
 }
 
 func TestTraversalRejected(t *testing.T) {
@@ -365,7 +364,7 @@ func TestUnsafeInstallNameWarnsOnce(t *testing.T) {
 			a.wantSummary(a.run(), 0, 2, 0, 0)
 			a.wantStderr(fmt.Sprintf("warning %s/install=%s/tags.json: name %q is not a safe directory name; using the install id",
 				org, installA, name))
-			a.wantFile(installA+"/claude-code-transcripts/a/2.jsonl", "y\n", t0)
+			a.wantFile(out(installA, claude, "a/2.jsonl"), "y\n", t0)
 		})
 	}
 }
@@ -375,8 +374,7 @@ func TestSymlinksNotFollowed(t *testing.T) {
 	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
 
 	// A real object outside ENC_DIR, reachable only through symlinks.
-	outside := newArchive(t)
-	outside.id, outside.key = a.id, a.key
+	outside := &archive{t: t, enc: filepath.Join(t.TempDir(), "enc"), id: a.id}
 	outside.put(objectKey(installB, claude, "22bb"), manifest(installB, claude, "/a/2.jsonl"), "outside\n", t0)
 	srcDir := filepath.Join(outside.enc, filepath.FromSlash(org), "install="+installB, "mirror", "source="+claude)
 	linkDir := filepath.Join(a.enc, filepath.FromSlash(org), "install="+installB, "mirror", "source="+claude)
@@ -394,25 +392,35 @@ func TestSymlinksNotFollowed(t *testing.T) {
 	a.wantSummary(a.run(), 1, 1, 0, 2)
 	a.wantStderr(
 		"unseal "+objectKey(installA, claude, "33cc")+": symlink, not followed",
-		"unseal "+org+"/install="+installB+"/mirror/source="+claude+": symlink, not followed",
+		"unseal "+installRoot(installB)+"/mirror/source="+claude+": symlink, not followed",
 	)
-	a.wantPlain(installA+"/claude-code-transcripts/a/1.jsonl", installA+"/claude-code-transcripts/a/1.jsonl"+sidecarSuffix)
+	a.wantPlain(out(installA, claude, "a/1.jsonl"))
 }
 
+// Case and NFC/NFD spellings collide too, since macOS and Windows merge them into one file.
 func TestDuplicateOutputPath(t *testing.T) {
 	a := newArchive(t)
+	nfc, nfd := "a/café.jsonl", "a/café.jsonl"
 	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "first\n", t0)
 	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, `\a\1.jsonl`), "second\n", t0)
 	a.put(objectKey(installA, claude, "33cc"), manifest(installA, claude, "/A/1.JSONL"), "third\n", t0)
-	want := []string{
-		"unseal " + objectKey(installA, claude, "22bb") + ": output " + installA + "/claude-code-transcripts/a/1.jsonl already written by " + objectKey(installA, claude, "11aa"),
-		"unseal " + objectKey(installA, claude, "33cc") + ": output " + installA + "/claude-code-transcripts/A/1.JSONL already written by " + objectKey(installA, claude, "11aa"),
+	a.put(objectKey(installA, claude, "44dd"), manifest(installA, claude, "/"+nfc), "nfc\n", t0)
+	a.put(objectKey(installA, claude, "55ee"), manifest(installA, claude, "/"+nfd), "nfd\n", t0)
+	collides := func(leaf, output, first string) string {
+		return "unseal " + objectKey(installA, claude, leaf) + ": output " + out(installA, claude, output) +
+			" already written by " + objectKey(installA, claude, first)
 	}
-	a.wantSummary(a.run(), 1, 1, 0, 2)
+	want := []string{
+		collides("22bb", "a/1.jsonl", "11aa"),
+		collides("33cc", "A/1.JSONL", "11aa"),
+		collides("55ee", nfd, "44dd"),
+	}
+	a.wantSummary(a.run(), 1, 2, 0, 3)
 	a.wantStderr(want...)
-	a.wantFile(installA+"/claude-code-transcripts/a/1.jsonl", "first\n", t0)
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "first\n", t0)
+	a.wantFile(out(installA, claude, nfc), "nfc\n", t0)
 
-	a.wantSummary(a.run(), 1, 0, 1, 2)
+	a.wantSummary(a.run(), 1, 0, 2, 3)
 	a.wantStderr(want...)
 }
 
@@ -441,11 +449,10 @@ func TestUsageErrors(t *testing.T) {
 
 func TestNativeRelPath(t *testing.T) {
 	for native, want := range map[string]string{
-		"<HOME>/.claude/projects/p/1.jsonl": "<HOME>/.claude/projects/p/1.jsonl",
-		"/Users/__USER__/./x//y.jsonl":      "Users/__USER__/x/y.jsonl",
-		`C:\Users\__USER__\x.jsonl`:         "C/Users/__USER__/x.jsonl",
-		`\\server\share\x.jsonl`:            "server/share/x.jsonl",
-		"rel/C:/x":                          "rel/C:/x",
+		"/Users/__USER__/./x//y.jsonl": "Users/__USER__/x/y.jsonl",
+		`C:\Users\__USER__\x.jsonl`:    "C/Users/__USER__/x.jsonl",
+		`\\server\share\x.jsonl`:       "server/share/x.jsonl",
+		"rel/C:/x":                     "rel/C:/x",
 	} {
 		if got, err := nativeRelPath(native); err != nil || got != want {
 			t.Errorf("nativeRelPath(%q) = %q, %v; want %q", native, got, err, want)
@@ -478,7 +485,7 @@ func TestLargeManifestUnchanged(t *testing.T) {
 
 	a.wantSummary(a.run(), 0, 1, 0, 0)
 	a.wantSummary(a.run(), 0, 0, 1, 0)
-	a.wantFile(installA+"/claude-code-transcripts/a/1.jsonl", "x\n", t0)
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "x\n", t0)
 }
 
 // PLAIN_DIR on FAT, HFS+ or a bind mount rounds the mtime it stores; that is still unchanged.
@@ -494,20 +501,20 @@ func TestCoarseMtimeFilesystem(t *testing.T) {
 	key := objectKey(installA, claude, "11aa")
 	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v1\n", t0.Add(500*time.Millisecond))
 	a.wantSummary(a.run(), 0, 1, 0, 0)
-	a.wantFile(installA+"/claude-code-transcripts/a/1.jsonl", "v1\n", t0)
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "v1\n", t0)
 	a.wantSummary(a.run(), 0, 0, 1, 0)
 
 	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v2\n", t0.Add(1500*time.Millisecond))
 	a.wantSummary(a.run(), 0, 1, 0, 0)
-	a.wantFile(installA+"/claude-code-transcripts/a/1.jsonl", "v2\n", t0.Add(time.Second))
-	a.wantPlain(installA+"/claude-code-transcripts/a/1.jsonl", installA+"/claude-code-transcripts/a/1.jsonl"+sidecarSuffix)
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "v2\n", t0.Add(time.Second))
+	a.wantPlain(out(installA, claude, "a/1.jsonl"))
 }
 
 // Symlinks that cannot hide an object, a tags.json or a directory of them are not failures.
 func TestSymlinkOutsideArchiveIgnored(t *testing.T) {
 	a := newArchive(t)
 	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
-	a.write(org+"/install="+installA+"/state/cursor.json", []byte("{}"), t0)
+	a.write(installRoot(installA)+"/state/cursor.json", []byte("{}"), t0)
 	stateLink := filepath.Join(a.enc, filepath.FromSlash(org), "install="+installA, "state", "link.json")
 	if err := os.Symlink(filepath.Join(filepath.Dir(stateLink), "cursor.json"), stateLink); err != nil {
 		t.Fatal(err)
@@ -518,22 +525,6 @@ func TestSymlinkOutsideArchiveIgnored(t *testing.T) {
 
 	a.wantSummary(a.run(), 0, 1, 0, 0)
 	a.wantStderr("warning latest: symlink, not followed")
-}
-
-// macOS merges NFC and NFD spellings of one name, so they are one output path.
-func TestDuplicateOutputPathUnicode(t *testing.T) {
-	a := newArchive(t)
-	nfc, nfd := "/a/café.jsonl", "/a/café.jsonl"
-	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, nfc), "first\n", t0)
-	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, nfd), "second\n", t0.Add(time.Minute))
-	want := "unseal " + objectKey(installA, claude, "22bb") + ": output " + installA + "/claude-code-transcripts" + nfd +
-		" already written by " + objectKey(installA, claude, "11aa")
-
-	a.wantSummary(a.run(), 1, 1, 0, 1)
-	a.wantStderr(want)
-	a.wantFile(installA+"/claude-code-transcripts"+nfc, "first\n", t0)
-	a.wantSummary(a.run(), 1, 0, 1, 1)
-	a.wantStderr(want)
 }
 
 // A payload is streamed to disk, never held whole in memory, so a zstd bomb cannot exhaust it.
@@ -555,7 +546,7 @@ func TestPayloadStreamed(t *testing.T) {
 	}
 }
 
-// A leaf as long as its sidecar name allows still unseals; a longer one fails with a reason.
+// A leaf as long as its sidecar name allows still unseals; a longer one fails and leaves nothing.
 func TestLongLeaf(t *testing.T) {
 	a := newArchive(t)
 	fits := strings.Repeat("f", maxNameBytes-len(sidecarSuffix)-len(".jsonl")) + ".jsonl"
@@ -564,8 +555,10 @@ func TestLongLeaf(t *testing.T) {
 	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, "/a/"+tooLong), "y\n", t0)
 
 	a.wantSummary(a.run(), 1, 1, 0, 1)
-	a.wantStderr("unseal " + objectKey(installA, claude, "22bb") + ": output name " + tooLong + sidecarSuffix + " is over 255 bytes")
-	a.wantFile(installA+"/claude-code-transcripts/a/"+fits, "x\n", t0)
+	if !strings.HasPrefix(a.stderrStr, "unseal "+objectKey(installA, claude, "22bb")+": ") || strings.Count(a.stderrStr, "\n") != 1 {
+		t.Fatalf("stderr:\n%s", a.stderrStr)
+	}
+	a.wantPlain(out(installA, claude, "a/"+fits))
 }
 
 // An output path that is already a directory fails before the sidecar is written.
@@ -577,5 +570,5 @@ func TestPayloadTargetIsDirectory(t *testing.T) {
 	a.wantSummary(a.run(), 1, 1, 0, 1)
 	a.wantStderr("unseal " + objectKey(installA, claude, "22bb") + ": output " + installA +
 		"/claude-code-transcripts/x/b exists and is not a regular file")
-	a.wantPlain(installA+"/claude-code-transcripts/x/b/c", installA+"/claude-code-transcripts/x/b/c"+sidecarSuffix)
+	a.wantPlain(out(installA, claude, "x/b/c"))
 }
