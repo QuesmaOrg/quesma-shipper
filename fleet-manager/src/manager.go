@@ -90,9 +90,15 @@ func (m *Manager) LoadConfig(ctx context.Context) (FleetConfig, string, error) {
 	if err != nil {
 		return FleetConfig{}, "", err
 	}
+	collectionErr := normalizeCollectionMode(&cfg, false)
 	if err := validateConfig(cfg); err != nil {
 		return FleetConfig{}, "", fmt.Errorf("stored config is invalid: %w", err)
 	}
+	if collectionErr != nil {
+		cfg.Collection = nil
+		cfg.CollectionError = "Stored collection requires correction: " + collectionErr.Error()
+	}
+
 	if cfg.Organization != m.org {
 		return FleetConfig{}, "", errors.New("stored config names another organization")
 	}
@@ -106,6 +112,9 @@ func (m *Manager) Init(ctx context.Context, cfg FleetConfig) error {
 	cfg.Schema, cfg.Organization, cfg.UpdatedAt = schemaVersion, m.org, m.time()
 	if cfg.DisplayName == "" {
 		cfg.DisplayName = m.org
+	}
+	if err := normalizeCollection(&cfg); err != nil {
+		return err
 	}
 	if err := validateConfigForWrite(cfg); err != nil {
 		return err
@@ -122,6 +131,9 @@ func (m *Manager) Init(ctx context.Context, cfg FleetConfig) error {
 
 func (m *Manager) ApplyConfig(ctx context.Context, cfg FleetConfig, expectedVersion string) error {
 	cfg.Schema, cfg.Organization, cfg.UpdatedAt = schemaVersion, m.org, m.time()
+	if err := normalizeCollection(&cfg); err != nil {
+		return err
+	}
 	if err := validateConfigForWrite(cfg); err != nil {
 		return err
 	}

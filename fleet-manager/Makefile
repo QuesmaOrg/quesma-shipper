@@ -218,6 +218,7 @@ test: ## Run the suite
 .PHONY: test-ui
 test-ui: ## Check browser scripts and date/time handling (Node 22+)
 	$(IN) node --check src/admin-ui/app.js
+	$(IN) node --check src/admin-ui/collection.js
 	$(IN) node --check src/admin-ui/date-time.js
 	$(IN) node --check src/admin-ui/metadata-import.js
 	$(IN) node --test tests/*.test.cjs

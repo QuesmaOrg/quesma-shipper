@@ -241,7 +241,7 @@ func twoRecipients(t *testing.T) []string {
 
 func configJSON(t *testing.T, recipients []string) string {
 	t.Helper()
-	raw, err := json.Marshal(adminConfigRequest{AgeRecipients: recipients, IncludeInstallRecipient: true, AuthoredYAML: "mode: once"})
+	raw, err := json.Marshal(adminConfigRequest{AgeRecipients: recipients, IncludeInstallRecipient: true, AuthoredYAML: "mode: {schedule: 1m}"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +449,7 @@ func TestMultiTenantOrganizationLifecycleAndIsolation(t *testing.T) {
 	server, _ := testMultiTenantAdminServer(t)
 	create := func(slug, name string) {
 		raw, _ := json.Marshal(adminCreateOrganizationRequest{Slug: slug, DisplayName: name,
-			AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true, AuthoredYAML: "mode: once"})
+			AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true, AuthoredYAML: "mode: {schedule: 1m}"})
 		w := serveAdmin(t, server, adminRequest("POST", "/v1/admin/orgs", string(raw), testAdminCredential))
 		if w.Code != http.StatusCreated {
 			t.Fatalf("create %s = %d: %s", slug, w.Code, w.Body.String())

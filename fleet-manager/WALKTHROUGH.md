@@ -60,7 +60,7 @@ CRED=$(sh deploy.sh aws output admin_credential --dir .)
 R1=$(age-keygen -y custodian-1.agekey); R2=$(age-keygen -y custodian-2.agekey)
 
 curl -sS -X POST "$URL/v1/admin/orgs" -H "Authorization: Bearer $CRED" -H 'Content-Type: application/json' \
-  -d "{\"slug\":\"acme\",\"display_name\":\"Acme trial\",\"age_recipients\":[\"$R1\",\"$R2\"],\"include_install_recipient\":false,\"allow_quesma_etl\":false,\"authored_yaml\":\"\"}"
+  -d "{\"slug\":\"acme\",\"display_name\":\"Acme trial\",\"age_recipients\":[\"$R1\",\"$R2\"],\"include_install_recipient\":false,\"allow_quesma_etl\":false,\"collection\":{}}"
 
 INVITE=$(curl -sS -X POST "$URL/v1/admin/orgs/acme/invites" -H "Authorization: Bearer $CRED" -H 'Content-Type: application/json' \
   -d "{\"expires_at\":\"$(date -u -v+1H +%Y-%m-%dT%H:%M:%SZ)\"}" | sed 's/.*"secret":"\([^"]*\)".*/\1/')
@@ -173,3 +173,35 @@ cd ~ && rm -rf ~/fm-trial && docker rmi shipper-client
 ```
 
 Nothing remains in the account or on the laptop.
+
+### Collection configuration compatibility
+
+The admin config API accepts a typed `collection` object, for example
+`{"mode":{"schedule":"15m"},"max_files_per_run":512,"drain_deadline":"30s"}`.
+New writes are checked against the shared shipper-protocol authoring schema. The
+transitional `authored_yaml` request field is still accepted and receives the same
+validation; a request must not provide both fields. GET includes a generated
+`authored_yaml` view for older dashboard clients during rollout.
+
+Stored settings are read without a write and keep the shipper's tolerant read
+semantics: an old `5s` schedule is still served, and a key the shipper ignores is
+dropped from the served document rather than refused. Typed records are read the
+same way, so a later, stricter schema never makes a stored configuration
+unreadable. The schema applies to writes only, so a stored configuration the
+schema rejects must be corrected before any other setting of the organization can
+be saved; the error names the field, for example `collection: mode.schedule: '5s'
+is not valid go-schedule-duration: must be at least 1m0s`. A successful write
+migrates YAML to `collection`. If the old document cannot be represented, GET
+retains its original YAML and ETag, sets `collection_error`, and leaves the record
+untouched. The admin form displays the original and offers **Rebuild collection
+settings**; replacement happens only when Apply succeeds. Organization listing,
+telemetry, and upload authorization remain available while it is repaired.
+
+Deploy the shipper fallback release first, then fleet-manager, then the dashboard.
+Once configs have been saved in typed form, rolling back to an older fleet-manager
+binary requires restoring the corresponding versioned `config.json` objects first:
+older strict record decoders do not recognize the new `collection` field. Any
+write stores that field, including one that only changes recipients, so the same
+applies during a rolling deployment: old replicas still running answer that
+organization's config requests with an error, and a shipper whose request reaches
+one keeps its cached configuration.

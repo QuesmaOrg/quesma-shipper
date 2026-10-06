@@ -6,31 +6,36 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"path"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type adminConfigRequest struct {
-	DisplayName             *string  `json:"display_name,omitempty"`
-	AgeRecipients           []string `json:"age_recipients"`
-	IncludeInstallRecipient bool     `json:"include_install_recipient"`
-	AllowQuesmaETL          *bool    `json:"allow_quesma_etl,omitempty"`
-	AuthoredYAML            string   `json:"authored_yaml"`
-	TelemetryCollectorURL   *string  `json:"telemetry_collector_url,omitempty"`
+	DisplayName             *string           `json:"display_name,omitempty"`
+	AgeRecipients           []string          `json:"age_recipients"`
+	IncludeInstallRecipient bool              `json:"include_install_recipient"`
+	AllowQuesmaETL          *bool             `json:"allow_quesma_etl,omitempty"`
+	AuthoredYAML            string            `json:"authored_yaml,omitempty"`
+	Collection              *CollectionConfig `json:"collection,omitempty"`
+	TelemetryCollectorURL   *string           `json:"telemetry_collector_url,omitempty"`
 }
 
 type adminCreateOrganizationRequest struct {
-	Slug                    string   `json:"slug"`
-	DisplayName             string   `json:"display_name"`
-	AgeRecipients           []string `json:"age_recipients"`
-	IncludeInstallRecipient bool     `json:"include_install_recipient"`
-	AllowQuesmaETL          *bool    `json:"allow_quesma_etl,omitempty"`
-	AuthoredYAML            string   `json:"authored_yaml"`
-	TelemetryCollectorURL   *string  `json:"telemetry_collector_url,omitempty"`
+	Slug                    string            `json:"slug"`
+	DisplayName             string            `json:"display_name"`
+	AgeRecipients           []string          `json:"age_recipients"`
+	IncludeInstallRecipient bool              `json:"include_install_recipient"`
+	AllowQuesmaETL          *bool             `json:"allow_quesma_etl,omitempty"`
+	AuthoredYAML            string            `json:"authored_yaml,omitempty"`
+	Collection              *CollectionConfig `json:"collection,omitempty"`
+	TelemetryCollectorURL   *string           `json:"telemetry_collector_url,omitempty"`
 }
 
 type adminExpiryRequest struct {
@@ -286,6 +291,22 @@ func readAdminJSON[T any](w http.ResponseWriter, r *http.Request, out *T) bool {
 		writeAdminError(w, http.StatusBadRequest, "request exceeds 1 MiB")
 		return false
 	}
+	switch any(out).(type) {
+	case *adminConfigRequest, *adminCreateOrganizationRequest:
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(body, &fields) == nil {
+			for name, value := range fields {
+				if !strings.EqualFold(name, "collection") {
+					continue
+				}
+				if err := validateCollectionJSON(value); err != nil {
+					writeAdminError(w, http.StatusBadRequest, err.Error())
+					return false
+				}
+			}
+		}
+	}
+
 	if err := strictDecode(body, out); err != nil {
 		writeAdminError(w, http.StatusBadRequest, "malformed request: "+err.Error())
 		return false
@@ -295,7 +316,7 @@ func readAdminJSON[T any](w http.ResponseWriter, r *http.Request, out *T) bool {
 
 func configFromAdminRequest(req adminConfigRequest) FleetConfig {
 	cfg := FleetConfig{AgeRecipients: req.AgeRecipients, IncludeInstallRecipient: req.IncludeInstallRecipient,
-		AllowQuesmaETL: req.AllowQuesmaETL, AuthoredYAML: req.AuthoredYAML, TelemetryCollectorURL: req.TelemetryCollectorURL}
+		AllowQuesmaETL: req.AllowQuesmaETL, AuthoredYAML: req.AuthoredYAML, Collection: req.Collection, TelemetryCollectorURL: req.TelemetryCollectorURL}
 	if req.DisplayName != nil {
 		cfg.DisplayName = strings.TrimSpace(*req.DisplayName)
 	}
@@ -333,7 +354,7 @@ func (s *Server) handleAdminCreateOrganization(w http.ResponseWriter, r *http.Re
 	manager, _ := s.manager.ForOrganization(req.Slug)
 	cfg := FleetConfig{DisplayName: req.DisplayName, AgeRecipients: req.AgeRecipients,
 		IncludeInstallRecipient: req.IncludeInstallRecipient, AllowQuesmaETL: req.AllowQuesmaETL,
-		AuthoredYAML: req.AuthoredYAML, TelemetryCollectorURL: req.TelemetryCollectorURL}
+		AuthoredYAML: req.AuthoredYAML, Collection: req.Collection, TelemetryCollectorURL: req.TelemetryCollectorURL}
 	if !s.validateAdminConfig(w, manager, cfg) {
 		return
 	}
@@ -373,6 +394,11 @@ func (s *Server) handleAdminGetConfig(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.adminOperationError(w, "load config", err)
 		return
+	}
+	// Keep old dashboard clients usable during rollout; durable records only contain collection.
+	if cfg.Collection != nil {
+		raw, _ := yaml.Marshal(cfg.Collection)
+		cfg.AuthoredYAML = string(raw)
 	}
 	w.Header().Set("ETag", encodeETag(version))
 	// The effective values, so the administration UI shows what installs are actually served
@@ -420,6 +446,10 @@ func (s *Server) handleAdminPutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.AllowQuesmaETL == nil {
 		cfg.AllowQuesmaETL = current.AllowQuesmaETL
+	}
+	// Like the fields above: a client that does not mention collection must not erase it.
+	if req.Collection == nil && req.AuthoredYAML == "" {
+		cfg.Collection, cfg.AuthoredYAML = current.Collection, current.AuthoredYAML
 	}
 	if !s.validateAdminConfig(w, manager, cfg) {
 		return

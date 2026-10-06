@@ -33,6 +33,8 @@ var wireSchemas = []string{
 	"enroll-response.schema.json",
 	"config-request.schema.json",
 	"config-response.schema.json",
+	// Not a message on any route: the decoded config inside config-response, listed so the count stays honest.
+	"config-document.schema.json",
 	"v2/uploads-authorize-request.schema.json",
 	"v2/uploads-authorize-response.schema.json",
 }
