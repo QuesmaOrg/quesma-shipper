@@ -33,11 +33,8 @@ removal; enrollment and upload history remain per user. Re-running setup repairs
 without changing enrollment. Uninstall the previous scope without purging state before switching.
 For Intune, see the [Intune guide](packaging/windows/intune/README.md), including
 [System deployment before first login](packaging/windows/intune/README-System.md).
-Release signing is temporarily disabled while the publisher identity is validated, so Microsoft
-Defender SmartScreen may warn about the download, and devices whose application-control policy
-requires a trusted publisher may block it. The raw `quesma-shipper-windows-<arch>.exe` files remain
-available for portable use and are what the self-updater installs; a portable copy has no
-scheduled task or uninstaller.
+The raw `quesma-shipper-windows-<arch>.exe` files remain available for portable use and are what
+the self-updater installs; a portable copy has no scheduled task or uninstaller.
 
 **Updates.** Personal installations of released builds keep themselves current from Quesma's signed
 [TUF](https://theupdateframework.io/) repository; `quesma-shipper update` updates at once. The
