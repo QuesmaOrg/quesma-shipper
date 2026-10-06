@@ -18,7 +18,7 @@ and report only what the PR introduced or made worse.
 | `src/store.go`, `src/seen.go`, `src/tags.go`, `src/metadata.go` | D, J |
 | `src/telemetry*.go` | A, G |
 | `src/main.go`, `src/defaults_test.go` | C |
-| `src/ui.go`, `admin-ui/`, `tests/` | H |
+| `src/ui.go`, `src/admin-ui/`, `tests/` | H |
 | `terraform/` | E, F, I |
 | `deploy.sh`, `Dockerfile`, `Makefile`, `go.mod`, `third_party/`, `.github/workflows/fleet-manager-*` | F, M |
 | `src/protocol_test.go`, `src/terraform_test.go`, fixtures | J, K |
@@ -27,10 +27,11 @@ and report only what the PR introduced or made worse.
 
 ## A. Authentication and authorization
 
-1. **Admin route scope.** Every route under `/v1/admin` is wrapped in `scopedAdmin` unless a
-   reporter must reach it. `adminAuth` admits a reporter credential (`fmr1.*`) to the single
-   health report route and nothing else; read `health_test.go` for the routes it pins. A reporter
-   that can read configuration and its ETag can also replace it. [H, codified in SECURITY.md]
+1. **Admin route scope.** Every route under `/v1/admin` is wrapped in `scopedAdmin`, or in
+   `adminOnly` for the organization list, create, defaults and configuration routes. Bare `scoped`
+   admits a reporter credential (`fmr1.*`); only the health report route uses it, and
+   `reporterRoute` plus `health_test.go` pin that. A reporter that can read configuration and its
+   ETag can also replace it. [H, codified in SECURITY.md]
 2. **Decide at the choke point.** Credential kind is known in `adminAuth`; anything added later is
    administrative by default. A per-route check is a finding waiting to be forgotten. [H]
 3. **Device routes stay behind `deviceAuth`.** `/v1/config`, `/v2/uploads/authorize` and

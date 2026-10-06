@@ -26,6 +26,7 @@ allowed-tools:
   - Bash(go env:*)
   - Bash(go test:*)
   - Bash(go vet:*)
+  - Bash(grep:*)
 ---
 
 # Review a Fleet Manager change
@@ -49,8 +50,8 @@ threat model is the Scope section of `fleet-manager/SECURITY.md`, and the gate i
   `gh pr view <n> --json title,body,state,mergedAt,isDraft,headRefOid,baseRefOid,baseRefName,files`
   and `gh pr diff <n>`. The base is `baseRefOid`, not `origin/<baseRefName>`, which may have moved
   on. Record `state`: for a merged PR the findings are issues to file, not change requests.
-- A branch name: `git diff $(git merge-base origin/main <branch>) <branch>`; the base is that
-  merge-base.
+- A branch name: `git diff origin/main...<branch>`; the base is the merge-base the three dots
+  select.
 - A path: that path's diff against `origin/main`, plus uncommitted changes under it.
 - Nothing: the commits ahead of the upstream plus uncommitted changes (`git log @{u}..`,
   `git diff @{u}`).
@@ -69,7 +70,9 @@ run `/review-shipper <target>` as its own review.
 
 **Short path.** When the diff changes no route, grant, template, stored-record field, image pin,
 default or protocol fixture, say so, read only the `ARCHITECTURE.md` paragraph the diff touches,
-and run passes 3, 5 and 8.
+and run passes 3, 4, 5 and 8, plus pass 7 when `go.mod`, a workflow or `ui.go` changed. Pass 4
+runs on every diff: an error log in `upload.go` that prints the ticket URL is exactly the diff
+that takes this path.
 
 ## 2. Before reviewing
 
@@ -79,7 +82,8 @@ Read once per session: `fleet-manager/AGENTS.md` and the root `AGENTS.md` it def
 reread only those paragraphs. Read `CONSTITUTION.md` and `fleet-manager/OPERATIONS.md` when the
 diff touches a record, a grant, deployment or telemetry.
 
-Read the PR description and everything already said on it:
+Read the PR description now. Read the existing threads only after your own pass, so they do not
+steer it, then reconcile:
 
 ```sh
 gh pr view <n> --comments
@@ -88,9 +92,8 @@ gh api repos/QuesmaOrg/quesma-shipper/pulls/<n>/comments --paginate --jq '.[] | 
 ```
 
 `original_commit_id` says which commit a thread was raised on, which decides whether a later commit
-answered it. A finding someone already raised is not raised again: if it is still open at this
-head, name it in one line as open from the earlier review; if a later commit fixed it, say so in
-one line.
+answered it. A finding someone already raised is not raised again: list every thread under
+"Already raised" with its state at this head, open, fixed in a named commit, or moved to an issue.
 
 For every file the diff touches, read the base version with `git show <base>:<path>` and enough of
 the surrounding code to judge the change. The service is one package under `fleet-manager/src/`,
@@ -127,8 +130,12 @@ checked out. `git cat-file -t <headRefOid>` tells you whether the commit is loca
 `git fetch origin pull/<n>/head`. Then unpack it beside the repository and run from there:
 
 ```sh
-dir=$(mktemp -d) && git archive <headRefOid> | tar -x -C "$dir" && (cd "$dir/fleet-manager/src" && go test ./...)
+mktemp -d                              # prints <dir>
+git archive <headRefOid> | tar -x -C <dir>
+go test -C <dir>/fleet-manager/src ./...
 ```
+
+One command per line, so each matches a pre-approved rule.
 
 Run the new tests against the base the same way when a claim is "this fails on main". Some checks
 cannot be made from a checkout: whether a Docker Hub tag exists is answered by
@@ -146,10 +153,13 @@ skipped.
 
 The reflex P1. Read the permission, the route and the record together.
 
-- Every route added or changed under `/v1/admin` is wrapped in `scopedAdmin` unless a reporter is
-  meant to reach it. `adminAuth` admits a reporter credential (`fmr1.*`) to the single health
-  report route and nothing else; a reporter that can read or write configuration can take custody
-  of the recipients. Decide at the choke point, not per route.
+- Every route added or changed under `/v1/admin` is wrapped in `scopedAdmin`, or in `adminOnly`
+  for the organization list, create, defaults and configuration routes, which resolve the
+  organization themselves. Bare `scoped` authenticates but admits a reporter credential (`fmr1.*`);
+  the health report route is the only one meant to use it, and `reporterRoute` in `admin_http.go`
+  pins that. A new route wrapped in bare `scoped` is a P1 unless the description says a reporter
+  must reach it: a reporter that can read or write configuration can take custody of the
+  recipients. Decide at the choke point, not per route.
 - Device routes (`/v1/config`, `/v2/uploads/authorize`, `/v1/telemetry`) stay behind `deviceAuth`;
   an install reaches its own organization's records and its own prefix, never another's.
 - An invite is single-use; a revoked install is served no configuration and no tickets. Known gaps
@@ -250,7 +260,8 @@ The most frequent finding, and the one maintainers fix themselves when the autho
 
   ```sh
   git grep -n -i -e '<term>' <headRefOid> -- . ':!*_test.go'
-  grep -rn -i -e '<term>' "$(go env GOMODCACHE)/github.com/!quesma!org/shipper-protocol@<version>"
+  go env GOMODCACHE                    # prints <cache>
+  grep -rn -i -e '<term>' <cache>/github.com/!quesma!org/shipper-protocol@<version>
   ```
 
 ### Pass 6: publishing, pins and deployment
@@ -321,6 +332,7 @@ Open with `Reviewed <sha>` and the counts per priority, or `No P1 or P2 findings
 per P1 and P2: `[P1] path:line - what is wrong, when it happens, what it breaks, the fix if short`.
 Then:
 
+- **Already raised**: every existing thread, one line each, with its state at this head.
 - **Description check**, one line each, present or missing: before and after; compatibility for
   the wire protocol, stored records, the object-key grammar and served-configuration authority;
   permissions, with `src/terraform_test.go` named; security effect; after-merge checks when the

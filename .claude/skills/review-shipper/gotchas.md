@@ -87,8 +87,9 @@ surfaced.
   whole-configuration deny check runs on configuration-added globs only, and lives in
   `src/internal/config/resolve.go` and `src/internal/sources/deny.go`, which a catalog diff never
   shows. (#64, #68)
-- A root outside the compiled catalog is rejected with "a new root requires a release"; a
-  configuration layer can add include globs and switch a source off, not add a root. (#51)
+- A root outside the compiled catalog is rejected; "a new root requires a release" is the
+  shipper-protocol rulebook's note, not the shipper's error text. A configuration layer can add
+  include globs and switch a source off, not add a root. (#51)
 
 - The size-and-mtime stat shortcut is unsafe when one logical identity spans several paths, such as
   a live transcript, its archived copy and its compressed copy. Read and hash whenever the observed
@@ -97,6 +98,10 @@ surfaced.
 - `source-hash` is the pre-scrub hash, so `already_present` on it alone keeps an object scrubbed
   under old rules; `shipped-hash` fixes the scrub half. Recipient rotation is open as #77. In a
   versioned bucket a "replaced" object keeps its earlier versions. (#74, #79)
+- An account snapshot's entry in `fingerprints.json` stores the hash of its comparison form
+  (`Payload.Compare`), not of the shipped bytes, under one series key per source; the manifest's
+  `source-hash` still covers the shipped bytes. A reviewer comparing the two will see them differ.
+  (#92)
 - A foreign `fingerprints.json` is discarded and rebuilt, with the archive answering
   `already_present`; it is never a refused run. Reading the record for `doctor` does not apply the
   guard that `run` applies, so `doctor` explains first. (#27, #33)

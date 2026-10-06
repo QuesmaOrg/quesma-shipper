@@ -68,19 +68,22 @@ the base version, and report only what the PR introduced or made worse.
     the stat shortcut is bypassed whenever the observed path differs from the recorded one, and the
     newest of several coexisting forms wins, with plaintext only breaking a tie. Reproduce through
     the catalog and engine, not by reading the code. [M; #49]
-12. **Hash semantics.** `source-hash` is the pre-scrub hash; `shipped-hash` covers the scrub half;
-    recipient rotation is still open. Any `already_present` decision states which hash it trusts and
-    why that is enough. [M; #74, #79]
+12. **Hash semantics.** The manifest's `source-hash` is the pre-scrub hash; `shipped-hash` covers
+    the scrub half; recipient rotation is still open. Any `already_present` decision states which
+    hash it trusts and why that is enough. The state entry is not always the same hash: a candidate
+    with `Payload.Compare` set, today every account snapshot, records the hash of its comparison
+    form under one series key, so successive buckets dedup against each other. [M; #74, #79, #92]
 13. **Commit after the destination confirms.** No state write precedes a successful PUT. This is
     what makes a Windows hard kill and a launchd process-group kill safe. [H, codified; #7]
 
 ## C. Sources and catalog
 
 14. **New sources declare what the served document may adjust.** A configuration layer can add
-    include globs and switch a source off, but a root outside the compiled catalog is rejected with
-    "a new root requires a release" (`resolveRoots` in `src/internal/config/resolve.go`). A new
-    source therefore declares every root an operator could plausibly need, and the description says
-    which parts the control plane can change without a release. [M; #51]
+    include globs and switch a source off, but a root outside the compiled catalog is rejected
+    (`resolveRoots` in `src/internal/config/resolve.go`; "a new root requires a release" is the
+    shipper-protocol rulebook's note, not the shipper's error text). A new source therefore
+    declares every root an operator could plausibly need, and the description says which parts the
+    control plane can change without a release. [M; #51]
 15. **Deny list on the resolved path, before existence.** A root pointed into a secrets directory is
     refused whether or not it exists. The whole-configuration deny check (`pickRoot` in
     `src/internal/config/resolve.go` calling `CheckIncludes` in `src/internal/sources/deny.go`)

@@ -45,8 +45,8 @@ merge, not for a redesign. The design authority is `CONSTITUTION.md`, the layeri
   and `gh pr diff <n>`. The base is `baseRefOid`, never `origin/main`, which may already contain
   the PR. For a squash-merged PR the head tree is `mergeCommit.oid`. Record `state`: for a merged
   PR the findings are issues to file, not change requests.
-- A branch name: `git diff $(git merge-base origin/main <branch>) <branch>`; the base is that
-  merge-base.
+- A branch name: `git diff origin/main...<branch>`; the base is the merge-base the three dots
+  select.
 - A path: that path's diff against `origin/main`, plus uncommitted changes under it.
 - Nothing: the commits ahead of the upstream plus uncommitted changes (`git log @{u}..`,
   `git diff @{u}`).
@@ -65,7 +65,8 @@ then run `/review-fleet-manager <target>` as its own review.
 
 **Short path.** When the diff touches no packaging, state record, scrub or seal code, catalog,
 configuration, protocol or golden file, say so, read only the `ARCHITECTURE.md` paragraph the diff
-touches, and run passes 5, 6, 7 and 10.
+touches, and run passes 5, 6, 7, 8 and 10. Pass 8 runs on every diff: a one-line logging change
+in `src/app/` or `src/internal/upload/` is exactly the diff that takes this path.
 
 ## 2. Before reviewing
 
@@ -117,8 +118,13 @@ checked out. `git cat-file -t <sha>` tells you whether the commit is local; if n
 `git fetch origin pull/<n>/head`. Then unpack it beside the repository and run from there:
 
 ```sh
-dir=$(mktemp -d) && git archive <sha> | tar -x -C "$dir" && (cd "$dir/src" && go test ./internal/... ./app/... ./e2e/...)
+mktemp -d                              # prints <dir>
+git archive <sha> | tar -x -C <dir>
+go test -C <dir>/src ./...
 ```
+
+One command per line, so each matches a pre-approved rule. `./...` and not a package list: the
+installer and supervisor tests under `src/packaging` and `src/cmd` are what pass 3 depends on.
 
 `TestEveryCatalogSourceScrubsItsCanary` in `src/internal/engine` runs every catalog source through
 scrub; run it for any catalog change. Numbers that need Docker (`make perf`) come from the
@@ -301,9 +307,9 @@ The most frequent finding. Wrong documentation is a finding; wording preference 
 
 - Article 1: a behaviour that is fine on one machine and wrong on ten thousand is wrong, such as a
   check against `updates.quesma.dev` on every launch. A root outside the compiled catalog is still
-  rejected with "a new root requires a release", so a new source declares every root an operator
-  could plausibly need, and the description says which parts the served document can adjust (#7,
-  #51).
+  rejected (`pickRoot` in `src/internal/config/resolve.go`; the protocol rulebook's note reads "a
+  new root requires a release"), so a new source declares every root an operator could plausibly
+  need, and the description says which parts the served document can adjust (#7, #51).
 - Product-scope calls, such as supporting a new agent or holding a feature, are flagged with the
   trade-off for a maintainer, not decided by the review (#35, #51).
 - The description opens with a before-and-after example, states compatibility in the author's
