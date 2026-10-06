@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -60,8 +61,16 @@ func TestReExecAfterUpdate(t *testing.T) {
 		os.Setenv("QUESMA_TEST_REEXEC", "restarted")
 		t.Fatal(ReExec())
 	case "restarted":
-		if !bytes.HasSuffix(raw, marker) {
-			t.Fatal("restarted the old binary")
+		// The image that is running, not the file argv[0] names: the install is updated either way.
+		exe, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if running, err := os.ReadFile(exe); err != nil || !bytes.HasSuffix(running, marker) {
+			t.Fatalf("restarted the old binary: %v", err)
+		}
+		if want := []string{"-test.run=^TestReExecAfterUpdate$"}; !slices.Equal(os.Args[1:], want) {
+			t.Fatalf("argv not kept: %q", os.Args[1:])
 		}
 		fmt.Println("restarted")
 		return

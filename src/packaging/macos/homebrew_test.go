@@ -3,7 +3,10 @@
 package macos
 
 import (
+	"bytes"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -12,10 +15,60 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
-func TestRawExecutableUpdateTarget(t *testing.T) {
-	release := common.Release{Targets: map[string]string{"darwin/" + runtime.GOARCH: "raw-binary", "darwin/pkg": "package"}}
-	if got := UpdateTarget(release); got != "raw-binary" {
-		t.Fatalf("update target = %q", got)
+// The macOS dispatch for a Homebrew install: outside an app bundle, ApplyTarget swaps the binary the
+// cask's symlink points at, and the restart runs the marked build. Marker and restart check as in
+// common.TestReExecAfterUpdate.
+func TestRawExecutableUpdateReexec(t *testing.T) {
+	marker := []byte("quesma-test-update")
+	switch os.Getenv("QUESMA_TEST_BREW_REEXEC") {
+	case "update":
+		release := common.Release{Targets: map[string]string{"darwin/" + runtime.GOARCH: "raw-binary", "darwin/pkg": "package"}}
+		if got := UpdateTarget(release); got != "raw-binary" {
+			t.Fatalf("update target = %q", got)
+		}
+		raw, err := os.ReadFile(os.Args[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ApplyTarget(append(raw, marker...), "1.0.1"); err != nil {
+			t.Fatal(err)
+		}
+		os.Setenv("QUESMA_TEST_BREW_REEXEC", "restarted")
+		t.Fatal(common.ReExec())
+	case "restarted":
+		exe, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if running, err := os.ReadFile(exe); err != nil || !bytes.HasSuffix(running, marker) {
+			t.Fatalf("restarted the old binary: %v", err)
+		}
+		fmt.Println("restarted")
+		return
+	}
+	raw, err := os.ReadFile(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	installed := filepath.Join(root, "Caskroom", "quesma-shipper", "1.0.0", "quesma-shipper")
+	if err := os.MkdirAll(filepath.Dir(installed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, raw, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "shipper")
+	if err := os.Symlink(installed, link); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(link, "-test.run=^TestRawExecutableUpdateReexec$")
+	cmd.Env = append(os.Environ(), "QUESMA_TEST_BREW_REEXEC=update")
+	if out, err := cmd.CombinedOutput(); err != nil || !strings.HasPrefix(string(out), "restarted\n") {
+		t.Fatalf("update and re-exec: %v, %s", err, out)
+	}
+	if target, err := os.Readlink(link); err != nil || target != installed {
+		t.Fatalf("command link changed: %q, %v", target, err)
 	}
 }
 
