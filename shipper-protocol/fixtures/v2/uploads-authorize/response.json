@@ -1,0 +1,22 @@
+{
+  "tickets": [
+    {
+      "ticket_id": "b1bd1a73-f16d-4a51-aac6-29f1f48b0658",
+      "object_id": "trajectory-1",
+      "method": "PUT",
+      "url": "https://archive.example.invalid/v1/organization%3Dacme/install%3D3f2504e0-4f89-41d3-9a0c-0305e82c3301/mirror/source%3Dclaude-code-transcripts/f91631a3882c7956a9d2061b96ea38fd75bc77549b85cab26c7b2b63db21ed73.age?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=300&X-Amz-Signature=FIXTURE",
+      "expires_at": "2026-08-19T12:05:00Z",
+      "required_headers": {
+        "x-amz-meta-source-hash": "94f4d055cd323cbae40c74b5ed35df51b8fb4f362d7f43acb9b85cfbca5f2cb8",
+        "x-amz-meta-ticket-id": "b1bd1a73-f16d-4a51-aac6-29f1f48b0658",
+        "x-amz-meta-manifest-version": "1",
+        "x-amz-meta-source-id": "claude-code-transcripts",
+        "x-amz-meta-shipped-hash": "f70fd6b3501a3ff995e69e00ad1b1813ac296cf0768d30445549f8aefbd598b7",
+        "x-amz-meta-artifact-class": "trajectory",
+        "x-amz-tagging": "class=trajectory"
+      },
+      "content_length": 481239,
+      "content_length_signed": true
+    }
+  ]
+}

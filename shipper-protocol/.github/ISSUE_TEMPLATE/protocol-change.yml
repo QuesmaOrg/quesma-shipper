@@ -1,0 +1,33 @@
+name: Protocol change
+description: Propose a change to the wire contract
+labels: [protocol]
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What must a client or server do that the current contract does not allow?
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - Compatible clarification of an existing version
+        - New optional field, shipped client-first
+        - New endpoint or schema version
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility impact
+      description: Which peer must change first, and what happens to peers that have not updated?
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security impact
+      description: What can a client or server do after this change that it cannot do today?

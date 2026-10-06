@@ -1,0 +1,13 @@
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Go build and test output
+bin/
+dist/
+*.test
+*.out
+coverage.*

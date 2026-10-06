@@ -1,0 +1,23 @@
+name: Bug report
+description: A schema, fixture, or document disagrees with itself or with an implementation
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Module version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong
+      description: Name the file and the field. Use synthetic data only. Do not paste production payloads, credentials, or presigned URLs.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true

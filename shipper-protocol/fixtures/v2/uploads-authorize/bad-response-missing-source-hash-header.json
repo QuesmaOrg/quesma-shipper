@@ -1,0 +1,16 @@
+{
+  "tickets": [
+    {
+      "ticket_id": "b1bd1a73-f16d-4a51-aac6-29f1f48b0658",
+      "object_id": "trajectory-1",
+      "method": "PUT",
+      "url": "https://archive.example.invalid/object?X-Amz-Signature=FIXTURE",
+      "expires_at": "2026-08-19T12:05:00Z",
+      "required_headers": {
+        "x-amz-meta-ticket-id": "b1bd1a73-f16d-4a51-aac6-29f1f48b0658"
+      },
+      "content_length": 481239,
+      "content_length_signed": true
+    }
+  ]
+}

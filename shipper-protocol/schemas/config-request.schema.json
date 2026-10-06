@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/QuesmaOrg/shipper-protocol/schemas/config-request.schema.json",
+  "title": "POST /v1/config request",
+  "description": "Which build is asking, and which config schema versions it can execute. The version list is not a minimum-version pin: a version floor can brick a fleet that cannot move, and an explicit 409 on an unsupported config_version refuses cleanly instead of applying a document partially. The server decodes this request tolerantly, so new fields ship client-first.",
+  "type": "object",
+  "required": ["agent_version", "config_versions"],
+  "additionalProperties": false,
+  "properties": {
+    "agent_version": {
+      "description": "The shipper build's canonical version string. The same value travels in the X-Shipper-Version header on every request.",
+      "type": "string",
+      "minLength": 1
+    },
+    "config_versions": {
+      "description": "Config schema versions this build can execute. The server answers 409 when the intersection with what it serves is empty.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "integer", "minimum": 1 }
+    }
+  }
+}
