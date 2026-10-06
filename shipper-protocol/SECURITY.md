@@ -6,7 +6,7 @@ Do not open a public issue for a suspected vulnerability. Do not include real cr
 data, presigned URLs, or production payloads in a report.
 
 Use GitHub's private vulnerability reporting at
-<https://github.com/QuesmaOrg/shipper-protocol/security/advisories/new>, or email
+<https://github.com/QuesmaOrg/quesma-shipper/security/advisories/new>, or email
 `contact@quesma.com` with the subject `Security: shipper-protocol`. Include:
 
 - the affected protocol or module version;
@@ -19,6 +19,9 @@ protocol peers to be patched before you publish details.
 
 ## Supported versions
 
-Security fixes are made on the latest released module version. The default branch is development
-code and is not a supported release. Wire versions are immutable after release. A fix that cannot
+Security fixes are made on the latest released module version, the newest `shipper-protocol/vX.Y.Z`
+tag. The default branch is development code and is not a supported release. Wire versions are immutable after release. A fix that cannot
 be made compatibly uses a new endpoint and schema version.
+
+The shipper and Fleet Manager, the two peers of this contract, have their own scope and report
+details in [SECURITY.md](../SECURITY.md) and [fleet-manager/SECURITY.md](../fleet-manager/SECURITY.md).

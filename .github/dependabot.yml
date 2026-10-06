@@ -20,6 +20,14 @@ updates:
     groups:
       fleet-manager-go-deps:
         patterns: ["*"]
+  # The wire contract: its own module, which the two components above build against in place.
+  - package-ecosystem: gomod
+    directory: /shipper-protocol
+    schedule:
+      interval: weekly
+    groups:
+      shipper-protocol-go-deps:
+        patterns: ["*"]
   - package-ecosystem: docker
     directory: /fleet-manager
     schedule:

@@ -74,9 +74,10 @@ agent session files ──► discover ──► detect change ──► read �
   themselves when a newer signed release exists. Development builds do not self-update.
 
 The design rules are in [CONSTITUTION.md](../CONSTITUTION.md). The code layout is in
-[ARCHITECTURE.md](../ARCHITECTURE.md). The wire contract is the public
-[shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) module. This repository imports
-its schemas and fixtures. Protocol changes are reviewed and released there.
+[ARCHITECTURE.md](../ARCHITECTURE.md). The wire contract is the
+[shipper-protocol](../shipper-protocol/) module beside this one. The shipper imports its schemas
+and fixtures in its contract tests, and a protocol change lands in the same pull request as the
+shipper and control-plane changes that need it.
 
 ## What is collected
 
@@ -174,7 +175,7 @@ the user file, the document served by the control plane. `quesma-shipper config 
 prints each effective value and the layer that set it.
 
 The served document has limited authority. A rulebook in the
-[shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) module states, field by field,
+[shipper-protocol](../shipper-protocol/) module states, field by field,
 what the control plane can change. For example, it can add scrub rule packs. It cannot remove them.
 It cannot turn off scrub or encryption. Contract tests here and in the control plane enforce the
 rulebook.

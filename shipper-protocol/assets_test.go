@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/QuesmaOrg/shipper-protocol"
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 

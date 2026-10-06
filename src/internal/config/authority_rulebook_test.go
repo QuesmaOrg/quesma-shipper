@@ -11,7 +11,7 @@ import (
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
-	protocol "github.com/QuesmaOrg/shipper-protocol"
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 )
 
 // The authority rulebook in the shipper-protocol module bounds a served config's authority; this file makes it executable, and a row without a probe fails.

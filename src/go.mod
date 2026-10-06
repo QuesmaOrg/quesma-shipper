@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	filippo.io/age v1.3.2
 	github.com/Masterminds/semver/v3 v3.5.0
-	github.com/QuesmaOrg/shipper-protocol v0.1.1-0.20261005085748-a2c3f5bea025
+	github.com/QuesmaOrg/quesma-shipper/shipper-protocol v0.0.0
 	github.com/Shopify/toxiproxy/v2 v2.12.0
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.6
@@ -105,3 +105,6 @@ require (
 // the fork path at v3.0.4, and replacing onto that same version is refused: "used for two
 // different module paths".
 replace gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.5
+
+// The protocol module lives in this repository; consumers build against the tree, not a tag.
+replace github.com/QuesmaOrg/quesma-shipper/shipper-protocol => ../shipper-protocol

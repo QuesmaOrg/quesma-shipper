@@ -3,13 +3,14 @@
 This document is the contract for the machine protocol between Quesma Shipper (the shipper) and
 its control plane. The JSON Schemas in [`schemas/`](schemas/) define every message shape. The
 fixtures in [`fixtures/v1/`](fixtures/v1/) and [`fixtures/v2/`](fixtures/v2/) are golden payloads.
-Both peers import this module and run contract tests against these assets in their own
-repositories. The schemas, fixtures, and tests express this document in executable form. Change
-them together when the protocol changes.
+Both peers import this module and run contract tests against these assets; in the
+quesma-shipper repository they build against this directory in place. The schemas, fixtures, and
+tests express this document in executable form. Change them together when the protocol changes.
 
-This repository is the Go module `github.com/QuesmaOrg/shipper-protocol`. Its `protocol.FS`
-embeds this document, all schemas, and all fixtures, so consumers do not depend on repository
-paths. Releases are tagged `vX.Y.Z`.
+This directory is the Go module `github.com/QuesmaOrg/quesma-shipper/shipper-protocol`. Its
+`protocol.FS` embeds this document, all schemas, and all fixtures, so consumers do not depend on
+repository paths. Releases are tagged `shipper-protocol/vX.Y.Z`; schema `$id` values keep the
+`https://github.com/QuesmaOrg/shipper-protocol/` namespace they were first published under.
 
 The shipper and the control plane each define their own wire structs. They do not share an
 implementation, because a shared implementation would couple what the protocol keeps separate. The

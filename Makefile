@@ -1,6 +1,6 @@
 # Makefile for Quesma Shipper.
 #
-# The Shipper module lives in src/. Its wire contract comes from github.com/QuesmaOrg/shipper-protocol.
+# The Shipper module lives in src/. Its wire contract is the shipper-protocol/ module beside it.
 
 MODULE := src
 BIN    := bin/quesma-shipper

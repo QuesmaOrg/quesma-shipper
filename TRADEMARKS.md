@@ -26,7 +26,7 @@ many other open source projects.
 - Refer to Quesma, Quesma Shipper, and Quesma Fleet Manager by name in documentation, articles,
   comparisons, and discussions.
 - Use the wire-protocol identifiers defined in the
-  [protocol specification](https://github.com/QuesmaOrg/shipper-protocol/blob/main/PROTOCOL.md),
+  [protocol specification](shipper-protocol/PROTOCOL.md),
   such as header names and signing prefixes. They are part of the protocol, not the brand, and any implementation may
   use them.
 - Redistribute unmodified official releases under their original name, including the official

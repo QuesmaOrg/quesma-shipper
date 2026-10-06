@@ -4,7 +4,7 @@ import (
 	"io/fs"
 	"path"
 
-	protocol "github.com/QuesmaOrg/shipper-protocol"
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 
 	"bytes"
 	"context"

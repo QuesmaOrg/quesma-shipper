@@ -23,7 +23,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
-	protocol "github.com/QuesmaOrg/shipper-protocol"
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 )
 
 // wireSchemas is the complete set, versioned subdirectories included. A schema added to
