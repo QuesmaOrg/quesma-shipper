@@ -4,7 +4,9 @@ Design decisions are governed by [CONSTITUTION.md](CONSTITUTION.md).
 
 The control plane in `fleet-manager/` is its own component. For a change there, also follow
 [fleet-manager/AGENTS.md](fleet-manager/AGENTS.md), which lists what differs, and run
-`make -C fleet-manager check`.
+`make -C fleet-manager check`. The wire contract in `shipper-protocol/` is a third: follow
+[shipper-protocol/AGENTS.md](shipper-protocol/AGENTS.md) and run `make -C shipper-protocol check`,
+and expect a change there to run both other gates, since they build against it.
 
 ## Workflow
 
@@ -24,6 +26,6 @@ Consider running `make race` and `make perf` (needs Docker) when a change has a 
 
 4. Please offer to run simplification after finishing big change (e.g. `/simplify`).
 
-5. Be cautious with file format changes, protocol changes or configuration changes. They could break backward compatibility. Test that and verify assumptions with a human. Golden tests (`src/e2e/golden_test.go`, `src/conformance/`, and the wire fixtures imported from the shipper-protocol module) pin output byte for byte; a golden diff is a claim the output should change, so read the diff and ask for confirmation before running `-update`.
+5. Be cautious with file format changes, protocol changes or configuration changes. They could break backward compatibility. Test that and verify assumptions with a human. Golden tests (`src/e2e/golden_test.go`, `src/conformance/`, and the wire fixtures under `shipper-protocol/fixtures/`) pin output byte for byte; a golden diff is a claim the output should change, so read the diff and ask for confirmation before running `-update`.
 
 6. Never widen perf budgets or make tests less strict without explicit confirmation.

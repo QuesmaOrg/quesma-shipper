@@ -34,7 +34,7 @@ In scope:
   prefix — one install overwriting another's objects is the invariant here. A signed header outside
   the ticket contract in `src/aws.go`. A ticket whose lifetime exceeds what was asked for.
 - **Configuration authority.** A served document that changes a field the
-  [shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) rulebook does not permit. A
+  [shipper-protocol](../shipper-protocol/) rulebook does not permit. A
   served recipient list the organization did not set — including the built-in ETL recipient
   appearing while `allow_quesma_etl` is off, or was never set on a deployment whose
   `FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL` is `false`.

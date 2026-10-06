@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/QuesmaOrg/shipper-protocol/schemas/v2/uploads-authorize-request.schema.json",
+  "title": "POST /v2/uploads/authorize request",
+  "description": "A device-signed, bounded batch of exact object keys for which the shipper requests short-lived PUT tickets. The server authenticates the install before interpreting object fields, derives its permitted install root from the enrollment record, and rejects the whole batch when any member is invalid.",
+  "type": "object",
+  "required": ["writer_id", "issued_at", "objects"],
+  "additionalProperties": false,
+  "properties": {
+    "writer_id": {
+      "description": "Random UUID generated for this running process and not persisted with the install identity. It is audit vocabulary only: no writer is fenced out and the server records nothing about it.",
+      "$ref": "#/$defs/uuid"
+    },
+    "issued_at": {
+      "description": "Client signing time. The server rejects a request more than 5 minutes old or more than 1 minute in the future.",
+      "$ref": "#/$defs/timestamp"
+    },
+    "objects": {
+      "description": "One bounded authorization batch. Object IDs and keys must be unique within the batch. The server additionally rejects a declared-size sum above 1 GiB.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/upload_object" }
+    }
+  },
+
+  "$defs": {
+    "upload_object": {
+      "oneOf": [
+        { "$ref": "#/$defs/mirror_object" },
+        { "$ref": "#/$defs/heartbeat_object" }
+      ]
+    },
+    "mirror_object": {
+      "type": "object",
+      "required": ["object_id", "key", "size", "source_hash", "metadata"],
+      "additionalProperties": false,
+      "properties": {
+        "object_id": { "$ref": "#/$defs/object_id" },
+        "key": {
+          "description": "Canonical blinded mirror key. The organization and install are checked against the authenticated enrollment. The source segment follows protocol grammar and must equal metadata source-id; it is not restricted to a server catalog.",
+          "type": "string",
+          "pattern": "^v1/organization=[a-z0-9][a-z0-9._-]{0,63}/install=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/mirror/source=[a-z0-9][a-z0-9._-]{0,63}/[0-9a-f]{64}\\.age$"
+        },
+        "size": { "$ref": "#/$defs/size" },
+        "source_hash": { "$ref": "#/$defs/source_hash" },
+        "metadata": { "$ref": "#/$defs/mirror_metadata" }
+      }
+    },
+    "heartbeat_object": {
+      "type": "object",
+      "required": ["object_id", "key", "size", "source_hash", "metadata"],
+      "additionalProperties": false,
+      "properties": {
+        "object_id": { "$ref": "#/$defs/object_id" },
+        "key": {
+          "description": "Canonical heartbeat key. The organization and install are checked against the authenticated enrollment.",
+          "type": "string",
+          "pattern": "^v1/organization=[a-z0-9][a-z0-9._-]{0,63}/install=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/state/heartbeat\\.json\\.age$"
+        },
+        "size": { "$ref": "#/$defs/size" },
+        "source_hash": { "$ref": "#/$defs/source_hash" },
+        "metadata": { "$ref": "#/$defs/heartbeat_metadata" }
+      }
+    },
+    "mirror_metadata": {
+      "description": "Allowlisted plaintext metadata. source_hash is absent because the server derives the provider-specific source-hash metadata header from the dedicated validated field.",
+      "type": "object",
+      "required": ["manifest-version", "source-id", "shipped-hash", "artifact-class"],
+      "additionalProperties": false,
+      "properties": {
+        "manifest-version": { "type": "string", "pattern": "^[1-9][0-9]{0,8}$" },
+        "source-id": { "$ref": "#/$defs/identifier" },
+        "shipped-hash": { "$ref": "#/$defs/source_hash" },
+        "artifact-class": { "$ref": "#/$defs/identifier" },
+        "agent-version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "shape-sniff": { "$ref": "#/$defs/identifier" },
+        "derived": { "const": "true" },
+        "enrich-status": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "heartbeat_metadata": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "heartbeat" }
+      }
+    },
+    "object_id": {
+      "description": "Batch-local opaque correlation value with no storage meaning.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "size": {
+      "description": "Exact ciphertext byte count held by the shipper. Each object and the aggregate declared batch are capped at 1 GiB by server policy.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1073741824
+    },
+    "source_hash": {
+      "description": "Lowercase hexadecimal SHA-256 of the raw pre-redaction source bytes. It is deduplication metadata and not a checksum of the encrypted PUT body.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    }
+  }
+}

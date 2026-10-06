@@ -1,0 +1,53 @@
+{
+  "comment": "Synthetic golden material for the Shipper-Device authorization scheme; every value is public test data and must not be used as a real credential. The organization locates the install record but is not signed. The device key is ed25519.NewKeyFromSeed(device_key_seed_hex); each authorization is a detached signature over the EXACT body bytes. Both modules' wire contract tests consume this file: the client proves it reproduces the golden headers, the server proves it accepts them and rejects every entry in `rejected`.",
+  "install_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "device_key_seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "device_public_key": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+  "config": {
+    "body": "{\"agent_version\":\"0.0.0-test\",\"config_versions\":[1]}",
+    "authorization": "Shipper-Device org=acme, install=3f2504e0-4f89-41d3-9a0c-0305e82c3301, sig=6FEPZXE3aY0xfcvAbn9VtYYoXM2bRD8shFpcEx23752TGzrbKTig9vWr8neHL3BU5jHVbuUEN5rDzhZkaV/EBQ=="
+  },
+  "rejected": [
+    {
+      "name": "missing organization",
+      "authorization": "Shipper-Device install=3f2504e0-4f89-41d3-9a0c-0305e82c3301, sig=6FEPZXE3aY0xfcvAbn9VtYYoXM2bRD8shFpcEx23752TGzrbKTig9vWr8neHL3BU5jHVbuUEN5rDzhZkaV/EBQ==",
+      "body": "{\"agent_version\":\"0.0.0-test\",\"config_versions\":[1]}"
+    },
+    {
+      "name": "invalid organization",
+      "authorization": "Shipper-Device org=../acme, install=3f2504e0-4f89-41d3-9a0c-0305e82c3301, sig=6FEPZXE3aY0xfcvAbn9VtYYoXM2bRD8shFpcEx23752TGzrbKTig9vWr8neHL3BU5jHVbuUEN5rDzhZkaV/EBQ==",
+      "body": "{\"agent_version\":\"0.0.0-test\",\"config_versions\":[1]}"
+    },
+    {
+      "name": "mismatched organization",
+      "authorization": "Shipper-Device org=other, install=3f2504e0-4f89-41d3-9a0c-0305e82c3301, sig=6FEPZXE3aY0xfcvAbn9VtYYoXM2bRD8shFpcEx23752TGzrbKTig9vWr8neHL3BU5jHVbuUEN5rDzhZkaV/EBQ==",
+      "body": "{\"agent_version\":\"0.0.0-test\",\"config_versions\":[1]}"
+    },
+    {
+      "name": "no header",
+      "authorization": "",
+      "body": "{}"
+    },
+    {
+      "name": "wrong scheme",
+      "authorization": "Bearer 6FEPZXE3aY0xfcvAbn9VtYYoXM2bRD8s",
+      "body": "{}"
+    },
+    {
+      "name": "unknown install",
+      "authorization": "Shipper-Device org=acme, install=00000000-0000-4000-8000-000000000000, sig=uGs28Qzd+n5JBljRU7LHQ2p25EC4VkSVhwNKwy+VSCLtFITk5yyiZAUDe9GqianCfdZRM7skWSAEu9h2jAlXAA==",
+      "body": "{}"
+    },
+    {
+      "name": "zeroed signature",
+      "authorization": "Shipper-Device org=acme, install=3f2504e0-4f89-41d3-9a0c-0305e82c3301, sig=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "body": "{}"
+    },
+    {
+      "name": "signature over different body",
+      "authorization": "Shipper-Device org=acme, install=3f2504e0-4f89-41d3-9a0c-0305e82c3301, sig=uGs28Qzd+n5JBljRU7LHQ2p25EC4VkSVhwNKwy+VSCLtFITk5yyiZAUDe9GqianCfdZRM7skWSAEu9h2jAlXAA==",
+      "body": "{\"agent_version\":\"0.0.0-test\",\"config_versions\":[1]}"
+    }
+  ],
+  "organization": "acme"
+}

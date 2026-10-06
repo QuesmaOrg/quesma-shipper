@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - "fleet-manager/**"
+      - "shipper-protocol/**"
       - ".github/workflows/fleet-manager-check.yml"
   # Required checks must be reported for every PR. Filtering the entire workflow
   # leaves unmatched PRs permanently waiting for statuses that can never arrive.

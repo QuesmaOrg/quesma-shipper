@@ -78,8 +78,9 @@ fails the suite rather than passing review unnoticed.
 
 ## Where a change goes
 
-A new shipper-facing behaviour starts in `shipper-protocol`, is released as a module version, and
-arrives here as a dependency bump plus a handler. A new storage backend is a new provider file and
+A new shipper-facing behaviour starts in `shipper-protocol/`, which this module builds against in
+place, and lands in the same pull request as its handler here and the shipper's contract tests; the
+protocol is tagged as a module version when it is released. A new storage backend is a new provider file and
 nothing else. A new administrative operation is a route in `admin_http.go`, a method on `Manager`,
 and a decision about which credential scope may call it — the reporter credential exists so that
 whatever reports collection health cannot also create organizations or revoke installs.

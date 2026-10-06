@@ -1,0 +1,135 @@
+{
+  "comment": "The rulebook: what a served config document may touch, field by field. There is one served tier, so every row describes the one remote layer. Quesma Shipper enforces these bounds at resolve time. The data is executable twice: the shipper contract tests assert every row against the resolver, and cmd/protocolgen renders the table in PROTOCOL.md (-check fails on drift).",
+  "classes": {
+    "set": "the served document may set the field, within compiled validation",
+    "union": "add only: union with the compiled/local set, can never remove",
+    "off-only": "may disable, never enable: re-enabling over a local refusal is a widen",
+    "refused": "machine-owner only, refused from any served document",
+    "envelope": "the served document only; refused from the machine owner's own file",
+    "ignored": "read and discarded: a vestigial field that selects nothing, tolerated so older documents still load"
+  },
+  "fields": [
+    {
+      "field": "issued_at / org",
+      "default": "—",
+      "server_may": "envelope",
+      "note": "The envelope of the served document: the time the control plane issued it, and the organization that becomes the organization= key segment. A local file must not carry these fields."
+    },
+    {
+      "field": "config_version",
+      "default": "1",
+      "server_may": "set",
+      "note": "Must be in the accepted set [1]. An unknown version is a hard error. The document is never partially applied."
+    },
+    {
+      "field": "mode.schedule",
+      "default": "15m",
+      "server_may": "set",
+      "note": "Must parse as a Go duration (\"90s\", \"5m\", \"1h\") and be at least 1m."
+    },
+    {
+      "field": "max_files_per_run",
+      "default": "512",
+      "server_may": "set"
+    },
+    {
+      "field": "drain_deadline",
+      "default": "1h",
+      "server_may": "set",
+      "note": "Must parse as a duration and be greater than 0."
+    },
+    {
+      "field": "state_dir",
+      "default": "XDG default",
+      "server_may": "refused",
+      "note": "Holds the identity, the fingerprint document, and the pause kill switch. No served document may move them."
+    },
+    {
+      "field": "upload_targets",
+      "default": "empty (unpinned)",
+      "server_may": "refused",
+      "note": "Optional origin pin. With no entries, the control plane's tickets decide the destination (https only, exact key still enforced). Any entry pins the allowed origins. Machine-owner only: a presigned ticket authorizes itself, so a layer that could write the pin could also loosen it. HTTPS unless the entry explicitly enables loopback http."
+    },
+    {
+      "field": "send.sink / bucket / prefix / region / path",
+      "default": "the presigned upload, always",
+      "server_may": "ignored",
+      "note": "Vestigial. The presigned upload is the only write path, so these fields select nothing. A document that still names s3 with a bucket and a region loads and is ignored. This lets one served document serve both old and new clients. upload_targets, when configured, pins where a ticket may send bytes."
+    },
+    {
+      "field": "scrub.rule_packs",
+      "default": "gitleaks-core, quesma-extra, cloud-keys, generic-entropy, pii-core",
+      "server_may": "union",
+      "note": "Additions only make scrubbing stricter. A pack this build does not have is refused."
+    },
+    {
+      "field": "scrub.secret_key_names",
+      "default": "compiled set",
+      "server_may": "union",
+      "note": "Naming another key can only redact more."
+    },
+    {
+      "field": "structural_exempt",
+      "default": "compiled baseline",
+      "server_may": "set",
+      "note": "Weakens scrubbing. Only compiled code, the machine owner's files, or the served document may carry it. Merges with the compiled baseline and never replaces it."
+    },
+    {
+      "field": "encryption.additional_recipients",
+      "default": "empty",
+      "server_may": "union",
+      "note": "Recipients decide who can read every object sealed after them. This is the only channel through which an organization's reader key reaches a client. Each layer may add readers. No layer may remove another layer's readers."
+    },
+    {
+      "field": "encryption.include_install_recipient",
+      "default": "true",
+      "server_may": "set",
+      "note": "false means the install cannot decrypt what it ships. Setting false requires at least one additional recipient. A config that would seal objects no key can open is rejected whole."
+    },
+    {
+      "field": "sources[].enabled",
+      "default": "catalog",
+      "server_may": "set",
+      "note": "A local disable beats a remote enable."
+    },
+    {
+      "field": "sources[].roots / include / exclude",
+      "default": "catalog",
+      "server_may": "set",
+      "note": "Roots must stay within the compiled scope ceiling. A new root requires a release. Globs are not subsumption-checked."
+    },
+    {
+      "field": "sources[].max_file_bytes",
+      "default": "catalog",
+      "server_may": "set"
+    },
+    {
+      "field": "sources[].enrichers{}",
+      "default": "catalog",
+      "server_may": "off-only",
+      "note": "May disable a registered enricher. May not enable one, and may not attach one the catalog does not have. An enricher reads a store the raw pipeline never touches."
+    },
+    {
+      "field": "a source id not in the compiled catalog",
+      "default": "—",
+      "server_may": "refused",
+      "note": "A config layer cannot create a source. It can only adjust one."
+    },
+    {
+      "field": "crash_report.enabled / dsn",
+      "default": "no crash reporting",
+      "server_may": "ignored",
+      "note": "Vestigial. Crash reporting is removed. The key still parses from any layer and is discarded, so older configs and served documents keep working. Clients from before the removal still enforce the old rules: enabled is off-only, and a served dsn is refused."
+    },
+    {
+      "field": "autoupdate.enabled",
+      "default": "true",
+      "server_may": "off-only",
+      "note": "Self-update at daemon startup, release builds only. Re-enabling over a local refusal would push new code onto a machine its owner froze."
+    }
+  ],
+  "not_settable": [
+    "The object key layout: generated, never configured, from any layer.",
+    "The store endpoint (`SHIPPER_S3_ENDPOINT` environment variable): environment only. No served field can redirect uploads."
+  ]
+}
