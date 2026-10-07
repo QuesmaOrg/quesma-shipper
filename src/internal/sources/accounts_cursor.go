@@ -15,10 +15,10 @@ import (
 )
 
 // Usage events are fetched without a teamId: Cursor then returns only the signed-in user's
-// requests, even to a team owner. Each snapshot carries the trailing week; closed months come
-// once each from cursorHistory.
+// requests, even to a team owner. Each UTC day is one object, one event per line as Cursor sent
+// it, oldest first: a new request appends a line, which ingest stores without rewriting the day.
 
-const cursorHistoryMonths = 12
+const cursorUsageDays = 90
 
 func (p *Accounts) collectCursor(ctx context.Context, req Request) ([]accountObservation, bool) {
 	var out []accountObservation
@@ -29,10 +29,8 @@ func (p *Accounts) collectCursor(ctx context.Context, req Request) ([]accountObs
 	values, token, err := sqliteread.CursorAccount(ctx, path)
 	body, _ := json.Marshal(values)
 	out = append(out, localAccount(req, "cursor.local.account", body, err))
-	now := req.Now().UTC()
-	usage := fmt.Sprintf(`{"startDate":"%d","endDate":"%d","page":1,"pageSize":1000}`, now.Add(-7*24*time.Hour).UnixMilli(), now.UnixMilli())
-	for _, call := range []struct{ endpoint, body string }{{"GetPlanInfo", "{}"}, {"GetCurrentPeriodUsage", "{}"}, {"GetFilteredUsageEvents", usage}} {
-		out = append(out, p.cursorCall(ctx, token, call.endpoint, call.body, now))
+	for _, endpoint := range []string{"GetPlanInfo", "GetCurrentPeriodUsage"} {
+		out = append(out, p.cursorCall(ctx, token, endpoint, "{}", req.Now().UTC()))
 	}
 	return out, true
 }
@@ -56,27 +54,28 @@ func (p *Accounts) cursorCall(ctx context.Context, token, endpoint, body string,
 	return p.fetch(obs, request)
 }
 
-// cursorHistory is one candidate per closed month. Its size and mtime never change, so the engine
-// loads each month once and skips it after it ships; a failed load is retried with backoff.
-func (p *Accounts) cursorHistory(req Request) []Candidate {
-	now := req.Now().UTC()
-	end := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-	if now.Sub(end) < 24*time.Hour {
-		// The trailing week still covers the month that just ended.
-		end = end.AddDate(0, -1, 0)
-	}
+// cursorDays is one candidate per UTC day. Until a day has been over for a day its mtime is the
+// collection bucket, so it is reloaded and overwritten when its events change; after that its
+// mtime is fixed, so the engine loads it one last time and then skips it.
+func (p *Accounts) cursorDays(req Request) []Candidate {
+	bucket := req.Now().UTC().Truncate(req.Interval)
+	today := bucket.Truncate(24 * time.Hour)
 	var out []Candidate
-	for range cursorHistoryMonths {
-		start, stop := end.AddDate(0, -1, 0), end
-		name := "cursor.usage." + start.Format("200601") + ".jsonl"
-		out = append(out, Candidate{Path: name, RelPath: name, Size: req.Source.MaxFileBytes, MTime: stop,
-			Load: func(ctx context.Context) (Payload, error) { return p.loadCursorMonth(ctx, req, start, stop) }})
-		end = start
+	for i := range cursorUsageDays + 1 {
+		start := today.AddDate(0, 0, -i)
+		end := start.AddDate(0, 0, 1)
+		mtime := end.Add(24 * time.Hour)
+		if bucket.Before(mtime) {
+			mtime = bucket
+		}
+		name := "cursor.usage." + start.Format("20060102") + ".jsonl"
+		out = append(out, Candidate{Path: name, RelPath: name, Size: req.Source.MaxFileBytes, MTime: mtime,
+			Load: func(ctx context.Context) (Payload, error) { return p.loadCursorDay(ctx, req, start, end, mtime) }})
 	}
 	return out
 }
 
-func (p *Accounts) loadCursorMonth(ctx context.Context, req Request, start, end time.Time) (Payload, error) {
+func (p *Accounts) loadCursorDay(ctx context.Context, req Request, start, end, mtime time.Time) (Payload, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	path := filepath.Join(req.Source.Root, "state.vscdb")
@@ -87,14 +86,13 @@ func (p *Accounts) loadCursorMonth(ctx context.Context, req Request, start, end 
 	if err != nil {
 		return Payload{}, err
 	}
-	var raw bytes.Buffer
-	encoder := json.NewEncoder(&raw)
-	for page, fetched := 1, 0; ; page++ {
+	var events []json.RawMessage
+	for page := 1; ; page++ {
 		body := fmt.Sprintf(`{"startDate":"%d","endDate":"%d","page":%d,"pageSize":500}`, start.UnixMilli(), end.UnixMilli(), page)
 		obs := p.cursorCall(ctx, token, "GetFilteredUsageEvents", body, req.Now().UTC())
 		if obs.Error != "" {
-			// Not shipped: a month ships once, so it must not ship incomplete.
-			return Payload{}, fmt.Errorf("cursor usage %s page %d: %s", start.Format("2006-01"), page, obs.Error)
+			// Not shipped: a settled day loads once, so it must never ship incomplete.
+			return Payload{}, fmt.Errorf("cursor usage %s page %d: %s", start.Format(time.DateOnly), page, obs.Error)
 		}
 		var resp struct {
 			Total  int               `json:"totalUsageEventsCount"`
@@ -103,18 +101,22 @@ func (p *Accounts) loadCursorMonth(ctx context.Context, req Request, start, end 
 		if err := json.Unmarshal(obs.Body, &resp); err != nil {
 			return Payload{}, err
 		}
-		if err := encoder.Encode(struct {
-			BucketStart time.Time `json:"bucket_start"`
-			accountObservation
-		}{start, obs}); err != nil {
-			return Payload{}, err
-		}
-		if req.Source.MaxFileBytes > 0 && int64(raw.Len()) > req.Source.MaxFileBytes {
-			return Payload{}, fmt.Errorf("cursor usage %s: exceeds file size limit", start.Format("2006-01"))
-		}
-		if fetched += len(resp.Events); len(resp.Events) == 0 || fetched >= resp.Total {
+		events = append(events, resp.Events...)
+		if len(resp.Events) == 0 || len(events) >= resp.Total {
 			break
 		}
 	}
-	return Payload{Bytes: raw.Bytes(), MTime: end}, nil
+	var raw bytes.Buffer
+	// Cursor pages newest first.
+	for i := len(events) - 1; i >= 0; i-- {
+		// Compact only guarantees one line; Cursor already sends compact JSON.
+		if err := json.Compact(&raw, events[i]); err != nil {
+			return Payload{}, err
+		}
+		raw.WriteByte('\n')
+	}
+	if req.Source.MaxFileBytes > 0 && int64(raw.Len()) > req.Source.MaxFileBytes {
+		return Payload{}, fmt.Errorf("cursor usage %s: exceeds file size limit", start.Format(time.DateOnly))
+	}
+	return Payload{Bytes: raw.Bytes(), MTime: mtime}, nil
 }
