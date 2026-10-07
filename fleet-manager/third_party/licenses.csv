@@ -13,6 +13,7 @@ github.com/Azure/azure-sdk-for-go/sdk/azidentity,MIT
 github.com/Azure/azure-sdk-for-go/sdk/internal,MIT
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage,MIT
 github.com/Azure/azure-sdk-for-go/sdk/storage/azblob,MIT
+github.com/Azure/azure-sdk-for-go/sdk/storage/internal/sasurl,MIT
 github.com/AzureAD/microsoft-authentication-library-for-go/apps,MIT
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp,Apache-2.0
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric,Apache-2.0
