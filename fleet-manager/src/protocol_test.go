@@ -16,6 +16,8 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +25,7 @@ import (
 	"filippo.io/age"
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"gopkg.in/yaml.v3"
 )
 
 // The wire contract comes from the published module, not from a sibling directory. These are
@@ -92,12 +95,96 @@ func TestWireStructsMatchSchemas(t *testing.T) {
 		DevicePublicKey: "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=", AgeRecipient: "age1cpx4grz9j4fkn36cfurggwcg4l0da5fyqadl8fwagtcwy55gt44qlclfa5"})
 	validateSchema(t, "enroll-response.schema.json", enrollResponse{Organization: "acme"})
 	validateSchema(t, "config-request.schema.json", configRequest{AgentVersion: "test", ConfigVersions: []int{1}})
+	validateSchema(t, "config-request.schema.json", configRequest{AgentVersion: "test", ConfigVersions: []int{1}, Catalog: testCatalog(featureExcludeAdd)})
 	validateSchema(t, "config-response.schema.json", configResponse{Config: []byte("config_version: 1\n"), ExpiresAt: now})
 	validateSchema(t, "v2/uploads-authorize-request.schema.json", uploadAuthorizeRequest{WriterID: "8403c1de-6940-4e35-a19b-5c91c45fc379", IssuedAt: now,
 		Objects: []uploadObject{{ObjectID: "heartbeat", Key: "v1/organization=acme/install=3f2504e0-4f89-41d3-9a0c-0305e82c3301/state/heartbeat.json.age",
 			Size: 10, SourceHash: strings.Repeat("a", 64), Metadata: map[string]string{"kind": "heartbeat"}}}})
 	validateSchema(t, "v2/uploads-authorize-response.schema.json", uploadAuthorizeResponse{
 		Tickets: []uploadTicket{{TicketID: "8403c1de-6940-4e35-a19b-5c91c45fc379", ObjectID: "heartbeat", AlreadyPresent: true}}})
+}
+
+// The golden catalog decodes into this service's own struct with no field left over, and what the
+// service stores from it is still a valid catalog.
+func TestCatalogRequestFixtureDecodesWhole(t *testing.T) {
+	raw, err := readProtocol("fixtures/v1/config", "request-catalog.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req configRequest
+	if err := strictDecode(raw, &req); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if req.Catalog == nil || req.Catalog.usable() != nil || len(req.Catalog.Sources) != 2 || !slices.Contains(req.Catalog.Features, featureExcludeAdd) {
+		t.Fatalf("decoded %+v", req.Catalog)
+	}
+	var golden, ours any
+	_ = json.Unmarshal(raw, &golden)
+	_ = json.Unmarshal(mustJSON(t, req), &ours)
+	if !reflect.DeepEqual(golden, ours) {
+		t.Fatalf("re-encoding changed the request:\n%s", mustJSON(t, req))
+	}
+	validateSchema(t, "config-request.schema.json", req)
+}
+
+// A source carrying a field the schema forbids -- here a resolved root, which names the machine --
+// is decoded tolerantly, and the field never reaches storage: the stored catalog is re-encoded from
+// this service's struct. A source without an id leaves the catalog unusable, so it is not acted on.
+func TestCatalogRejectionFixtures(t *testing.T) {
+	raw, _ := readProtocol("fixtures/v1/config", "bad-request-catalog-resolved-root.json")
+	var req configRequest
+	if err := json.Unmarshal(raw, &req); err != nil || req.Catalog == nil {
+		t.Fatalf("tolerant decode: %v", err)
+	}
+	reported, err := req.Catalog.reported()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(reported.Record, []byte("resolved_root")) || bytes.Contains(reported.Record, []byte("/Users/ada")) {
+		t.Fatalf("the stored catalog kept a resolved root:\n%s", reported.Record)
+	}
+
+	raw, _ = readProtocol("fixtures/v1/config", "bad-request-catalog-source-without-id.json")
+	req = configRequest{}
+	if err := json.Unmarshal(raw, &req); err != nil || req.Catalog == nil || req.Catalog.usable() == nil {
+		t.Fatalf("a source without an id was usable: %v", err)
+	}
+}
+
+// exclude_add is a field the shared schema accepts on writes, and it round-trips through the
+// collection model the admin API, the store and the served YAML all use.
+func TestExcludeAddDocumentFixtureRoundTrips(t *testing.T) {
+	raw, err := readProtocol("fixtures/v1/config-document", "exclude-add.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := protocol.ValidateConfigDocument(raw); err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	var document struct {
+		ConfigVersion int `json:"config_version"`
+		CollectionConfig
+	}
+	if err := strictDecode(raw, &document); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	var golden, ours any
+	_ = json.Unmarshal(raw, &golden)
+	_ = json.Unmarshal(mustJSON(t, document), &ours)
+	if !reflect.DeepEqual(golden, ours) {
+		t.Fatalf("JSON round trip changed the document:\n%s", mustJSON(t, document))
+	}
+	var served CollectionConfig
+	if err := yaml.Unmarshal([]byte(renderConfig(FleetConfig{Organization: "acme", Collection: &document.CollectionConfig})), &served); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(served.Sources, document.Sources) {
+		t.Fatalf("YAML round trip: %+v", served.Sources)
+	}
+	bad, _ := readProtocol("fixtures/v1/config-document", "bad-exclude-add-type.json")
+	if protocol.ValidateConfigDocument(bad) == nil {
+		t.Fatal("accepted bad-exclude-add-type.json")
+	}
 }
 
 func TestUploadFixturesUseTheExistingContract(t *testing.T) {

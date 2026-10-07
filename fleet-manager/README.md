@@ -326,6 +326,74 @@ Organization discovery also permits the runtime identity to list keys below `v1/
 That listing can reveal encrypted trajectory object names, but not read their contents; this is an
 accepted tradeoff of using each organization's `config.json` as the only organization registry.
 
+## Source catalogs
+
+A shipper build that has one reports its compiled source catalog on every config fetch: the
+sources it can collect, its scrub rule packs, and the served-document features it reads (see
+"Source catalog report" in the shipper-protocol `PROTOCOL.md`). Root templates arrive unexpanded,
+so a catalog is the same on every machine running that build and says nothing about the machine or
+its files. The service keeps each install's latest one, content-addressed:
+
+```
+v1/organization=<org>/control/catalogs/<sha256>.json   one per distinct catalog, written once
+```
+
+The SHA-256 is over the catalog as this service re-encodes it, so fields it does not know are never
+stored. The install's check-in record names the digest its latest config fetch carried
+(`catalog_digest`, reported at `last_config_at`), and drops it when a fetch carries none. A
+changed digest is written even inside the one-minute check-in throttle. A catalog without source
+ids is ignored and logged, and the fetch is served as one without a catalog. Catalogs sit under
+`control/`, so the ETL reader grant, which names install roots and `config.json` only, does not
+reach them.
+
+**Serving per install.** With the requesting build's catalog, the document is rendered for that
+build: a `sources[]` entry or `scrub.rule_packs` name the catalog lacks is left out, so the build
+does not refuse the whole document over an entry another build needs. `sources[].exclude_add` is
+served as is to a build listing the `sources.exclude_add` feature. For one that does not, which
+would ignore it, it is folded: `exclude` becomes the entry's own `exclude` if it sets one, else the
+build's reported `exclude` for the source, followed by the additions. A fetch without a catalog is
+served as before, except that `exclude_add` is folded over the newest catalog any install of the
+organization reported for that source; if none has the source, the `exclude_add` is dropped. What
+was left out, folded or dropped is logged once per change for each install, not on every fetch.
+
+**What installs report.** `GET /v1/admin/orgs/{org}/sources` answers what the active installs can
+collect:
+
+```json
+{
+  "installs": {"active": 14, "reporting": 12},
+  "sources": [{"id": "claude-code-transcripts", "family": "claude-code", "family_name": "Claude Code",
+               "description": "…", "artifact_class": "trajectory", "enabled": true, "roots": ["~/.claude"],
+               "include": ["…"], "exclude": ["…"], "max_file_bytes": 536870912, "enrichers": [], "installs": 12}],
+  "rule_packs": [{"name": "gitleaks-core", "installs": 12}],
+  "features": [{"name": "sources.exclude_add", "installs": 12}]
+}
+```
+
+`active` counts installs with status active; `reporting` those of them whose latest config fetch
+carried a catalog. Pending and revoked installs count for neither. A source, pack or feature is
+listed when a reporting install has it, `installs` is how many do, and a source's metadata comes
+from the most recently reported catalog that has it. Sources sort by `family_name`, then `id`;
+packs and features by name. Lists are empty arrays, never null, and `max_file_bytes` is absent
+when the catalog states none.
+
+**Checking writes.** A `PUT /v1/admin/orgs/{org}/config` that states a collection is checked, after
+the schema, against the same counts:
+
+- While any install reports, every `sources[].id` and `scrub.rule_packs` name must be in some
+  reporting install's catalog, else 400, for example
+  `collection: sources[2].id "foo" is not in any reporting install's catalog`. With none reporting,
+  they are not checked.
+- Any `sources[].exclude_add` needs every active install to report its catalog, else 409:
+  `collection: sources[].exclude_add needs every active install to report its catalog; 2 of 14 do
+  not yet. Update their shippers first.` A build without a catalog cannot be folded for reliably,
+  so the write waits for the fleet to update.
+
+A write that does not mention the collection keeps the stored one and is not checked, so a
+recipient change is never refused because the fleet moved. Older fleet-manager releases decode
+check-in and configuration records strictly: upgrade every replica before installs report
+catalogs or a collection uses `exclude_add`, and keep this in mind when rolling back.
+
 ## Telemetry proxy
 
 `POST /v1/telemetry` forwards authenticated shipper telemetry to the organization's

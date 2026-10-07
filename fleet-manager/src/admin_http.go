@@ -198,6 +198,7 @@ func (s *Server) adminHandler() http.Handler {
 func registerOrganizationRoutes(mux *http.ServeMux, prefix string, s *Server) {
 	mux.HandleFunc("GET "+prefix+"/config", s.adminOnly(s.handleAdminGetConfig))
 	mux.HandleFunc("PUT "+prefix+"/config", s.adminOnly(s.handleAdminPutConfig))
+	mux.HandleFunc("GET "+prefix+"/sources", s.scopedAdmin(s.handleAdminListSources))
 	mux.HandleFunc("GET "+prefix+"/grants", s.scopedAdmin(s.handleAdminListGrants))
 	mux.HandleFunc("POST "+prefix+"/grants", s.scopedAdmin(s.handleAdminCreateGrant))
 	mux.HandleFunc("POST "+prefix+"/grants/{id}/revoke", s.scopedAdmin(s.handleAdminRevokeGrant))
@@ -332,6 +333,28 @@ func (s *Server) validateAdminConfig(w http.ResponseWriter, manager *Manager, cf
 	return true
 }
 
+// validateCollectionForFleet checks a new collection against what the organization's installs
+// reported they can execute. Only a write that states a collection is checked: one that keeps the
+// stored collection must not be refused because the fleet moved since it was written.
+func (s *Server) validateCollectionForFleet(w http.ResponseWriter, r *http.Request, manager *Manager, cfg FleetConfig) bool {
+	// The same normalization ApplyConfig runs, so authored_yaml is checked as the collection it becomes.
+	cfg.Schema, cfg.Organization = schemaVersion, manager.org
+	if err := normalizeCollection(&cfg); err != nil {
+		writeAdminError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+	fleet, err := manager.FleetCatalog(r.Context())
+	if err != nil {
+		s.adminOperationError(w, "read install catalogs", err)
+		return false
+	}
+	if status, message := validateCollectionAgainstFleet(cfg.Collection, fleet); status != 0 {
+		writeAdminError(w, status, message)
+		return false
+	}
+	return true
+}
+
 func (s *Server) handleAdminListOrganizations(w http.ResponseWriter, r *http.Request) {
 	records, err := s.manager.ListOrganizations(r.Context())
 	s.writeAdminList(w, "list organizations", records, err)
@@ -454,6 +477,11 @@ func (s *Server) handleAdminPutConfig(w http.ResponseWriter, r *http.Request) {
 	if !s.validateAdminConfig(w, manager, cfg) {
 		return
 	}
+	if req.Collection != nil || req.AuthoredYAML != "" {
+		if !s.validateCollectionForFleet(w, r, manager, cfg) {
+			return
+		}
+	}
 	err = manager.ApplyConfig(r.Context(), cfg, version)
 	if errors.Is(err, ErrConflict) {
 		writeAdminError(w, http.StatusPreconditionFailed, "configuration changed")
@@ -529,6 +557,18 @@ func (s *Server) handleAdminListSeen(w http.ResponseWriter, r *http.Request) {
 	manager, _ := s.adminManager(r)
 	records, err := manager.ListSeen(r.Context())
 	s.writeAdminList(w, "list install details", records, err)
+}
+
+// handleAdminListSources is what the organization's active installs reported they can collect, so
+// an editor offers only sources, rule packs and features some install can execute.
+func (s *Server) handleAdminListSources(w http.ResponseWriter, r *http.Request) {
+	manager, _ := s.adminManager(r)
+	fleet, err := manager.FleetCatalog(r.Context())
+	if err != nil {
+		s.adminOperationError(w, "list sources", err)
+		return
+	}
+	writeJSON(w, summarizeFleetCatalog(fleet))
 }
 
 // Health is listed separately from the identity records, like the telemetry: a caller renders
