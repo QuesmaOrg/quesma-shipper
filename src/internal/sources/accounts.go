@@ -50,7 +50,7 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 		Load: func(ctx context.Context) (Payload, error) { return p.load(ctx, req, bucket) },
 	}}
 	if req.Source.ID == "cursor-account" {
-		d.Candidates = append(d.Candidates, p.cursorDays(req)...)
+		d.Candidates = append(d.Candidates, p.cursorDays(req, bucket)...)
 	}
 	d.Health = Collected
 	return d, nil
