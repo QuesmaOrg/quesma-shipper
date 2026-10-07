@@ -55,6 +55,11 @@ type Options struct {
 	// Heartbeat publishes discovery health after a run. Optional and best-effort: it fails open.
 	Heartbeat func(context.Context, Report) error
 
+	// Step names the stage the run has entered and the source it is on, for the crash journal and
+	// the stall watchdog: a run stuck forever cannot say where itself. Called from the batch
+	// goroutines too, so it must be safe for concurrent use. Never a path or a file name.
+	Step func(stage, source string)
+
 	// Progress streams each file's outcome as it is decided. Optional; nil is silent.
 	Progress formats.Progress
 
@@ -217,6 +222,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			continue
 		}
 
+		o.step("discover", src.ID)
 		disc, err := prim.Discover(sources.Request{
 			Source:   src,
 			All:      o.Plan.Sources,
@@ -299,6 +305,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			budget:  &budget,
 			staging: len(enrichers) > 0,
 		}
+		o.step("read and seal", src.ID)
 		if err := pass.run(ctx); err != nil {
 			// A refusal and an unavailable control plane both carry a source outcome worth
 			// reporting; a cancelled context, the only other way this returns, does not.
@@ -315,6 +322,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			if len(staged) == 0 && enricher.NeedsUnits() {
 				continue
 			}
+			o.step("enrich", src.ID)
 			err := o.enrichSource(ctx, store, src, enricher, staged, &out, &rep)
 			if err == nil {
 				continue
@@ -350,6 +358,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 		}
 
 		// A source boundary bounds what a crash re-ships to the source in flight.
+		o.step("commit", src.ID)
 		if err := store.Flush(); err != nil {
 			return rep, err
 		}
@@ -360,6 +369,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 	slices.SortFunc(rep.Sources, func(a, b SourceOutcome) int { return cmp.Compare(a.SourceID, b.SourceID) })
 
 	if !o.DryRun && o.Heartbeat != nil {
+		o.step("heartbeat", "")
 		// Health reporting fails open; only redaction fails closed.
 		err := o.Heartbeat(ctx, rep)
 		if err != nil && o.Log != nil {
@@ -401,6 +411,12 @@ func median(v []int64) int64 {
 	sorted := slices.Clone(v)
 	slices.Sort(sorted)
 	return sorted[len(sorted)/2]
+}
+
+func (o Options) step(stage, source string) {
+	if o.Step != nil {
+		o.Step(stage, source)
+	}
 }
 
 func (o Options) scrubber() (*transforms.Scrubber, error) {

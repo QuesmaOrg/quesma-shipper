@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
@@ -431,4 +433,36 @@ func (e *countingEnricher) NeedsUnits() bool       { return true }
 func (e *countingEnricher) Enrich(transforms.Input) transforms.EnrichResult {
 	e.calls++
 	return transforms.EnrichResult{EnricherID: e.id, Version: 1}
+}
+
+// The stage hook is what the crash journal and the stall watchdog read: the stages a source goes
+// through arrive in order, named by source, with the heartbeat last.
+func TestARunNamesTheStageItIsIn(t *testing.T) {
+	f := newFixture(t)
+	f.writeTranscript("p/s01.jsonl", line1)
+	port := newPort()
+	var mu sync.Mutex
+	var steps []string
+	_, err := vendRun(f, port, func(o *engine.Options) {
+		o.Step = func(stage, source string) {
+			mu.Lock()
+			defer mu.Unlock()
+			steps = append(steps, strings.TrimSpace(stage+" "+source))
+		}
+		o.Heartbeat = func(context.Context, engine.Report) error { return nil }
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"discover claude-code-transcripts", "read and seal claude-code-transcripts",
+		"upload claude-code-transcripts", "commit claude-code-transcripts", "heartbeat"}
+	at := 0
+	for _, s := range steps {
+		if at < len(want) && s == want[at] {
+			at++
+		}
+	}
+	if at != len(want) {
+		t.Fatalf("want the stages %v in order, got %v", want, steps)
+	}
 }

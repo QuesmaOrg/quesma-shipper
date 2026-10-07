@@ -46,6 +46,7 @@ type Log struct {
 	path   string
 	runID  string
 	warned bool
+	phase  string
 }
 
 // Open rotates a large journal aside and returns the appender. Rotation happens only here,
@@ -65,7 +66,19 @@ func (l *Log) Start() {
 	l.append(entry{Ev: "start", PID: os.Getpid()}, true)
 }
 
+// Phase records the stage reached. A repeat of the current one is dropped, so a stage entered
+// once per upload group costs one line, not one per group.
 func (l *Log) Phase(name string) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	same := l.phase == name
+	l.phase = name
+	l.mu.Unlock()
+	if same {
+		return
+	}
 	l.append(entry{Ev: "phase", Phase: name}, false)
 }
 

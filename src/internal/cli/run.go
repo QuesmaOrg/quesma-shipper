@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -276,7 +277,17 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 	}
 	started := time.Now()
 
+	// The source the engine is on, under the tick: a crash's "last step" then names it. Stages
+	// within a source stay in memory for the stall watchdog; journaling each would be noise.
+	var tickNo atomic.Int64
+	env.OnStep = func(_, source string) {
+		if source != "" {
+			fl.Phase(fmt.Sprintf("tick %d: %s", tickNo.Load(), source))
+		}
+	}
+
 	for n := 1; ; n++ {
+		tickNo.Store(int64(n))
 		fl.Phase(fmt.Sprintf("tick %d", n))
 		// Roots are picked once, during app.New above. An agent installed -- or first run, which
 		// is when Claude Code creates projects/ -- after this process started would otherwise read

@@ -139,6 +139,7 @@ func (p *sourcePass) run(ctx context.Context) error {
 			// whole life; the port bounds the fan-out inside.
 			go func() {
 				uploadSlots <- struct{}{}
+				p.o.step("upload", p.src.ID)
 				done := p.o.sendBatch(ctx, items)
 				<-uploadSlots
 				batches <- done

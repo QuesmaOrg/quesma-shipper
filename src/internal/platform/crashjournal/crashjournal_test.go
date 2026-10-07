@@ -199,3 +199,24 @@ func TestNilLogIsSilent(t *testing.T) {
 	l.Reported()
 	l.Exit()
 }
+
+// A stage entered once per upload group costs one line, not one per group.
+func TestARepeatedPhaseIsOneEntry(t *testing.T) {
+	dir := t.TempDir()
+	l, err := Open(dir, "run-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Start()
+	l.Phase("tick 1: cursor")
+	l.Phase("tick 1: cursor")
+	l.Phase("tick 1: cursor")
+	l.Phase("tick 1: claude")
+	raw, err := os.ReadFile(filepath.Join(dir, fileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(raw), `"ev":"phase"`); got != 2 {
+		t.Fatalf("want 2 phase entries, got %d:\n%s", got, raw)
+	}
+}
