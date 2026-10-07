@@ -70,7 +70,7 @@ sources:
       kind: none
 
   - id: cursor-account
-    description: Account and raw provider usage snapshots, uploaded when they change and at least daily, and the user's own usage events as one object per UTC day.
+    description: Account and raw provider usage snapshots, uploaded when they change and at least daily.
     gather: account
     scrub: false
     roots:
@@ -82,5 +82,21 @@ sources:
     artifact_class: context
     max_file_bytes: 8388608
     emit: account
+    sniff:
+      kind: jsonl
+
+  - id: cursor-usage
+    description: The signed-in user's own requests (model, token counts, cost, conversation id), one object per UTC day, the past 90 days and as they happen.
+    gather: cursor_usage
+    scrub: false
+    roots:
+      - ~/Library/Application Support/Cursor/User/globalStorage
+      - $APPDATA/Cursor/User/globalStorage
+      - $XDG_CONFIG_HOME/Cursor/User/globalStorage
+      - ~/.config/Cursor/User/globalStorage
+      - ~/.config/cursor/User/globalStorage
+    artifact_class: context
+    max_file_bytes: 8388608
+    emit: usage_events
     sniff:
       kind: jsonl

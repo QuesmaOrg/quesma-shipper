@@ -3,11 +3,9 @@ package sources
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,8 +14,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	_ "modernc.org/sqlite"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
@@ -310,76 +306,5 @@ func TestAccountCompareIgnoresReadTimeAndCountdowns(t *testing.T) {
 	}
 	if rolled := load(start.Add(3*time.Hour), window("23", "495459", "2026-10-05T21:20:00.5+00:00", "2026-10-05T15:00:00Z")); bytes.Equal(first.Compare, rolled.Compare) {
 		t.Fatal("a new window compared equal")
-	}
-}
-
-func TestCursorUsageDays(t *testing.T) {
-	req := accountFixture(t)
-	req.Source = Resolved{Source: Source{ID: "cursor-account", Family: "cursor", Gather: "account"}, Root: t.TempDir()}
-	db, err := sql.Open("sqlite", "file:"+filepath.Join(req.Source.Root, "state.vscdb"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB); INSERT INTO ItemTable VALUES ('cursorAuth/accessToken', 'fixture-access')`); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-	// Cursor's order: newest first, two per page.
-	events := []string{`{"timestamp":"3","tokenUsage":{"totalCents":72.0478}}`, `{"timestamp":"2"}`, `{"timestamp":"1"}`}
-	var bodies []string
-	failPage := 0
-	p := Accounts{client: &http.Client{Transport: accountTransport(func(r *http.Request) (*http.Response, error) {
-		raw, _ := io.ReadAll(r.Body)
-		reply := `{}`
-		if strings.HasSuffix(r.URL.Path, "/GetFilteredUsageEvents") {
-			bodies = append(bodies, string(raw))
-			var q struct{ Page int }
-			json.Unmarshal(raw, &q)
-			page := events[min(2*(q.Page-1), len(events)):min(2*q.Page, len(events))]
-			reply = fmt.Sprintf(`{"totalUsageEventsCount":%d,"usageEventsDisplay":[%s]}`, len(events), strings.Join(page, ","))
-			if len(bodies) == failPage {
-				return &http.Response{StatusCode: 503, Body: io.NopCloser(strings.NewReader(`{}`)), Header: http.Header{}}, nil
-			}
-		}
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(reply)), Header: http.Header{}}, nil
-	})}}
-	d, err := p.Discover(req)
-	if err != nil || len(d.Candidates) != 2+cursorUsageDays {
-		t.Fatalf("%+v %v", d, err)
-	}
-	snapshot, err := d.Candidates[0].Load(req.Context)
-	if err != nil || len(bodies) != 0 {
-		t.Fatalf("usage events belong in the day objects, not the account snapshot: %v %s", err, snapshot.Bytes)
-	}
-	// 2026-09-16T14:17:03Z: today and yesterday follow the bucket, the day before is settled.
-	days := d.Candidates[1:]
-	bucket := time.Date(2026, 9, 16, 14, 15, 0, 0, time.UTC)
-	if days[0].Path != "cursor.usage.20260916.jsonl" || !days[0].MTime.Equal(bucket) || !days[1].MTime.Equal(bucket) ||
-		!days[2].MTime.Equal(time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC)) || days[len(days)-1].Path != "cursor.usage.20260618.jsonl" {
-		t.Fatalf("%+v %+v %+v", days[0], days[1], days[2])
-	}
-	all := events
-	events = all[1:]
-	earlier, err := days[0].Load(req.Context)
-	if err != nil {
-		t.Fatal(err)
-	}
-	events = all
-	bodies = nil
-	today, err := days[0].Load(req.Context)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// 2026-09-16T00:00:00Z to 2026-09-17T00:00:00Z, without a teamId, paged until the reported total.
-	if len(bodies) != 2 || bodies[1] != `{"startDate":"1789516800000","endDate":"1789603200000","page":2,"pageSize":500}` {
-		t.Fatalf("%q", bodies)
-	}
-	// Each event as Cursor sent it, oldest first, so a new request only appends.
-	if string(today.Bytes) != events[2]+"\n"+events[1]+"\n"+events[0]+"\n" || !bytes.HasPrefix(today.Bytes, earlier.Bytes) {
-		t.Fatalf("%s then %s", earlier.Bytes, today.Bytes)
-	}
-	bodies, failPage = nil, 2
-	if _, err := days[0].Load(req.Context); err == nil {
-		t.Fatal("a day with a failed page must not ship")
 	}
 }
