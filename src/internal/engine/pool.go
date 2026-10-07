@@ -40,6 +40,8 @@ type fileResult struct {
 
 	// unavailable stops this run's uploads without outcome.Fatal's permanent-kill meaning.
 	unavailable bool
+	// offline says the failed upload never reached the far end.
+	offline     bool
 	loadWarning string
 }
 
@@ -333,6 +335,9 @@ func (p *sourcePass) fold(r fileResult) {
 		p.rep.Parked++
 	case auditlog.DecisionFailed:
 		p.rep.Failed++
+		if r.offline {
+			p.rep.OfflineFailed++
+		}
 	}
 
 	if r.outcome.Fatal {

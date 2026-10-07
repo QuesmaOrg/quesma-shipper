@@ -53,7 +53,11 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 	if errors.Is(err, engine.ErrLocked) {
 		return nil
 	}
+	// Offline is the machine's state, not the shipper's: nothing counts, one standing event says
+	// so, and the failure heartbeat is skipped because it could not be sent either.
+	offline := platform.Offline(err)
 	if err == nil && rep.Shipped == 0 && rep.Failed > 0 {
+		offline = rep.OfflineFailed == rep.Failed
 		// One reason travels: the count alone cannot tell a refused PUT from an unreachable
 		// control plane, and identical messages make the log unactionable.
 		err = fmt.Errorf("the run shipped nothing: all %d attempted uploads failed: %s",
@@ -70,13 +74,21 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 				"the fingerprint store could not be loaded and was discarded; the next sync replaces it"))
 		}
 
-		if err == nil {
+		switch {
+		case err == nil:
 			// Persisted on a clean run too, on purpose twice over: a healthy run's cost is the
 			// baseline that makes the next one's readable, and the next heartbeat is built
 			// mid-flush BEFORE judging, so it can only read these facts off disk; an in-memory
 			// shortcut would silently empty the field.
 			rec.ConsecutiveFailures = 0
-		} else {
+		case offline:
+			e := newEvent(r.eff.StateDir, r.runID, formats.FailureOffline, "offline: "+err.Error())
+			if last := rec.Latest(); last != nil && last.Kind == formats.FailureOffline {
+				*last = e
+			} else {
+				rec.Append(e)
+			}
+		default:
 			ev := newEvent(r.eff.StateDir, r.runID, kind, err.Error())
 			rec.Append(ev)
 			if ev.Counted() {
@@ -94,7 +106,7 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 	// this the record waits for a future healthy run that a full disk may never grant. Skipped when
 	// the uploads themselves failed (another attempt could only stall the loop for one more
 	// timeout) and on the SIGTERM drain, whose host is going away either way.
-	if err != nil && kind != formats.FailureShutdown && rep.Failed == 0 {
+	if err != nil && !offline && kind != formats.FailureShutdown && rep.Failed == 0 {
 		r.shipFailureHeartbeat(context.Background(), rep, "failure record", os.Stderr)
 	}
 	return err

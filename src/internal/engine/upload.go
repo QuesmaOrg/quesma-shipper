@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 )
 
@@ -199,6 +200,7 @@ func (o Options) applyUploadOutcome(it stagedUpload, oc error) (r fileResult) {
 		out.Reason = oc.Error()
 		out.Fatal = errors.Is(oc, formats.ErrCredentialsRefused)
 		r.unavailable = errors.Is(oc, ErrUploadUnavailable)
+		r.offline = platform.Offline(oc)
 		return r
 	}
 

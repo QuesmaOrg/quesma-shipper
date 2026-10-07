@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -409,5 +411,51 @@ func TestTheFactsRideACleanRunToo(t *testing.T) {
 	}
 	if f.MaxFilesPerRun != 512 || f.GOMAXPROCS == 0 || f.MaxInFlightBytes == 0 {
 		t.Errorf("the concurrency configuration is incomplete: %+v", f)
+	}
+}
+
+// Offline is the machine's state, not the shipper's: one standing event, nothing counted, and a
+// later offline tick replaces it rather than filling the log with the same fact.
+func TestAnOfflineTickIsRecordedOnceAndNotCounted(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "0123456789abcdef"}
+	offline := formats.Report{Failed: 2, OfflineFailed: 2, Sources: []formats.SourceOutcome{{Files: []formats.FileOutcome{
+		{Decision: formats.DecisionFailed, Reason: "backend: /v2/uploads/authorize: dial tcp: lookup cp.example: no such host"},
+	}}}}
+
+	if err := r.JudgeTick(nil, offline, false, platform.Delta{}); err == nil {
+		t.Fatal("an offline tick still failed the run; the verdict must say so")
+	}
+	r.JudgeTick(nil, offline, false, platform.Delta{})
+	rec := readFailureRecord(dir)
+	if len(rec.Recent) != 1 || rec.Latest().Kind != formats.FailureOffline {
+		t.Fatalf("want exactly one offline event, got %+v", rec.Recent)
+	}
+	if !strings.HasPrefix(rec.Latest().Message, "offline: ") || !strings.Contains(rec.Latest().Message, "no such host") {
+		t.Errorf("the event does not name the cause: %q", rec.Latest().Message)
+	}
+	if rec.ConsecutiveFailures != 0 {
+		t.Errorf("an offline tick moved consecutive_failures to %d", rec.ConsecutiveFailures)
+	}
+
+	// A refusal from the far end is still a failure: the network answered.
+	r.JudgeTick(nil, formats.Report{Failed: 2, OfflineFailed: 1, Sources: offline.Sources}, false, platform.Delta{})
+	rec = readFailureRecord(dir)
+	if rec.ConsecutiveFailures != 1 || rec.Latest().Kind != formats.FailureTick || len(rec.Recent) != 2 {
+		t.Fatalf("a partly offline run was not counted as a failure: %+v", rec)
+	}
+}
+
+// The drain on a host going away with no network is the same fact as an offline tick, and it must
+// not try to ship a failure heartbeat it cannot send.
+func TestAnOfflineDrainIsNotAShutdownFailure(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runtime{eff: &config.Effective{StateDir: dir}}
+	err := fmt.Errorf("upload: PUT object %q: %w", "0", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED})
+
+	r.JudgeFinalSlice(err, formats.Report{}, platform.Delta{})
+	rec := readFailureRecord(dir)
+	if rec.Latest() == nil || rec.Latest().Kind != formats.FailureOffline || rec.ConsecutiveFailures != 0 {
+		t.Fatalf("an offline drain was judged as %+v", rec)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
@@ -431,4 +432,31 @@ func (e *countingEnricher) NeedsUnits() bool       { return true }
 func (e *countingEnricher) Enrich(transforms.Input) transforms.EnrichResult {
 	e.calls++
 	return transforms.EnrichResult{EnricherID: e.id, Version: 1}
+}
+
+// A control plane that cannot be reached is neither a refusal nor a 5xx: the report says how many
+// failures never left the machine, so the judge can file the run as offline rather than failed.
+func TestAnUnreachableControlPlaneIsReportedAsOffline(t *testing.T) {
+	f := newFixture(t)
+	for i := 0; i < 3; i++ {
+		f.writeTranscript(fmt.Sprintf("p/o%02d.jsonl", i), line1)
+	}
+	port := newPort()
+	port.FailAll = fmt.Errorf("backend: /v2/uploads/authorize: %w",
+		&net.DNSError{Err: "no such host", Name: "cp.example", IsNotFound: true})
+
+	rep, err := vendRun(f, port, func(o *engine.Options) { o.Workers = 2 })
+	if err != nil {
+		t.Fatalf("an unreachable control plane is not a run error: %v", err)
+	}
+	if rep.Shipped != 0 || rep.Failed == 0 || rep.OfflineFailed != rep.Failed {
+		t.Fatalf("want every failure counted as offline, got shipped=%d failed=%d offline=%d",
+			rep.Shipped, rep.Failed, rep.OfflineFailed)
+	}
+
+	port.FailAll = fmt.Errorf("backend: HTTP 503: %w", engine.ErrUploadUnavailable)
+	rep, _ = vendRun(f, port, func(o *engine.Options) { o.Workers = 2 })
+	if rep.OfflineFailed != 0 {
+		t.Fatalf("a 5xx from the far end counted as offline: %+v", rep)
+	}
 }

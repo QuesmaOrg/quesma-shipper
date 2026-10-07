@@ -207,6 +207,10 @@ const (
 	// A tick that outlived its own interval, recorded before its outcome is known: a run stuck
 	// forever never reaches the judge. Uncounted, and the tick may yet complete.
 	FailureStalled = "tick_stalled"
+
+	// Every upload failed before reaching the far end. Uncounted and replaced in place: the
+	// machine is off the network, not the shipper broken, and the next online tick ships it all.
+	FailureOffline = "offline"
 )
 
 // The message is username-placeholdered like every outbound diagnostic; a stack stays local.
@@ -281,6 +285,10 @@ type Report struct {
 	Skipped   int
 	Parked    int
 	Failed    int
+
+	// OfflineFailed is how many of Failed never reached the far end. Judged on the machine and never
+	// serialized: the heartbeat that would carry it is exactly what could not be sent.
+	OfflineFailed int `json:"-"`
 
 	// Truncated is true when max_files_per_run cut the run short.
 	Truncated bool
