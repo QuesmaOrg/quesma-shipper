@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
 
@@ -146,6 +147,16 @@ func selfUpdateGate(build app.Build, getenv func(string) string, persistedHop st
 }
 
 // maybeSelfUpdate replaces a released binary at daemon start; autoupdate is the resolved
+// updateFailure words a skipped update for the failure record, and says whether to record it at
+// all: an update channel that could not be reached is the machine offline, retried next tick,
+// not an install that cannot replace itself.
+func updateFailure(version string, err error) (string, bool) {
+	if platform.Offline(err) {
+		return "", false
+	}
+	return fmt.Sprintf("self-update from %s did not happen: %v", version, err), true
+}
+
 // autoupdate.enabled, true when the config did not resolve.
 func maybeSelfUpdate(ctx context.Context, build app.Build, autoupdate bool, errOut io.Writer) {
 	if packaging.SystemManaged() {
@@ -174,7 +185,9 @@ func maybeSelfUpdate(ctx context.Context, build app.Build, autoupdate bool, errO
 	res, err := packaging.Update(ctx, packaging.UpdateOptions{Current: build.Version, Out: errOut})
 	if err != nil {
 		fmt.Fprintf(errOut, "self-update: skipped: %v\n", err)
-		app.RecordUpdateFailure(fmt.Sprintf("self-update from %s did not happen: %v", build.Version, err))
+		if message, record := updateFailure(build.Version, err); record {
+			app.RecordUpdateFailure(message)
+		}
 		return
 	}
 	if !res.Updated {
