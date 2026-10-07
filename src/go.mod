@@ -9,7 +9,7 @@ require (
 	github.com/Shopify/toxiproxy/v2 v2.12.0
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.6
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.4
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.0
 	github.com/bmatcuk/doublestar/v4 v4.10.2
 	github.com/creativeprojects/go-selfupdate v1.6.0
 	github.com/ebitengine/purego v0.11.1
@@ -25,8 +25,8 @@ require (
 	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.46.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/libc v1.75.7
-	modernc.org/sqlite v1.59.0
+	modernc.org/libc v1.77.1
+	modernc.org/sqlite v1.60.1
 )
 
 require (
