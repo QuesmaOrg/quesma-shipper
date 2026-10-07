@@ -388,6 +388,47 @@ func TestTranscriptToolResultAttachmentsAreExcluded(t *testing.T) {
 	}
 }
 
+// A served exclude_add keeps a repository's sessions out of discovery while the catalog's own excludes still apply.
+func TestExcludeAddKeepsMatchingFilesOutOfDiscovery(t *testing.T) {
+	c, err := sources.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	projects := filepath.Join(home, ".claude", "projects")
+	write(t, filepath.Join(projects, "-work-api", "s.jsonl"), `{"a":1}`+"\n")
+	write(t, filepath.Join(projects, "-work-api", "tool-results", "shot.png"), `{"a":1}`+"\n")
+	write(t, filepath.Join(projects, "-work-client-repo", "s.jsonl"), `{"a":1}`+"\n")
+
+	served, err := config.ParseServedDocument([]byte("sources:\n  - id: claude-code-transcripts\n    exclude_add: [\"projects/-work-client-repo/**\"]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	eff, err := config.Resolve(config.Input{
+		Catalog:  c,
+		Layers:   []config.LayeredDocument{{Layer: config.LayerRemote, Doc: served}},
+		Env:      sources.Env{Home: home, Lookup: func(string) (string, bool) { return "", false }},
+		StateDir: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var src config.ResolvedSource
+	for _, s := range eff.Sources {
+		if s.ID == "claude-code-transcripts" {
+			src = s
+		}
+	}
+
+	var got []string
+	for _, cand := range discover(t, src, eff.Deny).Candidates {
+		got = append(got, cand.RelPath)
+	}
+	if want := []string{"projects/-work-api/s.jsonl"}; !slices.Equal(got, want) {
+		t.Errorf("collected %v, want %v", got, want)
+	}
+}
+
 // A permission denial deep in a store must not abort the walk: everything readable still ships, and the problem is reported.
 func TestUnreadableSubtreeDoesNotAbortTheWalk(t *testing.T) {
 	if runtime.GOOS == "windows" {

@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	filippo.io/age v1.3.2
 	github.com/Masterminds/semver/v3 v3.5.0
-	github.com/QuesmaOrg/shipper-protocol v0.1.1-0.20261005085748-a2c3f5bea025
+	github.com/QuesmaOrg/shipper-protocol v0.1.1-0.20261007134159-fc191fcf4e02
 	github.com/Shopify/toxiproxy/v2 v2.12.0
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.6

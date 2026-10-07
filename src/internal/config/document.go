@@ -64,6 +64,9 @@ type SourceOverride struct {
 	// Enrichers toggles a registered enricher; config can never attach one, that would be config installing code.
 	// Not free for a DB-backed source: disabling cursor-transcript-join stops DB-side capture entirely.
 	Enrichers map[string]bool `yaml:"enrichers"`
+
+	// ExcludeAdd is appended to the effective excludes, whichever layer set them, so it can only exclude more.
+	ExcludeAdd []string `yaml:"exclude_add"`
 }
 
 // UploadTarget pins one destination for a presigned upload ticket. Machine-owner only: the ticket carries its own authority.
