@@ -175,7 +175,7 @@ func maybeSelfUpdate(ctx context.Context, build app.Build, autoupdate bool, errO
 	res, err := packaging.Update(ctx, packaging.UpdateOptions{Current: build.Version, Out: errOut})
 	if err != nil {
 		fmt.Fprintf(errOut, "self-update: skipped: %v\n", err)
-		if message, record := updateFailure(build.Version, err); record {
+		if message, record := updateFailure(ctx, build.Version, err); record {
 			app.RecordUpdateFailure(message)
 		}
 		return
@@ -206,8 +206,8 @@ func maybeSelfUpdate(ctx context.Context, build app.Build, autoupdate bool, errO
 // updateFailure words a skipped update for the failure record, and says whether to record it at
 // all: an update channel that could not be reached is the machine offline, retried next tick,
 // not an install that cannot replace itself.
-func updateFailure(version string, err error) (string, bool) {
-	if platform.Offline(err) {
+func updateFailure(ctx context.Context, version string, err error) (string, bool) {
+	if ctx.Err() == nil && platform.Offline(err) {
 		return "", false
 	}
 	return fmt.Sprintf("self-update from %s did not happen: %v", version, err), true

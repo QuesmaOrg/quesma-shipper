@@ -463,3 +463,26 @@ func TestAnUnreachableControlPlaneHaltsTheRunAsOffline(t *testing.T) {
 		t.Fatalf("the next run did not ship everything: shipped %d, %v", rep2.Shipped, err)
 	}
 }
+
+// A PUT refused before the control plane went away is a second failure in the report, which is
+// how the judge tells a run that failed and then lost the network from one that only lost it.
+func TestAFailureBeforeAnOfflineHaltStaysInTheReport(t *testing.T) {
+	f := newFixture(t)
+	for i := 0; i < 6; i++ {
+		f.writeTranscript(fmt.Sprintf("p/m%02d.jsonl", i), line1)
+	}
+	port := newPort()
+	port.verdict = func(call, _ int, _ engine.PreparedObject) error {
+		if call == 0 {
+			return errors.New("upload: HTTP 403 AccessDenied")
+		}
+		return fmt.Errorf("%w: backend: dial tcp: lookup cp.example: no such host", engine.ErrOffline)
+	}
+	rep, err := vendRun(f, port, func(o *engine.Options) { o.Workers = 1; o.UploadWorkers = 1 })
+	if !errors.Is(err, engine.ErrOffline) {
+		t.Fatalf("want the offline halt, got %v", err)
+	}
+	if rep.Failed != 2 || rep.Shipped != 0 {
+		t.Fatalf("want the refused PUT and the halt, got failed=%d shipped=%d", rep.Failed, rep.Shipped)
+	}
+}

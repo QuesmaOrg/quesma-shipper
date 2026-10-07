@@ -475,3 +475,18 @@ func TestStandingEventsDoNotEvictCountedFailures(t *testing.T) {
 		t.Fatalf("the counted failure was evicted: %+v", rec)
 	}
 }
+
+// A run that failed a PUT and then lost the network is a failed run: the earlier failure reached
+// the network, and going offline afterwards must not hide it.
+func TestAFailureBeforeGoingOfflineStillCounts(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "0123456789abcdef"}
+	mixed := formats.Report{Failed: 2, Sources: []formats.SourceOutcome{{Files: []formats.FileOutcome{
+		{Decision: formats.DecisionFailed, Reason: "upload: HTTP 403 AccessDenied"},
+	}}}}
+	r.JudgeTick(fmt.Errorf("%w: collection stopped after 1 of 6 files", engine.ErrOffline), mixed, false, platform.Delta{})
+	rec := readFailureRecord(dir)
+	if rec.ConsecutiveFailures != 1 || rec.Latest() == nil || rec.Latest().Kind != formats.FailureTick {
+		t.Fatalf("the AccessDenied before the outage was not counted: %+v", rec)
+	}
+}

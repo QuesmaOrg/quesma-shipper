@@ -89,7 +89,7 @@ func (p *vendPort) AuthorizeAndUpload(ctx context.Context, batch []engine.Prepar
 	}
 	resp, err := p.client.AuthorizeUploads(ctx, req)
 	if err != nil {
-		return sameOutcome(out, classifyAuthorize(err))
+		return sameOutcome(out, classifyAuthorize(ctx, err))
 	}
 
 	tickets := make(map[string]controlplane.Ticket, len(resp.Tickets))
@@ -231,13 +231,14 @@ func printableASCII(v string, max int) bool {
 
 // classifyAuthorize picks the sentinel the engine reads: refused credentials kill the install, an
 // outage stops one run, and the unavailable wrapping drops the chain so neither can find the other.
-func classifyAuthorize(err error) error {
+func classifyAuthorize(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, formats.ErrCredentialsRefused):
 		return err
 	case errors.Is(err, controlplane.ErrAuthorizeUnavailable):
 		return fmt.Errorf("%w: %v", engine.ErrUploadUnavailable, err)
-	case platform.Offline(err):
+	case ctx.Err() == nil && platform.Offline(err):
+		// With a live context the dial ran out of its own time, not the caller's.
 		return fmt.Errorf("%w: %w", engine.ErrOffline, err)
 	}
 	return err
