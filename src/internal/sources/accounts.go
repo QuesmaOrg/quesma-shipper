@@ -49,6 +49,9 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 	d.Candidates = []Candidate{{Path: name, RelPath: name, Series: req.Source.ID, Size: req.Source.MaxFileBytes, MTime: bucket,
 		Load: func(ctx context.Context) (Payload, error) { return p.load(ctx, req, bucket) },
 	}}
+	if req.Source.ID == "cursor-account" {
+		d.Candidates = append(d.Candidates, p.cursorHistory(req)...)
+	}
 	d.Health = Collected
 	return d, nil
 }

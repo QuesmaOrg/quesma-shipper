@@ -114,7 +114,8 @@ One more record is produced by the shipper itself:
   account metadata and provider usage JSON in UTC buckets matching the collection interval (default
   15 minutes), only when it changed since the last upload, and at least once per UTC day. Unknown
   fields are preserved; these records skip scrubbing and ship encrypted. For Cursor this includes
-  the signed-in user's own requests of the past week: model, token counts, cost and conversation id.
+  the signed-in user's own requests (model, token counts, cost, conversation id): the past week in
+  each snapshot, and each of the past 12 closed months once.
 
 All other files above pass through the scrub stage before encryption. The control plane receives no
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.

@@ -334,7 +334,7 @@ func TestCursorShipsOwnUsageEvents(t *testing.T) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}}, nil
 	})}}
 	d, err := p.Discover(req)
-	if err != nil || len(d.Candidates) != 1 {
+	if err != nil || len(d.Candidates) != 1+cursorHistoryMonths {
 		t.Fatalf("%+v %v", d, err)
 	}
 	payload, err := d.Candidates[0].Load(req.Context)
@@ -347,5 +347,45 @@ func TestCursorShipsOwnUsageEvents(t *testing.T) {
 	}
 	if !bytes.Contains(payload.Bytes, []byte(`"source":"cursor.dashboard.GetFilteredUsageEvents"`)) || !bytes.Contains(payload.Bytes, []byte(`"totalCents":72.0478`)) {
 		t.Fatalf("usage events not shipped: %s", payload.Bytes)
+	}
+}
+
+func TestCursorHistoryShipsEachClosedMonthWhole(t *testing.T) {
+	req := accountFixture(t)
+	req.Source = Resolved{Source: Source{ID: "cursor-account", Family: "cursor", Gather: "account"}, Root: t.TempDir()}
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(req.Source.Root, "state.vscdb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB); INSERT INTO ItemTable VALUES ('cursorAuth/accessToken', 'fixture-access')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	var bodies []string
+	failPage := 0
+	p := Accounts{client: &http.Client{Transport: accountTransport(func(r *http.Request) (*http.Response, error) {
+		raw, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(raw))
+		if len(bodies) == failPage {
+			return &http.Response{StatusCode: 503, Body: io.NopCloser(strings.NewReader(`{}`)), Header: http.Header{}}, nil
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"totalUsageEventsCount":3,"usageEventsDisplay":[{"model":"m"},{"model":"m"}]}`)), Header: http.Header{}}, nil
+	})}}
+	months := p.cursorHistory(req)
+	// 2026-09-16: August is the newest closed month, a year back is September 2025.
+	if months[0].Path != "cursor.usage.202608.jsonl" || months[len(months)-1].Path != "cursor.usage.202509.jsonl" || !months[0].MTime.Equal(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("%+v", months[0])
+	}
+	payload, err := months[0].Load(req.Context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 2026-08-01T00:00:00Z to 2026-09-01T00:00:00Z, paged until the reported total is reached.
+	if len(bodies) != 2 || bodies[1] != `{"startDate":"1785542400000","endDate":"1788220800000","page":2,"pageSize":500}` || bytes.Count(payload.Bytes, []byte("\n")) != 2 {
+		t.Fatalf("%q %s", bodies, payload.Bytes)
+	}
+	bodies, failPage = nil, 2
+	if _, err := months[0].Load(req.Context); err == nil {
+		t.Fatal("a month with a failed page must not ship")
 	}
 }
