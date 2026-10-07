@@ -3,6 +3,7 @@ package sources
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
@@ -306,5 +309,43 @@ func TestAccountCompareIgnoresReadTimeAndCountdowns(t *testing.T) {
 	}
 	if rolled := load(start.Add(3*time.Hour), window("23", "495459", "2026-10-05T21:20:00.5+00:00", "2026-10-05T15:00:00Z")); bytes.Equal(first.Compare, rolled.Compare) {
 		t.Fatal("a new window compared equal")
+	}
+}
+
+func TestCursorShipsOwnUsageEvents(t *testing.T) {
+	req := accountFixture(t)
+	req.Source = Resolved{Source: Source{ID: "cursor-account", Family: "cursor", Gather: "account"}, Root: t.TempDir()}
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(req.Source.Root, "state.vscdb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB); INSERT INTO ItemTable VALUES ('cursorAuth/accessToken', 'fixture-access')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	var usageBody string
+	p := Accounts{client: &http.Client{Transport: accountTransport(func(r *http.Request) (*http.Response, error) {
+		body := `{}`
+		if strings.HasSuffix(r.URL.Path, "/GetFilteredUsageEvents") {
+			raw, _ := io.ReadAll(r.Body)
+			usageBody = string(raw)
+			body = `{"totalUsageEventsCount":1,"usageEventsDisplay":[{"timestamp":"1789560000000","model":"claude-opus-5","tokenUsage":{"inputTokens":1200,"outputTokens":300,"cacheReadTokens":40000,"totalCents":72.0478},"conversationId":"00000000-0000-4000-8000-000000000001"}]}`
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}}, nil
+	})}}
+	d, err := p.Discover(req)
+	if err != nil || len(d.Candidates) != 1 {
+		t.Fatalf("%+v %v", d, err)
+	}
+	payload, err := d.Candidates[0].Load(req.Context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 2026-09-09T14:17:03Z to 2026-09-16T14:17:03Z, and no teamId: the team's events are not this machine's to ship.
+	if usageBody != `{"startDate":"1788963423000","endDate":"1789568223000","page":1,"pageSize":1000}` {
+		t.Fatal(usageBody)
+	}
+	if !bytes.Contains(payload.Bytes, []byte(`"source":"cursor.dashboard.GetFilteredUsageEvents"`)) || !bytes.Contains(payload.Bytes, []byte(`"totalCents":72.0478`)) {
+		t.Fatalf("usage events not shipped: %s", payload.Bytes)
 	}
 }
