@@ -172,12 +172,15 @@ func (r *Runtime) WatchStalledTick(ctx context.Context, n int, every time.Durati
 		case <-time.After(wait):
 		}
 		elapsed := time.Since(started).Round(time.Second)
-		fmt.Fprintf(errOut, "warning: tick %d still running after %s\n", n, elapsed)
+		message := fmt.Sprintf("tick %d still running after %s", n, elapsed)
+		if step := r.currentStep(); step != "" {
+			message += ", in " + step
+		}
+		fmt.Fprintf(errOut, "warning: %s\n", message)
 		r.persistRecord("stalled tick", errOut, func(rec *formats.FailureRecord) {
 			// Replaced, not skipped: clean ticks append nothing, so a stall that recovered stays the
 			// newest event indefinitely, and a later stall must not hide behind its stale timestamp.
-			rec.Stand(newEvent(r.eff.StateDir, r.runID, formats.FailureStalled,
-				fmt.Sprintf("tick %d still running after %s", n, elapsed)))
+			rec.Stand(newEvent(r.eff.StateDir, r.runID, formats.FailureStalled, message))
 		})
 		// The last completed tick's report rides along: this heartbeat overwrites the remote
 		// object, and blanking per-source health would make a stalled install read as an idle one.

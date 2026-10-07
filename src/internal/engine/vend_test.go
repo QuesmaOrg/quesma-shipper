@@ -7,7 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
@@ -16,6 +20,7 @@ import (
 )
 
 // vendRun runs the loop with the port wired and returns the report and the run's error.
+
 func vendRun(f *fixture, port *fakePort, adjust func(*engine.Options)) (engine.Report, error) {
 	o := f.opts()
 	o.Upload = port
@@ -26,6 +31,7 @@ func vendRun(f *fixture, port *fakePort, adjust func(*engine.Options)) (engine.R
 }
 
 // One authorization for a small run, one PUT per object, one fingerprint per PUT.
+
 func TestTheUploadPathShipsOneGroupForASmallRun(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 5; i++ {
@@ -53,6 +59,7 @@ func TestTheUploadPathShipsOneGroupForASmallRun(t *testing.T) {
 }
 
 // The group is bounded by object count, and the remainder must not wait for a full group.
+
 func TestAnOversizedRunSplitsIntoBoundedGroups(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 40; i++ {
@@ -86,6 +93,7 @@ func TestAnOversizedRunSplitsIntoBoundedGroups(t *testing.T) {
 }
 
 // One object's failure is its own. Its siblings commit, and the next run re-prepares only it.
+
 func TestAFailedObjectDoesNotDiscardItsSiblings(t *testing.T) {
 	f := newFixture(t)
 	f.writeTranscript("p/bad.jsonl", line1)
@@ -129,6 +137,7 @@ func TestAFailedObjectDoesNotDiscardItsSiblings(t *testing.T) {
 }
 
 // A refused install is the kill path: the run stops and the duplicates in flight are one fact.
+
 func TestARefusedAuthorizationStopsTheRun(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 20; i++ {
@@ -163,6 +172,7 @@ func TestARefusedAuthorizationStopsTheRun(t *testing.T) {
 }
 
 // An unavailable control plane is NOT a kill: nothing new commits, and the next run ships it.
+
 func TestAnUnavailableControlPlaneStopsUploadsWithoutKillingTheInstall(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 12; i++ {
@@ -200,7 +210,9 @@ func TestAnUnavailableControlPlaneStopsUploadsWithoutKillingTheInstall(t *testin
 }
 
 // The same fact across several groups: objects sealed when the halt lands are drained, and
+
 // counting each would make the failure count a function of what was in flight.
+
 func TestAnUnavailableControlPlaneCountsOnceAcrossManyGroups(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 40; i++ {
@@ -228,6 +240,7 @@ func TestAnUnavailableControlPlaneCountsOnceAcrossManyGroups(t *testing.T) {
 }
 
 // An expired ticket earns exactly one more authorization, and the object ships on it.
+
 func TestAnExpiredTicketIsReauthorizedOnce(t *testing.T) {
 	f := newFixture(t)
 	f.writeTranscript("p/e0.jsonl", line1)
@@ -253,6 +266,7 @@ func TestAnExpiredTicketIsReauthorizedOnce(t *testing.T) {
 }
 
 // The reauthorization is bounded to ONE: a second expiry is a wrong clock or a wrong lease.
+
 func TestReauthorizationDoesNotLoop(t *testing.T) {
 	f := newFixture(t)
 	f.writeTranscript("p/e1.jsonl", line1)
@@ -279,7 +293,9 @@ func TestReauthorizationDoesNotLoop(t *testing.T) {
 }
 
 // What the race detector is here for: overlapping compute and groups, one PUT and one commit per
+
 // key, with the accumulator on the loop thread alone.
+
 func TestTheUploadPathShipsEachKeyExactlyOnceUnderRace(t *testing.T) {
 	f := newFixture(t)
 	const files = 96
@@ -319,6 +335,7 @@ func TestTheUploadPathShipsEachKeyExactlyOnceUnderRace(t *testing.T) {
 }
 
 // Derived objects take the upload path too, after every raw unit of the source has shipped.
+
 func TestDerivedObjectsShipThroughTheUploadPath(t *testing.T) {
 	f := newFixture(t)
 	db := cursorFixture(t, f)
@@ -347,7 +364,9 @@ func TestDerivedObjectsShipThroughTheUploadPath(t *testing.T) {
 }
 
 // An unauthorized enricher group reports once and commits nothing, while raw objects keep their
+
 // commits. The halt must come back out of engine.Run, or the run would exit zero and look healthy.
+
 func TestAnUnavailableControlPlaneStopsTheDerivedGroup(t *testing.T) {
 	f := newFixture(t)
 	db := cursorFixture(t, f)
@@ -388,7 +407,9 @@ func TestAnUnavailableControlPlaneStopsTheDerivedGroup(t *testing.T) {
 }
 
 // The halt latch belongs to the source, not to one enricher: a second enricher must not ship
+
 // under credentials the control plane has just rejected.
+
 func TestARefusedDerivedGroupStopsTheRemainingEnrichers(t *testing.T) {
 	f := newFixture(t)
 	db := cursorFixture(t, f)
@@ -417,24 +438,33 @@ func TestARefusedDerivedGroupStopsTheRemainingEnrichers(t *testing.T) {
 }
 
 // countingEnricher derives nothing and records whether it was asked to.
+
 type countingEnricher struct {
 	id    string
 	calls int
 }
 
-func (e *countingEnricher) ID() string             { return e.id }
-func (e *countingEnricher) Version() int           { return 1 }
-func (e *countingEnricher) Table() string          { return "" }
-func (e *countingEnricher) Keyspaces() []string    { return nil }
+func (e *countingEnricher) ID() string { return e.id }
+
+func (e *countingEnricher) Version() int { return 1 }
+
+func (e *countingEnricher) Table() string { return "" }
+
+func (e *countingEnricher) Keyspaces() []string { return nil }
+
 func (e *countingEnricher) DBCandidates() []string { return nil }
-func (e *countingEnricher) NeedsUnits() bool       { return true }
+
+func (e *countingEnricher) NeedsUnits() bool { return true }
+
 func (e *countingEnricher) Enrich(transforms.Input) transforms.EnrichResult {
 	e.calls++
 	return transforms.EnrichResult{EnricherID: e.id, Version: 1}
 }
 
 // A control plane that cannot be reached halts the run's uploads like an unavailable one, and the
+
 // run's error says offline so the judge can file the machine, not the shipper, as the cause.
+
 func TestAnUnreachableControlPlaneHaltsTheRunAsOffline(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 12; i++ {
@@ -465,7 +495,9 @@ func TestAnUnreachableControlPlaneHaltsTheRunAsOffline(t *testing.T) {
 }
 
 // A PUT refused before the control plane went away is a second failure in the report, which is
+
 // how the judge tells a run that failed and then lost the network from one that only lost it.
+
 func TestAFailureBeforeAnOfflineHaltStaysInTheReport(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 6; i++ {
@@ -484,5 +516,135 @@ func TestAFailureBeforeAnOfflineHaltStaysInTheReport(t *testing.T) {
 	}
 	if rep.Failed != 2 || rep.Shipped != 0 {
 		t.Fatalf("want the refused PUT and the halt, got failed=%d shipped=%d", rep.Failed, rep.Shipped)
+	}
+}
+
+type stepLog struct {
+	mu    sync.Mutex
+	steps []string
+}
+
+func (l *stepLog) record(stage, source string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.steps = append(l.steps, strings.TrimSpace(stage+" "+source))
+}
+
+func (l *stepLog) all() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.steps...)
+}
+
+func (l *stepLog) waitFor(t *testing.T, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, s := range l.all() {
+			if s == want {
+				return
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("stage %q never reported; saw %v", want, l.all())
+}
+
+func inOrder(steps, want []string) bool {
+	at := 0
+	for _, s := range steps {
+		if at < len(want) && s == want[at] {
+			at++
+		}
+	}
+	return at == len(want)
+}
+
+func TestAStageReportsSealingAndUploadingWhenTheyOverlap(t *testing.T) {
+	f := newFixture(t)
+	for i := 0; i < 6; i++ {
+		f.writeTranscript(fmt.Sprintf("p/v%02d.jsonl", i), line1)
+	}
+	port := newPort()
+	release := make(chan struct{})
+	port.verdict = func(call, _ int, _ engine.PreparedObject) error {
+		if call == 0 {
+			<-release
+		}
+		return nil
+	}
+	var log stepLog
+	done := make(chan error, 1)
+	go func() {
+		_, err := vendRun(f, port, func(o *engine.Options) {
+			o.Workers = 1
+			o.Step = log.record
+			o.Heartbeat = func(context.Context, engine.Report) error { return nil }
+		})
+		done <- err
+	}()
+	// The first group blocks; the loop keeps sealing behind it until every file is sealed.
+	log.waitFor(t, "read and seal + upload claude-code-transcripts")
+	log.waitFor(t, "upload claude-code-transcripts")
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !inOrder(log.all(), []string{"discover claude-code-transcripts", "read and seal claude-code-transcripts",
+		"read and seal + upload claude-code-transcripts", "upload claude-code-transcripts",
+		"commit claude-code-transcripts", "heartbeat"}) {
+		t.Fatalf("stages out of order: %v", log.all())
+	}
+}
+
+func TestADerivedUploadIsReportedAsAnUpload(t *testing.T) {
+	f := newFixture(t)
+	db := cursorFixture(t, f)
+	port := newPort()
+	var log stepLog
+	o := enrichOpts(t, f, db, true)
+	o.Upload = port
+	o.Step = log.record
+	if _, err := engine.Run(context.Background(), f.store, o); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	steps := log.all()
+	src := ""
+	for _, s := range steps {
+		if strings.HasPrefix(s, "enrich ") {
+			src = strings.TrimPrefix(s, "enrich ")
+		}
+	}
+	if src == "" {
+		t.Fatalf("no enrich stage reported: %v", steps)
+	}
+	if !inOrder(steps, []string{"enrich " + src, "upload " + src, "enrich " + src}) {
+		t.Fatalf("the derived PUT was not reported as an upload inside enrichment: %v", steps)
+	}
+}
+
+func TestEveryDurableWriteReportsCommit(t *testing.T) {
+	f := newFixture(t)
+	gone := f.writeTranscript("p/w00.jsonl", line1)
+	f.writeTranscript("p/w01.jsonl", line1)
+	var first stepLog
+	if _, err := vendRun(f, newPort(), func(o *engine.Options) { o.Step = first.record }); err != nil {
+		t.Fatal(err)
+	}
+	// A fresh store: EnsureSpec writes the spec before any file is read.
+	if !inOrder(first.all(), []string{"discover claude-code-transcripts", "commit claude-code-transcripts", "read and seal claude-code-transcripts"}) {
+		t.Fatalf("the spec write during discovery did not read as commit: %v", first.all())
+	}
+
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
+	}
+	var second stepLog
+	if _, err := vendRun(f, newPort(), func(o *engine.Options) { o.Step = second.record }); err != nil {
+		t.Fatal(err)
+	}
+	// Nothing new shipped, so nothing was pending; the one write is DropVanished's deletion.
+	if !inOrder(second.all(), []string{"read and seal claude-code-transcripts", "commit claude-code-transcripts"}) {
+		t.Fatalf("the deletion write did not read as commit: %v", second.all())
 	}
 }
