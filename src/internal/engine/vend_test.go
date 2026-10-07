@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -543,5 +544,34 @@ func TestADerivedUploadIsReportedAsAnUpload(t *testing.T) {
 	}
 	if !inOrder(steps, []string{"enrich " + src, "upload " + src, "enrich " + src}) {
 		t.Fatalf("the derived PUT was not reported as an upload inside enrichment: %v", steps)
+	}
+}
+
+// Every durable write reads as commit, not only the flush at the source boundary: the spec
+// generation EnsureSpec writes during discovery, and the deletions DropVanished writes after the
+// pending entries have already gone out.
+func TestEveryDurableWriteReportsCommit(t *testing.T) {
+	f := newFixture(t)
+	gone := f.writeTranscript("p/w00.jsonl", line1)
+	f.writeTranscript("p/w01.jsonl", line1)
+	var first stepLog
+	if _, err := vendRun(f, newPort(), func(o *engine.Options) { o.Step = first.record }); err != nil {
+		t.Fatal(err)
+	}
+	// A fresh store: EnsureSpec writes the spec before any file is read.
+	if !inOrder(first.all(), []string{"discover claude-code-transcripts", "commit claude-code-transcripts", "read and seal claude-code-transcripts"}) {
+		t.Fatalf("the spec write during discovery did not read as commit: %v", first.all())
+	}
+
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
+	}
+	var second stepLog
+	if _, err := vendRun(f, newPort(), func(o *engine.Options) { o.Step = second.record }); err != nil {
+		t.Fatal(err)
+	}
+	// Nothing new shipped, so nothing was pending; the one write is DropVanished's deletion.
+	if !inOrder(second.all(), []string{"read and seal claude-code-transcripts", "commit claude-code-transcripts"}) {
+		t.Fatalf("the deletion write did not read as commit: %v", second.all())
 	}
 }

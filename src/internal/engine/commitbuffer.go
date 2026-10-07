@@ -13,9 +13,6 @@ type commitBuffer struct {
 
 	// limit bounds both the crash window and the memory held.
 	limit int
-
-	// onFlush brackets every durable write, so a stage report can say "commit" while one lasts.
-	onFlush func(on bool)
 }
 
 const defaultCommitBatch = 200
@@ -55,10 +52,6 @@ func (b *commitBuffer) Commit(k Key, fp Fingerprint) error {
 func (b *commitBuffer) Flush() error {
 	if len(b.pending) == 0 {
 		return nil
-	}
-	if b.onFlush != nil {
-		b.onFlush(true)
-		defer b.onFlush(false)
 	}
 	if err := b.store.CommitAll(b.pending); err != nil {
 		return err

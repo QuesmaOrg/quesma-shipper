@@ -140,8 +140,10 @@ type Plan struct {
 func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 	// Commits batch for the run: an unflushed commit means the file ships again onto the same key.
 	store := newCommitBuffer(st, o.CommitBatch)
-	// A flush from anywhere, the 200-entry one inside Commit included, reads as commit while it lasts.
-	store.onFlush = func(on bool) { o.stages.flushing(on) }
+	// Every durable write, whichever method asked for it, reads as commit while it lasts: the
+	// 200-entry flush inside Commit, EnsureSpec's generation bump, DropVanished's deletions.
+	st.onFlush = func(on bool) { o.stages.flushing(on) }
+	defer func() { st.onFlush = nil }()
 
 	// Refusing here beats sealing every file and only then discovering there is nowhere to put them.
 	if o.Upload == nil && !o.DryRun {
