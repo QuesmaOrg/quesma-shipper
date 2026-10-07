@@ -288,9 +288,10 @@ type Registry struct {
 func NewRegistry() *Registry {
 	return &Registry{primitives: map[string]Primitive{
 		// file_glob: append-only JSONL stores (a .zst file is decoded on load), copied config files, spill directories.
-		"file_glob": globPrimitive{},
-		"account":   &Accounts{},
-		"sidecar":   sessionDispatch{},
+		"file_glob":    globPrimitive{},
+		"account":      &Accounts{},
+		"cursor_usage": &CursorUsage{},
+		"sidecar":      sessionDispatch{},
 	}}
 }
 
