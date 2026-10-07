@@ -208,10 +208,28 @@ const (
 	// forever never reaches the judge. Uncounted, and the tick may yet complete.
 	FailureStalled = "tick_stalled"
 
-	// Every upload failed before reaching the far end. Uncounted and replaced in place: the
+	// The control plane could not be reached, so the run stopped. Uncounted and standing: the
 	// machine is off the network, not the shipper broken, and the next online tick ships it all.
 	FailureOffline = "offline"
 )
+
+// Standing kinds describe a condition that persists rather than an event that happened: one entry
+// each stands in the log, refreshed in place, so neither can evict the counted failures.
+func (e FailureEvent) Standing() bool {
+	return e.Kind == FailureOffline || e.Kind == FailureStalled
+}
+
+// Stand records a standing event: it replaces the one of its kind among the trailing standing
+// entries, or appends when none stands.
+func (r *FailureRecord) Stand(e FailureEvent) {
+	for i := len(r.Recent) - 1; i >= 0 && r.Recent[i].Standing(); i-- {
+		if r.Recent[i].Kind == e.Kind {
+			r.Recent[i] = e
+			return
+		}
+	}
+	r.Append(e)
+}
 
 // The message is username-placeholdered like every outbound diagnostic; a stack stays local.
 type FailureEvent struct {
@@ -285,10 +303,6 @@ type Report struct {
 	Skipped   int
 	Parked    int
 	Failed    int
-
-	// OfflineFailed is how many of Failed never reached the far end. Judged on the machine and never
-	// serialized: the heartbeat that would carry it is exactly what could not be sent.
-	OfflineFailed int `json:"-"`
 
 	// Truncated is true when max_files_per_run cut the run short.
 	Truncated bool

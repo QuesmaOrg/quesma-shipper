@@ -8,9 +8,11 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -209,5 +211,19 @@ func TestAnOutOfGrammarAgentVersionIsDroppedRatherThanShipped(t *testing.T) {
 		if err != nil || md.AgentVersion != ok || len(dropped) != 0 {
 			t.Errorf("agent-version %q was dropped: %+v %v %v", ok, md, dropped, err)
 		}
+	}
+}
+
+// An authorization that never reached the control plane is the one verdict the judge files as the
+// machine offline; it must never read as a refusal, which kills the install.
+func TestAnUnreachableControlPlaneIsClassifiedOffline(t *testing.T) {
+	unreachable := fmt.Errorf("backend: /v2/uploads/authorize: %w",
+		&net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED})
+	got := classifyAuthorize(unreachable)
+	if !errors.Is(got, engine.ErrOffline) || !errors.Is(got, syscall.ECONNREFUSED) {
+		t.Fatalf("%v was not classified offline with its cause kept: %v", unreachable, got)
+	}
+	if errors.Is(got, formats.ErrCredentialsRefused) || errors.Is(got, engine.ErrUploadUnavailable) {
+		t.Fatal("offline also reads as a refusal or an unavailable control plane")
 	}
 }

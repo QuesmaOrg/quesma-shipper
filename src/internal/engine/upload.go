@@ -12,7 +12,6 @@ import (
 	"strconv"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
-	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 )
 
@@ -89,6 +88,10 @@ var (
 	// ErrUploadUnavailable is an authorization the control plane would not serve now. It must NEVER
 	// wrap formats.ErrCredentialsRefused: this install is waiting, not revoked.
 	ErrUploadUnavailable = errors.New("engine: upload authorization is unavailable")
+
+	// ErrOffline is an authorization that never reached the control plane. Halts the run's uploads
+	// like ErrUploadUnavailable; the judge files the run as the machine offline, not as a failure.
+	ErrOffline = errors.New("engine: the control plane could not be reached")
 
 	// ErrTicketExpired is the one verdict worth a second authorization inside a single run.
 	ErrTicketExpired = errors.New("engine: upload ticket had expired")
@@ -182,7 +185,8 @@ func (o Options) authorizeAndUpload(ctx context.Context, items []stagedUpload) [
 // stopsRun reports the two verdicts that end a run's uploads rather than one file. Never conflate
 // them: a refusal kills the install, while unavailability stops only this run's uploads.
 func stopsRun(err error) bool {
-	return errors.Is(err, formats.ErrCredentialsRefused) || errors.Is(err, ErrUploadUnavailable)
+	return errors.Is(err, formats.ErrCredentialsRefused) || errors.Is(err, ErrUploadUnavailable) ||
+		errors.Is(err, ErrOffline)
 }
 
 const alreadyPresentReason = "no bytes sent: the control plane answered that the archive already holds this object"
@@ -199,8 +203,8 @@ func (o Options) applyUploadOutcome(it stagedUpload, oc error) (r fileResult) {
 		out.Decision = auditlog.DecisionFailed
 		out.Reason = oc.Error()
 		out.Fatal = errors.Is(oc, formats.ErrCredentialsRefused)
-		r.unavailable = errors.Is(oc, ErrUploadUnavailable)
-		r.offline = platform.Offline(oc)
+		r.offline = errors.Is(oc, ErrOffline)
+		r.unavailable = errors.Is(oc, ErrUploadUnavailable) || r.offline
 		return r
 	}
 

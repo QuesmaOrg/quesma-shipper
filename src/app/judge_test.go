@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -419,14 +417,12 @@ func TestTheFactsRideACleanRunToo(t *testing.T) {
 func TestAnOfflineTickIsRecordedOnceAndNotCounted(t *testing.T) {
 	dir := t.TempDir()
 	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "0123456789abcdef"}
-	offline := formats.Report{Failed: 2, OfflineFailed: 2, Sources: []formats.SourceOutcome{{Files: []formats.FileOutcome{
-		{Decision: formats.DecisionFailed, Reason: "backend: /v2/uploads/authorize: dial tcp: lookup cp.example: no such host"},
-	}}}}
+	offline := fmt.Errorf("%w: collection stopped after 0 of 2 files: dial tcp: lookup cp.example: no such host", engine.ErrOffline)
 
-	if err := r.JudgeTick(nil, offline, false, platform.Delta{}); err == nil {
+	if err := r.JudgeTick(offline, formats.Report{Failed: 1}, false, platform.Delta{}); err == nil {
 		t.Fatal("an offline tick still failed the run; the verdict must say so")
 	}
-	r.JudgeTick(nil, offline, false, platform.Delta{})
+	r.JudgeTick(offline, formats.Report{Failed: 1}, false, platform.Delta{})
 	rec := readFailureRecord(dir)
 	if len(rec.Recent) != 1 || rec.Latest().Kind != formats.FailureOffline {
 		t.Fatalf("want exactly one offline event, got %+v", rec.Recent)
@@ -438,11 +434,13 @@ func TestAnOfflineTickIsRecordedOnceAndNotCounted(t *testing.T) {
 		t.Errorf("an offline tick moved consecutive_failures to %d", rec.ConsecutiveFailures)
 	}
 
-	// A refusal from the far end is still a failure: the network answered.
-	r.JudgeTick(nil, formats.Report{Failed: 2, OfflineFailed: 1, Sources: offline.Sources}, false, platform.Delta{})
+	// A PUT that failed after the control plane answered reached the network: a failure.
+	r.JudgeTick(nil, formats.Report{Failed: 2, Sources: []formats.SourceOutcome{{Files: []formats.FileOutcome{
+		{Decision: formats.DecisionFailed, Reason: "upload: PUT object \"0\": dial tcp: lookup bucket.example: no such host"},
+	}}}}, false, platform.Delta{})
 	rec = readFailureRecord(dir)
 	if rec.ConsecutiveFailures != 1 || rec.Latest().Kind != formats.FailureTick || len(rec.Recent) != 2 {
-		t.Fatalf("a partly offline run was not counted as a failure: %+v", rec)
+		t.Fatalf("a run that reached the network was not counted as a failure: %+v", rec)
 	}
 }
 
@@ -451,11 +449,29 @@ func TestAnOfflineTickIsRecordedOnceAndNotCounted(t *testing.T) {
 func TestAnOfflineDrainIsNotAShutdownFailure(t *testing.T) {
 	dir := t.TempDir()
 	r := &Runtime{eff: &config.Effective{StateDir: dir}}
-	err := fmt.Errorf("upload: PUT object %q: %w", "0", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED})
-
-	r.JudgeFinalSlice(err, formats.Report{}, platform.Delta{})
+	r.JudgeFinalSlice(fmt.Errorf("%w: collection stopped", engine.ErrOffline), formats.Report{Failed: 1}, platform.Delta{})
 	rec := readFailureRecord(dir)
 	if rec.Latest() == nil || rec.Latest().Kind != formats.FailureOffline || rec.ConsecutiveFailures != 0 {
 		t.Fatalf("an offline drain was judged as %+v", rec)
+	}
+}
+
+// A stall and an offline verdict can alternate for as long as a backlog lasts; between them they
+// hold two entries, and the counted failure before them stays in the log.
+func TestStandingEventsDoNotEvictCountedFailures(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "abababababababab"}
+	r.JudgeTick(errors.New("scrub: pattern timed out"), formats.Report{}, false, platform.Delta{})
+	offline := fmt.Errorf("%w: collection stopped", engine.ErrOffline)
+	for i := 0; i < 10; i++ {
+		watchFires(r, i+2, 1)
+		r.JudgeTick(offline, formats.Report{Failed: 1}, false, platform.Delta{})
+	}
+	rec := readFailureRecord(dir)
+	if len(rec.Recent) != 3 {
+		t.Fatalf("want the failure plus one stall and one offline entry, got %d: %+v", len(rec.Recent), rec.Recent)
+	}
+	if rec.LatestCounted() == nil || rec.ConsecutiveFailures != 1 {
+		t.Fatalf("the counted failure was evicted: %+v", rec)
 	}
 }

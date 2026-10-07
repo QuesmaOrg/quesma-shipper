@@ -6,19 +6,18 @@ import (
 	"net"
 )
 
-// Offline reports an error that never reached the far end: a name that would not resolve, a dial
-// that was refused or timed out, a handshake that stalled, a connection reset underneath a request.
-// The far end's own answers, a 5xx or a refusal, are not offline, and neither is a deadline this
-// process set itself.
+// Offline reports an error from before any connection existed: a name that would not resolve, or a
+// dial that was refused, unreachable or timed out. Anything after a connection is the far end's
+// answer, not the network: a TLS alert, a reset under a request, a response that never came. A
+// dial cancelled by the caller's own context is not offline either.
 func Offline(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if err == nil || errors.Is(err, context.Canceled) {
 		return false
 	}
 	var dns *net.DNSError
-	var op *net.OpError
-	if errors.As(err, &dns) || errors.As(err, &op) {
+	if errors.As(err, &dns) {
 		return true
 	}
-	var timeout net.Error
-	return errors.As(err, &timeout) && timeout.Timeout()
+	var op *net.OpError
+	return errors.As(err, &op) && op.Op == "dial"
 }

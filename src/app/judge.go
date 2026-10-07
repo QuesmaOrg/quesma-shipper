@@ -54,10 +54,11 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 		return nil
 	}
 	// Offline is the machine's state, not the shipper's: nothing counts, one standing event says
-	// so, and the failure heartbeat is skipped because it could not be sent either.
-	offline := platform.Offline(err)
+	// so, and the failure heartbeat is skipped because it could not be sent either. The engine
+	// decides it, on the authorization that never reached the control plane; a PUT that failed
+	// after a successful authorization reached the network and is judged like any failure.
+	offline := errors.Is(err, engine.ErrOffline)
 	if err == nil && rep.Shipped == 0 && rep.Failed > 0 {
-		offline = rep.OfflineFailed == rep.Failed
 		// One reason travels: the count alone cannot tell a refused PUT from an unreachable
 		// control plane, and identical messages make the log unactionable.
 		err = fmt.Errorf("the run shipped nothing: all %d attempted uploads failed: %s",
@@ -82,12 +83,7 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 			// shortcut would silently empty the field.
 			rec.ConsecutiveFailures = 0
 		case offline:
-			e := newEvent(r.eff.StateDir, r.runID, formats.FailureOffline, "offline: "+err.Error())
-			if last := rec.Latest(); last != nil && last.Kind == formats.FailureOffline {
-				*last = e
-			} else {
-				rec.Append(e)
-			}
+			rec.Stand(newEvent(r.eff.StateDir, r.runID, formats.FailureOffline, "offline: "+err.Error()))
 		default:
 			ev := newEvent(r.eff.StateDir, r.runID, kind, err.Error())
 			rec.Append(ev)
@@ -177,15 +173,10 @@ func (r *Runtime) WatchStalledTick(ctx context.Context, n int, every time.Durati
 		elapsed := time.Since(started).Round(time.Second)
 		fmt.Fprintf(errOut, "warning: tick %d still running after %s\n", n, elapsed)
 		r.persistRecord("stalled tick", errOut, func(rec *formats.FailureRecord) {
-			e := newEvent(r.eff.StateDir, r.runID, formats.FailureStalled,
-				fmt.Sprintf("tick %d still running after %s", n, elapsed))
 			// Replaced, not skipped: clean ticks append nothing, so a stall that recovered stays the
 			// newest event indefinitely, and a later stall must not hide behind its stale timestamp.
-			if last := rec.Latest(); last != nil && last.Kind == formats.FailureStalled {
-				*last = e
-			} else {
-				rec.Append(e)
-			}
+			rec.Stand(newEvent(r.eff.StateDir, r.runID, formats.FailureStalled,
+				fmt.Sprintf("tick %d still running after %s", n, elapsed)))
 		})
 		// The last completed tick's report rides along: this heartbeat overwrites the remote
 		// object, and blanking per-source health would make a stalled install read as an idle one.

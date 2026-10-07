@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
@@ -434,29 +433,33 @@ func (e *countingEnricher) Enrich(transforms.Input) transforms.EnrichResult {
 	return transforms.EnrichResult{EnricherID: e.id, Version: 1}
 }
 
-// A control plane that cannot be reached is neither a refusal nor a 5xx: the report says how many
-// failures never left the machine, so the judge can file the run as offline rather than failed.
-func TestAnUnreachableControlPlaneIsReportedAsOffline(t *testing.T) {
+// A control plane that cannot be reached halts the run's uploads like an unavailable one, and the
+// run's error says offline so the judge can file the machine, not the shipper, as the cause.
+func TestAnUnreachableControlPlaneHaltsTheRunAsOffline(t *testing.T) {
 	f := newFixture(t)
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 12; i++ {
 		f.writeTranscript(fmt.Sprintf("p/o%02d.jsonl", i), line1)
 	}
 	port := newPort()
-	port.FailAll = fmt.Errorf("backend: /v2/uploads/authorize: %w",
-		&net.DNSError{Err: "no such host", Name: "cp.example", IsNotFound: true})
+	port.FailAll = fmt.Errorf("%w: backend: /v2/uploads/authorize: dial tcp: lookup cp.example: no such host", engine.ErrOffline)
 
-	rep, err := vendRun(f, port, func(o *engine.Options) { o.Workers = 2 })
-	if err != nil {
-		t.Fatalf("an unreachable control plane is not a run error: %v", err)
+	rep, err := vendRun(f, port, func(o *engine.Options) { o.Workers = 4 })
+	if !errors.Is(err, engine.ErrOffline) {
+		t.Fatalf("want an offline halt, got %v", err)
 	}
-	if rep.Shipped != 0 || rep.Failed == 0 || rep.OfflineFailed != rep.Failed {
-		t.Fatalf("want every failure counted as offline, got shipped=%d failed=%d offline=%d",
-			rep.Shipped, rep.Failed, rep.OfflineFailed)
+	if errors.Is(err, formats.ErrCredentialsRefused) || errors.Is(err, engine.ErrUploadUnavailable) {
+		t.Fatal("offline reads as a refusal or an unavailable control plane")
+	}
+	if rep.Shipped != 0 || rep.Failed != 1 {
+		t.Errorf("shipped %d, failed %d; one unreachable control plane is one fact", rep.Shipped, rep.Failed)
+	}
+	if port.calls != 1 {
+		t.Errorf("%d authorizations attempted while offline; the first verdict halts the rest", port.calls)
 	}
 
-	port.FailAll = fmt.Errorf("backend: HTTP 503: %w", engine.ErrUploadUnavailable)
-	rep, _ = vendRun(f, port, func(o *engine.Options) { o.Workers = 2 })
-	if rep.OfflineFailed != 0 {
-		t.Fatalf("a 5xx from the far end counted as offline: %+v", rep)
+	healthy := newPort()
+	rep2, err := vendRun(f, healthy, func(o *engine.Options) { o.Workers = 4 })
+	if err != nil || rep2.Shipped != 12 {
+		t.Fatalf("the next run did not ship everything: shipped %d, %v", rep2.Shipped, err)
 	}
 }

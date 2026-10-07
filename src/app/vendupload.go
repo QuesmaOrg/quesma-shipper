@@ -21,6 +21,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/upload"
 )
 
@@ -236,6 +237,8 @@ func classifyAuthorize(err error) error {
 		return err
 	case errors.Is(err, controlplane.ErrAuthorizeUnavailable):
 		return fmt.Errorf("%w: %v", engine.ErrUploadUnavailable, err)
+	case platform.Offline(err):
+		return fmt.Errorf("%w: %w", engine.ErrOffline, err)
 	}
 	return err
 }
