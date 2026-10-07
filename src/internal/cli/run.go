@@ -81,6 +81,18 @@ func managedEnrollmentDelay(err error, conflicts *int) time.Duration {
 	return cap/2 + time.Duration(rand.Int64N(int64(cap/2)))
 }
 
+// journalPhase is the crash journal's view of a step: the source when there is one, the stage
+// otherwise, and "between ticks" once the run has returned, so an idle death blames no source.
+func journalPhase(tick int64, stage, source string) string {
+	switch {
+	case source != "":
+		return fmt.Sprintf("tick %d: %s", tick, source)
+	case stage != "":
+		return fmt.Sprintf("tick %d: %s", tick, stage)
+	}
+	return fmt.Sprintf("tick %d: between ticks", tick)
+}
+
 func recycleDue(started, now time.Time, serviceLoaded func() bool) bool {
 	return now.Sub(started) >= recycleAfter && serviceLoaded()
 }
@@ -280,10 +292,8 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 	// The source the engine is on, under the tick: a crash's "last step" then names it. Stages
 	// within a source stay in memory for the stall watchdog; journaling each would be noise.
 	var tickNo atomic.Int64
-	env.OnStep = func(_, source string) {
-		if source != "" {
-			fl.Phase(fmt.Sprintf("tick %d: %s", tickNo.Load(), source))
-		}
+	env.OnStep = func(stage, source string) {
+		fl.Phase(journalPhase(tickNo.Load(), stage, source))
 	}
 
 	for n := 1; ; n++ {

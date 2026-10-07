@@ -66,19 +66,9 @@ func (l *Log) Start() {
 	l.append(entry{Ev: "start", PID: os.Getpid()}, true)
 }
 
-// Phase records the stage reached. A repeat of the current one is dropped, so a stage entered
+// Phase records the stage reached. A repeat of the one on disk is dropped, so a stage entered
 // once per upload group costs one line, not one per group.
 func (l *Log) Phase(name string) {
-	if l == nil {
-		return
-	}
-	l.mu.Lock()
-	same := l.phase == name
-	l.phase = name
-	l.mu.Unlock()
-	if same {
-		return
-	}
 	l.append(entry{Ev: "phase", Phase: name}, false)
 }
 
@@ -108,6 +98,9 @@ func (l *Log) append(e entry, syncNow bool) {
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if e.Ev == "phase" && e.Phase == l.phase {
+		return
+	}
 	f, err := os.OpenFile(l.path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		l.warnLocked(err)
@@ -117,6 +110,10 @@ func (l *Log) append(e entry, syncNow bool) {
 	if _, err := f.Write(body); err != nil {
 		l.warnLocked(err)
 		return
+	}
+	// Remembered only once it is on disk: a failed write must not suppress the retry.
+	if e.Ev == "phase" {
+		l.phase = e.Phase
 	}
 	if syncNow {
 		if err := f.Sync(); err != nil {

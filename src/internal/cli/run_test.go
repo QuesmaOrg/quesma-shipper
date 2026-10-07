@@ -132,3 +132,17 @@ func TestACleanTickIsUntouched(t *testing.T) {
 		t.Errorf("a clean tick wrote to stderr: %q", errOut.String())
 	}
 }
+
+// The journal names the source while one is in flight, the stage otherwise, and says so once the
+// run has returned, so a death in the idle sleep blames no source.
+func TestJournalPhaseBlamesNoSourceBetweenTicks(t *testing.T) {
+	for _, tc := range []struct{ stage, source, want string }{
+		{"read and seal + upload", "cursor-transcripts", "tick 7: cursor-transcripts"},
+		{"heartbeat", "", "tick 7: heartbeat"},
+		{"", "", "tick 7: between ticks"},
+	} {
+		if got := journalPhase(7, tc.stage, tc.source); got != tc.want {
+			t.Errorf("journalPhase(7, %q, %q) = %q, want %q", tc.stage, tc.source, got, tc.want)
+		}
+	}
+}

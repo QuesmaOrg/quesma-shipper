@@ -258,6 +258,8 @@ func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (format
 		return formats.Report{}, err
 	}
 	defer store.Close()
+	// Deferred, so a recovered panic cannot leave the last stage standing for the next watchdog.
+	defer r.noteStep("", "")
 	if r.OnLocked != nil {
 		r.OnLocked()
 	}
@@ -271,7 +273,6 @@ func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (format
 	o.Unbounded = unbounded
 	o.Heartbeat = r.WriteHeartbeat
 	rep, err := engine.Run(ctx, store, o)
-	r.noteStep("", "")
 
 	// Stamped even when the run shipped nothing: the marker answers "is the agent running at all",
 	// which the fingerprint document cannot.
