@@ -7,7 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
@@ -431,4 +435,143 @@ func (e *countingEnricher) NeedsUnits() bool       { return true }
 func (e *countingEnricher) Enrich(transforms.Input) transforms.EnrichResult {
 	e.calls++
 	return transforms.EnrichResult{EnricherID: e.id, Version: 1}
+}
+
+// stepLog records what the engine reports, with a reader for tests that wait on a stage.
+type stepLog struct {
+	mu    sync.Mutex
+	steps []string
+}
+
+func (l *stepLog) record(stage, source string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.steps = append(l.steps, strings.TrimSpace(stage+" "+source))
+}
+
+func (l *stepLog) all() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.steps...)
+}
+
+func (l *stepLog) waitFor(t *testing.T, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, s := range l.all() {
+			if s == want {
+				return
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("stage %q never reported; saw %v", want, l.all())
+}
+
+func inOrder(steps, want []string) bool {
+	at := 0
+	for _, s := range steps {
+		if at < len(want) && s == want[at] {
+			at++
+		}
+	}
+	return at == len(want)
+}
+
+// Sealing and uploading overlap by design, so while a group is in flight and later files are still
+// being sealed the stage says both; once nothing is left to seal it says upload alone. A scrub
+// stuck behind a stuck PUT is then not reported as the PUT.
+func TestAStageReportsSealingAndUploadingWhenTheyOverlap(t *testing.T) {
+	f := newFixture(t)
+	for i := 0; i < 6; i++ {
+		f.writeTranscript(fmt.Sprintf("p/v%02d.jsonl", i), line1)
+	}
+	port := newPort()
+	release := make(chan struct{})
+	port.verdict = func(call, _ int, _ engine.PreparedObject) error {
+		if call == 0 {
+			<-release
+		}
+		return nil
+	}
+	var log stepLog
+	done := make(chan error, 1)
+	go func() {
+		_, err := vendRun(f, port, func(o *engine.Options) {
+			o.Workers = 1
+			o.Step = log.record
+			o.Heartbeat = func(context.Context, engine.Report) error { return nil }
+		})
+		done <- err
+	}()
+	// The first group blocks; the loop keeps sealing behind it until every file is sealed.
+	log.waitFor(t, "read and seal + upload claude-code-transcripts")
+	log.waitFor(t, "upload claude-code-transcripts")
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !inOrder(log.all(), []string{"discover claude-code-transcripts", "read and seal claude-code-transcripts",
+		"read and seal + upload claude-code-transcripts", "upload claude-code-transcripts",
+		"commit claude-code-transcripts", "heartbeat"}) {
+		t.Fatalf("stages out of order: %v", log.all())
+	}
+}
+
+// A derived object's PUT is an upload, not enrichment: the enricher's own stage ends where its
+// authorization group starts.
+func TestADerivedUploadIsReportedAsAnUpload(t *testing.T) {
+	f := newFixture(t)
+	db := cursorFixture(t, f)
+	port := newPort()
+	var log stepLog
+	o := enrichOpts(t, f, db, true)
+	o.Upload = port
+	o.Step = log.record
+	if _, err := engine.Run(context.Background(), f.store, o); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	steps := log.all()
+	src := ""
+	for _, s := range steps {
+		if strings.HasPrefix(s, "enrich ") {
+			src = strings.TrimPrefix(s, "enrich ")
+		}
+	}
+	if src == "" {
+		t.Fatalf("no enrich stage reported: %v", steps)
+	}
+	if !inOrder(steps, []string{"enrich " + src, "upload " + src, "enrich " + src}) {
+		t.Fatalf("the derived PUT was not reported as an upload inside enrichment: %v", steps)
+	}
+}
+
+// Every durable write reads as commit, not only the flush at the source boundary: the spec
+// generation EnsureSpec writes during discovery, and the deletions DropVanished writes after the
+// pending entries have already gone out.
+func TestEveryDurableWriteReportsCommit(t *testing.T) {
+	f := newFixture(t)
+	gone := f.writeTranscript("p/w00.jsonl", line1)
+	f.writeTranscript("p/w01.jsonl", line1)
+	var first stepLog
+	if _, err := vendRun(f, newPort(), func(o *engine.Options) { o.Step = first.record }); err != nil {
+		t.Fatal(err)
+	}
+	// A fresh store: EnsureSpec writes the spec before any file is read.
+	if !inOrder(first.all(), []string{"discover claude-code-transcripts", "commit claude-code-transcripts", "read and seal claude-code-transcripts"}) {
+		t.Fatalf("the spec write during discovery did not read as commit: %v", first.all())
+	}
+
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
+	}
+	var second stepLog
+	if _, err := vendRun(f, newPort(), func(o *engine.Options) { o.Step = second.record }); err != nil {
+		t.Fatal(err)
+	}
+	// Nothing new shipped, so nothing was pending; the one write is DropVanished's deletion.
+	if !inOrder(second.all(), []string{"read and seal claude-code-transcripts", "commit claude-code-transcripts"}) {
+		t.Fatalf("the deletion write did not read as commit: %v", second.all())
+	}
 }

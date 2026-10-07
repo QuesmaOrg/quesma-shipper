@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"filippo.io/age"
@@ -54,6 +55,16 @@ type Options struct {
 
 	// Heartbeat publishes discovery health after a run. Optional and best-effort: it fails open.
 	Heartbeat func(context.Context, Report) error
+
+	// Step names the stages the run has in flight and the source it is on, for the crash journal
+	// and the stall watchdog: a run stuck forever cannot say where itself. Sealing and uploading
+	// overlap by design, so a stage can read "read and seal + upload". Called on the run's own
+	// goroutine only. Never a path or a file name.
+	Step func(stage, source string)
+
+	// stages renders Step for the source in flight. Shared by pointer with the pass and the
+	// enrichers, and swapped per source.
+	stages *stageTracker
 
 	// Progress streams each file's outcome as it is decided. Optional; nil is silent.
 	Progress formats.Progress
@@ -129,6 +140,10 @@ type Plan struct {
 func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 	// Commits batch for the run: an unflushed commit means the file ships again onto the same key.
 	store := newCommitBuffer(st, o.CommitBatch)
+	// Every durable write, whichever method asked for it, reads as commit while it lasts: the
+	// 200-entry flush inside Commit, EnsureSpec's generation bump, DropVanished's deletions.
+	st.onFlush = func(on bool) { o.stages.flushing(on) }
+	defer func() { st.onFlush = nil }()
 
 	// Refusing here beats sealing every file and only then discovering there is nowhere to put them.
 	if o.Upload == nil && !o.DryRun {
@@ -217,6 +232,8 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			continue
 		}
 
+		o.stages = &stageTracker{step: o.Step, source: src.ID, base: "discover"}
+		o.stages.refresh()
 		disc, err := prim.Discover(sources.Request{
 			Source:   src,
 			All:      o.Plan.Sources,
@@ -299,6 +316,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			budget:  &budget,
 			staging: len(enrichers) > 0,
 		}
+		o.stages.enter("read and seal")
 		if err := pass.run(ctx); err != nil {
 			// A refusal and an unavailable control plane both carry a source outcome worth
 			// reporting; a cancelled context, the only other way this returns, does not.
@@ -315,6 +333,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			if len(staged) == 0 && enricher.NeedsUnits() {
 				continue
 			}
+			o.stages.enter("enrich")
 			err := o.enrichSource(ctx, store, src, enricher, staged, &out, &rep)
 			if err == nil {
 				continue
@@ -359,7 +378,9 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 
 	slices.SortFunc(rep.Sources, func(a, b SourceOutcome) int { return cmp.Compare(a.SourceID, b.SourceID) })
 
+	o.stages = nil
 	if !o.DryRun && o.Heartbeat != nil {
+		o.step("heartbeat", "")
 		// Health reporting fails open; only redaction fails closed.
 		err := o.Heartbeat(ctx, rep)
 		if err != nil && o.Log != nil {
@@ -401,6 +422,76 @@ func median(v []int64) int64 {
 	sorted := slices.Clone(v)
 	slices.Sort(sorted)
 	return sorted[len(sorted)/2]
+}
+
+func (o Options) step(stage, source string) {
+	if o.Step != nil {
+		o.Step(stage, source)
+	}
+}
+
+// stageTracker renders the stages one source has in flight. Owned by the loop goroutine: every
+// count changes there, so it needs no lock, and the label changes only when the set does.
+type stageTracker struct {
+	step   func(stage, source string)
+	source string
+	base   string // the stage when nothing is in flight
+	last   string
+
+	computing  int // files being read, scrubbed and sealed
+	uploading  int // authorization groups in flight
+	committing bool
+}
+
+func (t *stageTracker) enter(base string) {
+	if t == nil {
+		return
+	}
+	t.base = base
+	t.refresh()
+}
+
+// add moves the in-flight counts; nil-safe for a caller built without Step.
+func (t *stageTracker) add(computing, uploading int) {
+	if t == nil {
+		return
+	}
+	t.computing += computing
+	t.uploading += uploading
+	t.refresh()
+}
+
+func (t *stageTracker) flushing(on bool) {
+	if t == nil {
+		return
+	}
+	t.committing = on
+	t.refresh()
+}
+
+func (t *stageTracker) refresh() {
+	if t == nil || t.step == nil {
+		return
+	}
+	var parts []string
+	if t.computing > 0 {
+		parts = append(parts, "read and seal")
+	}
+	if t.uploading > 0 {
+		parts = append(parts, "upload")
+	}
+	if t.committing {
+		parts = append(parts, "commit")
+	}
+	label := strings.Join(parts, " + ")
+	if label == "" {
+		label = t.base
+	}
+	if label == t.last {
+		return
+	}
+	t.last = label
+	t.step(label, t.source)
 }
 
 func (o Options) scrubber() (*transforms.Scrubber, error) {

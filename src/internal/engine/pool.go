@@ -137,6 +137,7 @@ func (p *sourcePass) run(ctx context.Context) error {
 		send: func(items []stagedUpload) {
 			// One authorization, then one PUT per member. The group holds ONE upload slot for its
 			// whole life; the port bounds the fan-out inside.
+			p.o.stages.add(0, 1)
 			go func() {
 				uploadSlots <- struct{}{}
 				done := p.o.sendBatch(ctx, items)
@@ -171,6 +172,7 @@ func (p *sourcePass) run(ctx context.Context) error {
 			next++
 			inFlight++
 			computing++
+			p.o.stages.add(1, 0)
 		}
 		// Nothing else can join the accumulator, so send what is held rather than wait.
 		if computing == 0 {
@@ -182,6 +184,7 @@ func (p *sourcePass) run(ctx context.Context) error {
 		select {
 		case r := <-results:
 			computing--
+			p.o.stages.add(-1, 0)
 			if r.pending != nil {
 				if d, final := p.stageUpload(r); final {
 					settle(d)
@@ -190,6 +193,7 @@ func (p *sourcePass) run(ctx context.Context) error {
 			}
 			settle(r)
 		case done := <-batches:
+			p.o.stages.add(0, -1)
 			for _, r := range done {
 				settle(r)
 			}

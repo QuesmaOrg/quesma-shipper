@@ -124,7 +124,9 @@ func (o Options) shipDerivedGroups(
 	group := &batcher{
 		maxObjects: maxBatchObjects,
 		send: func(items []stagedUpload) {
+			o.stages.add(0, 1)
 			outcomes := o.authorizeAndUpload(ctx, items)
+			o.stages.add(0, -1)
 			for i, g := range items {
 				idx := g.res.idx
 				fos[idx] = o.commitDerived(store, g.res.outcome, g.pending, outcomes[i])

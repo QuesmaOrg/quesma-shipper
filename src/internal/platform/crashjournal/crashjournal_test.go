@@ -199,3 +199,48 @@ func TestNilLogIsSilent(t *testing.T) {
 	l.Reported()
 	l.Exit()
 }
+
+// A stage entered once per upload group costs one line, not one per group.
+func TestARepeatedPhaseIsOneEntry(t *testing.T) {
+	dir := t.TempDir()
+	l, err := Open(dir, "run-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Start()
+	l.Phase("tick 1: cursor")
+	l.Phase("tick 1: cursor")
+	l.Phase("tick 1: cursor")
+	l.Phase("tick 1: claude")
+	raw, err := os.ReadFile(filepath.Join(dir, fileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(raw), `"ev":"phase"`); got != 2 {
+		t.Fatalf("want 2 phase entries, got %d:\n%s", got, raw)
+	}
+}
+
+// A phase that failed to reach the disk is not remembered, so the retry after the journal
+// recovers writes it rather than being dropped as a repeat.
+func TestAFailedPhaseWriteIsRetried(t *testing.T) {
+	dir := t.TempDir()
+	l, err := Open(dir, "run-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Start()
+	l.Phase("tick 1")
+	good := l.path
+	l.path = dir // a directory: the open fails
+	l.Phase("tick 1: cursor")
+	l.path = good
+	l.Phase("tick 1: cursor")
+	raw, err := os.ReadFile(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(raw), `"phase":"tick 1: cursor"`); got != 1 {
+		t.Fatalf("want the retried phase written once, got %d:\n%s", got, raw)
+	}
+}

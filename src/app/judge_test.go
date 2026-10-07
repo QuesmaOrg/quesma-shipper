@@ -411,3 +411,21 @@ func TestTheFactsRideACleanRunToo(t *testing.T) {
 		t.Errorf("the concurrency configuration is incomplete: %+v", f)
 	}
 }
+
+// A stall that names its stage is one a reader can act on; one that only says "slow" is not.
+func TestAStallNamesTheStageTheRunIsIn(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "ffffffffffffffff"}
+	r.noteStep("upload", "cursor-transcripts")
+	watchFires(r, 3, 1)
+
+	rec := readFailureRecord(dir)
+	if rec.Latest() == nil || !strings.Contains(rec.Latest().Message, "tick 3 still running after") ||
+		!strings.Contains(rec.Latest().Message, ", in upload cursor-transcripts") {
+		t.Fatalf("the stall does not say where the run is: %+v", rec.Latest())
+	}
+	r.noteStep("", "")
+	if r.currentStep() != "" {
+		t.Fatal("the step did not clear between runs")
+	}
+}
