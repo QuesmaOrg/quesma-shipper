@@ -352,8 +352,9 @@ does not refuse the whole document over an entry another build needs. `sources[]
 served as is to a build listing the `sources.exclude_add` feature. For one that does not, which
 would ignore it, it is folded: `exclude` becomes the entry's own `exclude` if it sets one, else the
 build's reported `exclude` for the source, followed by the additions. A fetch without a catalog is
-served as before, except that `exclude_add` is folded over the newest catalog any install of the
-organization reported for that source; if none has the source, the `exclude_add` is dropped. What
+served as before, except that `exclude_add` is folded over every exclude any install of the
+organization reported for that source, their union, so no one report can shrink it; if none has
+the source, the `exclude_add` is dropped. What
 was left out, folded or dropped is logged once per change for each install, not on every fetch.
 
 **What installs report.** `GET /v1/admin/orgs/{org}/sources` answers what the active installs can

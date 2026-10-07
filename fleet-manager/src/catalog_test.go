@@ -233,7 +233,7 @@ func TestExcludeAddIsServedOnlyToABuildThatReadsIt(t *testing.T) {
 	}
 }
 
-func TestCatalogLessFetchFoldsOverTheOrganizationsNewestCatalog(t *testing.T) {
+func TestCatalogLessFetchFoldsOverEveryCatalogOfTheOrganization(t *testing.T) {
 	server, manager, key, installID := enrolledServer(t)
 	var logs bytes.Buffer
 	server.logger = log.New(&logs, "", 0)
@@ -255,8 +255,9 @@ func TestCatalogLessFetchFoldsOverTheOrganizationsNewestCatalog(t *testing.T) {
 	for range 2 {
 		served := fetchCollection(t, server, key, installID, nil)
 		claude, cursor := servedSource(t, served, "claude-code-transcripts"), servedSource(t, served, "cursor-chats")
-		if claude.ExcludeAdd != nil || !slices.Equal(claude.Exclude, []string{"newer/**", "client/**"}) {
-			t.Fatalf("not folded over the newest catalog: %+v", claude)
+		// The union of what every catalog excludes, newest first: one report cannot shrink the base.
+		if claude.ExcludeAdd != nil || !slices.Equal(claude.Exclude, []string{"newer/**", "older/**", "client/**"}) {
+			t.Fatalf("not folded over every catalog's excludes: %+v", claude)
 		}
 		// No catalog has it, so there is nothing to fold over: dropped, never served unfolded.
 		if cursor.ExcludeAdd != nil || cursor.Exclude != nil {

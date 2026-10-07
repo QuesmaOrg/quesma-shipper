@@ -172,9 +172,10 @@ func (m *Manager) FleetCatalog(ctx context.Context) (fleetCatalog, error) {
 	return fleetCatalog{Active: len(active), Reporting: reporting}, nil
 }
 
-// newestSourceExcludes answers, for each id, the exclude list of the newest catalog any install of
-// the organization reported with that source. An id no catalog has is absent from the map.
-func (m *Manager) newestSourceExcludes(ctx context.Context, ids []string) (map[string][]string, error) {
+// sourceExcludes answers, for each id, every exclude glob any catalog of the organization has for
+// that source: the union, so the base a catalog-less fold extends can only grow, and no one
+// install's report can shrink what another build excludes. An id no catalog has is absent.
+func (m *Manager) sourceExcludes(ctx context.Context, ids []string) (map[string][]string, error) {
 	reported, err := m.reportedCatalogs(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -182,10 +183,20 @@ func (m *Manager) newestSourceExcludes(ctx context.Context, ids []string) (map[s
 	out := map[string][]string{}
 	for _, id := range ids {
 		for _, catalog := range reported {
-			if source, ok := catalog.source(id); ok {
-				out[id] = source.Exclude
-				break
+			source, ok := catalog.source(id)
+			if !ok {
+				continue
 			}
+			union := out[id]
+			if union == nil {
+				union = []string{}
+			}
+			for _, glob := range source.Exclude {
+				if !slices.Contains(union, glob) {
+					union = append(union, glob)
+				}
+			}
+			out[id] = union
 		}
 	}
 	return out, nil
@@ -197,7 +208,7 @@ func (m *Manager) newestSourceExcludes(ctx context.Context, ids []string) (map[s
 // not refuse the whole document over one entry another build needs; exclude_add is served as is to
 // a build that reads it and folded into exclude for one that does not. Without a catalog the
 // document is served as before, except exclude_add, which an older build would ignore: it is folded
-// over the newest catalog the organization has for that source, and dropped if there is none.
+// over every catalog the organization has for that source, and dropped if there is none.
 func (m *Manager) collectionForInstall(ctx context.Context, collection *CollectionConfig, catalog *sourceCatalog) (*CollectionConfig, []string, error) {
 	if collection == nil {
 		return nil, nil, nil
@@ -216,7 +227,7 @@ func (m *Manager) collectionForInstall(ctx context.Context, collection *Collecti
 		}
 		if len(needed) > 0 {
 			var err error
-			if excludes, err = m.newestSourceExcludes(ctx, needed); err != nil {
+			if excludes, err = m.sourceExcludes(ctx, needed); err != nil {
 				return nil, nil, err
 			}
 		}
