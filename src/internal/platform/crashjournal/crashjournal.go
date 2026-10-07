@@ -138,15 +138,19 @@ type Summary struct {
 	Clean    bool // the run wrote an exit entry
 	Reported bool // the run delivered the pending crash report in a heartbeat
 	Phase    string
+	Last     time.Time // the newest entry's time
 
 	// Crashes counts the runs that never reached exit since the last delivered report, this included.
 	Crashes int
 }
 
 // LastRun reports the undelivered crash before this process, or nil when there is none: a clean
-// previous run, an absent or empty journal, or a crash a heartbeat already reported.
-// Call it before Open: Open may rotate the very file this reads.
-func LastRun(stateDir string) *Summary {
+// previous run, an absent or empty journal, a crash a heartbeat already reported, or a run that
+// stopped with the machine. Call it before Open: Open may rotate the very file this reads.
+//
+// bootedAt is the machine's last boot; a run whose newest entry predates it did not survive the
+// shutdown, which on Windows is a hard kill with no exit entry. A zero bootedAt disables the check.
+func LastRun(stateDir string, bootedAt time.Time) *Summary {
 	raw, err := readCapped(filepath.Join(stateDir, fileName))
 	if err != nil || len(raw) == 0 {
 		return nil
@@ -167,6 +171,9 @@ func LastRun(stateDir string) *Summary {
 			byRun[e.RunID] = s
 			order = append(order, s)
 		}
+		if e.At.After(s.Last) {
+			s.Last = e.At
+		}
 		switch e.Ev {
 		case "start":
 			s.Phase, s.PID = "start", e.PID
@@ -184,14 +191,16 @@ func LastRun(stateDir string) *Summary {
 
 	// A crash must survive restarts that could not deliver the report: only a run that wrote
 	// "reported" proved a heartbeat carrying it reached the sink, so the walk stops there and
-	// nowhere else. A run with no exit whose process is still alive is concurrent, not dead.
+	// nowhere else. A run with no exit whose process is still alive is concurrent, not dead, and
+	// one whose last entry predates the boot was stopped with the machine: nothing was lost,
+	// because a source is committed only after its destination confirms the write.
 	var crash *Summary
 	for i := len(order) - 1; i >= 0; i-- {
 		s := order[i]
 		if s.Reported {
 			break
 		}
-		if s.Clean || alive(s.PID) {
+		if s.Clean || alive(s.PID) || (!bootedAt.IsZero() && s.Last.Before(bootedAt)) {
 			continue
 		}
 		if crash == nil {

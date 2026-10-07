@@ -1,10 +1,12 @@
 package crashjournal
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // deadEntries writes a run as a SIGKILL (an OOM kill) leaves it: entries present, no exit,
@@ -61,7 +63,7 @@ func TestCleanRunReportsNoCrash(t *testing.T) {
 	l.Phase("init")
 	l.Exit()
 
-	if s := LastRun(dir); s != nil {
+	if s := LastRun(dir, time.Time{}); s != nil {
 		t.Fatalf("a clean run is no crash, got %+v", s)
 	}
 }
@@ -75,7 +77,7 @@ func TestADeathCarriesThePhaseItReached(t *testing.T) {
 		l.Phase("tick 1")
 	})
 
-	s := LastRun(dir)
+	s := LastRun(dir, time.Time{})
 	if s == nil || s.Clean {
 		t.Fatalf("want a death, got %+v", s)
 	}
@@ -93,7 +95,7 @@ func TestConsecutiveCrashesCounted(t *testing.T) {
 	deadRun(t, dir, "run-b", func(l *Log) { l.Phase("init") })
 	deadRun(t, dir, "run-c", func(l *Log) { l.Phase("init") })
 
-	s := LastRun(dir)
+	s := LastRun(dir, time.Time{})
 	if s == nil || s.Clean || s.RunID != "run-c" || s.Crashes != 3 || s.Phase != "init" {
 		t.Fatalf("want run-c with 3 crashes at init, got %+v", s)
 	}
@@ -110,7 +112,7 @@ func TestCrashSurvivesErrorExitRestarts(t *testing.T) {
 		l.Exit()
 	}
 
-	s := LastRun(dir)
+	s := LastRun(dir, time.Time{})
 	if s == nil || s.Clean || s.RunID != "run-crash" || s.Crashes != 1 {
 		t.Fatalf("want run-crash still reported past two error exits, got %+v", s)
 	}
@@ -127,7 +129,7 @@ func TestOnlyAReportedRunClearsTheCrash(t *testing.T) {
 	l, _ := Open(dir, "run-b")
 	l.Start()
 	l.Exit() // clean, but no heartbeat carrying the crash reached the sink
-	if s := LastRun(dir); s == nil || s.Clean || s.RunID != "run-a" {
+	if s := LastRun(dir, time.Time{}); s == nil || s.Clean || s.RunID != "run-a" {
 		t.Fatalf("a clean exit must not clear the report, got %+v", s)
 	}
 
@@ -135,7 +137,7 @@ func TestOnlyAReportedRunClearsTheCrash(t *testing.T) {
 	l.Start()
 	l.Reported()
 	l.Exit()
-	if s := LastRun(dir); s != nil {
+	if s := LastRun(dir, time.Time{}); s != nil {
 		t.Fatalf("want the delivered report cleared, got %+v", s)
 	}
 }
@@ -146,7 +148,7 @@ func TestLiveConcurrentRunIsNotADeath(t *testing.T) {
 	l.Start() // this test's own PID: alive by definition
 	l.Phase("tick 1")
 
-	if s := LastRun(dir); s != nil {
+	if s := LastRun(dir, time.Time{}); s != nil {
 		t.Fatalf("a live run must not report as a crash, got %+v", s)
 	}
 }
@@ -163,14 +165,14 @@ func TestTornLastLineTolerated(t *testing.T) {
 	}
 	f.Close()
 
-	s := LastRun(dir)
+	s := LastRun(dir, time.Time{})
 	if s == nil || s.Clean || s.Phase != "engine" {
 		t.Fatalf("want the last whole entry to win, got %+v", s)
 	}
 }
 
 func TestMissingJournal(t *testing.T) {
-	if s := LastRun(t.TempDir()); s != nil {
+	if s := LastRun(t.TempDir(), time.Time{}); s != nil {
 		t.Fatalf("want nil on a fresh state dir, got %+v", s)
 	}
 }
@@ -242,5 +244,65 @@ func TestAFailedPhaseWriteIsRetried(t *testing.T) {
 	}
 	if got := strings.Count(string(raw), `"phase":"tick 1: cursor"`); got != 1 {
 		t.Fatalf("want the retried phase written once, got %d:\n%s", got, raw)
+	}
+}
+
+// stampAt rewrites every entry of one run to the given time, standing in for a run that died
+// before the machine last booted.
+func stampAt(t *testing.T, dir, runID string, at time.Time) {
+	t.Helper()
+	path := filepath.Join(dir, fileName)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, line := range strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n") {
+		var e entry
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			t.Fatal(err)
+		}
+		if e.RunID == runID {
+			e.At = at
+			body, err := json.Marshal(e)
+			if err != nil {
+				t.Fatal(err)
+			}
+			line = string(body)
+		}
+		out = append(out, line)
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(out, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A hard kill at shutdown (Task Scheduler on Windows, a laptop forced off) leaves no exit entry
+// either, but the local record commits only after the destination confirms, so nothing was lost.
+func TestARunStoppedWithTheMachineIsNotACrash(t *testing.T) {
+	dir := t.TempDir()
+	booted := time.Now().UTC()
+	deadRun(t, dir, "run-before-boot", func(l *Log) { l.Phase("tick 3") })
+	stampAt(t, dir, "run-before-boot", booted.Add(-time.Hour))
+
+	if s := LastRun(dir, booted); s != nil {
+		t.Fatalf("a run that stopped with the machine is no crash, got %+v", s)
+	}
+	if s := LastRun(dir, time.Time{}); s == nil || s.RunID != "run-before-boot" {
+		t.Fatalf("an unknown boot time keeps the death reported, got %+v", s)
+	}
+}
+
+func TestOnlyDeathsAfterBootAreCounted(t *testing.T) {
+	dir := t.TempDir()
+	booted := time.Now().UTC()
+	deadRun(t, dir, "run-before-boot", func(l *Log) { l.Phase("tick 3") })
+	stampAt(t, dir, "run-before-boot", booted.Add(-time.Hour))
+	deadRun(t, dir, "run-after-boot", func(l *Log) { l.Phase("tick 1") })
+	stampAt(t, dir, "run-after-boot", booted.Add(time.Minute))
+
+	s := LastRun(dir, booted)
+	if s == nil || s.RunID != "run-after-boot" || s.Crashes != 1 || s.Phase != "tick 1" {
+		t.Fatalf("want only the death after boot, counted once, got %+v", s)
 	}
 }

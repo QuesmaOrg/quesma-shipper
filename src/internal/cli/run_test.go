@@ -31,7 +31,7 @@ func TestRecycleIsNotACrash(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("recycle: %v, %s", err, out)
 	}
-	if s := crashjournal.LastRun(dir); s != nil {
+	if s := crashjournal.LastRun(dir, time.Time{}); s != nil {
 		t.Fatalf("a recycle reads as a crash: %+v", s)
 	}
 }
