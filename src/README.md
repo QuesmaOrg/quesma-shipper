@@ -113,9 +113,9 @@ One more record is produced by the shipper itself:
 - **Account and usage history.** Independent Claude Code, Codex, and Cursor collectors upload
   account metadata and provider usage JSON in UTC buckets matching the collection interval (default
   15 minutes), only when it changed since the last upload, and at least once per UTC day. Unknown
-  fields are preserved; these records skip scrubbing and ship encrypted. For Cursor this includes
-  the signed-in user's own requests (model, token counts, cost, conversation id): the past week in
-  each snapshot, and each of the past 12 closed months once.
+  fields are preserved; these records skip scrubbing and ship encrypted. Cursor's collector also
+  uploads the signed-in user's own requests (model, token counts, cost, conversation id) as one
+  object per UTC day, `cursor.usage.YYYYMMDD.jsonl`, for the past 90 days and as they happen.
 
 All other files above pass through the scrub stage before encryption. The control plane receives no
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.
