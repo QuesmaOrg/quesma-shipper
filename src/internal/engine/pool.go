@@ -38,8 +38,10 @@ type fileResult struct {
 	// pending lives only between the compute leg and the loop thread that stages it.
 	pending *pendingPut
 
-	// unavailable stops this run's uploads without outcome.Fatal's permanent-kill meaning.
+	// unavailable stops this run's uploads without outcome.Fatal's permanent-kill meaning; offline
+	// says why: the control plane could not be reached at all.
 	unavailable bool
+	offline     bool
 	loadWarning string
 }
 
@@ -89,6 +91,7 @@ type sourcePass struct {
 
 	// uploadHalted is fatal's non-permanent twin: this run sends and commits nothing more.
 	uploadHalted bool
+	offline      bool
 	haltReason   string
 
 	// unchangedElided counts unchanged decisions not written per-file, for the one aggregate entry.
@@ -244,9 +247,13 @@ func (p *sourcePass) run(ctx context.Context) error {
 				Reason:   p.out.Reason,
 			})
 		}
+		why := ErrUploadUnavailable
+		if p.offline {
+			why = ErrOffline
+		}
 		return fmt.Errorf("%w: collection stopped after %d of %d files; "+
 			"nothing new was committed and the next run retries. %s",
-			ErrUploadUnavailable, len(p.out.Files), len(p.disc.Candidates), p.haltReason)
+			why, len(p.out.Files), len(p.disc.Candidates), p.haltReason)
 	}
 	if stopped != nil {
 		return stopped
@@ -349,6 +356,7 @@ func (p *sourcePass) fold(r fileResult) {
 		// Latched on the loop thread, so the admission gate and accumulator see it on the next turn.
 		p.uploadHalted = true
 		p.haltReason = r.outcome.Reason
+		p.offline = r.offline
 		return
 	}
 

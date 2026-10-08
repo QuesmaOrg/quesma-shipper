@@ -50,7 +50,9 @@ func TestJudgeTick(t *testing.T) {
 }
 
 // The two classification corrections: lock contention is neither a success nor a failure, and a nil
+
 // error that shipped nothing while everything attempted failed is a failure.
+
 func TestJudgeTickClassifies(t *testing.T) {
 	r := &Runtime{eff: &config.Effective{StateDir: t.TempDir()}}
 
@@ -82,6 +84,7 @@ func TestJudgeTickClassifies(t *testing.T) {
 }
 
 // A run that shipped something is not a failure, however much also failed beside it.
+
 func TestJudgeTickAcceptsAPartialRun(t *testing.T) {
 	r := &Runtime{eff: &config.Effective{StateDir: t.TempDir()}}
 
@@ -108,8 +111,11 @@ func TestJudgeTickPlaceholdersTheUsername(t *testing.T) {
 }
 
 // The bound is the whole design: this rides a document that already ships every run, so it must
+
 // not grow. Newest kept, oldest dropped, and consecutive heartbeats overlap so a version nobody
+
 // read loses nothing.
+
 func TestTheFailureLogIsBoundedAndKeepsTheNewest(t *testing.T) {
 	r := &Runtime{eff: &config.Effective{StateDir: t.TempDir()}}
 
@@ -135,7 +141,9 @@ func TestTheFailureLogIsBoundedAndKeepsTheNewest(t *testing.T) {
 }
 
 // A panic in any verb has to outlive the terminal it printed to. The state dir is resolved without
+
 // the configuration on purpose, so this works on an install whose config is what broke.
+
 func TestRecordPanicPersistsWithoutAResolvedConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", dir)
@@ -167,7 +175,9 @@ func TestRecordPanicPersistsWithoutAResolvedConfig(t *testing.T) {
 }
 
 // The re-enrollment case end to end: the discard that recovers the install must clear the streak
+
 // those refusals built up, without the discard itself becoming the streak's newest reason.
+
 func TestARecoveringRunClearsTheStreakItInherited(t *testing.T) {
 	dir := t.TempDir()
 	for i := 0; i < 3; i++ {
@@ -199,7 +209,9 @@ func TestARecoveringRunClearsTheStreakItInherited(t *testing.T) {
 }
 
 // The point of the field: a reader has to be able to tell twenty runs that each failed once from
+
 // one run that failed twenty times, which a flat list of messages cannot express.
+
 func TestEventsAreAttributedToTheRunThatRecordedThem(t *testing.T) {
 	dir := t.TempDir()
 	for _, id := range []string{"aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"} {
@@ -218,7 +230,9 @@ func TestEventsAreAttributedToTheRunThatRecordedThem(t *testing.T) {
 }
 
 // The startup path has no Runtime to carry the id -- that is the failure it reports -- so the
+
 // caller hands it over instead, and this is the only thing proving it does.
+
 func TestAStartupFailureIsAttributedToItsRun(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	stateDir, err := StateDirWithoutConfig()
@@ -239,8 +253,11 @@ func TestAStartupFailureIsAttributedToItsRun(t *testing.T) {
 }
 
 // Self-update is the remediation channel: an install that cannot replace itself cannot be fixed
+
 // remotely, so the one failure that must never be stderr-only is this one. Uncounted, because
+
 // collection around it succeeded.
+
 func TestAnUpdateFailureIsRecordedButNotCounted(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	stateDir, err := StateDirWithoutConfig()
@@ -267,6 +284,7 @@ func TestAnUpdateFailureIsRecordedButNotCounted(t *testing.T) {
 }
 
 // The crash used to reach only the heartbeat; the persisted event is what survives the process.
+
 func TestACrashIsPersistedLocally(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	stateDir, err := StateDirWithoutConfig()
@@ -301,7 +319,9 @@ func TestACrashIsPersistedLocally(t *testing.T) {
 }
 
 // One standing event however long the stall lasts: a stuck tick re-reported twenty times would
+
 // evict the rest of the log.
+
 func TestAStalledTickIsRecordedOnce(t *testing.T) {
 	dir := t.TempDir()
 	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "eeeeeeeeeeeeeeee"}
@@ -320,7 +340,9 @@ func TestAStalledTickIsRecordedOnce(t *testing.T) {
 }
 
 // A stall that recovered leaves its event as the newest one through every clean tick after it; a
+
 // later stall must replace it, not be deduplicated away behind a stale timestamp.
+
 func TestALaterStallReplacesTheStandingEvent(t *testing.T) {
 	dir := t.TempDir()
 	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "ffffffffffffffff"}
@@ -338,7 +360,9 @@ func TestALaterStallReplacesTheStandingEvent(t *testing.T) {
 }
 
 // fires counts watchdog fires: without an upload port the warning line is the only thing a fire
+
 // writes, so waiting for a count replaces a wall-clock guess.
+
 type fires chan struct{}
 
 func (c fires) Write(p []byte) (int, error) { c <- struct{}{}; return len(p), nil }
@@ -359,7 +383,9 @@ func watchFires(r *Runtime, n, want int) {
 }
 
 // The in-memory copy exists for the disk that cannot be written; once a write succeeds it must be
+
 // dropped, or the daemon would clobber events other processes append between its ticks.
+
 func TestJudgeMergesEventsFromOtherWriters(t *testing.T) {
 	dir := t.TempDir()
 	r := &Runtime{eff: &config.Effective{StateDir: dir}}
@@ -379,9 +405,13 @@ func TestJudgeMergesEventsFromOtherWriters(t *testing.T) {
 }
 
 // The facts ride every outcome, a clean one included: memory pressure and a pathological redaction
+
 // degrade an install without any step erroring, so the healthy run's cost is the baseline that makes
+
 // the next one readable. Figures rather than events, because they would recur every tick and evict
+
 // the log.
+
 func TestTheFactsRideACleanRunToo(t *testing.T) {
 	dir := t.TempDir()
 	r := &Runtime{eff: &config.Effective{StateDir: dir, MaxFilesPerRun: 512}}
@@ -412,7 +442,93 @@ func TestTheFactsRideACleanRunToo(t *testing.T) {
 	}
 }
 
-// A stall that names its stage is one a reader can act on; one that only says "slow" is not.
+// Offline is the machine's state, not the shipper's: one standing event, nothing counted, and a
+
+// later offline tick replaces it rather than filling the log with the same fact.
+
+func TestAnOfflineTickIsRecordedOnceAndNotCounted(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "0123456789abcdef"}
+	offline := fmt.Errorf("%w: collection stopped after 0 of 2 files: dial tcp: lookup cp.example: no such host", engine.ErrOffline)
+
+	if err := r.JudgeTick(offline, formats.Report{Failed: 1}, false, platform.Delta{}); err == nil {
+		t.Fatal("an offline tick still failed the run; the verdict must say so")
+	}
+	r.JudgeTick(offline, formats.Report{Failed: 1}, false, platform.Delta{})
+	rec := readFailureRecord(dir)
+	if len(rec.Recent) != 1 || rec.Latest().Kind != formats.FailureOffline {
+		t.Fatalf("want exactly one offline event, got %+v", rec.Recent)
+	}
+	if !strings.HasPrefix(rec.Latest().Message, "offline: ") || !strings.Contains(rec.Latest().Message, "no such host") {
+		t.Errorf("the event does not name the cause: %q", rec.Latest().Message)
+	}
+	if rec.ConsecutiveFailures != 0 {
+		t.Errorf("an offline tick moved consecutive_failures to %d", rec.ConsecutiveFailures)
+	}
+
+	// A PUT that failed after the control plane answered reached the network: a failure.
+	r.JudgeTick(nil, formats.Report{Failed: 2, Sources: []formats.SourceOutcome{{Files: []formats.FileOutcome{
+		{Decision: formats.DecisionFailed, Reason: "upload: PUT object \"0\": dial tcp: lookup bucket.example: no such host"},
+	}}}}, false, platform.Delta{})
+	rec = readFailureRecord(dir)
+	if rec.ConsecutiveFailures != 1 || rec.Latest().Kind != formats.FailureTick || len(rec.Recent) != 2 {
+		t.Fatalf("a run that reached the network was not counted as a failure: %+v", rec)
+	}
+}
+
+// The drain on a host going away with no network is the same fact as an offline tick, and it must
+
+// not try to ship a failure heartbeat it cannot send.
+
+func TestAnOfflineDrainIsNotAShutdownFailure(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runtime{eff: &config.Effective{StateDir: dir}}
+	r.JudgeFinalSlice(fmt.Errorf("%w: collection stopped", engine.ErrOffline), formats.Report{Failed: 1}, platform.Delta{})
+	rec := readFailureRecord(dir)
+	if rec.Latest() == nil || rec.Latest().Kind != formats.FailureOffline || rec.ConsecutiveFailures != 0 {
+		t.Fatalf("an offline drain was judged as %+v", rec)
+	}
+}
+
+// A stall and an offline verdict can alternate for as long as a backlog lasts; between them they
+
+// hold two entries, and the counted failure before them stays in the log.
+
+func TestStandingEventsDoNotEvictCountedFailures(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "abababababababab"}
+	r.JudgeTick(errors.New("scrub: pattern timed out"), formats.Report{}, false, platform.Delta{})
+	offline := fmt.Errorf("%w: collection stopped", engine.ErrOffline)
+	for i := 0; i < 10; i++ {
+		watchFires(r, i+2, 1)
+		r.JudgeTick(offline, formats.Report{Failed: 1}, false, platform.Delta{})
+	}
+	rec := readFailureRecord(dir)
+	if len(rec.Recent) != 3 {
+		t.Fatalf("want the failure plus one stall and one offline entry, got %d: %+v", len(rec.Recent), rec.Recent)
+	}
+	if rec.LatestCounted() == nil || rec.ConsecutiveFailures != 1 {
+		t.Fatalf("the counted failure was evicted: %+v", rec)
+	}
+}
+
+// A run that failed a PUT and then lost the network is a failed run: the earlier failure reached
+
+// the network, and going offline afterwards must not hide it.
+
+func TestAFailureBeforeGoingOfflineStillCounts(t *testing.T) {
+	dir := t.TempDir()
+	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "0123456789abcdef"}
+	mixed := formats.Report{Failed: 2, Sources: []formats.SourceOutcome{{Files: []formats.FileOutcome{
+		{Decision: formats.DecisionFailed, Reason: "upload: HTTP 403 AccessDenied"},
+	}}}}
+	r.JudgeTick(fmt.Errorf("%w: collection stopped after 1 of 6 files", engine.ErrOffline), mixed, false, platform.Delta{})
+	rec := readFailureRecord(dir)
+	if rec.ConsecutiveFailures != 1 || rec.Latest() == nil || rec.Latest().Kind != formats.FailureTick {
+		t.Fatalf("the AccessDenied before the outage was not counted: %+v", rec)
+	}
+}
+
 func TestAStallNamesTheStageTheRunIsIn(t *testing.T) {
 	dir := t.TempDir()
 	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "ffffffffffffffff"}

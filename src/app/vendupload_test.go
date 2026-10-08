@@ -8,9 +8,11 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -34,15 +36,15 @@ func TestAlreadyPresentCommitsWithoutSpendingACapability(t *testing.T) {
 func TestAuthorizeFailuresKeepRefusalAndUnavailabilityApart(t *testing.T) {
 	refused := fmt.Errorf("backend: /v2/uploads/authorize refused this install (HTTP 403): %w",
 		formats.ErrCredentialsRefused)
-	if got := classifyAuthorize(refused); !errors.Is(got, formats.ErrCredentialsRefused) {
+	if got := classifyAuthorize(context.Background(), refused); !errors.Is(got, formats.ErrCredentialsRefused) {
 		t.Errorf("a refusal was reclassified as %v", got)
 	}
-	if got := classifyAuthorize(refused); errors.Is(got, engine.ErrUploadUnavailable) {
+	if got := classifyAuthorize(context.Background(), refused); errors.Is(got, engine.ErrUploadUnavailable) {
 		t.Error("a refusal also reads as an unavailable control plane")
 	}
 
 	unavailable := fmt.Errorf("%w (HTTP 503)", controlplane.ErrAuthorizeUnavailable)
-	got := classifyAuthorize(unavailable)
+	got := classifyAuthorize(context.Background(), unavailable)
 	if !errors.Is(got, engine.ErrUploadUnavailable) {
 		t.Errorf("%v was not classified as unavailable: %v", unavailable, got)
 	}
@@ -55,7 +57,7 @@ func TestAuthorizeFailuresKeepRefusalAndUnavailabilityApart(t *testing.T) {
 		errors.New("backend: decode response"),
 		errors.New("backend: /v2/uploads/authorize returned HTTP 409"),
 	} {
-		if got := classifyAuthorize(other); got != other {
+		if got := classifyAuthorize(context.Background(), other); got != other {
 			t.Errorf("an unclassified failure was rewritten to %v", got)
 		}
 	}
@@ -209,5 +211,36 @@ func TestAnOutOfGrammarAgentVersionIsDroppedRatherThanShipped(t *testing.T) {
 		if err != nil || md.AgentVersion != ok || len(dropped) != 0 {
 			t.Errorf("agent-version %q was dropped: %+v %v %v", ok, md, dropped, err)
 		}
+	}
+}
+
+// An authorization that never reached the control plane is the one verdict the judge files as the
+// machine offline; it must never read as a refusal, which kills the install.
+func TestAnUnreachableControlPlaneIsClassifiedOffline(t *testing.T) {
+	unreachable := fmt.Errorf("backend: /v2/uploads/authorize: %w",
+		&net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED})
+	got := classifyAuthorize(context.Background(), unreachable)
+	if !errors.Is(got, engine.ErrOffline) || !errors.Is(got, syscall.ECONNREFUSED) {
+		t.Fatalf("%v was not classified offline with its cause kept: %v", unreachable, got)
+	}
+	if errors.Is(got, formats.ErrCredentialsRefused) || errors.Is(got, engine.ErrUploadUnavailable) {
+		t.Fatal("offline also reads as a refusal or an unavailable control plane")
+	}
+}
+
+// A dial that ran out of the caller's deadline looks exactly like one that ran out of the
+// dialer's; only the live context tells them apart, so an expired caller is never offline.
+func TestADialCutShortByTheCallerIsNotOffline(t *testing.T) {
+	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	_, err := (&net.Dialer{}).DialContext(expired, "tcp", "127.0.0.1:1")
+	if err == nil {
+		t.Fatal("the probe produced no error")
+	}
+	if got := classifyAuthorize(expired, err); errors.Is(got, engine.ErrOffline) {
+		t.Fatalf("a caller-owned deadline was classified offline: %v", got)
+	}
+	if got := classifyAuthorize(context.Background(), err); !errors.Is(got, engine.ErrOffline) {
+		t.Fatalf("the same dial error with a live caller is not offline: %v", got)
 	}
 }

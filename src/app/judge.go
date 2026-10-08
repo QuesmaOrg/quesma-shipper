@@ -53,6 +53,12 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 	if errors.Is(err, engine.ErrLocked) {
 		return nil
 	}
+	// Offline is the machine's state, not the shipper's: nothing counts, one standing event says
+	// so, and the failure heartbeat is skipped because it could not be sent either. The engine
+	// decides it, on the authorization that never reached the control plane, and the halt is the
+	// one failure it counts; any failure beside it reached the network or never needed to, so a
+	// run that also failed a PUT or a scrub before going offline is still a failed run.
+	offline := errors.Is(err, engine.ErrOffline) && rep.Failed <= 1
 	if err == nil && rep.Shipped == 0 && rep.Failed > 0 {
 		// One reason travels: the count alone cannot tell a refused PUT from an unreachable
 		// control plane, and identical messages make the log unactionable.
@@ -70,13 +76,16 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 				"the fingerprint store could not be loaded and was discarded; the next sync replaces it"))
 		}
 
-		if err == nil {
+		switch {
+		case err == nil:
 			// Persisted on a clean run too, on purpose twice over: a healthy run's cost is the
 			// baseline that makes the next one's readable, and the next heartbeat is built
 			// mid-flush BEFORE judging, so it can only read these facts off disk; an in-memory
 			// shortcut would silently empty the field.
 			rec.ConsecutiveFailures = 0
-		} else {
+		case offline:
+			rec.Stand(newEvent(r.eff.StateDir, r.runID, formats.FailureOffline, "offline: "+err.Error()))
+		default:
 			ev := newEvent(r.eff.StateDir, r.runID, kind, err.Error())
 			rec.Append(ev)
 			if ev.Counted() {
@@ -94,7 +103,7 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 	// this the record waits for a future healthy run that a full disk may never grant. Skipped when
 	// the uploads themselves failed (another attempt could only stall the loop for one more
 	// timeout) and on the SIGTERM drain, whose host is going away either way.
-	if err != nil && kind != formats.FailureShutdown && rep.Failed == 0 {
+	if err != nil && !offline && kind != formats.FailureShutdown && rep.Failed == 0 {
 		r.shipFailureHeartbeat(context.Background(), rep, "failure record", os.Stderr)
 	}
 	return err
@@ -169,14 +178,9 @@ func (r *Runtime) WatchStalledTick(ctx context.Context, n int, every time.Durati
 		}
 		fmt.Fprintf(errOut, "warning: %s\n", message)
 		r.persistRecord("stalled tick", errOut, func(rec *formats.FailureRecord) {
-			e := newEvent(r.eff.StateDir, r.runID, formats.FailureStalled, message)
 			// Replaced, not skipped: clean ticks append nothing, so a stall that recovered stays the
 			// newest event indefinitely, and a later stall must not hide behind its stale timestamp.
-			if last := rec.Latest(); last != nil && last.Kind == formats.FailureStalled {
-				*last = e
-			} else {
-				rec.Append(e)
-			}
+			rec.Stand(newEvent(r.eff.StateDir, r.runID, formats.FailureStalled, message))
 		})
 		// The last completed tick's report rides along: this heartbeat overwrites the remote
 		// object, and blanking per-source health would make a stalled install read as an idle one.

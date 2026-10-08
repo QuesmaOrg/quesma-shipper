@@ -90,9 +90,10 @@ func (o Options) enrichSource(
 		}
 	}
 
-	shipped, halted := o.shipDerivedGroups(ctx, store, src, e, dbPath, res.Objects, out)
+	shipped, failed, halted := o.shipDerivedGroups(ctx, store, src, e, dbPath, res.Objects, out)
 	out.Enriched += shipped
 	rep.Shipped += shipped
+	rep.Failed += failed
 	if halted != nil {
 		// The same line the raw pass records, so the outcome itself says why the run stopped.
 		out.Reason = "uploads stopped: " + halted.Error()
@@ -119,7 +120,7 @@ func (o Options) shipDerivedGroups(
 	dbPath string,
 	objects []transforms.Derived,
 	out *SourceOutcome,
-) (shipped int, halted error) {
+) (shipped, failed int, halted error) {
 	fos := make([]FileOutcome, len(objects))
 	group := &batcher{
 		maxObjects: maxBatchObjects,
@@ -132,6 +133,10 @@ func (o Options) shipDerivedGroups(
 				fos[idx] = o.commitDerived(store, g.res.outcome, g.pending, outcomes[i])
 				if fos[idx].Decision == auditlog.DecisionShipped {
 					shipped++
+				}
+				// A batch-wide halt counts once, just as it does in the raw pass.
+				if fos[idx].Decision == auditlog.DecisionFailed && (!stopsRun(outcomes[i]) || halted == nil) {
+					failed++
 				}
 				// A refusal or an unavailable plane stops this enricher; a failed PUT does not.
 				if stopsRun(outcomes[i]) && halted == nil {
@@ -152,6 +157,9 @@ func (o Options) shipDerivedGroups(
 		fo, pending := o.prepareDerived(store, src, e, dbPath, d)
 		if pending == nil {
 			fos[i] = fo
+			if fo.Decision == auditlog.DecisionFailed {
+				failed++
+			}
 			continue
 		}
 		group.add(stagedUpload{res: fileResult{idx: i, outcome: fo}, pending: pending}, int64(len(pending.obj)))
@@ -159,7 +167,7 @@ func (o Options) shipDerivedGroups(
 	group.flush()
 
 	out.Files = append(out.Files, fos...)
-	return shipped, halted
+	return shipped, failed, halted
 }
 
 // commitDerived turns one object's verdict into its outcome, committing only after the PUT.
