@@ -20,6 +20,7 @@ import (
 )
 
 // vendRun runs the loop with the port wired and returns the report and the run's error.
+
 func vendRun(f *fixture, port *fakePort, adjust func(*engine.Options)) (engine.Report, error) {
 	o := f.opts()
 	o.Upload = port
@@ -30,6 +31,7 @@ func vendRun(f *fixture, port *fakePort, adjust func(*engine.Options)) (engine.R
 }
 
 // One authorization for a small run, one PUT per object, one fingerprint per PUT.
+
 func TestTheUploadPathShipsOneGroupForASmallRun(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 5; i++ {
@@ -57,6 +59,7 @@ func TestTheUploadPathShipsOneGroupForASmallRun(t *testing.T) {
 }
 
 // The group is bounded by object count, and the remainder must not wait for a full group.
+
 func TestAnOversizedRunSplitsIntoBoundedGroups(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 40; i++ {
@@ -90,6 +93,7 @@ func TestAnOversizedRunSplitsIntoBoundedGroups(t *testing.T) {
 }
 
 // One object's failure is its own. Its siblings commit, and the next run re-prepares only it.
+
 func TestAFailedObjectDoesNotDiscardItsSiblings(t *testing.T) {
 	f := newFixture(t)
 	f.writeTranscript("p/bad.jsonl", line1)
@@ -133,6 +137,7 @@ func TestAFailedObjectDoesNotDiscardItsSiblings(t *testing.T) {
 }
 
 // A refused install is the kill path: the run stops and the duplicates in flight are one fact.
+
 func TestARefusedAuthorizationStopsTheRun(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 20; i++ {
@@ -167,6 +172,7 @@ func TestARefusedAuthorizationStopsTheRun(t *testing.T) {
 }
 
 // An unavailable control plane is NOT a kill: nothing new commits, and the next run ships it.
+
 func TestAnUnavailableControlPlaneStopsUploadsWithoutKillingTheInstall(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 12; i++ {
@@ -204,7 +210,9 @@ func TestAnUnavailableControlPlaneStopsUploadsWithoutKillingTheInstall(t *testin
 }
 
 // The same fact across several groups: objects sealed when the halt lands are drained, and
+
 // counting each would make the failure count a function of what was in flight.
+
 func TestAnUnavailableControlPlaneCountsOnceAcrossManyGroups(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 40; i++ {
@@ -232,6 +240,7 @@ func TestAnUnavailableControlPlaneCountsOnceAcrossManyGroups(t *testing.T) {
 }
 
 // An expired ticket earns exactly one more authorization, and the object ships on it.
+
 func TestAnExpiredTicketIsReauthorizedOnce(t *testing.T) {
 	f := newFixture(t)
 	f.writeTranscript("p/e0.jsonl", line1)
@@ -257,6 +266,7 @@ func TestAnExpiredTicketIsReauthorizedOnce(t *testing.T) {
 }
 
 // The reauthorization is bounded to ONE: a second expiry is a wrong clock or a wrong lease.
+
 func TestReauthorizationDoesNotLoop(t *testing.T) {
 	f := newFixture(t)
 	f.writeTranscript("p/e1.jsonl", line1)
@@ -283,7 +293,9 @@ func TestReauthorizationDoesNotLoop(t *testing.T) {
 }
 
 // What the race detector is here for: overlapping compute and groups, one PUT and one commit per
+
 // key, with the accumulator on the loop thread alone.
+
 func TestTheUploadPathShipsEachKeyExactlyOnceUnderRace(t *testing.T) {
 	f := newFixture(t)
 	const files = 96
@@ -323,6 +335,7 @@ func TestTheUploadPathShipsEachKeyExactlyOnceUnderRace(t *testing.T) {
 }
 
 // Derived objects take the upload path too, after every raw unit of the source has shipped.
+
 func TestDerivedObjectsShipThroughTheUploadPath(t *testing.T) {
 	f := newFixture(t)
 	db := cursorFixture(t, f)
@@ -351,7 +364,9 @@ func TestDerivedObjectsShipThroughTheUploadPath(t *testing.T) {
 }
 
 // An unauthorized enricher group reports once and commits nothing, while raw objects keep their
+
 // commits. The halt must come back out of engine.Run, or the run would exit zero and look healthy.
+
 func TestAnUnavailableControlPlaneStopsTheDerivedGroup(t *testing.T) {
 	f := newFixture(t)
 	db := cursorFixture(t, f)
@@ -392,7 +407,9 @@ func TestAnUnavailableControlPlaneStopsTheDerivedGroup(t *testing.T) {
 }
 
 // The halt latch belongs to the source, not to one enricher: a second enricher must not ship
+
 // under credentials the control plane has just rejected.
+
 func TestARefusedDerivedGroupStopsTheRemainingEnrichers(t *testing.T) {
 	f := newFixture(t)
 	db := cursorFixture(t, f)
@@ -421,23 +438,87 @@ func TestARefusedDerivedGroupStopsTheRemainingEnrichers(t *testing.T) {
 }
 
 // countingEnricher derives nothing and records whether it was asked to.
+
 type countingEnricher struct {
 	id    string
 	calls int
 }
 
-func (e *countingEnricher) ID() string             { return e.id }
-func (e *countingEnricher) Version() int           { return 1 }
-func (e *countingEnricher) Table() string          { return "" }
-func (e *countingEnricher) Keyspaces() []string    { return nil }
+func (e *countingEnricher) ID() string { return e.id }
+
+func (e *countingEnricher) Version() int { return 1 }
+
+func (e *countingEnricher) Table() string { return "" }
+
+func (e *countingEnricher) Keyspaces() []string { return nil }
+
 func (e *countingEnricher) DBCandidates() []string { return nil }
-func (e *countingEnricher) NeedsUnits() bool       { return true }
+
+func (e *countingEnricher) NeedsUnits() bool { return true }
+
 func (e *countingEnricher) Enrich(transforms.Input) transforms.EnrichResult {
 	e.calls++
 	return transforms.EnrichResult{EnricherID: e.id, Version: 1}
 }
 
-// stepLog records what the engine reports, with a reader for tests that wait on a stage.
+// A control plane that cannot be reached halts the run's uploads like an unavailable one, and the
+
+// run's error says offline so the judge can file the machine, not the shipper, as the cause.
+
+func TestAnUnreachableControlPlaneHaltsTheRunAsOffline(t *testing.T) {
+	f := newFixture(t)
+	for i := 0; i < 12; i++ {
+		f.writeTranscript(fmt.Sprintf("p/o%02d.jsonl", i), line1)
+	}
+	port := newPort()
+	port.FailAll = fmt.Errorf("%w: backend: /v2/uploads/authorize: dial tcp: lookup cp.example: no such host", engine.ErrOffline)
+
+	rep, err := vendRun(f, port, func(o *engine.Options) { o.Workers = 4 })
+	if !errors.Is(err, engine.ErrOffline) {
+		t.Fatalf("want an offline halt, got %v", err)
+	}
+	if errors.Is(err, formats.ErrCredentialsRefused) || errors.Is(err, engine.ErrUploadUnavailable) {
+		t.Fatal("offline reads as a refusal or an unavailable control plane")
+	}
+	if rep.Shipped != 0 || rep.Failed != 1 {
+		t.Errorf("shipped %d, failed %d; one unreachable control plane is one fact", rep.Shipped, rep.Failed)
+	}
+	if port.calls != 1 {
+		t.Errorf("%d authorizations attempted while offline; the first verdict halts the rest", port.calls)
+	}
+
+	healthy := newPort()
+	rep2, err := vendRun(f, healthy, func(o *engine.Options) { o.Workers = 4 })
+	if err != nil || rep2.Shipped != 12 {
+		t.Fatalf("the next run did not ship everything: shipped %d, %v", rep2.Shipped, err)
+	}
+}
+
+// A PUT refused before the control plane went away is a second failure in the report, which is
+
+// how the judge tells a run that failed and then lost the network from one that only lost it.
+
+func TestAFailureBeforeAnOfflineHaltStaysInTheReport(t *testing.T) {
+	f := newFixture(t)
+	for i := 0; i < 6; i++ {
+		f.writeTranscript(fmt.Sprintf("p/m%02d.jsonl", i), line1)
+	}
+	port := newPort()
+	port.verdict = func(call, _ int, _ engine.PreparedObject) error {
+		if call == 0 {
+			return errors.New("upload: HTTP 403 AccessDenied")
+		}
+		return fmt.Errorf("%w: backend: dial tcp: lookup cp.example: no such host", engine.ErrOffline)
+	}
+	rep, err := vendRun(f, port, func(o *engine.Options) { o.Workers = 1; o.UploadWorkers = 1 })
+	if !errors.Is(err, engine.ErrOffline) {
+		t.Fatalf("want the offline halt, got %v", err)
+	}
+	if rep.Failed != 2 || rep.Shipped != 0 {
+		t.Fatalf("want the refused PUT and the halt, got failed=%d shipped=%d", rep.Failed, rep.Shipped)
+	}
+}
+
 type stepLog struct {
 	mu    sync.Mutex
 	steps []string
@@ -479,9 +560,6 @@ func inOrder(steps, want []string) bool {
 	return at == len(want)
 }
 
-// Sealing and uploading overlap by design, so while a group is in flight and later files are still
-// being sealed the stage says both; once nothing is left to seal it says upload alone. A scrub
-// stuck behind a stuck PUT is then not reported as the PUT.
 func TestAStageReportsSealingAndUploadingWhenTheyOverlap(t *testing.T) {
 	f := newFixture(t)
 	for i := 0; i < 6; i++ {
@@ -519,8 +597,6 @@ func TestAStageReportsSealingAndUploadingWhenTheyOverlap(t *testing.T) {
 	}
 }
 
-// A derived object's PUT is an upload, not enrichment: the enricher's own stage ends where its
-// authorization group starts.
 func TestADerivedUploadIsReportedAsAnUpload(t *testing.T) {
 	f := newFixture(t)
 	db := cursorFixture(t, f)
@@ -547,9 +623,6 @@ func TestADerivedUploadIsReportedAsAnUpload(t *testing.T) {
 	}
 }
 
-// Every durable write reads as commit, not only the flush at the source boundary: the spec
-// generation EnsureSpec writes during discovery, and the deletions DropVanished writes after the
-// pending entries have already gone out.
 func TestEveryDurableWriteReportsCommit(t *testing.T) {
 	f := newFixture(t)
 	gone := f.writeTranscript("p/w00.jsonl", line1)
@@ -574,4 +647,68 @@ func TestEveryDurableWriteReportsCommit(t *testing.T) {
 	if !inOrder(second.all(), []string{"read and seal claude-code-transcripts", "commit claude-code-transcripts"}) {
 		t.Fatalf("the deletion write did not read as commit: %v", second.all())
 	}
+}
+
+func TestDerivedFailuresCountWithoutRepeatingAnOfflineHalt(t *testing.T) {
+	for _, tc := range []struct {
+		name                                        string
+		rawFailed                                   bool
+		firstDerivedFailed                          bool
+		objects, wantFailed, wantShipped, wantCalls int
+	}{
+		{name: "raw failure then derived offline", rawFailed: true, objects: 1, wantFailed: 2, wantCalls: 2},
+		{name: "offline derived batch", objects: 40, wantFailed: 1, wantShipped: 1, wantCalls: 2},
+		{name: "derived failure then offline", firstDerivedFailed: true, objects: 40, wantFailed: 2, wantShipped: 32, wantCalls: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			db := cursorFixture(t, f)
+			port := newPort()
+			port.verdict = func(call, idx int, _ engine.PreparedObject) error {
+				if call == 0 {
+					if tc.rawFailed {
+						return errors.New("upload: HTTP 403 AccessDenied")
+					}
+					return nil
+				}
+				if call == 1 && tc.firstDerivedFailed {
+					if idx == 0 {
+						return errors.New("upload: HTTP 403 AccessDenied")
+					}
+					return nil
+				}
+				return engine.ErrOffline
+			}
+			o := enrichOpts(t, f, db, true)
+			e := &batchEnricher{countingEnricher: countingEnricher{id: "test-derived-batch"}, objects: tc.objects}
+			o.Enrichers = transforms.NewRegistry(e)
+			o.Plan.Sources[0].Enrichers = map[string]bool{e.ID(): true}
+			o.Upload = port
+			rep, err := engine.Run(context.Background(), f.store, o)
+			if !errors.Is(err, engine.ErrOffline) {
+				t.Fatalf("want offline halt, got %v: %+v", err, rep.Sources)
+			}
+			if rep.Failed != tc.wantFailed || rep.Shipped != tc.wantShipped || port.calls != tc.wantCalls {
+				t.Fatalf("failed=%d shipped=%d calls=%d; want %d, %d, %d", rep.Failed, rep.Shipped, port.calls, tc.wantFailed, tc.wantShipped, tc.wantCalls)
+			}
+		})
+	}
+}
+
+type batchEnricher struct {
+	countingEnricher
+	objects int
+}
+
+func (e *batchEnricher) Enrich(transforms.Input) transforms.EnrichResult {
+	res := transforms.EnrichResult{EnricherID: e.ID(), Version: e.Version()}
+	for i := 0; i < e.objects; i++ {
+		payload := []byte(fmt.Sprintf(`{"message":"derived %d"}`, i))
+		res.Objects = append(res.Objects, transforms.Derived{
+			NativePath: fmt.Sprintf("derived-%d.jsonl", i), Payload: payload,
+			OutputHash: transforms.Hash(payload), DerivedFrom: []string{transforms.Hash([]byte(line1))},
+			Status: transforms.StatusOK,
+		})
+	}
+	return res
 }

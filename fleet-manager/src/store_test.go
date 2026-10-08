@@ -54,6 +54,10 @@ func (s *memoryStore) Get(ctx context.Context, key string) ([]byte, string, erro
 	if !ok {
 		return nil, "", ErrNotFound
 	}
+	// The providers' read limit, so a test sees what a cloud store would answer.
+	if len(object.raw) > stateObjectLimit {
+		return nil, "", ErrTooLarge
+	}
 	return append([]byte(nil), object.raw...), strconv.Itoa(object.version), nil
 }
 func (s *memoryStore) Create(_ context.Context, key string, raw []byte) error {
