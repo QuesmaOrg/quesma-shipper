@@ -648,3 +648,67 @@ func TestEveryDurableWriteReportsCommit(t *testing.T) {
 		t.Fatalf("the deletion write did not read as commit: %v", second.all())
 	}
 }
+
+func TestDerivedFailuresCountWithoutRepeatingAnOfflineHalt(t *testing.T) {
+	for _, tc := range []struct {
+		name                                        string
+		rawFailed                                   bool
+		firstDerivedFailed                          bool
+		objects, wantFailed, wantShipped, wantCalls int
+	}{
+		{name: "raw failure then derived offline", rawFailed: true, objects: 1, wantFailed: 2, wantCalls: 2},
+		{name: "offline derived batch", objects: 40, wantFailed: 1, wantShipped: 1, wantCalls: 2},
+		{name: "derived failure then offline", firstDerivedFailed: true, objects: 40, wantFailed: 2, wantShipped: 32, wantCalls: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			db := cursorFixture(t, f)
+			port := newPort()
+			port.verdict = func(call, idx int, _ engine.PreparedObject) error {
+				if call == 0 {
+					if tc.rawFailed {
+						return errors.New("upload: HTTP 403 AccessDenied")
+					}
+					return nil
+				}
+				if call == 1 && tc.firstDerivedFailed {
+					if idx == 0 {
+						return errors.New("upload: HTTP 403 AccessDenied")
+					}
+					return nil
+				}
+				return engine.ErrOffline
+			}
+			o := enrichOpts(t, f, db, true)
+			e := &batchEnricher{countingEnricher: countingEnricher{id: "test-derived-batch"}, objects: tc.objects}
+			o.Enrichers = transforms.NewRegistry(e)
+			o.Plan.Sources[0].Enrichers = map[string]bool{e.ID(): true}
+			o.Upload = port
+			rep, err := engine.Run(context.Background(), f.store, o)
+			if !errors.Is(err, engine.ErrOffline) {
+				t.Fatalf("want offline halt, got %v: %+v", err, rep.Sources)
+			}
+			if rep.Failed != tc.wantFailed || rep.Shipped != tc.wantShipped || port.calls != tc.wantCalls {
+				t.Fatalf("failed=%d shipped=%d calls=%d; want %d, %d, %d", rep.Failed, rep.Shipped, port.calls, tc.wantFailed, tc.wantShipped, tc.wantCalls)
+			}
+		})
+	}
+}
+
+type batchEnricher struct {
+	countingEnricher
+	objects int
+}
+
+func (e *batchEnricher) Enrich(transforms.Input) transforms.EnrichResult {
+	res := transforms.EnrichResult{EnricherID: e.ID(), Version: e.Version()}
+	for i := 0; i < e.objects; i++ {
+		payload := []byte(fmt.Sprintf(`{"message":"derived %d"}`, i))
+		res.Objects = append(res.Objects, transforms.Derived{
+			NativePath: fmt.Sprintf("derived-%d.jsonl", i), Payload: payload,
+			OutputHash: transforms.Hash(payload), DerivedFrom: []string{transforms.Hash([]byte(line1))},
+			Status: transforms.StatusOK,
+		})
+	}
+	return res
+}
