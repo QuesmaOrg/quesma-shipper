@@ -92,9 +92,10 @@ type enrollResponse struct {
 	Organization string `json:"organization"`
 }
 type configRequest struct {
-	AgentVersion   string         `json:"agent_version"`
-	ConfigVersions []int          `json:"config_versions"`
-	Catalog        *sourceCatalog `json:"catalog,omitempty"`
+	AgentVersion   string `json:"agent_version"`
+	ConfigVersions []int  `json:"config_versions"`
+	// Catalog is decoded on its own, so a fault in it cannot fail the request; see decodeCatalog.
+	Catalog json.RawMessage `json:"catalog,omitempty"`
 }
 type configResponse struct {
 	Config    []byte    `json:"config"`
@@ -258,16 +259,14 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request, rec Instal
 	// A catalog this service cannot act on is treated as absent: the build still resolves whatever
 	// it is served, so a fault in its report must not cost it the document.
 	var notes []string
-	catalog, reported := req.Catalog, (*reportedCatalog)(nil)
-	if catalog != nil {
-		err := catalog.usable()
-		if err == nil {
-			reported, err = catalog.reported()
-		}
-		if err != nil {
-			notes = append(notes, "ignored its catalog: "+err.Error())
-			catalog = nil
-		}
+	var reported *reportedCatalog
+	catalog, err := decodeCatalog(req.Catalog)
+	if err == nil && catalog != nil {
+		reported, err = catalog.reported()
+	}
+	if err != nil {
+		notes = append(notes, "ignored its catalog: "+err.Error())
+		catalog = nil
 	}
 	scoped, _ := s.manager.ForOrganization(rec.Organization)
 	cfg, _, err := scoped.LoadConfig(r.Context())

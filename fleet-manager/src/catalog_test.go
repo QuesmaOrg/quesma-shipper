@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -66,6 +67,21 @@ func setCollection(t *testing.T, manager *Manager, collection *CollectionConfig)
 // fetchCollection asks for the install's document, as a build reporting catalog would, and
 // returns the collection it was served.
 func fetchCollection(t *testing.T, server *Server, key ed25519.PrivateKey, installID string, catalog *sourceCatalog) CollectionConfig {
+	t.Helper()
+	return fetchCollectionWith(t, server, key, installID, catalogJSON(t, catalog))
+}
+
+// catalogJSON is a catalog as a request carries it, or no catalog at all.
+func catalogJSON(t *testing.T, catalog *sourceCatalog) json.RawMessage {
+	t.Helper()
+	if catalog == nil {
+		return nil
+	}
+	return mustJSON(t, catalog)
+}
+
+// fetchCollectionWith sends the catalog bytes as they are, however malformed.
+func fetchCollectionWith(t *testing.T, server *Server, key ed25519.PrivateKey, installID string, catalog json.RawMessage) CollectionConfig {
 	t.Helper()
 	body, _ := json.Marshal(configRequest{AgentVersion: "v1", ConfigVersions: []int{1}, Catalog: catalog})
 	recorder := httptest.NewRecorder()
@@ -433,4 +449,138 @@ func configJSONWithoutCollection(t *testing.T, recipients []string) string {
 	t.Helper()
 	raw, _ := json.Marshal(map[string]any{"age_recipients": recipients, "include_install_recipient": true})
 	return string(raw)
+}
+
+// A catalog that is not what the schema requires is treated as absent, never as a catalog with no
+// sources: that would leave every source override out of the document, and a source the
+// administrator turned off would come back on under the build's compiled defaults. A wrong type
+// does not fail the request either. Unknown fields and explicit empty lists are still accepted.
+func TestMalformedCatalogIsServedAsNoCatalog(t *testing.T) {
+	server, manager, key, installID := enrolledServer(t)
+	server.logger = log.New(io.Discard, "", 0)
+	setCollection(t, manager, &CollectionConfig{Sources: []CollectionSource{
+		{ID: "claude-code-transcripts", Enabled: ptr(false), Exclude: []string{"secret/**"}},
+	}})
+	want := fetchCollection(t, server, key, installID, nil)
+	if source := servedSource(t, want, "claude-code-transcripts"); source.Enabled == nil || *source.Enabled {
+		t.Fatalf("the override is not served without a catalog: %+v", source)
+	}
+	source := `{"id":"claude-code-transcripts","family":"claude-code","enabled":true,"roots":["~/.claude"]}`
+	for _, catalog := range []string{
+		`{}`,
+		`{"sources":null,"rule_packs":[],"features":[]}`,
+		`{"sources":[],"rule_packs":[]}`,
+		`{"sources":[` + source + `],"rule_packs":null,"features":[]}`,
+		`{"sources":"claude-code-transcripts","rule_packs":[],"features":[]}`,
+		`{"sources":[` + source + `],"rule_packs":[7],"features":[]}`,
+		`{"sources":[` + source + `],"rule_packs":[""],"features":[]}`,
+		`{"sources":[null],"rule_packs":[],"features":[]}`,
+		`{"sources":[{"id":"claude-code-transcripts","family":"claude-code","roots":["~/.claude"]}],"rule_packs":[],"features":[]}`,
+		`{"sources":[{"id":"claude-code-transcripts","family":"claude-code","enabled":true,"roots":[null]}],"rule_packs":[],"features":[]}`,
+		`{"sources":[{"id":"claude-code-transcripts","family":"claude-code","enabled":true,"roots":[],"max_file_bytes":"big"}],"rule_packs":[],"features":[]}`,
+		`[]`,
+		`5`,
+	} {
+		served := fetchCollectionWith(t, server, key, installID, json.RawMessage(catalog))
+		if !bytes.Equal(mustJSON(t, served), mustJSON(t, want)) {
+			t.Fatalf("catalog %s was acted on: served %+v", catalog, served)
+		}
+		if got := loadSeen(t, manager, installID).CatalogDigest; got != "" {
+			t.Fatalf("catalog %s was recorded as %q", catalog, got)
+		}
+	}
+
+	// A field this service does not know yet is ignored, and explicit empty lists are a catalog.
+	future := `{"sources":[{"id":"claude-code-transcripts","family":"claude-code","enabled":true,"roots":[],"next":1}],"rule_packs":[],"features":[],"next":{}}`
+	served := fetchCollectionWith(t, server, key, installID, json.RawMessage(future))
+	if source := servedSource(t, served, "claude-code-transcripts"); source.Enabled == nil || *source.Enabled {
+		t.Fatalf("a catalog with unknown fields lost the override: %+v", source)
+	}
+	if loadSeen(t, manager, installID).CatalogDigest == "" {
+		t.Fatal("a catalog with unknown fields was not recorded")
+	}
+	served = fetchCollectionWith(t, server, key, installID, json.RawMessage(`{"sources":[],"rule_packs":[],"features":[]}`))
+	if len(served.Sources) != 0 || loadSeen(t, manager, installID).CatalogDigest == "" {
+		t.Fatalf("a build reporting no sources: %+v", served.Sources)
+	}
+}
+
+// oversizedCatalog fits a config request but not, encoded as a record, a state object.
+func oversizedCatalog() *sourceCatalog {
+	catalog := testCatalog()
+	catalog.Sources[0].Roots = make([]string, 330_000)
+	return catalog
+}
+
+// One install's catalog must not be able to stop the organization's configuration: a record the
+// stores could not read back is never written, and one already stored counts as no catalog.
+func TestOversizedCatalogIsNotStored(t *testing.T) {
+	server, manager, key, installID := enrolledServer(t)
+	var logs bytes.Buffer
+	server.logger = log.New(&logs, "", 0)
+	catalog := oversizedCatalog()
+	body, _ := json.Marshal(configRequest{AgentVersion: "v1", ConfigVersions: []int{1}, Catalog: catalogJSON(t, catalog)})
+	if len(body) > requestLimit {
+		t.Fatalf("the request is %d bytes, above the request limit", len(body))
+	}
+	if record, _ := encodeRecord(CatalogRecord{Schema: schemaVersion, Catalog: *catalog}); len(record) <= stateObjectLimit {
+		t.Fatalf("the record is %d bytes, within the state object limit", len(record))
+	}
+	fetchCollection(t, server, key, installID, catalog)
+	if got := loadSeen(t, manager, installID).CatalogDigest; got != "" {
+		t.Fatalf("an oversized catalog was recorded as %q", got)
+	}
+	if objects, _ := manager.store.List(context.Background(), controlPrefix("acme")+"catalogs/"); len(objects) != 0 {
+		t.Fatalf("an oversized catalog was stored: %+v", objects)
+	}
+	if !strings.Contains(logs.String(), "ignored its catalog") {
+		t.Fatalf("not logged: %q", logs.String())
+	}
+}
+
+func TestStoredOversizedCatalogCountsAsNone(t *testing.T) {
+	server, store := testAdminServer(t)
+	at := time.Date(2026, 9, 1, 11, 0, 0, 0, time.UTC)
+	seedInstall(t, store, InstallActive, testCatalog(), at)
+	// Written before records were bounded: the store holds it, and no provider reads it.
+	id := seedInstall(t, store, InstallActive, nil, at)
+	raw, _ := json.MarshalIndent(CatalogRecord{Schema: schemaVersion, Catalog: *oversizedCatalog()}, "", "  ")
+	_ = store.Create(context.Background(), catalogKey("acme", "oversized"), raw)
+	seen := SeenRecord{Schema: schemaVersion, InstallID: id, LastConfigAt: &at, LastSeenAt: at, CatalogDigest: "oversized"}
+	record, _ := encodeRecord(seen)
+	if err := store.Put(context.Background(), seenKey("acme", id), record); err != nil {
+		t.Fatal(err)
+	}
+
+	if out, _ := listSources(t, server); out.Installs != (adminSourcesInstalls{Active: 2, Reporting: 1}) {
+		t.Fatalf("installs %+v", out.Installs)
+	}
+	if w := putCollection(t, server, collectionPutBody(t, twoRecipients(t), `{"sources":[{"id":"codex-rollouts"}]}`)); w.Code != http.StatusNoContent {
+		t.Fatalf("collection update: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// The admin UI sends the collection with every save. A pack saved before any catalog arrived, or
+// for a build that does not report one, stays saveable once other builds report: rotating
+// recipients keeps it, while adding a pack no build has is still refused.
+func TestStoredRulePackIsNotRefusedAgain(t *testing.T) {
+	server, store := testAdminServer(t)
+	collection := `{"scrub":{"rule_packs":["gitleaks-core","private-pack"]}}`
+	if w := putCollection(t, server, collectionPutBody(t, twoRecipients(t), collection)); w.Code != http.StatusNoContent {
+		t.Fatalf("before any catalog: %d %s", w.Code, w.Body.String())
+	}
+	seedInstall(t, store, InstallActive, testCatalog(), time.Date(2026, 9, 1, 11, 0, 0, 0, time.UTC))
+
+	if w := putCollection(t, server, collectionPutBody(t, twoRecipients(t), collection)); w.Code != http.StatusNoContent {
+		t.Fatalf("recipient rotation: %d %s", w.Code, w.Body.String())
+	}
+	raw, _, _ := store.Get(context.Background(), configKey("acme"))
+	if !bytes.Contains(raw, []byte("private-pack")) {
+		t.Fatalf("the stored pack was lost: %s", raw)
+	}
+	added := `{"scrub":{"rule_packs":["gitleaks-core","private-pack","other-pack"]}}`
+	w := putCollection(t, server, collectionPutBody(t, twoRecipients(t), added))
+	if w.Code != http.StatusBadRequest || adminError(t, w) != `collection: scrub.rule_packs[2] "other-pack" is not in any reporting install's catalog` {
+		t.Fatalf("a new unsupported pack: %d %s", w.Code, w.Body.String())
+	}
 }

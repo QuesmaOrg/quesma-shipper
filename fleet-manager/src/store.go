@@ -33,4 +33,6 @@ type ObjectInfo struct {
 var (
 	ErrNotFound = errors.New("object not found")
 	ErrConflict = errors.New("conditional write conflict")
+	// ErrTooLarge is an object above stateObjectLimit, which no provider reads.
+	ErrTooLarge = errors.New("state object exceeds 4 MiB")
 )

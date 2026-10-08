@@ -54,20 +54,109 @@ type reportedCatalog struct {
 	Record []byte
 }
 
-// usable is the shape the schema requires of what this service acts on. A catalog that fails it is
-// treated as absent rather than failing the fetch: the build still resolves the document itself.
-func (c *sourceCatalog) usable() error {
-	seen := map[string]bool{}
-	for i, source := range c.Sources {
-		if source.ID == "" || source.Family == "" || source.Roots == nil {
-			return fmt.Errorf("sources[%d] lacks an id, a family or roots", i)
-		}
-		if seen[source.ID] {
-			return fmt.Errorf("sources[%d] repeats id %q", i, source.ID)
-		}
-		seen[source.ID] = true
+// wireCatalog reads the request's catalog with every field the schema requires as a pointer, so a
+// missing or null one is told apart from an empty one. Fields it does not know are ignored: the
+// request grows client-first.
+type wireCatalog struct {
+	Sources   *[]*wireSource `json:"sources"`
+	RulePacks *[]*string     `json:"rule_packs"`
+	Features  *[]*string     `json:"features"`
+}
+
+type wireSource struct {
+	ID            *string    `json:"id"`
+	Family        *string    `json:"family"`
+	FamilyName    string     `json:"family_name"`
+	Description   string     `json:"description"`
+	ArtifactClass string     `json:"artifact_class"`
+	Enabled       *bool      `json:"enabled"`
+	Roots         *[]*string `json:"roots"`
+	Include       []*string  `json:"include"`
+	Exclude       []*string  `json:"exclude"`
+	MaxFileBytes  *int64     `json:"max_file_bytes"`
+	Enrichers     []*string  `json:"enrichers"`
+}
+
+// decodeCatalog reads the config request's optional catalog. One this service cannot act on --
+// not an object, a required list missing or null, a known field of the wrong type -- comes back as
+// an error, and the fetch treats it as absent: the build still resolves whatever it is served, so
+// a fault in its report must neither cost it the document nor stand for an empty catalog, which
+// would leave every source out of it. No catalog at all is nil without an error.
+func decodeCatalog(raw json.RawMessage) (*sourceCatalog, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
 	}
-	return nil
+	var wire wireCatalog
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return nil, err
+	}
+	if wire.Sources == nil || wire.RulePacks == nil || wire.Features == nil {
+		return nil, errors.New("sources, rule_packs or features is missing or null")
+	}
+	catalog := &sourceCatalog{Sources: make([]catalogSource, 0, len(*wire.Sources))}
+	var err error
+	if catalog.RulePacks, err = names("rule_packs", *wire.RulePacks); err != nil {
+		return nil, err
+	}
+	if catalog.Features, err = names("features", *wire.Features); err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for i, w := range *wire.Sources {
+		if w == nil || w.ID == nil || *w.ID == "" || w.Family == nil || *w.Family == "" || w.Enabled == nil || w.Roots == nil {
+			return nil, fmt.Errorf("sources[%d] lacks an id, a family, enabled or roots", i)
+		}
+		if seen[*w.ID] {
+			return nil, fmt.Errorf("sources[%d] repeats id %q", i, *w.ID)
+		}
+		seen[*w.ID] = true
+		if w.MaxFileBytes != nil && *w.MaxFileBytes < 0 {
+			return nil, fmt.Errorf("sources[%d].max_file_bytes is negative", i)
+		}
+		source := catalogSource{ID: *w.ID, Family: *w.Family, FamilyName: w.FamilyName, Description: w.Description,
+			ArtifactClass: w.ArtifactClass, Enabled: *w.Enabled, MaxFileBytes: w.MaxFileBytes}
+		prefix := fmt.Sprintf("sources[%d].", i)
+		if source.Roots, err = strs(prefix+"roots", *w.Roots); err != nil {
+			return nil, err
+		}
+		if source.Include, err = strs(prefix+"include", w.Include); err != nil {
+			return nil, err
+		}
+		if source.Exclude, err = strs(prefix+"exclude", w.Exclude); err != nil {
+			return nil, err
+		}
+		if source.Enrichers, err = names(prefix+"enrichers", w.Enrichers); err != nil {
+			return nil, err
+		}
+		catalog.Sources = append(catalog.Sources, source)
+	}
+	return catalog, nil
+}
+
+// strs copies a list of strings, refusing a null item.
+func strs(field string, items []*string) ([]string, error) {
+	if items == nil {
+		return nil, nil
+	}
+	out := make([]string, 0, len(items))
+	for i, item := range items {
+		if item == nil {
+			return nil, fmt.Errorf("%s[%d] is null", field, i)
+		}
+		out = append(out, *item)
+	}
+	return out, nil
+}
+
+// names is strs for a list of names, which are never empty.
+func names(field string, items []*string) ([]string, error) {
+	out, err := strs(field, items)
+	for i, name := range out {
+		if name == "" {
+			return nil, fmt.Errorf("%s[%d] is empty", field, i)
+		}
+	}
+	return out, err
 }
 
 func (c *sourceCatalog) source(id string) (catalogSource, bool) {
@@ -80,7 +169,10 @@ func (c *sourceCatalog) source(id string) (catalogSource, bool) {
 }
 
 // reported encodes a catalog for storage. The digest is over the compact encoding of this
-// service's struct, so field order and unknown fields cannot make one build two objects.
+// service's struct, so field order and unknown fields cannot make one build two objects. A record
+// the stores could not read back is refused: the request limit does not bound it, because encoding
+// adds indentation and escapes, and a stored catalog nobody can read would fail every read of the
+// fleet's catalogs.
 func (c *sourceCatalog) reported() (*reportedCatalog, error) {
 	canonical, err := json.Marshal(c)
 	if err != nil {
@@ -89,6 +181,9 @@ func (c *sourceCatalog) reported() (*reportedCatalog, error) {
 	record, err := encodeRecord(CatalogRecord{Schema: schemaVersion, Catalog: *c})
 	if err != nil {
 		return nil, err
+	}
+	if len(record) > stateObjectLimit {
+		return nil, fmt.Errorf("its record is %d bytes, above the %d a store reads", len(record), stateObjectLimit)
 	}
 	digest := sha256.Sum256(canonical)
 	return &reportedCatalog{Digest: hex.EncodeToString(digest[:]), Record: record}, nil
@@ -100,6 +195,9 @@ var errUnusableCatalog = errors.New("unusable catalog")
 
 func (m *Manager) loadCatalog(ctx context.Context, digest string) (sourceCatalog, error) {
 	raw, _, err := m.store.Get(ctx, catalogKey(m.org, digest))
+	if errors.Is(err, ErrTooLarge) {
+		return sourceCatalog{}, fmt.Errorf("%w %s: %v", errUnusableCatalog, digest, err)
+	}
 	if err != nil {
 		return sourceCatalog{}, err
 	}
@@ -196,9 +294,12 @@ func collectionForBuild(collection *CollectionConfig, catalog *sourceCatalog) (*
 // reporting build has. A source ID passes when a reporting active install reports it, when the
 // stored collection already has it, or when the administrator acknowledged it in unverified: the
 // reported set is what has been discovered, so an ID beyond it is a warning to confirm, not an
-// error -- a build nobody has run yet may carry it. Rule packs stay strict while installs report,
-// because a pack a build lacks makes that build refuse the document and it is never left out. An
-// empty message means the collection is acceptable.
+// error -- a build nobody has run yet may carry it. A rule pack passes when a reporting build has
+// it or the stored collection already asks for it; a new one stays strict while installs report,
+// because a pack a build lacks makes that build refuse the document and it is never left out.
+// What is stored is never refused again, so a write that changes something else -- recipients, one
+// source -- is not blocked by a fleet that moved since the collection was saved. An empty message
+// means the collection is acceptable.
 func validateCollectionAgainstFleet(collection, stored *CollectionConfig, unverified []string, fleet fleetCatalog) string {
 	if collection == nil {
 		return ""
@@ -214,9 +315,11 @@ func validateCollectionAgainstFleet(collection, stored *CollectionConfig, unveri
 	}
 	if len(fleet.Reporting) > 0 && collection.Scrub != nil {
 		for i, pack := range collection.Scrub.RulePacks {
-			if !held(func(c *sourceCatalog) bool { return slices.Contains(c.RulePacks, pack) }) {
-				return fmt.Sprintf("collection: scrub.rule_packs[%d] %q is not in any reporting install's catalog", i, pack)
+			if held(func(c *sourceCatalog) bool { return slices.Contains(c.RulePacks, pack) }) ||
+				(stored != nil && stored.Scrub != nil && slices.Contains(stored.Scrub.RulePacks, pack)) {
+				continue
 			}
+			return fmt.Sprintf("collection: scrub.rule_packs[%d] %q is not in any reporting install's catalog", i, pack)
 		}
 	}
 	return ""

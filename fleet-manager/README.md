@@ -342,8 +342,13 @@ v1/organization=<org>/control/catalogs/<sha256>.json   one per distinct catalog,
 The SHA-256 is over the catalog as this service re-encodes it, so fields it does not know are never
 stored. The install's check-in record names the digest its latest config fetch carried
 (`catalog_digest`, reported at `last_config_at`), and drops it when a fetch carries none. A
-changed digest is written even inside the one-minute check-in throttle. A catalog without source
-ids is ignored and logged, and the fetch is served as one without a catalog. Catalogs sit under
+changed digest is written even inside the one-minute check-in throttle. A catalog this service
+cannot act on is ignored and logged, and the fetch is served as one without a catalog, never as one
+with no sources: one that is not an object, lacks `sources`, `rule_packs` or `features` or has one
+null, has a source without `id`, `family`, `enabled` or `roots`, or has a known field of the wrong
+type. A fault in the catalog never fails the request. Fields this service does not know are
+ignored. So is a catalog whose stored record would exceed the 4 MiB a store reads, and an install
+whose stored catalog cannot be read counts as one that reports none. Catalogs sit under
 `control/`, so the ETL reader grant, which names install roots and `config.json` only, does not
 reach them.
 
@@ -391,13 +396,15 @@ although no install reports them; it acknowledges this write only and is not sto
   `collection: sources[2].id "foo" is not reported by any install; send it in unverified_sources to
   save it anyway`. This holds whether or not any install reports, so a typo is caught, an ID only a
   catalog-less build uses is kept, and a source can be configured before its first build checks in.
-- While any install reports, every `scrub.rule_packs` name must be in some reporting install's
-  catalog, else 400:
+- While any install reports, a `scrub.rule_packs` name must be in some reporting install's catalog
+  or already in the stored collection, else 400:
   `collection: scrub.rule_packs[1] "foo" is not in any reporting install's catalog`. With none
   reporting, packs are not checked. `unverified_sources` does not cover packs.
 
-A write that does not mention the collection keeps the stored one and is not checked, so a
-recipient change is never refused because the fleet moved. Older fleet-manager releases decode
+What is stored is never refused again, so a write that changes something else, such as recipients
+or one source, is not blocked because the fleet moved since the collection was saved. The
+administration UI sends the collection with every save, and this is what keeps that safe. A write
+that does not mention the collection keeps the stored one and is not checked. Older fleet-manager releases decode
 check-in records strictly: upgrade every replica before installs report catalogs, and keep this in
 mind when rolling back.
 
