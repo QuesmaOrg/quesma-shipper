@@ -20,6 +20,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// testFeature stands in for a served-document feature; none is defined yet.
+const testFeature = "future.feature"
+
 func testCatalog(features ...string) *sourceCatalog {
 	return &sourceCatalog{
 		Sources: []catalogSource{
@@ -28,7 +31,7 @@ func testCatalog(features ...string) *sourceCatalog {
 			{ID: "codex-rollouts", Family: "codex", FamilyName: "Codex", Enabled: true, Roots: []string{"~/.codex"}},
 		},
 		RulePacks: []string{"gitleaks-core", "pii-core"},
-		Features:  features,
+		Features:  append([]string{}, features...),
 	}
 }
 
@@ -138,7 +141,7 @@ func TestChangedCatalogIsRecordedInsideTheThrottle(t *testing.T) {
 		t.Fatalf("an unchanged catalog inside the throttle wrote again: %d -> %d", versions, got)
 	}
 
-	fetchCollection(t, server, key, installID, testCatalog(featureExcludeAdd))
+	fetchCollection(t, server, key, installID, testCatalog(testFeature))
 	second := loadSeen(t, manager, installID).CatalogDigest
 	if second == "" || second == first {
 		t.Fatalf("a changed catalog inside the throttle was not recorded: %q -> %q", first, second)
@@ -178,7 +181,10 @@ func TestUnusableCatalogIsIgnored(t *testing.T) {
 	}
 }
 
-func TestServedDocumentLeavesOutWhatTheBuildLacks(t *testing.T) {
+// A source the build lacks is left out, so the build does not refuse the whole document over it. A
+// requested rule pack never is: that would scrub less than asked, and a build lacking one refuses
+// the document and keeps its last working one.
+func TestServedDocumentLeavesOutSourcesTheBuildLacksAndKeepsEveryRulePack(t *testing.T) {
 	server, manager, key, installID := enrolledServer(t)
 	var logs bytes.Buffer
 	server.logger = log.New(&logs, "", 0)
@@ -191,81 +197,18 @@ func TestServedDocumentLeavesOutWhatTheBuildLacks(t *testing.T) {
 		if len(served.Sources) != 1 || served.Sources[0].ID != "claude-code-transcripts" {
 			t.Fatalf("served sources %+v", served.Sources)
 		}
-		if served.Scrub == nil || !slices.Equal(served.Scrub.RulePacks, []string{"gitleaks-core"}) || !slices.Equal(served.Scrub.SecretKeyNames, []string{"api_key"}) {
-			t.Fatalf("served scrub %+v", served.Scrub)
+		if served.Scrub == nil || !slices.Equal(served.Scrub.RulePacks, []string{"made-up", "gitleaks-core"}) || !slices.Equal(served.Scrub.SecretKeyNames, []string{"api_key"}) {
+			t.Fatalf("a requested rule pack was not served: %+v", served.Scrub)
 		}
 	}
-	if lines := strings.Count(logs.String(), "\n"); lines != 1 || !strings.Contains(logs.String(), `sources[0] "cursor-chats"`) || !strings.Contains(logs.String(), `scrub.rule_packs[0] "made-up"`) {
-		t.Fatalf("want one line naming both, got %q", logs.String())
+	if lines := strings.Count(logs.String(), "\n"); lines != 1 || !strings.Contains(logs.String(), `sources[0] "cursor-chats"`) || strings.Contains(logs.String(), "rule_packs") {
+		t.Fatalf("want one line naming the source alone, got %q", logs.String())
 	}
 
 	// A build without a catalog is served as before.
 	served := fetchCollection(t, server, key, installID, nil)
 	if len(served.Sources) != 2 || len(served.Scrub.RulePacks) != 2 {
 		t.Fatalf("a catalog-less build was filtered: %+v", served)
-	}
-}
-
-func TestExcludeAddIsServedOnlyToABuildThatReadsIt(t *testing.T) {
-	server, manager, key, installID := enrolledServer(t)
-	setCollection(t, manager, &CollectionConfig{Sources: []CollectionSource{
-		{ID: "claude-code-transcripts", ExcludeAdd: []string{"projects/-Users-ada-client/**"}},
-		{ID: "codex-rollouts", Exclude: []string{"sessions/old/**"}, ExcludeAdd: []string{"sessions/client/**"}},
-	}})
-
-	served := fetchCollection(t, server, key, installID, testCatalog(featureExcludeAdd))
-	claude := servedSource(t, served, "claude-code-transcripts")
-	if claude.Exclude != nil || !slices.Equal(claude.ExcludeAdd, []string{"projects/-Users-ada-client/**"}) {
-		t.Fatalf("a build that reads exclude_add got %+v", claude)
-	}
-
-	served = fetchCollection(t, server, key, installID, testCatalog())
-	claude, codex := servedSource(t, served, "claude-code-transcripts"), servedSource(t, served, "codex-rollouts")
-	// Over the build's own excludes when the entry sets none, over the entry's when it does.
-	if claude.ExcludeAdd != nil || !slices.Equal(claude.Exclude, []string{"projects/**/*.png", "projects/-Users-ada-client/**"}) {
-		t.Fatalf("folded over the catalog: %+v", claude)
-	}
-	if codex.ExcludeAdd != nil || !slices.Equal(codex.Exclude, []string{"sessions/old/**", "sessions/client/**"}) {
-		t.Fatalf("folded over the entry: %+v", codex)
-	}
-	if stored, _, _ := manager.LoadConfig(context.Background()); stored.Collection.Sources[0].Exclude != nil {
-		t.Fatalf("folding changed the stored collection: %+v", stored.Collection.Sources[0])
-	}
-}
-
-func TestCatalogLessFetchFoldsOverEveryCatalogOfTheOrganization(t *testing.T) {
-	server, manager, key, installID := enrolledServer(t)
-	var logs bytes.Buffer
-	server.logger = log.New(&logs, "", 0)
-	olderKey, olderID := enrollInstall(t, server, manager)
-	newerKey, newerID := enrollInstall(t, server, manager)
-
-	older := testCatalog()
-	older.Sources[0].Exclude = []string{"older/**"}
-	fetchCollection(t, server, olderKey, olderID, older)
-	manager.now = func() time.Time { return time.Date(2026, 8, 26, 13, 0, 0, 0, time.UTC) }
-	newer := testCatalog(featureExcludeAdd)
-	newer.Sources[0].Exclude = []string{"newer/**"}
-	fetchCollection(t, server, newerKey, newerID, newer)
-
-	setCollection(t, manager, &CollectionConfig{Sources: []CollectionSource{
-		{ID: "claude-code-transcripts", ExcludeAdd: []string{"client/**"}},
-		{ID: "cursor-chats", ExcludeAdd: []string{"client/**"}},
-	}})
-	for range 2 {
-		served := fetchCollection(t, server, key, installID, nil)
-		claude, cursor := servedSource(t, served, "claude-code-transcripts"), servedSource(t, served, "cursor-chats")
-		// The union of what every catalog excludes, newest first: one report cannot shrink the base.
-		if claude.ExcludeAdd != nil || !slices.Equal(claude.Exclude, []string{"newer/**", "older/**", "client/**"}) {
-			t.Fatalf("not folded over every catalog's excludes: %+v", claude)
-		}
-		// No catalog has it, so there is nothing to fold over: dropped, never served unfolded.
-		if cursor.ExcludeAdd != nil || cursor.Exclude != nil {
-			t.Fatalf("an unfoldable exclude_add was served: %+v", cursor)
-		}
-	}
-	if strings.Count(logs.String(), "dropped sources[1]") != 1 {
-		t.Fatalf("the drop was not logged once: %q", logs.String())
 	}
 }
 
@@ -335,7 +278,7 @@ func TestSourcesEndpointCountsReportingActiveInstalls(t *testing.T) {
 	at := func(hour int) time.Time { return time.Date(2026, 9, 1, hour, 0, 0, 0, time.UTC) }
 	older := testCatalog()
 	older.Sources[0].Description = "older words"
-	newer := testCatalog(featureExcludeAdd)
+	newer := testCatalog(testFeature)
 	newer.Sources[0].Description = "newer words"
 	newer.Sources = append(newer.Sources, catalogSource{ID: "aider-history", Family: "aider", FamilyName: "Aider", Enabled: false, Roots: []string{"~"}})
 	newer.RulePacks = append(newer.RulePacks, "cloud-keys")
@@ -343,7 +286,7 @@ func TestSourcesEndpointCountsReportingActiveInstalls(t *testing.T) {
 	seedInstall(t, store, InstallActive, newer, at(10))
 	seedInstall(t, store, InstallActive, nil, at(11))
 	// Neither of these counts, whatever they reported.
-	revoked := testCatalog(featureExcludeAdd)
+	revoked := testCatalog(testFeature)
 	revoked.Sources = append(revoked.Sources, catalogSource{ID: "revoked-only", Family: "x", Enabled: true, Roots: []string{"~"}})
 	seedInstall(t, store, InstallRevoked, revoked, at(11))
 	seedInstall(t, store, InstallPending, nil, at(11))
@@ -367,7 +310,7 @@ func TestSourcesEndpointCountsReportingActiveInstalls(t *testing.T) {
 		t.Fatalf("an empty list is not an empty array: %s", raw)
 	}
 	wantPacks := []adminNameCount{{"cloud-keys", 1}, {"gitleaks-core", 2}, {"pii-core", 2}}
-	if !slices.Equal(out.RulePacks, wantPacks) || !slices.Equal(out.Features, []adminNameCount{{featureExcludeAdd, 1}}) {
+	if !slices.Equal(out.RulePacks, wantPacks) || !slices.Equal(out.Features, []adminNameCount{{testFeature, 1}}) {
 		t.Fatalf("packs %+v features %+v", out.RulePacks, out.Features)
 	}
 
@@ -400,70 +343,89 @@ func adminError(t *testing.T, w *httptest.ResponseRecorder) string {
 	return body.Error
 }
 
+func putCollectionAcknowledging(t *testing.T, server *Server, recipients []string, collection string, unverified ...string) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, _ := json.Marshal(map[string]any{"age_recipients": recipients, "include_install_recipient": true,
+		"collection": json.RawMessage(collection), "unverified_sources": unverified})
+	return putCollection(t, server, string(raw))
+}
+
+const unreportedFoo = `collection: sources[0].id "foo" is not reported by any install; send it in unverified_sources to save it anyway`
+
 func TestConfigPutIsCheckedAgainstReportedCatalogs(t *testing.T) {
 	server, store := testAdminServer(t)
 	recipients := twoRecipients(t)
 	at := time.Date(2026, 9, 1, 11, 0, 0, 0, time.UTC)
-	seedInstall(t, store, InstallActive, testCatalog(featureExcludeAdd), at)
-	seedInstall(t, store, InstallRevoked, nil, at)
-	lagging := seedInstall(t, store, InstallActive, nil, at)
+	seedInstall(t, store, InstallActive, testCatalog(), at)
+	seedInstall(t, store, InstallActive, nil, at)
+	revoked := testCatalog()
+	revoked.Sources = append(revoked.Sources, catalogSource{ID: "revoked-only", Family: "x", Enabled: true, Roots: []string{"~"}})
+	revoked.RulePacks = append(revoked.RulePacks, "revoked-pack")
+	seedInstall(t, store, InstallRevoked, revoked, at)
 
-	w := putCollection(t, server, collectionPutBody(t, recipients, `{"sources":[{"id":"codex-rollouts"},{"id":"claude-code-transcripts"},{"id":"foo"}]}`))
-	if w.Code != http.StatusBadRequest || adminError(t, w) != `collection: sources[2].id "foo" is not in any reporting install's catalog` {
-		t.Fatalf("unknown source: %d %s", w.Code, w.Body.String())
+	// Reported IDs pass; a new one nobody reports does not, a revoked install's report included.
+	if w := putCollection(t, server, collectionPutBody(t, recipients, `{"sources":[{"id":"codex-rollouts"},{"id":"claude-code-transcripts"}]}`)); w.Code != http.StatusNoContent {
+		t.Fatalf("reported sources: %d %s", w.Code, w.Body.String())
 	}
-	w = putCollection(t, server, collectionPutBody(t, recipients, `{"scrub":{"rule_packs":["pii-core","bar"]}}`))
-	if w.Code != http.StatusBadRequest || adminError(t, w) != `collection: scrub.rule_packs[1] "bar" is not in any reporting install's catalog` {
-		t.Fatalf("unknown pack: %d %s", w.Code, w.Body.String())
+	w := putCollection(t, server, collectionPutBody(t, recipients, `{"sources":[{"id":"codex-rollouts"},{"id":"claude-code-transcripts"},{"id":"revoked-only"}]}`))
+	if w.Code != http.StatusBadRequest || adminError(t, w) != `collection: sources[2].id "revoked-only" is not reported by any install; send it in unverified_sources to save it anyway` {
+		t.Fatalf("unknown source: %d %s", w.Code, w.Body.String())
 	}
 	// authored_yaml is checked as the collection it becomes.
 	raw, _ := json.Marshal(map[string]any{"age_recipients": recipients, "include_install_recipient": true, "authored_yaml": "sources: [{id: foo}]"})
-	if w = putCollection(t, server, string(raw)); w.Code != http.StatusBadRequest {
+	if w = putCollection(t, server, string(raw)); w.Code != http.StatusBadRequest || adminError(t, w) != unreportedFoo {
 		t.Fatalf("unknown source in authored_yaml: %d %s", w.Code, w.Body.String())
 	}
 
-	excludeAdd := collectionPutBody(t, recipients, `{"sources":[{"id":"claude-code-transcripts","exclude_add":["client/**"]}]}`)
-	w = putCollection(t, server, excludeAdd)
-	if w.Code != http.StatusConflict || adminError(t, w) != "collection: sources[].exclude_add needs every active install to report its catalog; 1 of 2 do not yet. Update their shippers first." {
-		t.Fatalf("exclude_add with an install not reporting: %d %s", w.Code, w.Body.String())
+	// Configuring a source before its first supporting build checks in: acknowledged, it saves,
+	// and the acknowledgement itself is not stored.
+	if w = putCollectionAcknowledging(t, server, recipients, `{"sources":[{"id":"foo","enabled":true}]}`, "foo", "claude-code-transcripts"); w.Code != http.StatusNoContent {
+		t.Fatalf("acknowledged source: %d %s", w.Code, w.Body.String())
+	}
+	if raw, _, _ := store.Get(context.Background(), configKey("acme")); bytes.Contains(raw, []byte("unverified")) {
+		t.Fatalf("unverified_sources was stored: %s", raw)
+	}
+	// Once stored, the ID is kept on later writes without acknowledging it again -- it may be a
+	// build that does not report a catalog that uses it.
+	if w = putCollection(t, server, collectionPutBody(t, recipients, `{"mode":{"schedule":"30m"},"sources":[{"id":"foo","enabled":false}]}`)); w.Code != http.StatusNoContent {
+		t.Fatalf("stored source: %d %s", w.Code, w.Body.String())
+	}
+	if w = putCollection(t, server, collectionPutBody(t, recipients, `{"sources":[{"id":"foo"},{"id":"bar"}]}`)); w.Code != http.StatusBadRequest || !strings.Contains(adminError(t, w), `sources[1].id "bar"`) {
+		t.Fatalf("a second unknown source: %d %s", w.Code, w.Body.String())
 	}
 
-	// Once every active install reports, it is accepted, and it round-trips through the API.
-	reportCatalog(t, store, lagging, testCatalog(), at)
-	if w = putCollection(t, server, excludeAdd); w.Code != http.StatusNoContent {
-		t.Fatalf("exclude_add with every install reporting: %d %s", w.Code, w.Body.String())
-	}
-	w = serveAdmin(t, server, adminRequest("GET", "/v1/admin/orgs/acme/config", "", testAdminCredential))
-	var cfg FleetConfig
-	_ = json.Unmarshal(w.Body.Bytes(), &cfg)
-	if cfg.Collection == nil || !slices.Equal(cfg.Collection.Sources[0].ExcludeAdd, []string{"client/**"}) {
-		t.Fatalf("exclude_add did not round-trip: %s", w.Body.String())
+	// Rule packs stay strict while installs report, and acknowledging does not cover them.
+	w = putCollectionAcknowledging(t, server, recipients, `{"scrub":{"rule_packs":["pii-core","revoked-pack"]}}`, "revoked-pack")
+	if w.Code != http.StatusBadRequest || adminError(t, w) != `collection: scrub.rule_packs[1] "revoked-pack" is not in any reporting install's catalog` {
+		t.Fatalf("unknown pack: %d %s", w.Code, w.Body.String())
 	}
 }
 
 func TestConfigPutWithNoReportingInstalls(t *testing.T) {
 	server, store := testAdminServer(t)
 	recipients := twoRecipients(t)
-	excludeAdd := collectionPutBody(t, recipients, `{"sources":[{"id":"anything","exclude_add":["client/**"]}]}`)
-
-	// No installs at all: nothing to check against and nobody to fold for.
-	if w := putCollection(t, server, excludeAdd); w.Code != http.StatusNoContent {
-		t.Fatalf("empty organization: %d %s", w.Code, w.Body.String())
+	for _, id := range []string{"foo", "baz"} {
+		if id == "baz" {
+			seedInstall(t, store, InstallActive, nil, time.Date(2026, 9, 1, 11, 0, 0, 0, time.UTC))
+		}
+		// Nothing reports, so only a stored or acknowledged ID passes, with or without installs...
+		want := `collection: sources[1].id "` + id + `" is not reported by any install; send it in unverified_sources to save it anyway`
+		collection := `{"sources":[{"id":"foo"},{"id":"` + id + `"}],"scrub":{"rule_packs":["any-pack"]}}`
+		if id == "foo" {
+			want = unreportedFoo
+			collection = `{"sources":[{"id":"foo"}],"scrub":{"rule_packs":["any-pack"]}}`
+		}
+		if w := putCollection(t, server, collectionPutBody(t, recipients, collection)); w.Code != http.StatusBadRequest || adminError(t, w) != want {
+			t.Fatalf("%s: %d %s", id, w.Code, w.Body.String())
+		}
+		// ...while packs go unchecked, as before catalogs existed.
+		if w := putCollectionAcknowledging(t, server, recipients, collection, id); w.Code != http.StatusNoContent {
+			t.Fatalf("%s acknowledged: %d %s", id, w.Code, w.Body.String())
+		}
 	}
-
-	seedInstall(t, store, InstallActive, nil, time.Date(2026, 9, 1, 11, 0, 0, 0, time.UTC))
-	// A write that does not state a collection keeps the stored one, exclude_add and all, unchecked.
+	// A write that does not state a collection keeps the stored one, unchecked.
 	if w := putCollection(t, server, configJSONWithoutCollection(t, recipients)); w.Code != http.StatusNoContent {
 		t.Fatalf("recipients-only write: %d %s", w.Code, w.Body.String())
-	}
-	// An exclude_add nobody could fold is refused...
-	w := putCollection(t, server, excludeAdd)
-	if w.Code != http.StatusConflict || !strings.Contains(adminError(t, w), "1 of 1 do not yet") {
-		t.Fatalf("exclude_add with no reporting install: %d %s", w.Code, w.Body.String())
-	}
-	// ...while ids and packs go unchecked, as before catalogs existed.
-	if w := putCollection(t, server, collectionPutBody(t, recipients, `{"sources":[{"id":"anything"}],"scrub":{"rule_packs":["any-pack"]}}`)); w.Code != http.StatusNoContent {
-		t.Fatalf("unchecked ids: %d %s", w.Code, w.Body.String())
 	}
 }
 

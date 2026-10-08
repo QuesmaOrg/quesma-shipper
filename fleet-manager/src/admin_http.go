@@ -25,6 +25,8 @@ type adminConfigRequest struct {
 	AuthoredYAML            string            `json:"authored_yaml,omitempty"`
 	Collection              *CollectionConfig `json:"collection,omitempty"`
 	TelemetryCollectorURL   *string           `json:"telemetry_collector_url,omitempty"`
+	// UnverifiedSources acknowledges, for this write only, source IDs no install reports. Never stored.
+	UnverifiedSources []string `json:"unverified_sources,omitempty"`
 }
 
 type adminCreateOrganizationRequest struct {
@@ -334,9 +336,9 @@ func (s *Server) validateAdminConfig(w http.ResponseWriter, manager *Manager, cf
 }
 
 // validateCollectionForFleet checks a new collection against what the organization's installs
-// reported they can execute. Only a write that states a collection is checked: one that keeps the
+// report they can execute. Only a write that states a collection is checked: one that keeps the
 // stored collection must not be refused because the fleet moved since it was written.
-func (s *Server) validateCollectionForFleet(w http.ResponseWriter, r *http.Request, manager *Manager, cfg FleetConfig) bool {
+func (s *Server) validateCollectionForFleet(w http.ResponseWriter, r *http.Request, manager *Manager, cfg FleetConfig, stored *CollectionConfig, unverified []string) bool {
 	// The same normalization ApplyConfig runs, so authored_yaml is checked as the collection it becomes.
 	cfg.Schema, cfg.Organization = schemaVersion, manager.org
 	if err := normalizeCollection(&cfg); err != nil {
@@ -348,8 +350,8 @@ func (s *Server) validateCollectionForFleet(w http.ResponseWriter, r *http.Reque
 		s.adminOperationError(w, "read install catalogs", err)
 		return false
 	}
-	if status, message := validateCollectionAgainstFleet(cfg.Collection, fleet); status != 0 {
-		writeAdminError(w, status, message)
+	if message := validateCollectionAgainstFleet(cfg.Collection, stored, unverified, fleet); message != "" {
+		writeAdminError(w, http.StatusBadRequest, message)
 		return false
 	}
 	return true
@@ -478,7 +480,7 @@ func (s *Server) handleAdminPutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Collection != nil || req.AuthoredYAML != "" {
-		if !s.validateCollectionForFleet(w, r, manager, cfg) {
+		if !s.validateCollectionForFleet(w, r, manager, cfg, current.Collection, req.UnverifiedSources) {
 			return
 		}
 	}

@@ -40,8 +40,8 @@ type Server struct {
 	// collectionErrors holds the last unservable-collection error logged per organization, so
 	// every install's poll does not log it again.
 	collectionErrors sync.Map
-	// servedNotes holds, per install, what rendering its document last left out or folded, so a
-	// change is logged once rather than on every fetch.
+	// servedNotes holds, per install, what rendering its document last left out, so a change is
+	// logged once rather than on every fetch.
 	servedNotes sync.Map
 }
 
@@ -285,12 +285,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request, rec Instal
 	}
 	s.collectionErrors.Delete(rec.Organization)
 	cfg = s.defaults.resolve(cfg)
-	collection, rendered, err := scoped.collectionForInstall(r.Context(), cfg.Collection, catalog)
-	if err != nil {
-		s.logger.Printf("config state read failed for install %s: %v", rec.InstallID, err)
-		http.Error(w, "config unavailable", http.StatusInternalServerError)
-		return
-	}
+	collection, rendered := collectionForBuild(cfg.Collection, catalog)
 	s.logServedNotes(rec, append(notes, rendered...))
 	cfg.Collection = collection
 	doc := renderConfig(cfg)

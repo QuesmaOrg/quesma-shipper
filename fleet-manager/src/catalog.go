@@ -1,8 +1,11 @@
 // A build reports its compiled source catalog on every config fetch: the sources it can collect,
 // its scrub rule packs, and the served-document features it reads. This service keeps each
-// install's latest one, renders the served document for the build asking, and refuses writes no
-// reporting build could execute. The catalog is build metadata -- the same on every machine
-// running that build, with root templates unexpanded -- and never collected data.
+// install's latest one, leaves out of the served document the sources the asking build lacks, and
+// offers administrators the sources the fleet reports. The reported sources are the ones discovered
+// so far, not an allowlist: a newer or custom build may carry a source no other install reports, and
+// an install without a catalog has unknown support, not none. The catalog is build metadata -- the
+// same on every machine running that build, with root templates unexpanded -- and never collected
+// data.
 package main
 
 import (
@@ -12,14 +15,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"slices"
 	"strings"
 )
-
-// featureExcludeAdd is the one served-document feature defined so far. A build that does not list
-// it ignores sources[].exclude_add, which would widen collection, so it is folded into exclude.
-const featureExcludeAdd = "sources.exclude_add"
 
 // sourceCatalog is this service's own copy of the config request's catalog; the protocol ships
 // schemas, not types. Fields it does not know are dropped on decode, so they are never stored.
@@ -113,15 +111,15 @@ func (m *Manager) loadCatalog(ctx context.Context, digest string) (sourceCatalog
 }
 
 // reportedCatalogs returns the catalog each install's latest config fetch carried, one per install,
-// newest report first. active limits it to installs in that set. A catalog that is
-// missing or unreadable leaves its install out, as one that reported none.
+// newest report first, for the installs in active. A catalog that is missing or unreadable leaves
+// its install out, as one that reported none.
 func (m *Manager) reportedCatalogs(ctx context.Context, active map[string]bool) ([]*sourceCatalog, error) {
 	seen, err := m.ListSeen(ctx)
 	if err != nil {
 		return nil, err
 	}
 	seen = slices.DeleteFunc(seen, func(rec SeenRecord) bool {
-		return rec.CatalogDigest == "" || rec.LastConfigAt == nil || (active != nil && !active[rec.InstallID])
+		return rec.CatalogDigest == "" || rec.LastConfigAt == nil || !active[rec.InstallID]
 	})
 	slices.SortFunc(seen, func(a, b SeenRecord) int { return b.LastConfigAt.Compare(*a.LastConfigAt) })
 	loaded := map[string]*sourceCatalog{}
@@ -172,140 +170,56 @@ func (m *Manager) FleetCatalog(ctx context.Context) (fleetCatalog, error) {
 	return fleetCatalog{Active: len(active), Reporting: reporting}, nil
 }
 
-// sourceExcludes answers, for each id, every exclude glob any catalog of the organization has for
-// that source: the union, so the base a catalog-less fold extends can only grow, and no one
-// install's report can shrink what another build excludes. An id no catalog has is absent.
-func (m *Manager) sourceExcludes(ctx context.Context, ids []string) (map[string][]string, error) {
-	reported, err := m.reportedCatalogs(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string][]string{}
-	for _, id := range ids {
-		for _, catalog := range reported {
-			source, ok := catalog.source(id)
-			if !ok {
-				continue
-			}
-			union := out[id]
-			if union == nil {
-				union = []string{}
-			}
-			for _, glob := range source.Exclude {
-				if !slices.Contains(union, glob) {
-					union = append(union, glob)
-				}
-			}
-			out[id] = union
-		}
-	}
-	return out, nil
-}
-
-// collectionForInstall renders the collection for the build asking, and says what it changed.
-//
-// With the build's catalog: a source or rule pack the build lacks is left out, so the build does
-// not refuse the whole document over one entry another build needs; exclude_add is served as is to
-// a build that reads it and folded into exclude for one that does not. Without a catalog the
-// document is served as before, except exclude_add, which an older build would ignore: it is folded
-// over every catalog the organization has for that source, and dropped if there is none.
-func (m *Manager) collectionForInstall(ctx context.Context, collection *CollectionConfig, catalog *sourceCatalog) (*CollectionConfig, []string, error) {
-	if collection == nil {
-		return nil, nil, nil
+// collectionForBuild renders the collection for a build that reported its catalog: a sources[]
+// entry the build lacks is left out, so the build does not refuse the whole document over an entry
+// another build needs -- it could not collect that source either way. Nothing else changes. A
+// requested rule pack in particular is never left out: that would scrub less than was asked for,
+// and a build refusing the document keeps its last working one. It reports what it left out.
+func collectionForBuild(collection *CollectionConfig, catalog *sourceCatalog) (*CollectionConfig, []string) {
+	if collection == nil || catalog == nil {
+		return collection, nil
 	}
 	out := *collection
 	var notes []string
-	servesExcludeAdd := catalog != nil && slices.Contains(catalog.Features, featureExcludeAdd)
-
-	var excludes map[string][]string
-	if catalog == nil {
-		var needed []string
-		for _, source := range collection.Sources {
-			if len(source.ExcludeAdd) > 0 && len(source.Exclude) == 0 {
-				needed = append(needed, source.ID)
-			}
-		}
-		if len(needed) > 0 {
-			var err error
-			if excludes, err = m.sourceExcludes(ctx, needed); err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-
 	out.Sources = make([]CollectionSource, 0, len(collection.Sources))
 	for i, source := range collection.Sources {
-		// compiled is the build's own exclude list for the source, the base a fold extends.
-		compiled, known := excludes[source.ID]
-		if catalog != nil {
-			reported, ok := catalog.source(source.ID)
-			if !ok {
-				notes = append(notes, fmt.Sprintf("left out sources[%d] %q, which its catalog lacks", i, source.ID))
-				continue
-			}
-			compiled, known = reported.Exclude, true
-		}
-		if len(source.ExcludeAdd) > 0 && !servesExcludeAdd {
-			folded := fmt.Sprintf("folded sources[%d] %q exclude_add into exclude", i, source.ID)
-			switch {
-			case len(source.Exclude) > 0:
-				source.Exclude = append(slices.Clone(source.Exclude), source.ExcludeAdd...)
-				notes = append(notes, folded)
-			case known:
-				source.Exclude = append(slices.Clone(compiled), source.ExcludeAdd...)
-				notes = append(notes, folded)
-			default:
-				notes = append(notes, fmt.Sprintf("dropped sources[%d] %q exclude_add: no catalog in the organization has the source to fold it over", i, source.ID))
-			}
-			source.ExcludeAdd = nil
+		if _, ok := catalog.source(source.ID); !ok {
+			notes = append(notes, fmt.Sprintf("left out sources[%d] %q, which its catalog lacks", i, source.ID))
+			continue
 		}
 		out.Sources = append(out.Sources, source)
 	}
-
-	if catalog != nil && collection.Scrub != nil {
-		scrub := *collection.Scrub
-		scrub.RulePacks = nil
-		for i, pack := range collection.Scrub.RulePacks {
-			if !slices.Contains(catalog.RulePacks, pack) {
-				notes = append(notes, fmt.Sprintf("left out scrub.rule_packs[%d] %q, which its catalog lacks", i, pack))
-				continue
-			}
-			scrub.RulePacks = append(scrub.RulePacks, pack)
-		}
-		out.Scrub = &scrub
-	}
-	return &out, notes, nil
+	return &out, notes
 }
 
-// validateCollectionAgainstFleet refuses a collection no reporting build could execute, and an
-// exclude_add that an install without a catalog could not have folded for it. A zero status means
-// the collection is acceptable.
-func validateCollectionAgainstFleet(collection *CollectionConfig, fleet fleetCatalog) (int, string) {
+// validateCollectionAgainstFleet refuses a source ID nobody has confirmed, and a rule pack no
+// reporting build has. A source ID passes when a reporting active install reports it, when the
+// stored collection already has it, or when the administrator acknowledged it in unverified: the
+// reported set is what has been discovered, so an ID beyond it is a warning to confirm, not an
+// error -- a build nobody has run yet may carry it. Rule packs stay strict while installs report,
+// because a pack a build lacks makes that build refuse the document and it is never left out. An
+// empty message means the collection is acceptable.
+func validateCollectionAgainstFleet(collection, stored *CollectionConfig, unverified []string, fleet fleetCatalog) string {
 	if collection == nil {
-		return 0, ""
+		return ""
 	}
-	if reporting := len(fleet.Reporting); reporting > 0 {
-		held := func(has func(*sourceCatalog) bool) bool {
-			return slices.ContainsFunc(fleet.Reporting, has)
+	held := func(has func(*sourceCatalog) bool) bool { return slices.ContainsFunc(fleet.Reporting, has) }
+	for i, source := range collection.Sources {
+		if held(func(c *sourceCatalog) bool { _, ok := c.source(source.ID); return ok }) ||
+			slices.Contains(unverified, source.ID) ||
+			(stored != nil && slices.ContainsFunc(stored.Sources, func(s CollectionSource) bool { return s.ID == source.ID })) {
+			continue
 		}
-		for i, source := range collection.Sources {
-			if !held(func(c *sourceCatalog) bool { _, ok := c.source(source.ID); return ok }) {
-				return http.StatusBadRequest, fmt.Sprintf("collection: sources[%d].id %q is not in any reporting install's catalog", i, source.ID)
+		return fmt.Sprintf("collection: sources[%d].id %q is not reported by any install; send it in unverified_sources to save it anyway", i, source.ID)
+	}
+	if len(fleet.Reporting) > 0 && collection.Scrub != nil {
+		for i, pack := range collection.Scrub.RulePacks {
+			if !held(func(c *sourceCatalog) bool { return slices.Contains(c.RulePacks, pack) }) {
+				return fmt.Sprintf("collection: scrub.rule_packs[%d] %q is not in any reporting install's catalog", i, pack)
 			}
 		}
-		if collection.Scrub != nil {
-			for i, pack := range collection.Scrub.RulePacks {
-				if !held(func(c *sourceCatalog) bool { return slices.Contains(c.RulePacks, pack) }) {
-					return http.StatusBadRequest, fmt.Sprintf("collection: scrub.rule_packs[%d] %q is not in any reporting install's catalog", i, pack)
-				}
-			}
-		}
 	}
-	if missing := fleet.Active - len(fleet.Reporting); missing > 0 &&
-		slices.ContainsFunc(collection.Sources, func(s CollectionSource) bool { return len(s.ExcludeAdd) > 0 }) {
-		return http.StatusConflict, fmt.Sprintf("collection: sources[].exclude_add needs every active install to report its catalog; %d of %d do not yet. Update their shippers first.", missing, fleet.Active)
-	}
-	return 0, ""
+	return ""
 }
 
 // The admin view of the fleet's catalogs: what the active installs can collect, and how many of
