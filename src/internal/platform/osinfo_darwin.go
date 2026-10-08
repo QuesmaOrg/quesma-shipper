@@ -22,3 +22,11 @@ func readBootTime() string {
 	}
 	return time.Unix(tv.Sec, 0).UTC().Format(time.RFC3339)
 }
+
+func readBootID() string {
+	v, err := unix.Sysctl("kern.bootsessionuuid")
+	if err != nil {
+		return ""
+	}
+	return v
+}

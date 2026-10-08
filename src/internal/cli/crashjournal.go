@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/crashjournal"
 )
 
@@ -22,14 +23,15 @@ func startCrashJournal(errOut io.Writer, dir string, dirErr error) (*crashjourna
 	}
 
 	// Before Open, which may rotate the file this reads.
-	prev := crashjournal.LastRun(dir)
+	boot := platform.BootID()
+	prev := crashjournal.LastRun(dir, boot)
 
 	fl, err := crashjournal.Open(dir, runID)
 	if err != nil {
 		fmt.Fprintf(errOut, "warning: crash journal unavailable: %v\n", err)
 		return nil, runID, nil
 	}
-	fl.Start()
+	fl.Start(boot)
 
 	var crash *formats.LastCrash
 	if prev != nil {
