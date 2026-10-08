@@ -22,6 +22,7 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
+	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	protocol "github.com/QuesmaOrg/shipper-protocol"
 )
@@ -117,6 +118,20 @@ func TestStructsMatchSchemas(t *testing.T) {
 		}},
 		{"config request", "config-request.schema.json", controlplane.ConfigRequest{
 			AgentVersion: "0.0.0-test", ConfigVersions: []int{1},
+		}},
+		{"config request, catalog", "config-request.schema.json", controlplane.ConfigRequest{
+			AgentVersion: "0.0.0-test", ConfigVersions: []int{1},
+			Catalog: &config.CatalogReport{
+				Sources: []config.CatalogSource{{
+					ID: "cursor-transcripts", Family: "cursor", FamilyName: "Cursor",
+					Description: "Agent transcripts.", ArtifactClass: "trajectory", Enabled: true,
+					Roots:   []string{"$CURSOR_PROJECTS_DIR", "~/.cursor/projects"},
+					Include: []string{"**/agent-transcripts/**/*.jsonl"}, Exclude: []string{"**/*.png"},
+					MaxFileBytes: 268435456, Enrichers: []string{"cursor-transcript-join"},
+				}},
+				RulePacks: []string{"gitleaks-core"},
+				Features:  []string{"example.feature"},
+			},
 		}},
 		{"config response", "config-response.schema.json", controlplane.ConfigResponse{
 			Config:    []byte("config_version: 1\n"),
@@ -321,6 +336,47 @@ func TestFixturesRoundTripStructs(t *testing.T) {
 				t.Errorf("round trip through %T changed the document:\nfixture: %s\nrewrote: %s", v, raw, remarshaled)
 			}
 		})
+	}
+}
+
+// The request a fetch actually posts, with this build's real compiled catalog, satisfies the
+// schema and stays well inside the server's 1 MiB request cap.
+func TestConfigFetchPostsTheCompiledCatalog(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		writeJSON(w, controlplane.ConfigResponse{Config: []byte("config_version: 1\n"), ExpiresAt: time.Now().Add(time.Hour)})
+	}))
+	defer srv.Close()
+
+	remote := controlplane.Refresh(context.Background(), controlplane.RefreshOptions{
+		Enrollment: newPlane(t).enrolled(t, srv.URL, installID), StateDir: t.TempDir(), Now: time.Now(),
+	})
+	if remote.Origin != controlplane.OriginFetched {
+		t.Fatalf("origin = %q (%v), want fetched", remote.Origin, remote.Err)
+	}
+
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := compileWireSchema(t, "config-request.schema.json").Validate(doc); err != nil {
+		t.Errorf("the posted config request does not satisfy its schema:\n%s\n%v", body, err)
+	}
+	if len(body) > 256<<10 {
+		t.Errorf("the config request is %d bytes, more than a quarter of the 1 MiB request cap", len(body))
+	}
+
+	var posted controlplane.ConfigRequest
+	if err := json.Unmarshal(body, &posted); err != nil {
+		t.Fatal(err)
+	}
+	want, err := config.CompiledCatalogReport()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(posted.Catalog, want) {
+		t.Errorf("posted catalog differs from the compiled report:\n%s", body)
 	}
 }
 
