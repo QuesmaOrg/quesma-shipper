@@ -271,21 +271,6 @@ func rulebookProbes(t *testing.T) map[string]rulebookProbe {
 			reject: "sources:\n  - id: claude-code-transcripts\n    roots: [\"~/.ssh\"]\n",
 		},
 
-		"sources[].exclude_add": {
-			accept: "sources:\n  - id: claude-code-transcripts\n    exclude_add: [\"projects/-Users-ada-client-repo/**\"]\n",
-			verify: func(t *testing.T, eff *config.Effective) {
-				src := sourceByID(t, eff, "claude-code-transcripts")
-				compiled, _ := loadCatalog(t).Source("claude-code-transcripts")
-				if len(compiled.Exclude) == 0 {
-					t.Fatal("the catalog source has no excludes, so this probe cannot tell append from replace")
-				}
-				want := append(slices.Clone(compiled.Exclude), "projects/-Users-ada-client-repo/**")
-				if !slices.Equal(src.Exclude, want) {
-					t.Errorf("exclude %v, want the catalog's kept and the addition appended %v", src.Exclude, want)
-				}
-			},
-		},
-
 		"sources[].max_file_bytes": {
 			accept: "sources:\n  - id: claude-code-transcripts\n    max_file_bytes: 1024\n",
 			verify: func(t *testing.T, eff *config.Effective) {
@@ -445,13 +430,6 @@ func TestRulebookDefaultsMatchResolver(t *testing.T) {
 		}
 		return strings.Join(values, ", ")
 	}
-	var added []string
-	for _, src := range eff.Sources {
-		compiled, _ := loadCatalog(t).Source(src.ID)
-		if !slices.Equal(src.Exclude, compiled.Exclude) {
-			added = append(added, src.ID)
-		}
-	}
 	uploadTargets := "empty (unpinned)"
 	if len(eff.UploadTargets) > 0 {
 		uploadTargets = fmt.Sprint(eff.UploadTargets)
@@ -465,7 +443,6 @@ func TestRulebookDefaultsMatchResolver(t *testing.T) {
 		"scrub.rule_packs":                     strings.Join(eff.RulePacks, ", "),
 		"encryption.additional_recipients":     emptyOr(eff.AdditionalRecipients),
 		"encryption.include_install_recipient": strconv.FormatBool(eff.IncludeInstallRecipient),
-		"sources[].exclude_add":                emptyOr(added),
 		"autoupdate.enabled":                   strconv.FormatBool(eff.AutoupdateEnabled),
 	}
 

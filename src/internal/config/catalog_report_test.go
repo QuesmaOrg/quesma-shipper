@@ -87,13 +87,13 @@ func TestCatalogReportRootsAreUnexpandedTemplates(t *testing.T) {
 	}
 }
 
-func TestCatalogReportListsEveryRulePackAndTheFeatures(t *testing.T) {
+func TestCatalogReportListsEveryRulePackAndNoFeatures(t *testing.T) {
 	report := catalogReport(t)
 	if !slices.Equal(report.RulePacks, packs.Available()) {
 		t.Errorf("rule_packs %v, want every pack this build has %v", report.RulePacks, packs.Available())
 	}
-	// Each listed feature is one the resolver reads; the rulebook probe for its row pins how.
-	if !slices.Equal(report.Features, []string{"sources.exclude_add"}) {
-		t.Errorf("features %v", report.Features)
+	// No feature is defined yet, and the wire field is required: [] rather than null.
+	if report.Features == nil || len(report.Features) != 0 {
+		t.Errorf("features %#v, want an empty list", report.Features)
 	}
 }

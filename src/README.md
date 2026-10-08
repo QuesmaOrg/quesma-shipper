@@ -176,23 +176,12 @@ what the control plane can change. For example, it can add scrub rule packs. It 
 It cannot turn off scrub or encryption. Contract tests here and in the control plane enforce the
 rulebook.
 
-A source's `exclude` replaces the catalog's list, including the globs that keep unscrubbable files
-out. `exclude_add` appends to whichever list is in force, so it can only exclude more. The served
-document and the user file may both set it, and no layer removes another layer's additions. To stop
-collecting one repository's Claude Code sessions:
-
-```yaml
-sources:
-  - id: claude-code-transcripts
-    exclude_add: ["projects/-Users-ada-client-repo/**"]
-```
-
 Each config fetch reports this build's compiled catalog: every source with its root templates,
-globs and size cap, the rule packs the build has, and the served-document features it reads
-(`sources.exclude_add`). Root templates are sent as compiled, such as `~/.claude`, never expanded.
-The report is the same on every machine running the build and says nothing about the machine, its
-files or its local configuration. The control plane uses it to refuse a document naming a source or
-rule pack no install has, and to fold `exclude_add` into `exclude` for a build that does not read it.
+globs and size cap, the rule packs the build has, and the served-document features it reads (none
+yet). Root templates are sent as compiled, such as `~/.claude`, never expanded. The report is the
+same on every machine running the build and says nothing about the machine, its files or its local
+configuration. The control plane uses it to offer sources by name, to catch a source or rule pack
+no install has, and to leave out of a served document the sources this build does not have.
 
 File locations. `XDG_CONFIG_HOME` and `XDG_STATE_HOME` are honoured.
 

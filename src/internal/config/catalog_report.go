@@ -12,9 +12,9 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/packs"
 )
 
-// Features are the served-document fields this resolver reads beyond its accepted config_version.
-// A control plane folds an unlisted one into fields every build reads, so listing one this build ignores would widen collection.
-var Features = []string{"sources.exclude_add"}
+// Features are the served-document fields this resolver reads beyond its accepted config_version. None
+// is defined yet; the list exists so a later field can be served only to builds that read it.
+var Features = []string{}
 
 // CatalogReport is the config request's `catalog`. It lives here, beside the resolver, because only
 // the resolver knows which sources, packs and features a served document may name.
@@ -58,7 +58,7 @@ func CompiledCatalogReport() (*CatalogReport, error) {
 	report := &CatalogReport{
 		Sources:   []CatalogSource{},
 		RulePacks: append([]string{}, packs.Available()...),
-		Features:  slices.Clone(Features),
+		Features:  append([]string{}, Features...),
 	}
 	for _, s := range c.Sources() {
 		report.Sources = append(report.Sources, CatalogSource{

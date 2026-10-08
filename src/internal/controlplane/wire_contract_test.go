@@ -130,7 +130,7 @@ func TestStructsMatchSchemas(t *testing.T) {
 					MaxFileBytes: 268435456, Enrichers: []string{"cursor-transcript-join"},
 				}},
 				RulePacks: []string{"gitleaks-core"},
-				Features:  []string{"sources.exclude_add"},
+				Features:  []string{"example.feature"},
 			},
 		}},
 		{"config response", "config-response.schema.json", controlplane.ConfigResponse{

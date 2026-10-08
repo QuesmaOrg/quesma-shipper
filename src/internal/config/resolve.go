@@ -326,8 +326,6 @@ func applySourceOverrides(eff *Effective, overrides map[string][]layeredOverride
 		locallyDisabledBy := Layer(0)
 		// The enricher map is detached from the compiled catalog on first touch, once per source.
 		clonedEnrichers := false
-		// Additions from every layer, applied after the loop so a higher layer's exclude cannot drop a lower layer's.
-		var excludeAdd []string
 
 		for _, lo := range overrides[src.ID] {
 			o := lo.override
@@ -354,10 +352,6 @@ func applySourceOverrides(eff *Effective, overrides map[string][]layeredOverride
 				src.Exclude = slices.Clone(o.Exclude)
 				eff.setOrigin("sources."+src.ID+".exclude", lo.layer)
 			}
-			if len(o.ExcludeAdd) > 0 {
-				excludeAdd = unionStrings(excludeAdd, o.ExcludeAdd)
-				eff.setOrigin("sources."+src.ID+".exclude_add", lo.layer)
-			}
 			if o.MaxFileBytes != nil {
 				src.MaxFileBytes = *o.MaxFileBytes
 				eff.setOrigin("sources."+src.ID+".max_file_bytes", lo.layer)
@@ -380,10 +374,6 @@ func applySourceOverrides(eff *Effective, overrides map[string][]layeredOverride
 				src.Enrichers[id] = on
 				eff.setOrigin("sources."+src.ID+".enrichers."+id, lo.layer)
 			}
-		}
-
-		if len(excludeAdd) > 0 {
-			src.Exclude = unionStrings(src.Exclude, excludeAdd)
 		}
 
 		// Recomputed from the effective read-affecting fields, so a changed glob resets exactly this source's state.
