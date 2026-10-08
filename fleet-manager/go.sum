@@ -56,8 +56,8 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/cloudmock v0
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/cloudmock v0.57.0/go.mod h1:dzcEjy1WJ0Q4u9twNR3LcLhNoYMRCrMCMafpxa0TjPQ=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.57.0 h1:RoO5+d7uCmDqovLrHCr2/BuViUXvdcrNxyNM1pN9dDQ=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.57.0/go.mod h1:YqwkQPrWSC7+byyc1VlKbWLBF5JsW5IoL6xUkemYSXk=
-github.com/QuesmaOrg/shipper-protocol v0.1.1-0.20261008074610-26c240f2d313 h1:T99yao9Re1+ITEJTogO+rs4L6AqOkQ0YmGRbgJzwaBk=
-github.com/QuesmaOrg/shipper-protocol v0.1.1-0.20261008074610-26c240f2d313/go.mod h1:Vzv+/BznliKDTxm29vKb92AYf/joiLI1L5ImAQUzZOg=
+github.com/QuesmaOrg/shipper-protocol v0.1.1-0.20261008091517-3c128fba1404 h1:QijRVKTC5i+MVbSibVFU/4y+uJUn7O6Uv1v7+n7R6kQ=
+github.com/QuesmaOrg/shipper-protocol v0.1.1-0.20261008091517-3c128fba1404/go.mod h1:Vzv+/BznliKDTxm29vKb92AYf/joiLI1L5ImAQUzZOg=
 github.com/andybalholm/brotli v1.2.2 h1:HzTuoo2ErYQqf5qvcJInB8uvqSVxRttzkFexPWtnceM=
 github.com/andybalholm/brotli v1.2.2/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/apache/arrow-go/v18 v18.7.0 h1:Vw/i+cJyebUofT7JlqFpe65LrmwxULn166jjwStM4HY=
