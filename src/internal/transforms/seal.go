@@ -10,6 +10,8 @@ package transforms
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -190,53 +192,72 @@ func writeTar(w io.Writer, manifestJSON, payload []byte, payloadMTime *time.Time
 
 // Open decrypts a whole object and returns its manifest and payload.
 func Open(object []byte, identities ...age.Identity) (Manifest, []byte, error) {
-	tr, closeFn, err := tarReader(bytes.NewReader(object), identities...)
+	var payload bytes.Buffer
+	m, err := OpenTo(bytes.NewReader(object), &payload, identities...)
 	if err != nil {
 		return Manifest{}, nil, err
+	}
+	return m, payload.Bytes(), nil
+}
+
+// OpenTo decrypts an object from r and streams its payload into w, so no payload is held in
+// memory. On error w may hold a partial or unverified payload, which the caller must discard.
+func OpenTo(r io.Reader, w io.Writer, identities ...age.Identity) (Manifest, error) {
+	tr, closeFn, err := tarReader(r, identities...)
+	if err != nil {
+		return Manifest{}, err
 	}
 	defer closeFn()
 
 	m, err := readManifestEntry(tr)
 	if err != nil {
-		return Manifest{}, nil, err
+		return Manifest{}, err
 	}
 
 	hdr, err := tr.Next()
 	if err != nil {
-		return Manifest{}, nil, fmt.Errorf("seal: no payload entry: %w", err)
+		return Manifest{}, fmt.Errorf("seal: no payload entry: %w", err)
 	}
 	if hdr.Name != PayloadEntry {
-		return Manifest{}, nil, fmt.Errorf("seal: second entry is %q, want %q", hdr.Name, PayloadEntry)
+		return Manifest{}, fmt.Errorf("seal: second entry is %q, want %q", hdr.Name, PayloadEntry)
 	}
-	payload, err := io.ReadAll(io.LimitReader(tr, maxDecompressedBytes))
-	if err != nil {
-		return Manifest{}, nil, fmt.Errorf("seal: read payload: %w", err)
+	if hdr.Size != m.PayloadSize || hdr.Size > maxDecompressedBytes {
+		return Manifest{}, fmt.Errorf("seal: payload entry is %d bytes, manifest payload_size %d, limit %d",
+			hdr.Size, m.PayloadSize, int64(maxDecompressedBytes))
+	}
+	h := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(w, h), tr); err != nil {
+		return Manifest{}, fmt.Errorf("seal: read payload: %w", err)
 	}
 
 	// The manifest describes bytes; verify it describes these bytes.
-	if got := Hash(payload); got != m.ShippedHash {
-		return Manifest{}, nil, fmt.Errorf("seal: payload hash %s does not match manifest shipped_hash %s",
+	if got := hex.EncodeToString(h.Sum(nil)); got != m.ShippedHash {
+		return Manifest{}, fmt.Errorf("seal: payload hash %s does not match manifest shipped_hash %s",
 			got, m.ShippedHash)
 	}
-	return m, payload, nil
+	return m, nil
 }
 
 // ReadManifestPrefix decodes the manifest from a ranged-GET prefix. Reading a prefix
 // ALWAYS ends in a truncation error from age or zstd, which must be swallowed once the
 // first tar entry is whole; a failure before that is ErrPrefixTooShort instead.
 func ReadManifestPrefix(prefix []byte, identities ...age.Identity) (Manifest, error) {
-	tr, closeFn, err := tarReader(bytes.NewReader(prefix), identities...)
-	if err != nil {
-		// A prefix too short to hold even the age header fails here.
-		return Manifest{}, fmt.Errorf("%w: %v", ErrPrefixTooShort, err)
-	}
-	defer closeFn()
-
-	m, err := readManifestEntry(tr)
+	m, err := ReadManifest(bytes.NewReader(prefix), identities...)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("%w: %v", ErrPrefixTooShort, err)
 	}
 	return m, nil
+}
+
+// ReadManifest decodes the manifest from the head of a whole object, reading no further than
+// the manifest needs, so its errors are the real cause rather than truncation.
+func ReadManifest(r io.Reader, identities ...age.Identity) (Manifest, error) {
+	tr, closeFn, err := tarReader(r, identities...)
+	if err != nil {
+		return Manifest{}, err
+	}
+	defer closeFn()
+	return readManifestEntry(tr)
 }
 
 // readManifestEntry validates that the first tar entry is the manifest; if it is not, the
