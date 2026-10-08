@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
@@ -23,17 +22,16 @@ func startCrashJournal(errOut io.Writer, dir string, dirErr error) (*crashjourna
 		return nil, runID, nil
 	}
 
-	// Before Open, which may rotate the file this reads. An unknown boot time keeps every death a
-	// crash rather than hiding any.
-	bootedAt, _ := time.Parse(time.RFC3339, platform.BootTime())
-	prev := crashjournal.LastRun(dir, bootedAt)
+	// Before Open, which may rotate the file this reads.
+	boot := platform.BootID()
+	prev := crashjournal.LastRun(dir, boot)
 
 	fl, err := crashjournal.Open(dir, runID)
 	if err != nil {
 		fmt.Fprintf(errOut, "warning: crash journal unavailable: %v\n", err)
 		return nil, runID, nil
 	}
-	fl.Start()
+	fl.Start(boot)
 
 	var crash *formats.LastCrash
 	if prev != nil {

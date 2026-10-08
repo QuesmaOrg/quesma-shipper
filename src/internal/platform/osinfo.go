@@ -8,6 +8,7 @@ import "sync"
 var (
 	osVersion = sync.OnceValue(readOSVersion)
 	bootTime  = sync.OnceValue(readBootTime)
+	bootID    = sync.OnceValue(readBootID)
 )
 
 // OSVersion is the human-readable OS release ("macOS 26.5.1", "Ubuntu 24.04.2 LTS"), or "".
@@ -15,3 +16,7 @@ func OSVersion() string { return osVersion() }
 
 // BootTime is the machine's last boot as RFC3339 UTC, or "" when unknown.
 func BootTime() string { return bootTime() }
+
+// BootID names the current boot and changes only on a reboot, unlike BootTime, which on Windows
+// is estimated from the clock. "" when unknown.
+func BootID() string { return bootID() }

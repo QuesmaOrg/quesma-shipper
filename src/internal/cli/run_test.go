@@ -12,6 +12,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/app"
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/crashjournal"
 )
 
@@ -31,7 +32,7 @@ func TestRecycleIsNotACrash(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("recycle: %v, %s", err, out)
 	}
-	if s := crashjournal.LastRun(dir, time.Time{}); s != nil {
+	if s := crashjournal.LastRun(dir, platform.BootID()); s != nil {
 		t.Fatalf("a recycle reads as a crash: %+v", s)
 	}
 }

@@ -37,6 +37,7 @@ type entry struct {
 	Ev    string    `json:"ev"`
 	Phase string    `json:"phase,omitempty"`
 	PID   int       `json:"pid,omitempty"`
+	Boot  string    `json:"boot,omitempty"` // on "start"; absent before this field existed
 }
 
 // Log appends one run's entries. All methods are best-effort and nil-safe: the journal observes
@@ -62,8 +63,9 @@ func Open(stateDir, runID string) (*Log, error) {
 	return &Log{path: path, runID: runID}, nil
 }
 
-func (l *Log) Start() {
-	l.append(entry{Ev: "start", PID: os.Getpid()}, true)
+// Start marks the run's start on the given boot ("" when unknown).
+func (l *Log) Start(boot string) {
+	l.append(entry{Ev: "start", PID: os.Getpid(), Boot: boot}, true)
 }
 
 // Phase records the stage reached. A repeat of the one on disk is dropped, so a stage entered
@@ -138,19 +140,20 @@ type Summary struct {
 	Clean    bool // the run wrote an exit entry
 	Reported bool // the run delivered the pending crash report in a heartbeat
 	Phase    string
-	Last     time.Time // the newest entry's time
 
 	// Crashes counts the runs that never reached exit since the last delivered report, this included.
 	Crashes int
+
+	boot     string
+	lastLine int
 }
 
 // LastRun reports the undelivered crash before this process, or nil when there is none: a clean
 // previous run, an absent or empty journal, a crash a heartbeat already reported, or a run that
 // stopped with the machine. Call it before Open: Open may rotate the very file this reads.
 //
-// bootedAt is the machine's last boot; a run whose newest entry predates it did not survive the
-// shutdown, which on Windows is a hard kill with no exit entry. A zero bootedAt disables the check.
-func LastRun(stateDir string, bootedAt time.Time) *Summary {
+// boot is the current boot's id, "" when unknown, which keeps every death a crash.
+func LastRun(stateDir string, boot string) *Summary {
 	raw, err := readCapped(filepath.Join(stateDir, fileName))
 	if err != nil || len(raw) == 0 {
 		return nil
@@ -158,7 +161,8 @@ func LastRun(stateDir string, bootedAt time.Time) *Summary {
 
 	byRun := map[string]*Summary{}
 	var order []*Summary
-	for len(raw) > 0 {
+	lastStart := map[string]int{} // boot id -> line of the newest start on that boot
+	for n := 0; len(raw) > 0; n++ {
 		line, rest, _ := bytes.Cut(raw, []byte{'\n'})
 		raw = rest
 		var e entry
@@ -171,12 +175,11 @@ func LastRun(stateDir string, bootedAt time.Time) *Summary {
 			byRun[e.RunID] = s
 			order = append(order, s)
 		}
-		if e.At.After(s.Last) {
-			s.Last = e.At
-		}
+		s.lastLine = n
 		switch e.Ev {
 		case "start":
-			s.Phase, s.PID = "start", e.PID
+			s.Phase, s.PID, s.boot = "start", e.PID, e.Boot
+			lastStart[e.Boot] = n
 		case "phase":
 			s.Phase = e.Phase
 		case "exit":
@@ -191,16 +194,20 @@ func LastRun(stateDir string, bootedAt time.Time) *Summary {
 
 	// A crash must survive restarts that could not deliver the report: only a run that wrote
 	// "reported" proved a heartbeat carrying it reached the sink, so the walk stops there and
-	// nowhere else. A run with no exit whose process is still alive is concurrent, not dead, and
-	// one whose last entry predates the boot was stopped with the machine: nothing was lost,
-	// because a source is committed only after its destination confirms the write.
+	// nowhere else. A run with no exit whose process is still alive is concurrent, not dead.
+	//
+	// A run on an earlier boot that no later run on that boot followed is taken as stopped with
+	// the machine: a hard kill at shutdown leaves no exit entry. This cannot tell such a kill from
+	// a crash just before the reboot, and treats both as a shutdown. A run that another run on the
+	// same boot followed died while the machine stayed up, so it stays a crash across reboots.
 	var crash *Summary
 	for i := len(order) - 1; i >= 0; i-- {
 		s := order[i]
 		if s.Reported {
 			break
 		}
-		if s.Clean || alive(s.PID) || (!bootedAt.IsZero() && s.Last.Before(bootedAt)) {
+		stoppedWithMachine := boot != "" && s.boot != "" && s.boot != boot && lastStart[s.boot] <= s.lastLine
+		if s.Clean || alive(s.PID) || stoppedWithMachine {
 			continue
 		}
 		if crash == nil {
