@@ -326,6 +326,95 @@ Organization discovery also permits the runtime identity to list keys below `v1/
 That listing can reveal encrypted trajectory object names, but not read their contents; this is an
 accepted tradeoff of using each organization's `config.json` as the only organization registry.
 
+## Source catalogs
+
+A shipper build that has one reports its compiled source catalog on every config fetch: the
+sources it can collect, its scrub rule packs, and the served-document features it reads, of which
+none is defined yet (see
+"Source catalog report" in the shipper-protocol `PROTOCOL.md`). Root templates arrive unexpanded,
+so a catalog is the same on every machine running that build and says nothing about the machine or
+its files. The service keeps each install's latest one, content-addressed:
+
+```
+v1/organization=<org>/control/catalogs/<sha256>.json   one per distinct catalog, written once
+```
+
+The SHA-256 is over the catalog as this service re-encodes it, so fields it does not know are never
+stored. The install's check-in record names the digest its latest config fetch carried
+(`catalog_digest`, reported at `last_config_at`), and drops it when a fetch carries none. A
+changed digest is written even inside the one-minute check-in throttle. A catalog this service
+cannot act on is ignored and logged, and the fetch is served as one without a catalog, never as one
+with no sources: one that is not an object, lacks `sources`, `rule_packs` or `features` or has one
+null, has a source without `id`, `family`, `enabled` or `roots`, or has a known field of the wrong
+type. A fault in the catalog never fails the request. Fields this service does not know are
+ignored. So is a catalog whose stored record would exceed the 4 MiB a store reads, and an install
+whose stored catalog cannot be read counts as one that reports none. Catalogs sit under
+`control/`, so the ETL reader grant, which names install roots and `config.json` only, does not
+reach them.
+
+The sources a fleet's catalogs report are the ones discovered so far, not an allowlist. A newer or
+custom build may carry a source no other install reports, and an install that reports no catalog
+has unknown support, not none. Reporting is how this service learns a new build's sources without
+being upgraded itself.
+
+**Serving per install.** With the requesting build's catalog, a `sources[]` entry the build lacks is
+left out of its document, so the build does not refuse the whole document over an entry another
+build needs; it could not collect that source either way. Nothing else changes. A requested
+`scrub.rule_packs` name is never left out: that would scrub less than the organization asked for,
+and a build lacking a pack refuses the document and keeps collecting on its last working one. What
+was left out is logged once per change for each install, not on every fetch. A fetch without a
+catalog is served exactly as before.
+
+**What installs report.** `GET /v1/admin/orgs/{org}/sources` answers what the active installs report
+they can collect:
+
+```json
+{
+  "installs": {"active": 14, "reporting": 12},
+  "sources": [{"id": "claude-code-transcripts", "family": "claude-code", "family_name": "Claude Code",
+               "description": "…", "artifact_class": "trajectory", "enabled": true, "roots": ["~/.claude"],
+               "include": ["…"], "exclude": ["…"], "max_file_bytes": 536870912, "enrichers": [], "installs": 10}],
+  "rule_packs": [{"name": "gitleaks-core", "installs": 12}],
+  "features": []
+}
+```
+
+`active` counts installs with status active; `reporting` those of them whose latest config fetch
+carried a catalog. Pending and revoked installs count for neither. A source, pack or feature is
+listed when a reporting install has it, `installs` is how many do, and a source's metadata comes
+from the most recently reported catalog that has it. Per source, `installs` report they can collect
+it, `reporting - installs` report they cannot, and `active - reporting` have not said: unknown.
+Sources sort by `family_name`, then `id`; packs and features by name. Lists are empty arrays, never
+null, and `max_file_bytes` is absent when the catalog states none. No feature is defined yet.
+
+**Checking writes.** A `PUT /v1/admin/orgs/{org}/config` that states a collection is checked, after
+the schema. The body may carry `unverified_sources`, the source IDs the administrator accepts
+although no install reports them; it acknowledges this write only and is not stored.
+
+- A `sources[].id` passes when a reporting active install reports it, when the stored collection
+  already has it, or when it is listed in `unverified_sources`. Otherwise 400, for example
+  `collection: sources[2].id "foo" is not reported by any install; send it in unverified_sources to
+  save it anyway`. This holds whether or not any install reports, so a typo is caught, an ID only a
+  catalog-less build uses is kept, and a source can be configured before its first build checks in.
+- While any install reports, a `scrub.rule_packs` name must be in some reporting install's catalog
+  or already in the stored collection, else 400:
+  `collection: scrub.rule_packs[1] "foo" is not in any reporting install's catalog`. With none
+  reporting, packs are not checked. `unverified_sources` does not cover packs.
+
+What is stored is never refused again, so a write that changes something else, such as recipients
+or one source, is not blocked because the fleet moved since the collection was saved. The
+administration UI sends the collection with every save, and this is what keeps that safe. A write
+that does not mention the collection keeps the stored one and is not checked. Older fleet-manager releases decode
+check-in records strictly: upgrade every replica before installs report catalogs, and keep this in
+mind when rolling back.
+
+The administration UI offers sources from this endpoint: each override picks a source by family
+and description, stores its ID, and says how many installs report they can collect it, how many
+report they cannot, and how many have not reported. A stored ID nobody reports is kept and shown as
+not reported by any install. **Use an unreported source ID** takes a typed ID, with a warning that
+no install has confirmed it, and sends it in `unverified_sources`. If the endpoint cannot be read,
+the form falls back to a typed ID, sent the same way.
+
 ## Telemetry proxy
 
 `POST /v1/telemetry` forwards authenticated shipper telemetry to the organization's
