@@ -14,8 +14,8 @@ github.com/Masterminds/semver/v3 v3.5.0 h1:kQceYJfbupGfZOKZQg0kou0DgAKhzDg2NZPAw
 github.com/Masterminds/semver/v3 v3.5.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/QuesmaOrg/shipper-protocol v0.1.1-0.20261008074610-26c240f2d313 h1:T99yao9Re1+ITEJTogO+rs4L6AqOkQ0YmGRbgJzwaBk=
-github.com/QuesmaOrg/shipper-protocol v0.1.1-0.20261008074610-26c240f2d313/go.mod h1:Vzv+/BznliKDTxm29vKb92AYf/joiLI1L5ImAQUzZOg=
+github.com/QuesmaOrg/shipper-protocol v0.1.1-0.20261008091517-3c128fba1404 h1:QijRVKTC5i+MVbSibVFU/4y+uJUn7O6Uv1v7+n7R6kQ=
+github.com/QuesmaOrg/shipper-protocol v0.1.1-0.20261008091517-3c128fba1404/go.mod h1:Vzv+/BznliKDTxm29vKb92AYf/joiLI1L5ImAQUzZOg=
 github.com/Shopify/toxiproxy/v2 v2.12.0 h1:d1x++lYZg/zijXPPcv7PH0MvHMzEI5aX/YuUi/Sw+yg=
 github.com/Shopify/toxiproxy/v2 v2.12.0/go.mod h1:R9Z38Pw6k2cGZWXHe7tbxjGW9azmY1KbDQJ1kd+h7Tk=
 github.com/aws/aws-sdk-go-v2 v1.47.1 h1:uOIZnp4PK3ZhKI0dNrJrhTEsLxbpXHTAJlwoS1pvAtw=
