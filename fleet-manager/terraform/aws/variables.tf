@@ -4,6 +4,15 @@ variable "name" {
 }
 variable "bucket" { type = string }
 variable "region" { type = string }
+variable "account_id" {
+  type        = string
+  default     = ""
+  description = "The AWS account this is applied in. Given, an apply from credentials of any other account is refused before anything is created. Empty accepts whatever account the credentials reach."
+  validation {
+    condition     = var.account_id == "" || can(regex("^[0-9]{12}$", var.account_id))
+    error_message = "account_id is a 12-digit AWS account id, or empty."
+  }
+}
 variable "image_uri" {
   type        = string
   default     = "docker.io/quesma/fleet-manager:latest"
