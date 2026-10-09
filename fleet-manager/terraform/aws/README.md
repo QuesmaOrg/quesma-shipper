@@ -37,7 +37,8 @@ export AWS_PROFILE='acme-prod'              # only if your credentials are a nam
 aws sts get-caller-identity                 # the account you are about to change
 
 terraform init
-terraform apply -var="region=eu-central-1" -var="bucket=globally-unique-acme-trajectories"
+terraform apply -var="region=eu-central-1" -var="bucket=globally-unique-acme-trajectories" \
+  -var="account_id=111122223333"                 # the account from the line above; refused anywhere else
 
 export FLEET_MANAGER_URL="$(terraform output -raw service_url)"
 curl --fail --silent --show-error "${FLEET_MANAGER_URL%/}/healthz"     # ok
@@ -53,6 +54,7 @@ providers as OpenTofu resolves them; Terraform rewrites it with its own registry
 | Variable | Default | |
 | --- | --- | --- |
 | `region` | required | |
+| `account_id` | empty | the account this belongs in; given, an apply from any other account's credentials is refused before anything is created |
 | `bucket` | required | S3 bucket names are global |
 | `name` | `fleet-manager` | the service and the prefix of its roles |
 | `image_uri` | `docker.io/quesma/fleet-manager:latest` | a moving tag Quesma publishes; see below |
