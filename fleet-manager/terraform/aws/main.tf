@@ -7,7 +7,14 @@ terraform {
   }
 }
 
-provider "aws" { region = var.region }
+# `account_id`, when given, makes the provider refuse any other account: this module takes its
+# credentials from the environment, and a shell whose AWS_PROFILE points somewhere else would
+# otherwise put the fleet manager there without a word. Left empty, any account the credentials
+# reach is accepted, as before.
+provider "aws" {
+  region              = var.region
+  allowed_account_ids = var.account_id == "" ? null : [var.account_id]
+}
 
 locals {
   control_prefix         = "v1/organization=*/control/"
