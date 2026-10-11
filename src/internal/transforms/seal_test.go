@@ -263,11 +263,30 @@ func TestSealValidatesTheManifestAgainstItsSchema(t *testing.T) {
 // bytes, so it has to describe THESE bytes.
 func TestOpenRejectsPayloadHashMismatch(t *testing.T) {
 	id := identity(t)
-
-	// Build a container by hand with a manifest that lies about its payload.
 	m := manifest()
 	m.ShippedHash = strings.Repeat("b", 64)
+	m.PayloadSize = int64(len("different"))
+	_, _, err := transforms.Open(handSealed(t, id, m, []byte("different")), id)
+	if err == nil || !strings.Contains(err.Error(), "does not match manifest shipped_hash") {
+		t.Fatalf("a payload that does not match shipped_hash must be refused, got %v", err)
+	}
+}
+
+// A payload entry whose size differs from payload_size is refused before any of it is read.
+func TestOpenRejectsPayloadSizeMismatch(t *testing.T) {
+	id := identity(t)
+	m := manifest()
+	m.ShippedHash = transforms.Hash([]byte("different"))
 	m.PayloadSize = 1
+	_, _, err := transforms.Open(handSealed(t, id, m, []byte("different")), id)
+	if err == nil || !strings.Contains(err.Error(), "manifest payload_size 1") {
+		t.Fatalf("a payload that does not match payload_size must be refused, got %v", err)
+	}
+}
+
+// handSealed builds a container by hand, so its manifest can lie about its payload.
+func handSealed(t *testing.T, id *age.X25519Identity, m transforms.Manifest, payload []byte) []byte {
+	t.Helper()
 	raw, err := m.Encode()
 	if err != nil {
 		t.Fatal(err)
@@ -278,7 +297,7 @@ func TestOpenRejectsPayloadHashMismatch(t *testing.T) {
 	for _, e := range []struct {
 		name string
 		body []byte
-	}{{transforms.ManifestEntry, raw}, {transforms.PayloadEntry, []byte("different")}} {
+	}{{transforms.ManifestEntry, raw}, {transforms.PayloadEntry, payload}} {
 		if err := tw.WriteHeader(&tar.Header{
 			Typeflag: tar.TypeReg, Name: e.name, Size: int64(len(e.body)),
 			Mode: 0o600, ModTime: time.Unix(0, 0).UTC(), Format: tar.FormatUSTAR,
@@ -307,10 +326,7 @@ func TestOpenRejectsPayloadHashMismatch(t *testing.T) {
 	}
 	zw.Close()
 	encW.Close()
-
-	if _, _, err := transforms.Open(objBuf.Bytes(), id); err == nil {
-		t.Fatal("a payload that does not match shipped_hash must be refused")
-	}
+	return objBuf.Bytes()
 }
 
 // Plaintext object metadata carries the hashes and versions a listing-side consumer dedupes

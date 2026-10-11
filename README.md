@@ -44,8 +44,9 @@ Pi, OpenCode, and Hermes support may change or be withdrawn.
 ## Operator: set up Fleet Manager (once)
 
 1. **Have ready:** an AWS account or Google Cloud project you can create resources in, and on your
-   laptop Terraform or OpenTofu, `curl`, `age`, `age-keygen`, `zstd`, and the `aws` CLI signed in,
-   or `gcloud` with `gcloud auth application-default login`. On AWS the Region needs a default VPC.
+   laptop Terraform or OpenTofu, `curl`, `age`, `age-keygen`, `rclone`, Go, and the `aws` CLI signed
+   in, or `gcloud` with `gcloud auth application-default login`. On AWS the Region needs a default
+   VPC.
 
 2. **Decide two things** before anything enrolls. Ask two custodians to each run `age-keygen -o
    name.agekey` and send you only their `age1…` public recipient (`age-keygen -y name.agekey`
@@ -83,18 +84,22 @@ Pi, OpenCode, and Hermes support may change or be withdrawn.
    any number of installs until it expires or is revoked, which suits shared machines and MDM
    rollouts.
 
-6. **Later, check a session arrived** and decrypt it with a custodian key. `active` on the
-   Installs page means a machine enrolled, not that it has shipped anything.
+6. **Later, read what arrived** with a custodian key. `active` on the Installs page means a machine
+   enrolled, not that it has shipped anything. Copy the organisation's objects with
+   [rclone](https://rclone.org/) (here an `s3` remote named `aws`), then decrypt them with Go, both
+   from the root of a clone of this repository:
 
    ```sh
-   B=$(sh deploy.sh aws output bucket)
-   KEY=$(aws s3api list-objects-v2 --bucket "$B" --prefix 'v1/organization=acme/install=' \
-     --query "Contents[?contains(Key, 'claude-code-transcripts')].Key | [0]" --output text)
-   aws s3 cp "s3://$B/$KEY" object.age
-   age -d -i name.agekey object.age | zstd -d | tar -t     # manifest.json, payload
+   B=$(sh fleet-manager/deploy.sh aws output bucket)
+   rclone copy "aws:$B/v1/organization=acme" enc/ --include 'install=*/**'
+   (cd src && go run ./cmd/quesma-unseal -i ../name.agekey ../enc ../plain)
    ```
 
-   On Google Cloud, `gcloud storage ls --recursive` on the bucket lists the same keys.
+   On Google Cloud, `deploy.sh gcp output bucket` and a `gcs` remote; on Azure, the container name
+   and an `azureblob` remote. `plain/` holds `<install name> (<id prefix>)/<source>/<native path>`,
+   or the install id when unnamed, each file beside a `.manifest.json` sidecar. Re-running both
+   commands fetches and decrypts only changed objects and never deletes anything; an object that
+   fails is named on stderr, retried on the next run, and makes the exit status 1.
 
 What the script creates, and running the template by hand with your own image or your own
 state: [fleet-manager/terraform/aws](fleet-manager/terraform/aws/README.md),
