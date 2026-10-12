@@ -202,9 +202,10 @@ moment the service learns anything about an install.
 it so an install cannot place itself in another organization's subtree. It becomes the
 `organization=` segment of every object key.
 
-**config request**: `agent_version` and the `config_versions` the build can execute, and nothing
-else. The version list is not a minimum-version pin. A floor could brick a fleet that cannot move.
-An explicit 409 refuses cleanly instead of applying a document partially.
+**config request**: `agent_version`, the `config_versions` the build can execute, and, from builds
+that have it, the build's `catalog` (see [Source catalog report](#source-catalog-report)). The
+version list is not a minimum-version pin. A floor could brick a fleet that cannot move. An
+explicit 409 refuses cleanly instead of applying a document partially.
 
 **config response**: one document: `config` (the served YAML bytes, base64) and `expires_at`. A
 response the client cannot parse or execute is refused whole, and the cached config keeps
@@ -235,6 +236,43 @@ are bearer credentials. Neither peer logs them. When present, S3's `x-amz-taggin
 `x-ms-tags` carry exactly `class=trajectory` or `class=context`. GCS has no object tags. Azure
 tickets also require `x-ms-blob-type: BlockBlob`. Successful responses carry
 `Cache-Control: no-store`.
+
+## Source catalog report
+
+A served document may only adjust sources the build has, name rule packs the build has, and use
+fields the build reads. Only the build knows those, so it says so: the config request carries
+`catalog`, the build's compiled catalog as shipped.
+
+- `sources`: every source the build can collect, with its family, description, whether it is
+  collected by default, its root templates, its include and exclude globs, its size cap and the
+  enrichers a served document may turn off.
+- `rule_packs`: the scrub rule packs the build has.
+- `features`: the served-document features it reads beyond the `config_version` it accepts. None
+  is defined yet; the list lets a later field be served only to builds that read it.
+
+**What it never carries.** Root templates are reported as compiled (`$CLAUDE_CONFIG_DIR`,
+`~/.claude`), never expanded. The catalog is the same on every machine running the build: it
+says nothing about the machine, its user, its files or its local configuration, and nothing about
+collected data.
+
+**How a control plane uses it.** It is optional and advisory; the client still resolves every
+served document against its own catalog and remains the authority.
+
+1. **Discovery, not an allowlist.** The sources a fleet's catalogs report are the sources the
+   control plane has seen, not every source there is. A newer or custom build may carry one no
+   other install reports, and an install without a catalog has unknown support, not none.
+   Reporting is how a control plane learns a new build's sources without being upgraded itself.
+   A control plane uses the reported set to offer sources by name and to catch typos; it should
+   keep a source ID it already stores, and may accept one no install reports when an
+   administrator asks for it explicitly, with a warning that no install has confirmed it.
+2. **Rule packs.** A build refuses a served document naming a rule pack it does not have. A
+   control plane may refuse such a write when installs report; it must not leave a requested pack
+   out of a document it serves, which would quietly scrub less than the organization asked for.
+3. **Serving per install.** A control plane that holds the requesting install's catalog may leave
+   out `sources[]` entries the build does not have, so the build does not refuse the whole
+   document over an entry another build needs. That build cannot collect the source either way.
+
+A build without a catalog is served as before.
 
 ## Served configuration validation
 
@@ -370,7 +408,7 @@ document may set, only add to, only disable, or not touch at all. It lives in
 | `config_version` | 1 | **set** | Must be in the accepted set [1]. An unknown version is a hard error. The document is never partially applied. |
 | `mode.schedule` | 15m | **set** | Must parse as a Go duration ("90s", "5m", "1h") and be at least 1m. |
 | `max_files_per_run` | 512 | **set** | — |
-| `drain_deadline` | 1h | **set** | Must parse as a duration and be greater than 0. |
+| `drain_deadline` | 5m | **set** | Must parse as a duration and be greater than 0. |
 | `state_dir` | XDG default | **refused** | Holds the identity, the fingerprint document, and the pause kill switch. No served document may move them. |
 | `upload_targets` | empty (unpinned) | **refused** | Optional origin pin. With no entries, the control plane's tickets decide the destination (https only, exact key still enforced). Any entry pins the allowed origins. Machine-owner only: a presigned ticket authorizes itself, so a layer that could write the pin could also loosen it. HTTPS unless the entry explicitly enables loopback http. |
 | `send.sink / bucket / prefix / region / path` | the presigned upload, always | **read and ignored** | Vestigial. The presigned upload is the only write path, so these fields select nothing. A document that still names s3 with a bucket and a region loads and is ignored. This lets one served document serve both old and new clients. upload_targets, when configured, pins where a ticket may send bytes. |
@@ -380,7 +418,7 @@ document may set, only add to, only disable, or not touch at all. It lives in
 | `encryption.additional_recipients` | empty | **add only** | Recipients decide who can read every object sealed after them. This is the only channel through which an organization's reader key reaches a client. Each layer may add readers. No layer may remove another layer's readers. |
 | `encryption.include_install_recipient` | true | **set** | false means the install cannot decrypt what it ships. Setting false requires at least one additional recipient. A config that would seal objects no key can open is rejected whole. |
 | `sources[].enabled` | catalog | **set** | A local disable beats a remote enable. |
-| `sources[].roots / include / exclude` | catalog | **set** | Roots must stay within the compiled scope ceiling. A new root requires a release. Globs are not subsumption-checked. |
+| `sources[].roots / include / exclude` | catalog | **set** | Roots must stay within the compiled scope ceiling. A new root requires a release. Globs are not subsumption-checked. A served exclude replaces the catalog's excludes, including any that keep unscrubbable files out. |
 | `sources[].max_file_bytes` | catalog | **set** | — |
 | `sources[].enrichers{}` | catalog | **turn off only** | May disable a registered enricher. May not enable one, and may not attach one the catalog does not have. An enricher reads a store the raw pipeline never touches. |
 | `a source id not in the compiled catalog` | — | **refused** | A config layer cannot create a source. It can only adjust one. |
@@ -395,9 +433,9 @@ Not settable from any config layer:
 
 ## Not on the wire
 
-- **No capability negotiation.** The config request carries `agent_version` and
-  `config_versions`, and nothing else. A future mismatch surfaces as a client-side resolve
-  refusal and a fallback to the cached config.
+- **No negotiation.** The build reports its catalog; the server does not ask for anything and the
+  client does not wait for an answer about it. A mismatch the server could not see still surfaces
+  as a client-side resolve refusal and a fallback to the cached config.
 - **No "nothing newer" answer.** No conditional GET, no ETag. Every fetch transfers the full
   config. At one fetch per process start, that is small.
 - **No revocation push or poll.** Revocation is a 403 on the next config or authorize call. That

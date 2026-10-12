@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/QuesmaOrg/shipper-protocol/schemas/config-request.schema.json",
   "title": "POST /v1/config request",
-  "description": "Which build is asking, and which config schema versions it can execute. The version list is not a minimum-version pin: a version floor can brick a fleet that cannot move, and an explicit 409 on an unsupported config_version refuses cleanly instead of applying a document partially. The server decodes this request tolerantly, so new fields ship client-first.",
+  "description": "Which build is asking, and which config schema versions it can execute. The version list is not a minimum-version pin: a version floor can brick a fleet that cannot move, and an explicit 409 on an unsupported config_version refuses cleanly instead of applying a document partially. The server decodes this request tolerantly, so new fields ship client-first. A build that knows its source catalog reports it in catalog, so a control plane can serve and validate against what each install can execute.",
   "type": "object",
   "required": ["agent_version", "config_versions"],
   "additionalProperties": false,
@@ -17,6 +17,53 @@
       "type": "array",
       "minItems": 1,
       "items": { "type": "integer", "minimum": 1 }
+    },
+    "catalog": {
+      "description": "The build's compiled source catalog: what this install can collect, and which served-document features it reads. Optional: a client that omits it is served as before. Root templates are reported as compiled ($CLAUDE_CONFIG_DIR, ~/.claude), never expanded, so the catalog says nothing about the machine, its user, or its files. Sent on every config fetch.",
+      "$ref": "#/$defs/catalog"
     }
+  },
+
+  "$defs": {
+    "catalog": {
+      "type": "object",
+      "required": ["sources", "rule_packs", "features"],
+      "additionalProperties": false,
+      "properties": {
+        "sources": {
+          "description": "Every source this build can collect. A served document may only adjust these; it cannot create one. Across a fleet these are the sources discovered so far, not every source there is.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/source" }
+        },
+        "rule_packs": {
+          "description": "The scrub rule packs this build has. A served scrub.rule_packs naming another is refused by this build.",
+          "$ref": "#/$defs/names"
+        },
+        "features": {
+          "description": "Served-document features this build reads beyond the config_version it accepts, by name. None is defined yet; a later field can then be served only to builds that list it.",
+          "$ref": "#/$defs/names"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["id", "family", "enabled", "roots"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "description": "The identifier a served document names in sources[].id.", "type": "string", "minLength": 1 },
+        "family": { "description": "The agent family, for example claude-code.", "type": "string", "minLength": 1 },
+        "family_name": { "description": "The family's display name, for example Claude Code.", "type": "string" },
+        "description": { "description": "What the source collects, in the catalog's words.", "type": "string" },
+        "artifact_class": { "description": "trajectory or context, as the catalog classifies the source.", "type": "string" },
+        "enabled": { "description": "Whether this build collects the source when no layer says otherwise.", "type": "boolean" },
+        "roots": { "description": "The compiled root templates, unexpanded. Globs are relative to the root that resolves on a machine.", "$ref": "#/$defs/strings" },
+        "include": { "description": "The compiled include globs.", "$ref": "#/$defs/strings" },
+        "exclude": { "description": "The compiled exclude globs. A served sources[].exclude replaces them.", "$ref": "#/$defs/strings" },
+        "max_file_bytes": { "description": "The compiled per-file size cap.", "type": "integer", "minimum": 0 },
+        "enrichers": { "description": "The registered enrichers a served document may turn off.", "$ref": "#/$defs/names" }
+      }
+    },
+    "names": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "strings": { "type": "array", "items": { "type": "string" } }
   }
 }

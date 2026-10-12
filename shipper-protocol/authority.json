@@ -34,7 +34,7 @@
     },
     {
       "field": "drain_deadline",
-      "default": "1h",
+      "default": "5m",
       "server_may": "set",
       "note": "Must parse as a duration and be greater than 0."
     },
@@ -96,7 +96,7 @@
       "field": "sources[].roots / include / exclude",
       "default": "catalog",
       "server_may": "set",
-      "note": "Roots must stay within the compiled scope ceiling. A new root requires a release. Globs are not subsumption-checked."
+      "note": "Roots must stay within the compiled scope ceiling. A new root requires a release. Globs are not subsumption-checked. A served exclude replaces the catalog's excludes, including any that keep unscrubbable files out."
     },
     {
       "field": "sources[].max_file_bytes",

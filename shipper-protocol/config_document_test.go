@@ -46,6 +46,7 @@ func TestConfigDocumentValidation(t *testing.T) {
 		`{"drain_deadline":"0s"}`, `{"drain_deadline":"-1s"}`, `{"drain_deadline":"999999999999999999h"}`,
 		`{"mode":{"schedule":"30s"}}`, `{"mode":{"schedule":"forever"}}`,
 		`{"sources":"hello"}`, `{"sources":[{}]}`, `{"sources":[{"id":"example","enabled":"yes"}]}`,
+		`{"sources":[{"id":"example","exclude_add":["a/**"]}]}`,
 		`{"unknown":true}`, `{"mode":{"unknown":true}}`,
 		`{"send":{}}`, `{"send":{"sink":"s3","bucket":"example"}}`,
 		`{"crash_report":{}}`, `{"crash_report":{"enabled":false}}`,
