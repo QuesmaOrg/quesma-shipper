@@ -1,0 +1,10 @@
+# The build context is the repository root (see Dockerfile); send only the two modules it builds.
+*
+!fleet-manager/
+!shipper-protocol/
+**/.git
+fleet-manager/Dockerfile*
+fleet-manager/coverage.out
+fleet-manager/terraform
+fleet-manager/fleet-manager
+fleet-manager/data

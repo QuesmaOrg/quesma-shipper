@@ -193,9 +193,9 @@ PLATFORM ?= linux/amd64
 deploy: ## Push quesma/fleet-manager:<sha> and :latest to Docker Hub, which every customer's Terraform pulls
 	@command -v docker >/dev/null && docker buildx version >/dev/null 2>&1 \
 	  || { echo "needs docker with buildx"; exit 1; }
-	@if [ -n "$$($(IN) git status --porcelain -- .)" ]; then \
+	@if [ -n "$$($(IN) git status --porcelain -- . ../shipper-protocol)" ]; then \
 	  echo "the working tree is dirty, so :$(REVISION) would name a commit that is not what gets built:"; \
-	  $(IN) git status --short -- . | head -10 | sed 's/^/  /'; exit 1; fi
+	  $(IN) git status --short -- . ../shipper-protocol | head -10 | sed 's/^/  /'; exit 1; fi
 	@digest() { out=$$(docker buildx imagetools inspect "$$1" --format '{{json .Manifest.Digest}}' 2>&1) \
 	  && { printf '%s' "$$out" | tr -d '"'; return 0; }; \
 	  case $$out in *": not found"*) return 0 ;; esac; \
@@ -208,8 +208,13 @@ deploy: ## Push quesma/fleet-manager:<sha> and :latest to Docker Hub, which ever
 	  echo "latest -> $(REVISION), retagged"; exit 0; fi; \
 	echo "building $(REVISION) for $(PLATFORM)"; \
 	docker buildx build --platform $(PLATFORM) --provenance=false --sbom=false --target cloud-run \
-	  --build-arg VERSION=$(VERSION)+$(REVISION) \
-	  -t $(IMAGE):$(REVISION) -t $(IMAGE):latest --push $(HERE)
+	  --build-arg VERSION=$(VERSION)+$(REVISION) -f $(HERE)Dockerfile \
+	  -t $(IMAGE):$(REVISION) -t $(IMAGE):latest --push $(HERE)..
+
+.PHONY: image
+image: ## Build the image as deploy would, without pushing it anywhere
+	docker buildx build --platform $(PLATFORM) --target cloud-run \
+	  --build-arg VERSION=$(VERSION)+$(REVISION) -f $(HERE)Dockerfile $(HERE)..
 
 .PHONY: test
 test: ## Run the suite

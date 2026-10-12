@@ -23,7 +23,6 @@ allowed-tools:
   - Bash(gh issue view:*)
   - Bash(gh run list:*)
   - Bash(gh api repos/QuesmaOrg/quesma-shipper/pulls:*)
-  - Bash(go env:*)
   - Bash(go test:*)
   - Bash(go vet:*)
   - Bash(grep:*)
@@ -105,10 +104,10 @@ Load [checklist.md](checklist.md); its first table maps changed paths to the are
 [gotchas.md](gotchas.md); it holds the cloud, record and tooling facts reviewers had to supply
 before, and it is short enough to read every time.
 
-The wire contract is the shipper-protocol module at the version in `fleet-manager/go.mod`, readable
-offline at `$(go env GOMODCACHE)/github.com/!quesma!org/shipper-protocol@<version>`: `PROTOCOL.md`
-for the prose, `authority.json` for which served fields the control plane may set, `schemas/` and
-`schemas/v2/` for the message shapes, `fixtures/` for the pinned bytes.
+The wire contract is `shipper-protocol/` at the head under review, which `fleet-manager/go.mod`
+replaces the module with: `PROTOCOL.md` for the prose, `authority.json` for which served fields the
+control plane may set, `schemas/` and `schemas/v2/` for the message shapes, `fixtures/` for the
+pinned bytes.
 
 ## 3. What counts as a finding
 
@@ -219,8 +218,8 @@ stored-record and configuration changes, and for a human to confirm any diff in
   `state reset` does after a scrub-rule change, after a recipient change, and during a rolling
   upgrade while old and new replicas answer side by side (#74, #79; recipient rotation is open as
   #77).
-- A new shipper-facing behaviour starts in shipper-protocol and arrives as a module bump plus a
-  handler. In `src/protocol_test.go` or a fixture, a diff that changes an asserted wire shape,
+- A new shipper-facing behaviour starts in `shipper-protocol/`, with a `CHANGELOG.md` entry, in the
+  same PR as its handler. In `src/protocol_test.go` or a fixture, a diff that changes an asserted wire shape,
   header, status or fixture bytes is a contract claim: read it and ask for confirmation. A diff
   that only changes which inputs earn an existing answer is behaviour: review it under the probe
   bullet, and still list it under "Needs a human's yes", because `fleet-manager/AGENTS.md` makes
@@ -254,14 +253,12 @@ The most frequent finding, and the one maintainers fix themselves when the autho
 - Wherever a document tells someone to run `age-keygen`, it says that recipients encrypt, only the
   private identity decrypts, and the identity is backed up and never committed (#78).
 - Stale statements: for every term the PR renames, redefines or removes, grep the head tree
-  outside tests and the shipper-protocol module in the module cache, and check each hit was updated
-  or is named in the description with a reason. Comments, `OPERATIONS.md`, the other cloud's
+  outside tests, `shipper-protocol/` included, and check each hit was updated or is named in the
+  description with a reason. Comments, `OPERATIONS.md`, the other cloud's
   `variables.tf` and shipper-side schema notes are where past misses sat (#79):
 
   ```sh
   git grep -n -i -e '<term>' <headRefOid> -- . ':!*_test.go'
-  go env GOMODCACHE                    # prints <cache>
-  grep -rn -i -e '<term>' <cache>/github.com/!quesma!org/shipper-protocol@<version>
   ```
 
 ### Pass 6: publishing, pins and deployment

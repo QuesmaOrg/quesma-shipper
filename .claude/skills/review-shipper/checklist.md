@@ -115,7 +115,8 @@ the base version, and report only what the PR introduced or made worse.
     `src/internal/transforms/scrub_conformance_test.go`, only after a maintainer has agreed to the
     diff; the description explains every added or changed vector; a vector whose format would
     change is deferred. The wire fixtures behind `src/internal/controlplane/wire_contract_test.go`
-    change only through a shipper-protocol release. [H, codified; #50, #66, #69, #76]
+    live under `shipper-protocol/fixtures/` and change only with a `CHANGELOG.md` entry there and
+    the same confirmation. [H, codified; #50, #66, #69, #76]
 23. **Source ids in both directions.** A served document naming an id the running binary lacks is
     rejected in full and collection continues under the last valid configuration (`RejectionError`
     in `src/internal/config/resolve.go`). Adding a source means an older client rejects any served

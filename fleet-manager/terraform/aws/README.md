@@ -75,7 +75,8 @@ rev=$(git rev-parse --short=12 HEAD)
 aws ecr get-login-password --region eu-central-1 \
   | docker login --username AWS --password-stdin "$REGISTRY"
 docker buildx build --platform linux/amd64 --target cloud-run \
-  --build-arg VERSION="$(cat VERSION)+$rev" -t "$REGISTRY/fleet-manager:$rev" --push .
+  --build-arg VERSION="$(cat VERSION)+$rev" -t "$REGISTRY/fleet-manager:$rev" --push \
+  -f Dockerfile ..                          # the context is the repository root
 docker buildx imagetools inspect "$REGISTRY/fleet-manager:$rev" \
   --format '{{json .Manifest.Digest}}' | tr -d '"'
 
