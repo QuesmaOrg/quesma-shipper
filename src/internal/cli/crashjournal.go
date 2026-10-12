@@ -24,14 +24,14 @@ func startCrashJournal(errOut io.Writer, dir string, dirErr error) (*crashjourna
 
 	// Before Open, which may rotate the file this reads.
 	boot := platform.BootID()
-	prev := crashjournal.LastRun(dir, boot)
+	prev, live := crashjournal.LastRun(dir, boot)
 
 	fl, err := crashjournal.Open(dir, runID)
 	if err != nil {
 		fmt.Fprintf(errOut, "warning: crash journal unavailable: %v\n", err)
 		return nil, runID, nil
 	}
-	fl.Start(boot)
+	fl.Start(boot, live)
 
 	var crash *formats.LastCrash
 	if prev != nil {

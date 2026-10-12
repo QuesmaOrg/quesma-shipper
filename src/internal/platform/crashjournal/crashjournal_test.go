@@ -3,6 +3,7 @@ package crashjournal
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -26,9 +27,22 @@ func deadRunOn(t *testing.T, dir, runID, boot string, mark func(l *Log)) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l.Start(boot)
+	l.Start(boot, nil)
 	mark(l)
 	stampDeadPID(t, dir, runID)
+}
+
+// begin starts a run the way the CLI does: LastRun first, then Open and Start with the runs it
+// found alive.
+func begin(t *testing.T, dir, runID, boot string) *Log {
+	t.Helper()
+	_, live := LastRun(dir, boot)
+	l, err := Open(dir, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Start(boot, live)
+	return l
 }
 
 // stampDeadPID rewrites the run's start entry to a PID that cannot be alive, so the
@@ -68,11 +82,11 @@ func TestCleanRunReportsNoCrash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l.Start(bootA)
+	l.Start(bootA, nil)
 	l.Phase("init")
 	l.Exit()
 
-	if s := LastRun(dir, bootA); s != nil {
+	if s, _ := LastRun(dir, bootA); s != nil {
 		t.Fatalf("a clean run is no crash, got %+v", s)
 	}
 }
@@ -86,7 +100,7 @@ func TestADeathCarriesThePhaseItReached(t *testing.T) {
 		l.Phase("tick 1")
 	})
 
-	s := LastRun(dir, bootA)
+	s, _ := LastRun(dir, bootA)
 	if s == nil || s.Clean {
 		t.Fatalf("want a death, got %+v", s)
 	}
@@ -104,7 +118,7 @@ func TestConsecutiveCrashesCounted(t *testing.T) {
 	deadRun(t, dir, "run-b", func(l *Log) { l.Phase("init") })
 	deadRun(t, dir, "run-c", func(l *Log) { l.Phase("init") })
 
-	s := LastRun(dir, bootA)
+	s, _ := LastRun(dir, bootA)
 	if s == nil || s.Clean || s.RunID != "run-c" || s.Crashes != 3 || s.Phase != "init" {
 		t.Fatalf("want run-c with 3 crashes at init, got %+v", s)
 	}
@@ -117,11 +131,11 @@ func TestCrashSurvivesErrorExitRestarts(t *testing.T) {
 	deadRun(t, dir, "run-crash", func(l *Log) { l.Phase("tick 1") })
 	for _, id := range []string{"run-retry1", "run-retry2"} {
 		l, _ := Open(dir, id)
-		l.Start(bootA)
+		l.Start(bootA, nil)
 		l.Exit()
 	}
 
-	s := LastRun(dir, bootA)
+	s, _ := LastRun(dir, bootA)
 	if s == nil || s.Clean || s.RunID != "run-crash" || s.Crashes != 1 {
 		t.Fatalf("want run-crash still reported past two error exits, got %+v", s)
 	}
@@ -136,17 +150,17 @@ func TestOnlyAReportedRunClearsTheCrash(t *testing.T) {
 	deadRun(t, dir, "run-a", func(l *Log) { l.Phase("init") })
 
 	l, _ := Open(dir, "run-b")
-	l.Start(bootA)
+	l.Start(bootA, nil)
 	l.Exit() // clean, but no heartbeat carrying the crash reached the sink
-	if s := LastRun(dir, bootA); s == nil || s.Clean || s.RunID != "run-a" {
+	if s, _ := LastRun(dir, bootA); s == nil || s.Clean || s.RunID != "run-a" {
 		t.Fatalf("a clean exit must not clear the report, got %+v", s)
 	}
 
 	l, _ = Open(dir, "run-c")
-	l.Start(bootA)
+	l.Start(bootA, nil)
 	l.Reported()
 	l.Exit()
-	if s := LastRun(dir, bootA); s != nil {
+	if s, _ := LastRun(dir, bootA); s != nil {
 		t.Fatalf("want the delivered report cleared, got %+v", s)
 	}
 }
@@ -154,10 +168,10 @@ func TestOnlyAReportedRunClearsTheCrash(t *testing.T) {
 func TestLiveConcurrentRunIsNotADeath(t *testing.T) {
 	dir := t.TempDir()
 	l, _ := Open(dir, "run-live")
-	l.Start(bootA) // this test's own PID: alive by definition
+	l.Start(bootA, nil) // this test's own PID: alive by definition
 	l.Phase("tick 1")
 
-	if s := LastRun(dir, bootA); s != nil {
+	if s, _ := LastRun(dir, bootA); s != nil {
 		t.Fatalf("a live run must not report as a crash, got %+v", s)
 	}
 }
@@ -174,14 +188,14 @@ func TestTornLastLineTolerated(t *testing.T) {
 	}
 	f.Close()
 
-	s := LastRun(dir, bootA)
+	s, _ := LastRun(dir, bootA)
 	if s == nil || s.Clean || s.Phase != "engine" {
 		t.Fatalf("want the last whole entry to win, got %+v", s)
 	}
 }
 
 func TestMissingJournal(t *testing.T) {
-	if s := LastRun(t.TempDir(), bootA); s != nil {
+	if s, _ := LastRun(t.TempDir(), bootA); s != nil {
 		t.Fatalf("want nil on a fresh state dir, got %+v", s)
 	}
 }
@@ -205,7 +219,7 @@ func TestOpenRotatesALargeJournal(t *testing.T) {
 
 func TestNilLogIsSilent(t *testing.T) {
 	var l *Log
-	l.Start(bootA)
+	l.Start(bootA, nil)
 	l.Phase("init")
 	l.Reported()
 	l.Exit()
@@ -218,7 +232,7 @@ func TestARepeatedPhaseIsOneEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l.Start(bootA)
+	l.Start(bootA, nil)
 	l.Phase("tick 1: cursor")
 	l.Phase("tick 1: cursor")
 	l.Phase("tick 1: cursor")
@@ -240,7 +254,7 @@ func TestAFailedPhaseWriteIsRetried(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l.Start(bootA)
+	l.Start(bootA, nil)
 	l.Phase("tick 1")
 	good := l.path
 	l.path = dir // a directory: the open fails
@@ -269,10 +283,10 @@ func TestARunStoppedWithTheMachineIsNotACrash(t *testing.T) {
 	dir := t.TempDir()
 	deadRun(t, dir, "run-a", func(l *Log) { l.Phase("tick 3") })
 
-	if s := LastRun(dir, bootB); s != nil {
+	if s, _ := LastRun(dir, bootB); s != nil {
 		t.Fatalf("a run that stopped with the machine is no crash, got %+v", s)
 	}
-	if s := LastRun(dir, ""); s == nil || s.RunID != "run-a" {
+	if s, _ := LastRun(dir, ""); s == nil || s.RunID != "run-a" {
 		t.Fatalf("an unknown boot keeps the death reported, got %+v", s)
 	}
 }
@@ -284,7 +298,7 @@ func TestAClockStepWithoutRebootKeepsTheCrash(t *testing.T) {
 		`{"at":"2020-01-01T10:00:00Z","run_id":"run-a","ev":"start","pid":99999999,"boot":"`+bootA+`"}`,
 		`{"at":"2020-01-01T10:09:00Z","run_id":"run-a","ev":"phase","phase":"tick 2"}`)
 
-	if s := LastRun(dir, bootA); s == nil || s.RunID != "run-a" || s.Phase != "tick 2" {
+	if s, _ := LastRun(dir, bootA); s == nil || s.RunID != "run-a" || s.Phase != "tick 2" {
 		t.Fatalf("want the crash on this boot reported, got %+v", s)
 	}
 }
@@ -295,11 +309,11 @@ func TestAnUndeliveredCrashSurvivesALaterReboot(t *testing.T) {
 	dir := t.TempDir()
 	deadRun(t, dir, "run-a", func(l *Log) { l.Phase("tick 2") })
 	l, _ := Open(dir, "run-b")
-	l.Start(bootA)
+	l.Start(bootA, nil)
 	l.Exit() // detected run-a's crash, delivered nothing
 	deadRun(t, dir, "run-c", func(l *Log) { l.Phase("tick 1") })
 
-	s := LastRun(dir, bootB)
+	s, _ := LastRun(dir, bootB)
 	if s == nil || s.RunID != "run-a" || s.Crashes != 1 || s.Phase != "tick 2" {
 		t.Fatalf("want run-a still reported after the reboot, counted once, got %+v", s)
 	}
@@ -310,7 +324,7 @@ func TestOnlyDeathsOnThisBootAreCounted(t *testing.T) {
 	deadRun(t, dir, "run-a", func(l *Log) { l.Phase("tick 3") })
 	deadRunOn(t, dir, "run-b", bootB, func(l *Log) { l.Phase("tick 1") })
 
-	s := LastRun(dir, bootB)
+	s, _ := LastRun(dir, bootB)
 	if s == nil || s.RunID != "run-b" || s.Crashes != 1 || s.Phase != "tick 1" {
 		t.Fatalf("want only the death on this boot, counted once, got %+v", s)
 	}
@@ -319,14 +333,12 @@ func TestOnlyDeathsOnThisBootAreCounted(t *testing.T) {
 // A manual sync that started while the daemon ran, both killed at shutdown.
 func TestOverlappingRunsStoppedWithTheMachine(t *testing.T) {
 	dir := t.TempDir()
-	daemon, _ := Open(dir, "run-daemon")
-	daemon.Start(bootA)
-	sync, _ := Open(dir, "run-sync")
-	sync.Start(bootA)
+	daemon := begin(t, dir, "run-daemon", bootA)
+	begin(t, dir, "run-sync", bootA)
 	daemon.Phase("tick 4")
 	stampDeadPID(t, dir, "run-daemon")
 
-	if s := LastRun(dir, bootB); s != nil {
+	if s, _ := LastRun(dir, bootB); s != nil {
 		t.Fatalf("overlapping runs stopped with the machine are no crash, got %+v", s)
 	}
 }
@@ -338,8 +350,61 @@ func TestAJournalWithoutBootIDsKeepsReporting(t *testing.T) {
 		`{"at":"2026-10-01T10:05:00Z","run_id":"run-a","ev":"phase","phase":"tick 2"}`,
 		`{"at":"2026-10-01T10:06:00Z","run_id":"run-b","ev":"start","pid":99999999}`)
 
-	s := LastRun(dir, bootB)
+	s, _ := LastRun(dir, bootB)
 	if s == nil || s.RunID != "run-b" || s.Crashes != 2 {
 		t.Fatalf("want both deaths without a boot id reported, got %+v", s)
+	}
+}
+
+// The daemon idles between ticks while a manual sync starts and exits; a shutdown then kills it.
+func TestAnIdleDaemonPastASyncStoppedWithTheMachine(t *testing.T) {
+	dir := t.TempDir()
+	daemon := begin(t, dir, "run-daemon", bootA)
+	daemon.Phase("tick 4")
+	begin(t, dir, "run-sync", bootA).Exit()
+	stampDeadPID(t, dir, "run-daemon")
+
+	if s, _ := LastRun(dir, bootB); s != nil {
+		t.Fatalf("a daemon a sync saw alive went down with the machine, got %+v", s)
+	}
+}
+
+// After a reboot an old PID belongs to some other process, so it proves nothing about the run.
+func TestAReusedPIDOnALaterBootKeepsTheCrash(t *testing.T) {
+	dir := t.TempDir()
+	deadRun(t, dir, "run-a", func(l *Log) { l.Phase("tick 2") })
+	begin(t, dir, "run-b", bootA).Exit() // saw run-a dead, delivered nothing
+	path := filepath.Join(dir, fileName)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reused := strings.Replace(string(raw), `"pid":99999999`, `"pid":`+strconv.Itoa(os.Getpid()), 1)
+	if err := os.WriteFile(path, []byte(reused), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if s, _ := LastRun(dir, bootB); s == nil || s.RunID != "run-a" {
+		t.Fatalf("want run-a reported despite its PID being taken, got %+v", s)
+	}
+}
+
+// A sync rotates the journal while the daemon runs, so the daemon's later entries have no start.
+func TestADaemonWhoseStartRotatedAwayStoppedWithTheMachine(t *testing.T) {
+	dir := t.TempDir()
+	daemon := begin(t, dir, "run-daemon", bootA)
+	f, err := os.OpenFile(filepath.Join(dir, fileName), os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(append(make([]byte, maxLogBytes), '\n')); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	begin(t, dir, "run-sync", bootA).Exit()
+	daemon.Phase("tick 9")
+
+	if s, _ := LastRun(dir, bootB); s != nil {
+		t.Fatalf("a daemon whose start rotated away went down with the machine, got %+v", s)
 	}
 }

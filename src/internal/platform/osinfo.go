@@ -17,6 +17,6 @@ func OSVersion() string { return osVersion() }
 // BootTime is the machine's last boot as RFC3339 UTC, or "" when unknown.
 func BootTime() string { return bootTime() }
 
-// BootID names the current boot and changes only on a reboot, unlike BootTime, which on Windows
-// is estimated from the clock. "" when unknown.
+// BootID is a best-effort id of the current boot, or "" when unknown. Unlike BootTime it does not
+// follow the clock; on Windows it comes from an undocumented counter a Fast Startup may not advance.
 func BootID() string { return bootID() }

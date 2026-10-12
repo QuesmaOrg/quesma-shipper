@@ -19,7 +19,7 @@ func readBootTime() string {
 	return time.Now().Add(-windows.DurationSinceBoot()).UTC().Format(time.RFC3339)
 }
 
-// The kernel increments BootId on every boot.
+// BootId counts boots. It is undocumented, so a missing value reads as unknown.
 func readBootID() string {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE,
 		`SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters`, registry.QUERY_VALUE)
