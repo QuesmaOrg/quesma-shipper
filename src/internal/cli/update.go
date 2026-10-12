@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
 
@@ -174,7 +175,9 @@ func maybeSelfUpdate(ctx context.Context, build app.Build, autoupdate bool, errO
 	res, err := packaging.Update(ctx, packaging.UpdateOptions{Current: build.Version, Out: errOut})
 	if err != nil {
 		fmt.Fprintf(errOut, "self-update: skipped: %v\n", err)
-		app.RecordUpdateFailure(fmt.Sprintf("self-update from %s did not happen: %v", build.Version, err))
+		if message, record := updateFailure(ctx, build.Version, err); record {
+			app.RecordUpdateFailure(message)
+		}
 		return
 	}
 	if !res.Updated {
@@ -198,4 +201,14 @@ func maybeSelfUpdate(ctx context.Context, build app.Build, autoupdate bool, errO
 		// restarts leaves the install running the old code with nothing saying so.
 		app.RecordUpdateFailure(fmt.Sprintf("updated to %s but the restart failed: %v", res.To, err))
 	}
+}
+
+// updateFailure words a skipped update for the failure record, and says whether to record it at
+// all: an update channel that could not be reached is the machine offline, retried next tick,
+// not an install that cannot replace itself.
+func updateFailure(ctx context.Context, version string, err error) (string, bool) {
+	if ctx.Err() == nil && platform.Offline(err) {
+		return "", false
+	}
+	return fmt.Sprintf("self-update from %s did not happen: %v", version, err), true
 }

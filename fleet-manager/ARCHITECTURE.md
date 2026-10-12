@@ -20,6 +20,7 @@ src/
   model.go          the records, and what a valid one is
   upload.go         turning an upload request into a batch of tickets
   seen.go tags.go   check-ins and install names, both off the critical path
+  catalog.go        the source catalogs builds report, and serving and checking writes against them
   telemetry*.go     the forwarding proxy and the deployment signing identity
   health.go         collection-health reports from a reporter credential
   store.go          ObjectStore -- the only durable-state primitive

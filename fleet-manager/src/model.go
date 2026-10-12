@@ -142,6 +142,9 @@ type SeenRecord struct {
 	LastConfigAt  *time.Time `json:"last_config_at,omitempty"`
 	LastVendAt    *time.Time `json:"last_vend_at,omitempty"`
 	LastSeenAt    time.Time  `json:"last_seen_at"`
+	// CatalogDigest names the catalog the latest config fetch carried, reported at LastConfigAt;
+	// empty when that fetch carried none.
+	CatalogDigest string `json:"catalog_digest,omitempty"`
 }
 
 // TagsRecord names an install for a human reader and carries what an administrator says about the
@@ -191,6 +194,12 @@ func installKey(org, id string) string {
 }
 func grantKey(org, id string) string { return controlPrefix(org) + "grants/" + id + ".json" }
 func seenKey(org, id string) string  { return controlPrefix(org) + "seen/" + id + ".json" }
+
+// catalogKey names a reported catalog by the SHA-256 of its canonical encoding. Under control/, so
+// the ETL reader grant, which names install roots and config.json only, does not reach it.
+func catalogKey(org, digest string) string {
+	return controlPrefix(org) + "catalogs/" + digest + ".json"
+}
 func healthKey(org, id string) string {
 	return controlPrefix(org) + "health/" + id + ".json"
 }

@@ -101,11 +101,15 @@ func New(o Options) (*Client, error) {
 	}, nil
 }
 
-// ConfigRequest is what a config fetch posts: which build is asking and which config schema
-// versions it can execute. Not a min-version pin: a floor can brick a fleet that cannot move.
+// ConfigRequest is what a config fetch posts: which build is asking, which config schema versions
+// it can execute, and its compiled catalog. Not a min-version pin: a floor can brick a fleet that
+// cannot move.
 type ConfigRequest struct {
 	AgentVersion   string `json:"agent_version"`
 	ConfigVersions []int  `json:"config_versions"`
+
+	// Catalog is advisory: the client still resolves every served document against its own catalog.
+	Catalog *config.CatalogReport `json:"catalog,omitempty"`
 }
 
 // EnrollRequest is the one-time registration.

@@ -33,11 +33,8 @@ removal; enrollment and upload history remain per user. Re-running setup repairs
 without changing enrollment. Uninstall the previous scope without purging state before switching.
 For Intune, see the [Intune guide](packaging/windows/intune/README.md), including
 [System deployment before first login](packaging/windows/intune/README-System.md).
-Release signing is temporarily disabled while the publisher identity is validated, so Microsoft
-Defender SmartScreen may warn about the download, and devices whose application-control policy
-requires a trusted publisher may block it. The raw `quesma-shipper-windows-<arch>.exe` files remain
-available for portable use and are what the self-updater installs; a portable copy has no
-scheduled task or uninstaller.
+The raw `quesma-shipper-windows-<arch>.exe` files remain available for portable use and are what
+the self-updater installs; a portable copy has no scheduled task or uninstaller.
 
 **Updates.** Personal installations of released builds keep themselves current from Quesma's signed
 [TUF](https://theupdateframework.io/) repository; `quesma-shipper update` updates at once. The
@@ -179,6 +176,13 @@ The served document has limited authority. A rulebook in the
 what the control plane can change. For example, it can add scrub rule packs. It cannot remove them.
 It cannot turn off scrub or encryption. Contract tests here and in the control plane enforce the
 rulebook.
+
+Each config fetch reports this build's compiled catalog: every source with its root templates,
+globs and size cap, the rule packs the build has, and the served-document features it reads (none
+yet). Root templates are sent as compiled, such as `~/.claude`, never expanded. The report is the
+same on every machine running the build and says nothing about the machine, its files or its local
+configuration. The control plane uses it to offer sources by name, to catch a source or rule pack
+no install has, and to leave out of a served document the sources this build does not have.
 
 File locations. `XDG_CONFIG_HOME` and `XDG_STATE_HOME` are honoured.
 

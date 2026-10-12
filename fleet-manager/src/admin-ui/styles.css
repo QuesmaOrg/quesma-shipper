@@ -576,6 +576,17 @@ pre {
   max-width: 68ch;
 }
 
+.source-note {
+  color: var(--graphite);
+  font-size: 0.85rem;
+  margin: 0.3rem 0 0;
+  max-width: 68ch;
+}
+
+.source-warning {
+  color: var(--vermilion-deep);
+}
+
 .telemetry-help {
   color: var(--graphite);
   font-size: 0.85rem;

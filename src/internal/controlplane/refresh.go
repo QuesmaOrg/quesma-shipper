@@ -143,10 +143,15 @@ func fetch(ctx context.Context, o RefreshOptions) (Remote, error) {
 		return Remote{}, err
 	}
 
-	// Built here, not passed in: both fields are compiled facts, so a caller could vary nothing.
+	// Built here, not passed in: every field is a compiled fact, so a caller could vary nothing.
+	catalog, err := config.CompiledCatalogReport()
+	if err != nil {
+		return Remote{}, err
+	}
 	req := ConfigRequest{
 		AgentVersion:   platform.Current().String(),
 		ConfigVersions: config.AcceptedConfigVersions,
+		Catalog:        catalog,
 	}
 
 	f, err := c.FetchConfig(ctx, req)

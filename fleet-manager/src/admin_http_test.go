@@ -137,7 +137,7 @@ func TestEveryAdminRouteRequiresAuthentication(t *testing.T) {
 	server, _ := testAdminServer(t)
 	routes := []struct{ method, path string }{
 		{"GET", "/v1/admin/orgs"}, {"POST", "/v1/admin/orgs"},
-		{"GET", "/v1/admin/orgs/acme/config"}, {"PUT", "/v1/admin/orgs/acme/config"},
+		{"GET", "/v1/admin/orgs/acme/config"}, {"PUT", "/v1/admin/orgs/acme/config"}, {"GET", "/v1/admin/orgs/acme/sources"},
 		{"GET", "/v1/admin/orgs/acme/grants"}, {"POST", "/v1/admin/orgs/acme/grants"}, {"POST", "/v1/admin/orgs/acme/grants/id/revoke"},
 		{"GET", "/v1/admin/orgs/acme/invites"}, {"POST", "/v1/admin/orgs/acme/invites"}, {"POST", "/v1/admin/orgs/acme/invites/id/revoke"},
 		{"POST", "/v1/admin/orgs/acme/invites/id/release"}, {"GET", "/v1/admin/orgs/acme/installs"}, {"POST", "/v1/admin/orgs/acme/installs/id/revoke"},

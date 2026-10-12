@@ -97,7 +97,8 @@ Two edges deserve prose because they look like mistakes and are the design:
   implementation; the ticket, the URL and every wire type stop in `src/app/`, which is why the
   loop cannot learn that a control plane exists.
 - **`src/internal/controlplane → src/internal/config`**: the served document is config's format to parse; the
-  alternative is a second implementation of the same document.
+  alternative is a second implementation of the same document. The catalog report the config request
+  carries is config's too: only the resolver knows which sources, packs and features a document may name.
 
 ## The invariants that outrank the tree
 

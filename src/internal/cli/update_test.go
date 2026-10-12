@@ -3,6 +3,9 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -117,5 +120,19 @@ func TestTheBootGateKeepsItsPromises(t *testing.T) {
 				t.Errorf("why = %q, want loud=%v", why, tc.loud)
 			}
 		})
+	}
+}
+
+// An update channel that could not be reached is the machine offline, not a frozen install: it is
+// said on stderr and not recorded, while any other skip still is.
+func TestAnOfflineUpdateCheckIsNotRecordedAsAFailure(t *testing.T) {
+	offline := fmt.Errorf("refreshing TUF metadata: %w",
+		&url.Error{Op: "Get", URL: "https://updates.example/2.root.json", Err: &net.DNSError{Err: "no such host"}})
+	if _, record := updateFailure(context.Background(), "1.2.3", offline); record {
+		t.Fatal("an offline update check was recorded as an update failure")
+	}
+	message, record := updateFailure(context.Background(), "1.2.3", errors.New("tuf: no such target"))
+	if !record || !strings.Contains(message, "self-update from 1.2.3 did not happen: tuf: no such target") {
+		t.Fatalf("a real skip was not recorded: %q %v", message, record)
 	}
 }

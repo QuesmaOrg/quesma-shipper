@@ -131,6 +131,9 @@ function configBody(form) {
   const collector = form.elements.telemetry_collector_url;
   const value = form.elements['telemetry-enabled'].checked ? collector.value.trim() : '';
   if (value !== collector.dataset.initialValue) body.telemetry_collector_url = value;
+  // Only a configuration write checks source IDs; creating an organization takes none of this.
+  const unverified = unverifiedSources(form);
+  if (form.id === 'config-form' && unverified.length) body.unverified_sources = unverified;
   return body;
 }
 
@@ -187,7 +190,7 @@ function lockConfig(locked) {
   form.elements['telemetry-enabled'].disabled = locked;
   all('.add-recipient,.remove-recipient', form).forEach((button) => { button.disabled = locked; });
   // readOnly does not stop a number input, a select or a button, and Rebuild would arm an empty collection.
-  all('input[type="number"],select,[data-add-source],[data-remove-source],[data-rebuild-collection]', form).forEach((control) => { control.disabled = locked; });
+  all('input[type="number"],select,[data-add-source],[data-remove-source],[data-source-unreported],[data-rebuild-collection]', form).forEach((control) => { control.disabled = locked; });
   // An existing override's source stays fixed, as addCollectionSource made it.
   all('[data-collection-source]', form).forEach((row) => { if (row._source.id) row.querySelector('[data-source-id]').readOnly = true; });
   if (!locked) updateRecipientButtons(form.querySelector('[data-recipient-list]'));
@@ -253,6 +256,9 @@ async function loadConfig() {
   const response = await api(orgPath('/config'));
   configETag = response.headers.get('ETag') || '';
   const config = await response.json();
+  // What installs report they can collect feeds the source picker. Without it the form still works,
+  // and a typed source ID is sent as unverified.
+  $('#config-form')._catalog = await api(orgPath('/sources')).then((sources) => sources.json()).catch(() => null);
   fillConfig(config);
   return config;
 }

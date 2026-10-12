@@ -59,7 +59,7 @@ func (s *gcsStore) Get(ctx context.Context, key string) ([]byte, string, error) 
 		return nil, "", err
 	}
 	if len(raw) > stateObjectLimit {
-		return nil, "", errorsNew("state object exceeds 4 MiB")
+		return nil, "", ErrTooLarge
 	}
 	return raw, strconv.FormatInt(reader.Attrs.Generation, 10), nil
 }

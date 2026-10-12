@@ -51,7 +51,8 @@ type telemetryEvent struct {
 
 // telemetryCrash is how the previous run died. Projected rather than embedding the record's own
 // type, so a field added there for the sealed heartbeat does not start crossing in the clear.
-// Phase is a closed vocabulary, "tick N".
+// Phase is the lifecycle step reached: "init", "tick N", "tick N: <source id>" or "tick N: between
+// ticks"; source ids come from the compiled catalog, never from the machine.
 type telemetryCrash struct {
 	RunID       string `json:"run_id"`
 	Phase       string `json:"phase"`

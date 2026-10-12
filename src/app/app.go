@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -84,6 +85,12 @@ type Runtime struct {
 	// install does not blank its own per-source health. Judge writes it, the next tick's watchdog
 	// reads it; the two never overlap (the watchdog is joined before judging).
 	lastRep formats.Report
+
+	// OnStep receives each stage the engine enters, for the crash journal. The latest one is kept
+	// here for the stall watchdog, which otherwise can only say that a tick is slow.
+	OnStep func(stage, source string)
+	stepMu sync.Mutex
+	step   string
 
 	// OnCrashShipped fires once, when a heartbeat CARRYING the crash report reached the sink; the
 	// heartbeat fails open, so nothing weaker proves delivery.
@@ -196,7 +203,24 @@ func (r *Runtime) options(dryRun bool) engine.Options {
 		Client:     clientBlock(),
 		Progress:   r.OnProgress,
 		RunID:      r.runID,
+		Step:       r.noteStep,
 	}
+}
+
+func (r *Runtime) noteStep(stage, source string) {
+	r.stepMu.Lock()
+	r.step = strings.TrimSpace(stage + " " + source)
+	r.stepMu.Unlock()
+	if r.OnStep != nil {
+		r.OnStep(stage, source)
+	}
+}
+
+// currentStep is where the run is, or "" between runs.
+func (r *Runtime) currentStep() string {
+	r.stepMu.Lock()
+	defer r.stepMu.Unlock()
+	return r.step
 }
 
 // Enrichers is the compiled enricher registry, shared with doctor so "in this build" cannot
@@ -234,6 +258,8 @@ func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (format
 		return formats.Report{}, err
 	}
 	defer store.Close()
+	// Deferred, so a recovered panic cannot leave the last stage standing for the next watchdog.
+	defer r.noteStep("", "")
 	if r.OnLocked != nil {
 		r.OnLocked()
 	}

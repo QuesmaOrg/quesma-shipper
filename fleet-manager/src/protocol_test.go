@@ -16,6 +16,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -92,12 +93,89 @@ func TestWireStructsMatchSchemas(t *testing.T) {
 		DevicePublicKey: "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=", AgeRecipient: "age1cpx4grz9j4fkn36cfurggwcg4l0da5fyqadl8fwagtcwy55gt44qlclfa5"})
 	validateSchema(t, "enroll-response.schema.json", enrollResponse{Organization: "acme"})
 	validateSchema(t, "config-request.schema.json", configRequest{AgentVersion: "test", ConfigVersions: []int{1}})
+	validateSchema(t, "config-request.schema.json", configRequest{AgentVersion: "test", ConfigVersions: []int{1}, Catalog: catalogJSON(t, testCatalog())})
 	validateSchema(t, "config-response.schema.json", configResponse{Config: []byte("config_version: 1\n"), ExpiresAt: now})
 	validateSchema(t, "v2/uploads-authorize-request.schema.json", uploadAuthorizeRequest{WriterID: "8403c1de-6940-4e35-a19b-5c91c45fc379", IssuedAt: now,
 		Objects: []uploadObject{{ObjectID: "heartbeat", Key: "v1/organization=acme/install=3f2504e0-4f89-41d3-9a0c-0305e82c3301/state/heartbeat.json.age",
 			Size: 10, SourceHash: strings.Repeat("a", 64), Metadata: map[string]string{"kind": "heartbeat"}}}})
 	validateSchema(t, "v2/uploads-authorize-response.schema.json", uploadAuthorizeResponse{
 		Tickets: []uploadTicket{{TicketID: "8403c1de-6940-4e35-a19b-5c91c45fc379", ObjectID: "heartbeat", AlreadyPresent: true}}})
+}
+
+// The golden catalog decodes into this service's own struct with no field left over, and what the
+// service stores from it is still a valid catalog.
+func TestCatalogRequestFixtureDecodesWhole(t *testing.T) {
+	raw, err := readProtocol("fixtures/v1/config", "request-catalog.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req configRequest
+	if err := strictDecode(raw, &req); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	var whole sourceCatalog
+	if err := strictDecode(req.Catalog, &whole); err != nil {
+		t.Fatalf("a catalog field this service does not know: %v", err)
+	}
+	catalog, err := decodeCatalog(req.Catalog)
+	if err != nil || catalog == nil || len(catalog.Sources) != 2 || catalog.Features == nil {
+		t.Fatalf("decoded %+v: %v", catalog, err)
+	}
+	req.Catalog = catalogJSON(t, catalog)
+	var golden, ours any
+	_ = json.Unmarshal(raw, &golden)
+	_ = json.Unmarshal(mustJSON(t, req), &ours)
+	if !reflect.DeepEqual(golden, ours) {
+		t.Fatalf("re-encoding changed the request:\n%s", mustJSON(t, req))
+	}
+	validateSchema(t, "config-request.schema.json", req)
+}
+
+// A source carrying a field the schema forbids -- here a resolved root, which names the machine --
+// is decoded tolerantly, and the field never reaches storage: the stored catalog is re-encoded from
+// this service's struct. A source without an id leaves the catalog unusable, so it is not acted on.
+func TestCatalogRejectionFixtures(t *testing.T) {
+	raw, _ := readProtocol("fixtures/v1/config", "bad-request-catalog-resolved-root.json")
+	var req configRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		t.Fatalf("tolerant decode: %v", err)
+	}
+	catalog, err := decodeCatalog(req.Catalog)
+	if err != nil || catalog == nil {
+		t.Fatalf("tolerant catalog decode: %v", err)
+	}
+	reported, err := catalog.reported()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(reported.Record, []byte("resolved_root")) || bytes.Contains(reported.Record, []byte("/Users/ada")) {
+		t.Fatalf("the stored catalog kept a resolved root:\n%s", reported.Record)
+	}
+
+	raw, _ = readProtocol("fixtures/v1/config", "bad-request-catalog-source-without-id.json")
+	req = configRequest{}
+	if err := json.Unmarshal(raw, &req); err != nil {
+		t.Fatalf("a fault in the catalog failed the request: %v", err)
+	}
+	if catalog, err := decodeCatalog(req.Catalog); err == nil {
+		t.Fatalf("a source without an id was usable: %+v", catalog)
+	}
+}
+
+// exclude_add left this round of the protocol: the shared schema refuses it on writes, and the
+// collection model has no field to carry it, so it can be neither stored nor served.
+func TestExcludeAddIsNotPartOfTheDocument(t *testing.T) {
+	raw := []byte(`{"config_version":1,"sources":[{"id":"claude-code-transcripts","exclude_add":["a/**"]}]}`)
+	if protocol.ValidateConfigDocument(raw) == nil {
+		t.Fatal("the schema accepted exclude_add")
+	}
+	var document struct {
+		ConfigVersion int `json:"config_version"`
+		CollectionConfig
+	}
+	if strictDecode(raw, &document) == nil {
+		t.Fatal("the collection model decoded exclude_add")
+	}
 }
 
 func TestUploadFixturesUseTheExistingContract(t *testing.T) {

@@ -109,6 +109,7 @@ v1/control/reporter/credential.json                  sha256 of the reporter cred
 private/fleet-manager/telemetry-identity.json        the deployment's Ed25519 signing seed
 v1/organization=<org>/control/…                      config, grants, invites, install records
 v1/organization=<org>/control/seen/<install>.json    check-in records (tagged ephemeral)
+v1/organization=<org>/control/catalogs/<sha256>.json reported source catalogs, written once each
 v1/organization=<org>/install=<install-id>/tags.json the install's display name
 v1/organization=<org>/install=<install-id>/…         the sealed trajectory objects
 ```

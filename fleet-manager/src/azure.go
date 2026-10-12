@@ -89,7 +89,7 @@ func (s *azureStore) Get(ctx context.Context, key string) ([]byte, string, error
 		return nil, "", err
 	}
 	if len(raw) > stateObjectLimit {
-		return nil, "", errorsNew("state object exceeds 4 MiB")
+		return nil, "", ErrTooLarge
 	}
 	if response.ETag == nil {
 		return nil, "", errorsNew("Azure response has no ETag")

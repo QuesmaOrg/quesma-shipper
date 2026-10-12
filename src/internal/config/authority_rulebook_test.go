@@ -3,9 +3,12 @@ package config_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -408,5 +411,58 @@ func TestRulebookMatchesResolver(t *testing.T) {
 				probe.custom(t)
 			}
 		})
+	}
+}
+
+// descriptiveDefaults are Default-column entries that say where a default comes from rather than state a value.
+var descriptiveDefaults = []string{"—", "catalog", "compiled set", "compiled baseline", "XDG default",
+	"the presigned upload, always", "no crash reporting"}
+
+// The Default column is held to what a resolution with no layers produces, so the rulebook cannot drift from the resolver.
+func TestRulebookDefaultsMatchResolver(t *testing.T) {
+	eff, err := resolveLayers(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyOr := func(values []string) string {
+		if len(values) == 0 {
+			return "empty"
+		}
+		return strings.Join(values, ", ")
+	}
+	uploadTargets := "empty (unpinned)"
+	if len(eff.UploadTargets) > 0 {
+		uploadTargets = fmt.Sprint(eff.UploadTargets)
+	}
+	resolved := map[string]string{
+		"config_version":                       strconv.Itoa(eff.ConfigVersion),
+		"mode.schedule":                        eff.Schedule,
+		"max_files_per_run":                    strconv.Itoa(eff.MaxFilesPerRun),
+		"drain_deadline":                       eff.DrainDeadline.String(),
+		"upload_targets":                       uploadTargets,
+		"scrub.rule_packs":                     strings.Join(eff.RulePacks, ", "),
+		"encryption.additional_recipients":     emptyOr(eff.AdditionalRecipients),
+		"encryption.include_install_recipient": strconv.FormatBool(eff.IncludeInstallRecipient),
+		"autoupdate.enabled":                   strconv.FormatBool(eff.AutoupdateEnabled),
+	}
+
+	for _, f := range loadRulebook(t).Fields {
+		if slices.Contains(descriptiveDefaults, f.Default) {
+			continue
+		}
+		got, ok := resolved[f.Field]
+		if !ok {
+			t.Errorf("rulebook row %q states default %q and nothing here checks it", f.Field, f.Default)
+			continue
+		}
+		if got == f.Default {
+			continue
+		}
+		// Durations compare by value: the resolver prints 5m0s where the rulebook says 5m.
+		want, errWant := time.ParseDuration(f.Default)
+		have, errHave := time.ParseDuration(got)
+		if errWant != nil || errHave != nil || want != have {
+			t.Errorf("rulebook row %q says the default is %q, the resolver's is %q", f.Field, f.Default, got)
+		}
 	}
 }

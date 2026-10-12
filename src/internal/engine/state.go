@@ -111,6 +111,10 @@ type Store struct {
 	entries   map[Key]Fingerprint
 
 	corrupt bool
+
+	// onFlush brackets every durable write, whichever method asked for it, so a stage report can
+	// say "commit" while one lasts.
+	onFlush func(on bool)
 }
 
 // Corrupt says the document could not be loaded and was discarded: the run continues from an empty
@@ -289,6 +293,10 @@ func (s *Store) DropVanished(sourceID string, live map[string]bool) (int, error)
 }
 
 func (s *Store) flush() error {
+	if s.onFlush != nil {
+		s.onFlush(true)
+		defer s.onFlush(false)
+	}
 	body, err := encode(s.installID, time.Now().UTC().Truncate(time.Second), s.specs, s.entries)
 	if err != nil {
 		return err
