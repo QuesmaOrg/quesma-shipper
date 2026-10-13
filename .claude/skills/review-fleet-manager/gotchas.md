@@ -78,7 +78,8 @@ where the fact surfaced; facts learned before the module moved into this reposit
   standard-library advisories, and a Dockerfile base image on the older version ships them.
 - A dependency bump regenerates `third_party/` and `licenses.csv`, or `make -C fleet-manager check`
   fails on a stale inventory. (#55)
-- `go install .../fleet-manager/src@ref` produces a binary named `src`.
+- `go install .../fleet-manager/src@ref` is refused: `go.mod` replaces the protocol module with
+  `../shipper-protocol`. Build from a checkout.
 - `http.FileServer` asks the host's mime table, which differs per machine; with
   `X-Content-Type-Options: nosniff` a wrong type is a blank admin UI. Content types are pinned in
   `ui.go` and asserted in `ui_test.go`.
