@@ -23,8 +23,9 @@ ENV ?= local
 # The binary lands in THIS directory unless told otherwise; untracked, never committed.
 BIN ?= $(HERE)fleet-manager
 # The packages are under ./src, which is why the patterns below differ from the other Go modules.
-# The UI is embedded in the binary, so asset edits must trigger a rebuild too.
-SRC := $(shell find $(HERE)src -type f -not -name '*_test.go') $(HERE)go.mod $(HERE)VERSION
+# The UI and the protocol (a replace, no go.mod bump) are built in, so their edits rebuild too.
+SRC := $(shell find $(HERE)src $(HERE)../shipper-protocol -type f -not -name '*_test.go') \
+	$(HERE)go.mod $(HERE)go.sum $(HERE)VERSION
 
 # The reviewed release line, plus the commit that built it. Deliberately not the shipper's
 # `VERSION-<commit count>-<sha>`: the count is taken over the whole repository, which this module
