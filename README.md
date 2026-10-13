@@ -131,8 +131,8 @@ Uninstalling, MDM and Intune deployment, what is collected, and how to pause or 
 throwaway deployment; [fleet-manager/README.md](fleet-manager/README.md) covers the control plane;
 [CONSTITUTION.md](CONSTITUTION.md) the design rules; [ARCHITECTURE.md](ARCHITECTURE.md) the code
 layout; [CONTRIBUTING.md](CONTRIBUTING.md) building, testing and releases; [SECURITY.md](SECURITY.md)
-reporting a vulnerability. The wire contract is the public
-[shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) module. Do not attach real
+reporting a vulnerability. The wire contract is the [shipper-protocol/](shipper-protocol/) module.
+Do not attach real
 trajectories, agent databases, logs or credentials to issues or pull requests.
 
 ## License

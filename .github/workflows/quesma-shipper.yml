@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "src/**"
+      - "shipper-protocol/**"
       - "scripts/**"
       - "VERSION"
       - "Makefile"

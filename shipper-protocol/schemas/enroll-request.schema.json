@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/QuesmaOrg/shipper-protocol/schemas/enroll-request.schema.json",
+  "title": "POST /v1/enroll request",
+  "description": "The one-time registration and the only unsigned protocol request. Exactly one claim gates it: a single-use server-minted invite (the interactive path) or a multi-use server-minted grant (the managed path, carried in the enroll command that fleet management distributes). This is the only moment the service learns anything about an install: id, device key, public age recipient, and cosmetics. The server decodes this request strictly: an unknown field is a 400, unlike /v1/config.",
+  "type": "object",
+  "required": ["install_id", "device_public_key", "age_recipient"],
+  "additionalProperties": false,
+  "oneOf": [
+    { "required": ["invite"], "not": { "required": ["grant"] } },
+    { "required": ["grant"], "not": { "required": ["invite"] } }
+  ],
+  "properties": {
+    "invite": {
+      "description": "Server-minted claim, opaque to the client. Bounded expiry and single use. An identical completed enrollment retry succeeds. Changed enrollment material is refused.",
+      "type": "string",
+      "minLength": 1
+    },
+    "grant": {
+      "description": "The managed-enrollment claim: an opaque multi-use token, distributed fleet-wide rather than minted per machine. The server looks it up in its own store, where its expiry and revocation live. Exactly one of invite or grant is set. Both or neither is a 400.",
+      "type": "string",
+      "minLength": 1
+    },
+    "install_id": {
+      "description": "Client-generated UUID. This is the install's identity from here on. It cannot be renamed, because it is part of every object key.",
+      "$ref": "#/$defs/uuid"
+    },
+    "device_public_key": {
+      "description": "Base64 32-byte Ed25519 public key. Every later request is verified against it. The server reads it fresh from the enrollment record for each request.",
+      "$ref": "#/$defs/ed25519_public_key"
+    },
+    "age_recipient": {
+      "description": "The install's age X25519 recipient, the public half only. No private key material leaves the machine. Lets the organization add this install as a recipient if policy allows.",
+      "$ref": "#/$defs/age_recipient"
+    },
+    "hostname": {
+      "description": "Cosmetic. Seeds the display name in the dashboard.",
+      "type": "string"
+    },
+    "platform": {
+      "description": "Cosmetic, for example darwin/arm64.",
+      "type": "string"
+    }
+  },
+
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "ed25519_public_key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]{43}=$"
+    },
+    "age_recipient": {
+      "type": "string",
+      "pattern": "^age1[02-9ac-hj-np-z]{58}$"
+    }
+  }
+}

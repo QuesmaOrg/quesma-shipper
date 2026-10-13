@@ -1,0 +1,11 @@
+{
+  "agent_version": "0.0.0-test",
+  "config_versions": [1],
+  "catalog": {
+    "sources": [
+      { "family": "claude-code", "enabled": true, "roots": ["~/.claude"] }
+    ],
+    "rule_packs": [],
+    "features": []
+  }
+}

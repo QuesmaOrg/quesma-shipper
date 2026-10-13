@@ -1,8 +1,8 @@
-# Publishes the fleet-manager image to Docker Hub on every push to main that touches the module,
-# through the same target a person runs: `make -C fleet-manager deploy`. That target builds
-# linux/amd64 -- the only architecture all three deployment targets accept -- and pushes :<sha>
-# and :latest, or does nothing when the commit is already there. The templates under
-# fleet-manager/terraform deploy `:latest` unless told otherwise.
+# Publishes the fleet-manager image to Docker Hub on every push to main that touches the module or
+# the protocol module it embeds, through the same target a person runs: `make -C fleet-manager
+# deploy`. That target builds linux/amd64 -- the only architecture all three deployment targets
+# accept -- and pushes :<sha> and :latest, or does nothing when the commit is already there. The
+# templates under fleet-manager/terraform deploy `:latest` unless told otherwise.
 name: fleet-manager-image
 
 on:
@@ -10,6 +10,7 @@ on:
     branches: [main]
     paths:
       - "fleet-manager/**"
+      - "shipper-protocol/**"
       - ".github/workflows/fleet-manager-image.yml"
 
 # Queue, never cancel: two jobs racing would decide `latest` by finish order, not commit order.

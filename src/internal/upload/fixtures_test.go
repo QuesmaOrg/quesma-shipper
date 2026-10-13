@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/QuesmaOrg/shipper-protocol"
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 )
 
 type goldenObject struct {

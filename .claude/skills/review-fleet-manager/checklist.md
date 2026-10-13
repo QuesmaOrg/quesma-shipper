@@ -73,8 +73,8 @@ and report only what the PR introduced or made worse.
 ## C. Served configuration and recipients
 
 13. **Authority rulebook.** The served document changes only the fields the shipper-protocol
-    rulebook lets the control plane set; a new field arrives through a protocol release and a
-    module bump. [H, codified]
+    rulebook lets the control plane set; a new field arrives through `shipper-protocol/`, in the
+    same PR as the code that sets it. [H, codified]
 14. **Recipients are what the organization set.** The Quesma recipient appears only while
     `allow_quesma_etl` is on; `FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL` decides the default for a new
     organization and nothing else; disabling affects future uploads only, and the docs say so.
@@ -182,9 +182,9 @@ and report only what the PR introduced or made worse.
 47. **Age custody explained at every `age-keygen`.** Recipients encrypt, only the private identity
     decrypts, back it up, never commit it; show the command once with its output. [M; #78]
 48. **Stale statements fixed here.** For every term the PR renames, redefines or removes, grep the
-    head tree outside tests (`git grep -n -i -e '<term>' <head> -- . ':!*_test.go'`) and the
-    shipper-protocol module in the module cache; each hit is updated in this PR or named in the
-    description with a reason. Past misses sat in code comments, `OPERATIONS.md`, the other
+    head tree outside tests (`git grep -n -i -e '<term>' <head> -- . ':!*_test.go'`), which
+    includes `shipper-protocol/`; each hit is updated in this PR or named in the description with
+    a reason. Past misses sat in code comments, `OPERATIONS.md`, the other
     cloud's `variables.tf` and a shipper-side schema note. Not in a follow-up. [M; #79]
 49. **Guarantee wording.** The service cannot decrypt, but its identity can download ciphertext
     where the probe grant applies; `tags.json` is readable; an install id does not identify a
@@ -192,8 +192,9 @@ and report only what the PR introduced or made worse.
 
 ## J. Protocol and compatibility
 
-50. **Contract changes start upstream.** A new shipper-facing behaviour is a shipper-protocol
-    release, then a module bump plus a handler here. [H, codified]
+50. **Contract changes start in the protocol.** A new shipper-facing behaviour changes
+    `shipper-protocol/` (schema, fixtures, `PROTOCOL.md`, a `CHANGELOG.md` entry) in the same PR
+    as its handler here. [H, codified]
 51. **A diff in `protocol_test.go` or a fixture is a claim.** Read it, explain it in the PR, ask for
     confirmation. [H, codified]
 52. **Object-key grammar.** A new key shape or `source=` value is a protocol change with ETL

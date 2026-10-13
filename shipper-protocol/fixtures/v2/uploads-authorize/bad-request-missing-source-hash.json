@@ -1,0 +1,12 @@
+{
+  "writer_id": "8403c1de-6940-4e35-a19b-5c91c45fc379",
+  "issued_at": "2026-08-19T12:00:00Z",
+  "objects": [
+    {
+      "object_id": "heartbeat",
+      "key": "v1/organization=acme/install=3f2504e0-4f89-41d3-9a0c-0305e82c3301/state/heartbeat.json.age",
+      "size": 8261,
+      "metadata": { "kind": "heartbeat" }
+    }
+  ]
+}

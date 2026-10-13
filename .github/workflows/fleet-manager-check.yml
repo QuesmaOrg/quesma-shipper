@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - "fleet-manager/**"
+      - "shipper-protocol/**"
       - ".github/workflows/fleet-manager-check.yml"
   # Required checks must be reported for every PR. Filtering the entire workflow
   # leaves unmatched PRs permanently waiting for statuses that can never arrive.
@@ -54,3 +55,13 @@ jobs:
           go-version-file: fleet-manager/go.mod
           cache-dependency-path: fleet-manager/go.sum
       - run: make vulncheck
+
+  # The image is otherwise built only when main publishes it, after merge. Its context spans
+  # fleet-manager/ and shipper-protocol/, so a change to either can break it without a test failing.
+  fleet-manager-image-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - run: make image

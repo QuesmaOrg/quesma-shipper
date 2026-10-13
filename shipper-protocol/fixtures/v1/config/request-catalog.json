@@ -1,0 +1,33 @@
+{
+  "agent_version": "0.0.0-test",
+  "config_versions": [1],
+  "catalog": {
+    "sources": [
+      {
+        "id": "claude-code-transcripts",
+        "family": "claude-code",
+        "family_name": "Claude Code",
+        "description": "Session and subagent transcripts.",
+        "artifact_class": "trajectory",
+        "enabled": true,
+        "roots": ["$CLAUDE_CONFIG_DIR", "~/.claude", "$XDG_CONFIG_HOME/claude"],
+        "include": ["projects/**/*.jsonl", "projects/**/tool-results/**"],
+        "exclude": ["projects/**/tool-results/**/*.{jpg,jpeg,png,gif,webp,pdf,bin,JPG,JPEG,PNG,GIF,WEBP,PDF,BIN}"],
+        "max_file_bytes": 536870912
+      },
+      {
+        "id": "codex-rollouts",
+        "family": "codex",
+        "family_name": "Codex",
+        "description": "Live rollouts under sessions/<YYYY>/<MM>/<DD>/ plus the flat archived_sessions/ tree.",
+        "artifact_class": "trajectory",
+        "enabled": true,
+        "roots": ["$CODEX_HOME", "~/.codex"],
+        "include": ["sessions/**/*.jsonl", "sessions/**/*.jsonl.zst", "archived_sessions/**/*.jsonl", "archived_sessions/**/*.jsonl.zst", "session_index.jsonl"],
+        "max_file_bytes": 536870912
+      }
+    ],
+    "rule_packs": ["gitleaks-core", "quesma-extra", "cloud-keys", "generic-entropy", "pii-core"],
+    "features": []
+  }
+}

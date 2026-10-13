@@ -13,6 +13,9 @@ participation is subject to the [code of conduct](CODE_OF_CONDUCT.md).
   Makefile and release line under `fleet-manager/`. It needs Go 1.27 and Node 22 or newer, for the
   administration UI's tests. Run its targets with `make -C fleet-manager <target>`; `make -C
   fleet-manager help` lists them. Nothing in one component builds or tests the other.
+- The wire contract, [shipper-protocol/](shipper-protocol/), is a third Go module that both
+  components build against through a `replace` directive. Its gate is
+  `make -C shipper-protocol check`.
 
 ## Before you open a pull request
 
@@ -125,8 +128,8 @@ Reviewers check these invariants on every shipper change:
 ## Golden tests and compatibility
 
 Golden tests pin output byte for byte. They are `src/e2e/golden_test.go`, the conformance vectors
-under `src/conformance/`, and the wire fixtures that the contract tests import from the
-[shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) module. Fleet Manager's contract
+under `src/conformance/`, and the wire fixtures under `shipper-protocol/fixtures/` that the
+contract tests import. Fleet Manager's contract
 is pinned the same way, by `fleet-manager/src/protocol_test.go` and the same wire fixtures, and
 what its deployment templates may grant by `fleet-manager/src/terraform_test.go`. A golden diff is
 a claim that the output must change. Read the diff. Explain it in the pull request. Do not run with
@@ -134,9 +137,11 @@ a claim that the output must change. Read the diff. Explain it in the pull reque
 
 File formats, the wire protocol, configuration keys, and the object-key grammar are compatibility
 surfaces. A change to one of them needs a test that shows old inputs still work, and a note in the
-pull request. A protocol change is made in the [shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol)
-repository and released as a module version. A shipper change that needs it bumps the dependency
-after that release.
+pull request. A protocol change is made under [shipper-protocol/](shipper-protocol/), in the same
+pull request as the shipper and Fleet Manager changes that need it: both build against that
+directory, so their contract tests run on the same tree. Record it in the protocol's `CHANGELOG.md`;
+a release is a tag `shipper-protocol/vX.Y.Z`. [shipper-protocol/AGENTS.md](shipper-protocol/AGENTS.md)
+lists what a released wire version may never change.
 
 Do not widen a performance budget. Do not make a test less strict. If you must, say so in the pull
 request.

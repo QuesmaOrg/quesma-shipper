@@ -1,0 +1,18 @@
+{
+  "tickets": [
+    {
+      "ticket_id": "eeb1c349-de5c-4abf-b264-240346111127",
+      "object_id": "heartbeat",
+      "method": "PUT",
+      "url": "https://archive.example.invalid/v1/organization%3Dacme/install%3D3f2504e0-4f89-41d3-9a0c-0305e82c3301/state/heartbeat.json.age?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=300&X-Amz-Signature=FIXTURE",
+      "expires_at": "2026-08-19T12:05:30Z",
+      "required_headers": {
+        "x-amz-meta-source-hash": "84c902c5bce0e7207d4bd97290e50c869865c95b2d102b11d30f9018e542bd2f",
+        "x-amz-meta-ticket-id": "eeb1c349-de5c-4abf-b264-240346111127",
+        "x-amz-meta-kind": "heartbeat"
+      },
+      "content_length": 8261,
+      "content_length_signed": true
+    }
+  ]
+}

@@ -22,7 +22,6 @@ allowed-tools:
   - Bash(gh pr checks:*)
   - Bash(gh issue view:*)
   - Bash(gh api repos/QuesmaOrg/quesma-shipper/pulls:*)
-  - Bash(go env:*)
   - Bash(go list:*)
   - Bash(go test:*)
   - Bash(go vet:*)
@@ -232,8 +231,8 @@ reports, and say which.
   renaming one means a served document still naming it is rejected. The description names who
   must change first.
 - A new `source=` value in object keys or a new record shape has consumers outside this repo. The
-  description names the ETL and protocol follow-ups. When the PR spans both components, check
-  that `src/` and `fleet-manager/` read the same shipper-protocol version and field names.
+  description names the ETL follow-ups. Both components build against `shipper-protocol/` in the
+  tree; when the PR changes it, check that `src/` and `fleet-manager/` use the same field names.
 
 ### Pass 5: docs say exactly what the system guarantees
 

@@ -23,8 +23,9 @@ ENV ?= local
 # The binary lands in THIS directory unless told otherwise; untracked, never committed.
 BIN ?= $(HERE)fleet-manager
 # The packages are under ./src, which is why the patterns below differ from the other Go modules.
-# The UI is embedded in the binary, so asset edits must trigger a rebuild too.
-SRC := $(shell find $(HERE)src -type f -not -name '*_test.go') $(HERE)go.mod $(HERE)VERSION
+# The UI and the protocol (a replace, no go.mod bump) are built in, so their edits rebuild too.
+SRC := $(shell find $(HERE)src $(HERE)../shipper-protocol -type f -not -name '*_test.go') \
+	$(HERE)go.mod $(HERE)go.sum $(HERE)VERSION
 
 # The reviewed release line, plus the commit that built it. Deliberately not the shipper's
 # `VERSION-<commit count>-<sha>`: the count is taken over the whole repository, which this module
@@ -193,9 +194,9 @@ PLATFORM ?= linux/amd64
 deploy: ## Push quesma/fleet-manager:<sha> and :latest to Docker Hub, which every customer's Terraform pulls
 	@command -v docker >/dev/null && docker buildx version >/dev/null 2>&1 \
 	  || { echo "needs docker with buildx"; exit 1; }
-	@if [ -n "$$($(IN) git status --porcelain -- .)" ]; then \
+	@if [ -n "$$($(IN) git status --porcelain -- . ../shipper-protocol)" ]; then \
 	  echo "the working tree is dirty, so :$(REVISION) would name a commit that is not what gets built:"; \
-	  $(IN) git status --short -- . | head -10 | sed 's/^/  /'; exit 1; fi
+	  $(IN) git status --short -- . ../shipper-protocol | head -10 | sed 's/^/  /'; exit 1; fi
 	@digest() { out=$$(docker buildx imagetools inspect "$$1" --format '{{json .Manifest.Digest}}' 2>&1) \
 	  && { printf '%s' "$$out" | tr -d '"'; return 0; }; \
 	  case $$out in *": not found"*) return 0 ;; esac; \
@@ -208,8 +209,13 @@ deploy: ## Push quesma/fleet-manager:<sha> and :latest to Docker Hub, which ever
 	  echo "latest -> $(REVISION), retagged"; exit 0; fi; \
 	echo "building $(REVISION) for $(PLATFORM)"; \
 	docker buildx build --platform $(PLATFORM) --provenance=false --sbom=false --target cloud-run \
-	  --build-arg VERSION=$(VERSION)+$(REVISION) \
-	  -t $(IMAGE):$(REVISION) -t $(IMAGE):latest --push $(HERE)
+	  --build-arg VERSION=$(VERSION)+$(REVISION) -f $(HERE)Dockerfile \
+	  -t $(IMAGE):$(REVISION) -t $(IMAGE):latest --push $(HERE)..
+
+.PHONY: image
+image: ## Build the image as deploy would, without pushing it anywhere
+	docker buildx build --platform $(PLATFORM) --target cloud-run \
+	  --build-arg VERSION=$(VERSION)+$(REVISION) -f $(HERE)Dockerfile $(HERE)..
 
 .PHONY: test
 test: ## Run the suite
