@@ -386,11 +386,18 @@ func newKeyNameMatcher(names []string) *keyNameMatcher {
 		if rest, ok := strings.CutPrefix(n, "*"); ok {
 			literal = rest
 			configured[i].suffix = true
-			alts = append(alts, `[A-Za-z0-9_]*`+regexp.QuoteMeta(rest))
+			// `*_PASSWORD` also matches a bare `PASSWORD=`: the prefix is optional, and so the
+			// gating stem is the word without its underscore.
+			if word, under := strings.CutPrefix(rest, "_"); under && word != "" {
+				literal = word
+				alts = append(alts, `(?:[A-Za-z0-9_]*_)?`+regexp.QuoteMeta(word))
+			} else {
+				alts = append(alts, `[A-Za-z0-9_]*`+regexp.QuoteMeta(rest))
+			}
 		} else {
 			alts = append(alts, regexp.QuoteMeta(n))
 		}
-		configured[i].upper = strings.ToUpper(literal)
+		configured[i].upper = strings.ToUpper(strings.TrimPrefix(n, "*"))
 		if literal == "" || !isASCII(literal) {
 			unfiltered = true
 			continue
@@ -400,9 +407,9 @@ func newKeyNameMatcher(names []string) *keyNameMatcher {
 	if unfiltered || len(stems) == 0 {
 		stems = nil
 	}
-	// NAME=value, NAME: value, NAME = "value"; the value run stops at whitespace,
-	// quotes and separators so one redaction cannot swallow a whole line.
-	pattern := `(?i)\b(?:` + strings.Join(alts, "|") + `)\b\s*[:=]\s*"?([^\s"',;)]+)"?`
+	// NAME=value, NAME: value, NAME = "value", "NAME": "value"; the value run stops at
+	// whitespace, quotes and separators so one redaction cannot swallow a whole line.
+	pattern := `(?i)\b(?:` + strings.Join(alts, "|") + `)\b"?\s*[:=]\s*"?([^\s"',;)]+)"?`
 	return &keyNameMatcher{re: regexp.MustCompile(pattern), names: configured, stems: stems}
 }
 

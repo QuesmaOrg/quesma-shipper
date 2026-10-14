@@ -63,13 +63,12 @@ curl -sS -X POST "$URL/v1/admin/orgs" -H "Authorization: Bearer $CRED" -H 'Conte
   -d "{\"slug\":\"acme\",\"display_name\":\"Acme trial\",\"age_recipients\":[\"$R1\",\"$R2\"],\"include_install_recipient\":false,\"allow_quesma_etl\":false,\"collection\":{}}"
 
 INVITE=$(curl -sS -X POST "$URL/v1/admin/orgs/acme/invites" -H "Authorization: Bearer $CRED" -H 'Content-Type: application/json' \
-  -d "{\"expires_at\":\"$(date -u -v+1H +%Y-%m-%dT%H:%M:%SZ)\"}" | sed 's/.*"secret":"\([^"]*\)".*/\1/')
+  -d "{\"expires_at\":\"$(date -u -v+1H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)\"}" | sed 's/.*"secret":"\([^"]*\)".*/\1/')
 echo "$INVITE"          # starts with fmi2.acme.
 ```
 
 `allow_quesma_etl` is off here so nothing in the trial is sealed to anyone but you. An invite is
-single-use and its secret is shown once; if you lose `$INVITE`, run the last command again. On
-Linux, `date -u -d '+1 hour'` replaces `date -u -v+1H`.
+single-use and its secret is shown once; if you lose `$INVITE`, run the last command again.
 
 ## 4. A developer machine
 
