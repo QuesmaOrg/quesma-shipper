@@ -97,3 +97,30 @@ func TestMalformedEmbeddedJSONDoesNotLeakQuotedSecrets(t *testing.T) {
 		}
 	}
 }
+
+// Raw-scanned files are often JSON documents. A secret-named key whose value is not a string
+// is left alone rather than redacted: replacing null, a number or a `{` would ship a document
+// that no longer parses.
+func TestKeyNameRuleKeepsRawJSONValid(t *testing.T) {
+	s, err := New(DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, doc := range []string{
+		`{"token": null, "n": 1}`,
+		`{"password": 1234, "n": 1}`,
+		`{"secret": true}`,
+		`{"credentials": {"type": "oauth", "user": "bob"}}`,
+		`{"api_key": ["a", "b"]}`,
+		`{"GITHUB_TOKEN": "ghp_x"}`,
+		"{\n  \"env\": {\n    \"MY_PASSWORD\": \"hunter2 with spaces\"\n  }\n}",
+	} {
+		res, err := s.Scrub([]byte(doc+"\n"), Hint{Family: "claude-code"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out := res.Out.Bytes(); !json.Valid(out) {
+			t.Errorf("%s scrubbed to invalid JSON: %s", doc, out)
+		}
+	}
+}

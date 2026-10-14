@@ -230,6 +230,13 @@ func New(cfg Config) (*Scrubber, error) {
 		return nil, fmt.Errorf("scrub: secret key names: %w", err)
 	}
 	s.patterns = append(s.patterns, gatedPattern{m: s.keyNames, gate: keyGate})
+	if b := s.keyNames.bare; b != nil {
+		bareGate, err := prefilter.AddKeywords(b.stems)
+		if err != nil {
+			return nil, fmt.Errorf("scrub: secret key names: %w", err)
+		}
+		s.patterns = append(s.patterns, gatedPattern{m: b, gate: bareGate})
+	}
 	s.prefilter = prefilter.Build()
 	s.keyValuePrefilter = keyValuePrefilter.Build()
 

@@ -350,6 +350,7 @@ type keyNameMatcher struct {
 	// Each configured name uppercased once, so MatchesKeyName folds only the key it is
 	// given; suffix marks a name configured with a leading "*", matched by suffix.
 	names []configuredName
+	bare  *bareKeyNames
 
 	// Lower-cased literal cores of the alternation ("_token" for *_TOKEN). Gating re behind the
 	// shared automaton narrows the rule: re is (?i), which also folds non-ASCII runes (long s,
@@ -379,6 +380,7 @@ type configuredName struct {
 func newKeyNameMatcher(names []string) *keyNameMatcher {
 	alts := make([]string, 0, len(names))
 	stems := make([]string, 0, len(names))
+	var bareWords, bareStems []string
 	configured := make([]configuredName, len(names))
 	unfiltered := false
 	for i, n := range names {
@@ -386,18 +388,16 @@ func newKeyNameMatcher(names []string) *keyNameMatcher {
 		if rest, ok := strings.CutPrefix(n, "*"); ok {
 			literal = rest
 			configured[i].suffix = true
-			// `*_PASSWORD` also matches a bare `PASSWORD=`: the prefix is optional, and so the
-			// gating stem is the word without its underscore.
-			if word, under := strings.CutPrefix(rest, "_"); under && word != "" {
-				literal = word
-				alts = append(alts, `(?:[A-Za-z0-9_]*_)?`+regexp.QuoteMeta(word))
-			} else {
-				alts = append(alts, `[A-Za-z0-9_]*`+regexp.QuoteMeta(rest))
+			alts = append(alts, `[A-Za-z0-9_]*`+regexp.QuoteMeta(rest))
+			if word, under := strings.CutPrefix(rest, "_"); under && word != "" && isASCII(word) {
+				bareWords = append(bareWords, regexp.QuoteMeta(word))
+				lw := strings.ToLower(word)
+				bareStems = append(bareStems, lw+"=", lw+":", lw+`"`)
 			}
 		} else {
 			alts = append(alts, regexp.QuoteMeta(n))
 		}
-		configured[i].upper = strings.ToUpper(strings.TrimPrefix(n, "*"))
+		configured[i].upper = strings.ToUpper(literal)
 		if literal == "" || !isASCII(literal) {
 			unfiltered = true
 			continue
@@ -407,10 +407,43 @@ func newKeyNameMatcher(names []string) *keyNameMatcher {
 	if unfiltered || len(stems) == 0 {
 		stems = nil
 	}
-	// NAME=value, NAME: value, NAME = "value", "NAME": "value"; the value run stops at
+	// NAME=value, NAME: value, NAME = "value"; and "NAME": "value" only with a string value, so
+	// a redaction never lands on JSON structure (null, a number, `{`). The value run stops at
 	// whitespace, quotes and separators so one redaction cannot swallow a whole line.
-	pattern := `(?i)\b(?:` + strings.Join(alts, "|") + `)\b"?\s*[:=]\s*"?([^\s"',;)]+)"?`
-	return &keyNameMatcher{re: regexp.MustCompile(pattern), names: configured, stems: stems}
+	pattern := `(?i)\b(?:` + strings.Join(alts, "|") + `)\b(?:\s*[:=]\s*"?` + keyValueRun + `"?|"\s*:\s*"` + keyValueRun + `)`
+	m := &keyNameMatcher{re: regexp.MustCompile(pattern), names: configured, stems: stems}
+	// `*_PASSWORD` also stands for a bare `PASSWORD=`. A regex of its own, gated on the word with
+	// its separator: folded into the one above it slowed every value that mentions `_token`.
+	if len(bareWords) > 0 {
+		bare := `(?i)\b(?:` + strings.Join(bareWords, "|") + `)(?:[:=]\s*"?` + keyValueRun + `"?|"\s*:\s*"` + keyValueRun + `)`
+		m.bare = &bareKeyNames{re: regexp.MustCompile(bare), stems: bareStems}
+	}
+	return m
+}
+
+const keyValueRun = `([^\s"',;)]+)`
+
+// bareKeyNames is the key-name rule for a secret word with no prefix; it reports as key-name.
+type bareKeyNames struct {
+	re    *regexp.Regexp
+	stems []string
+}
+
+func (b *bareKeyNames) MatchScannedIn(value string, _ *packs.ValueScan) []Span {
+	return keyNameSpans(b.re, value)
+}
+
+func keyNameSpans(re *regexp.Regexp, value string) []Span {
+	var out []Span
+	for _, loc := range re.FindAllStringSubmatchIndex(value, -1) {
+		for g := 2; g+1 < len(loc); g += 2 {
+			if loc[g] >= 0 {
+				out = append(out, Span{Start: loc[g], End: loc[g+1], RuleID: "key-name"})
+				break
+			}
+		}
+	}
+	return out
 }
 
 func (m *keyNameMatcher) RuleID() string { return "key-name" }
@@ -418,14 +451,7 @@ func (m *keyNameMatcher) RuleID() string { return "key-name" }
 // MatchScannedIn ignores the shared PII walk: this matcher has no candidate shape in it
 // to collect.
 func (m *keyNameMatcher) MatchScannedIn(value string, _ *packs.ValueScan) []Span {
-	var out []Span
-	for _, loc := range m.re.FindAllStringSubmatchIndex(value, -1) {
-		if len(loc) < 4 || loc[2] < 0 {
-			continue
-		}
-		out = append(out, Span{Start: loc[2], End: loc[3], RuleID: m.RuleID()})
-	}
-	return out
+	return keyNameSpans(m.re, value)
 }
 
 // MatchesKeyName reports whether a JSON key itself names a secret, in which case the
