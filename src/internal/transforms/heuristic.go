@@ -392,7 +392,7 @@ func newKeyNameMatcher(names []string) *keyNameMatcher {
 			if word, under := strings.CutPrefix(rest, "_"); under && word != "" && isASCII(word) {
 				bareWords = append(bareWords, regexp.QuoteMeta(word))
 				lw := strings.ToLower(word)
-				bareStems = append(bareStems, lw+"=", lw+":", lw+`"`)
+				bareStems = append(bareStems, lw+"=", lw+":", lw+`"`, lw+" ")
 			}
 		} else {
 			alts = append(alts, regexp.QuoteMeta(n))
@@ -412,10 +412,12 @@ func newKeyNameMatcher(names []string) *keyNameMatcher {
 	// whitespace, quotes and separators so one redaction cannot swallow a whole line.
 	pattern := `(?i)\b(?:` + strings.Join(alts, "|") + `)\b(?:\s*[:=]\s*"?` + keyValueRun + `"?|"\s*:\s*"` + keyValueRun + `)`
 	m := &keyNameMatcher{re: regexp.MustCompile(pattern), names: configured, stems: stems}
-	// `*_PASSWORD` also stands for a bare `PASSWORD=`. A regex of its own, gated on the word with
-	// its separator: folded into the one above it slowed every value that mentions `_token`.
+	// `*_PASSWORD` also stands for a bare `PASSWORD=`, and for `password = "…"` as code spells
+	// it. A regex of its own, gated on the word followed by its separator, a quote or a space:
+	// folded into the one above it slowed every value that mentions `_token`. The space stem
+	// fires on prose too, where the regex then stops at the first non-separator.
 	if len(bareWords) > 0 {
-		bare := `(?i)\b(?:` + strings.Join(bareWords, "|") + `)(?:[:=]\s*"?` + keyValueRun + `"?|"\s*:\s*"` + keyValueRun + `)`
+		bare := `(?i)\b(?:` + strings.Join(bareWords, "|") + `)(?:\s*[:=]\s*"?` + keyValueRun + `"?|"\s*:\s*"` + keyValueRun + `)`
 		m.bare = &bareKeyNames{re: regexp.MustCompile(bare), stems: bareStems}
 	}
 	return m

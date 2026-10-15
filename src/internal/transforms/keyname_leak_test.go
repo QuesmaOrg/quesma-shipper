@@ -32,6 +32,8 @@ func TestKeyNameRuleRedactsBareNamesAndQuotedKeys(t *testing.T) {
 		{"export PASSWORD", userLine("export PASSWORD=hunter2 && ./run"), true, []string{"hunter2"}},
 		{"SECRET=", userLine("SECRET=s3cr3t-value-here"), true, []string{"s3cr3t-value-here"}},
 		{"APIKEY=", userLine("APIKEY=zzzz-yyyy-xxxx"), true, []string{"zzzz-yyyy-xxxx"}},
+		{"spaced, as code spells it", userLine(`password = "hunter2"`), true, []string{"hunter2"}},
+		{"spaced upper", userLine("API_KEY = sk-live-123"), true, []string{"sk-live-123"}},
 		{"yaml password", userLine("db:\n  password: hunter2\n"), true, []string{"hunter2"}},
 		{"pretty settings.json, raw", pretty, false, []string{"my-proxy-token-123", "hunter2"}},
 		{"pretty settings.json, jsonl hint", pretty, true, []string{"my-proxy-token-123", "hunter2"}},
@@ -52,8 +54,8 @@ func TestKeyNameRuleRedactsBareNamesAndQuotedKeys(t *testing.T) {
 	}
 }
 
-// What the wider rule must still leave alone: words that only contain a secret word, and a
-// secret word with no value after it.
+// What the wider rule must still leave alone: words that only contain a secret word, a secret
+// word with no value after it, and prose where a space follows the word.
 func TestKeyNameRuleLeavesNonAssignmentsAlone(t *testing.T) {
 	s, err := New(DefaultConfig())
 	if err != nil {
@@ -64,6 +66,8 @@ func TestKeyNameRuleLeavesNonAssignmentsAlone(t *testing.T) {
 		"passwords are rotated weekly",
 		"the SECRET is safe",
 		"MYTOKEN=visible-on-purpose",
+		"the password is safe",
+		"token count: 4096",
 	} {
 		res, err := s.Scrub([]byte(text+"\n"), Hint{Family: "claude-code"})
 		if err != nil {
