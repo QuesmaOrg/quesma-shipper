@@ -381,6 +381,12 @@ func newKeyNameMatcher(names []string) *keyNameMatcher {
 	alts := make([]string, 0, len(names))
 	stems := make([]string, 0, len(names))
 	var bareWords, bareStems []string
+	// Only the compiled names stand for a bare word too. A served `*_NAME` keeps meaning the
+	// suffix: an organization adding `*_KEY` would not expect every `key:` to go.
+	compiled := make(map[string]bool)
+	for _, n := range DefaultSecretKeyNames() {
+		compiled[n] = true
+	}
 	configured := make([]configuredName, len(names))
 	unfiltered := false
 	for i, n := range names {
@@ -389,7 +395,7 @@ func newKeyNameMatcher(names []string) *keyNameMatcher {
 			literal = rest
 			configured[i].suffix = true
 			alts = append(alts, `[A-Za-z0-9_]*`+regexp.QuoteMeta(rest))
-			if word, under := strings.CutPrefix(rest, "_"); under && word != "" && isASCII(word) {
+			if word, under := strings.CutPrefix(rest, "_"); under && word != "" && isASCII(word) && compiled[n] {
 				bareWords = append(bareWords, regexp.QuoteMeta(word))
 				lw := strings.ToLower(word)
 				bareStems = append(bareStems, lw+"=", lw+":", lw+`"`, lw+" =", lw+" :")
@@ -409,22 +415,35 @@ func newKeyNameMatcher(names []string) *keyNameMatcher {
 	}
 	// NAME=value, NAME: value, NAME = "value"; and "NAME": "value" only with a string value, so
 	// a redaction never lands on JSON structure (null, a number, `{`). The value run stops at
-	// whitespace, quotes and separators so one redaction cannot swallow a whole line.
+	// whitespace, quotes, separators and closing brackets so one redaction cannot swallow a
+	// whole line. It runs on the escape shadow, where a JSON escape is blanked to its byte, so
+	// it also stops at an escaped quote inside the value: `"a\"b"` ships `b`.
 	pattern := `(?i)\b(?:` + strings.Join(alts, "|") + `)\b(?:\s*[:=]\s*"?` + keyValueRun + `"?|"\s*:\s*"` + keyValueRun + `)`
 	m := &keyNameMatcher{re: regexp.MustCompile(pattern), names: configured, stems: stems}
 	// `*_PASSWORD` also stands for a bare `PASSWORD=`, and for `password = "…"` as code spells
 	// it. A regex of its own, gated on the word followed by its separator, a quote, or one space
 	// and the separator: folded into the one above it slowed every value that mentions `_token`,
 	// and gating on the word and a space fired on prose often enough to cost 9% of the scrub
-	// rate on real transcripts. Two spaces or a tab before the separator are not gated.
+	// rate on real transcripts. Two spaces or a tab before the separator are not gated. The bare
+	// words are common identifiers, so their unquoted value is narrower than the prefixed rule's:
+	// four characters or more, and not starting with `=`, so `token := f()` and `token == ""`
+	// stay valid Go. On a real corpus those two cuts removed most of the damaged code and no
+	// value that looked like a secret.
 	if len(bareWords) > 0 {
-		bare := `(?i)\b(?:` + strings.Join(bareWords, "|") + `)(?:\s*[:=]\s*"?` + keyValueRun + `"?|"\s*:\s*"` + keyValueRun + `)`
+		bare := `(?i)\b(?:` + strings.Join(bareWords, "|") + `)(?:\s*[:=]\s*"?` + bareValueRun + `"?|"\s*:\s*"` + keyValueRun + `)`
 		m.bare = &bareKeyNames{re: regexp.MustCompile(bare), stems: bareStems}
 	}
 	return m
 }
 
-const keyValueRun = `([^\s"',;)]+)`
+// The stop set of an unquoted value: whitespace, quotes, separators, closing brackets and a
+// backtick, so a struct literal's `}` or a code span's closing tick is not part of the value.
+const valueStop = "\\s\"',;)}\\]`"
+
+const (
+	keyValueRun  = `([^` + valueStop + `]+)`
+	bareValueRun = `([^` + valueStop + `=][^` + valueStop + `]{3,})`
+)
 
 // bareKeyNames is the key-name rule for a secret word with no prefix; it reports as key-name.
 type bareKeyNames struct {
@@ -432,8 +451,20 @@ type bareKeyNames struct {
 	stems []string
 }
 
+// MatchScannedIn drops what is code rather than a value: a call or an index (`f(x)`, `m[k]`),
+// a placeholder or a format verb (`$TOKEN`, `<token>`, `{token}`, `%v`). Measured on a real
+// corpus, none of the values that looked like a secret had either shape.
 func (b *bareKeyNames) MatchScannedIn(value string, _ *packs.ValueScan) []Span {
-	return keyNameSpans(b.re, value)
+	spans := keyNameSpans(b.re, value)
+	kept := spans[:0]
+	for _, sp := range spans {
+		v := value[sp.Start:sp.End]
+		if strings.ContainsAny(v, "([") || strings.IndexByte("$<{%", v[0]) >= 0 {
+			continue
+		}
+		kept = append(kept, sp)
+	}
+	return kept
 }
 
 func keyNameSpans(re *regexp.Regexp, value string) []Span {

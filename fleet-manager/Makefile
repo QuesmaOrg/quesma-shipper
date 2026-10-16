@@ -100,7 +100,8 @@ endif
 run: ## Serve on port 8099, every interface, against the local store, setting it up first if needed
 ifeq ($(ENV),local)
 	@# Checked first: otherwise the address and credential below point at whatever already serves.
-	@if curl -s -o /dev/null --max-time 2 http://127.0.0.1:$(DEV_PORT)/; then \
+	@# A TCP connect, not an HTTP request: a listener that does not speak HTTP holds the port too.
+	@if nc -z -w 1 127.0.0.1 $(DEV_PORT) 2>/dev/null; then \
 		echo "port $(DEV_PORT) is already taken; stop what serves there, or make run DEV_PORT=<port>"; exit 1; fi
 	@$(MAKE) --no-print-directory build setup
 	@printf '  admin UI     http://127.0.0.1:%s/admin/\n' "$(DEV_PORT)"

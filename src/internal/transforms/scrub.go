@@ -625,9 +625,16 @@ func escapeShadow(value string) ([]byte, escapeIndex) {
 	}
 	shadow := []byte(value)
 	splits, starts, ends := newBitset(len(shadow)), newBitset(len(shadow)), newBitset(len(shadow))
-	for again, from := true, first; again; from = 0 {
+	for again, from, pass := true, first, 0; again; from, pass = 0, pass+1 {
 		again = false
 		for i := from; i+1 < len(shadow); i++ {
+			// A backslash that an earlier pass decoded, followed by a quote the text had all
+			// along, is an escaped backslash at the end of a string, not `\"`: at any encoding
+			// level the quote after `\\` closes the enclosing string. Reading it as an escape
+			// made a redaction swallow the closing quote of `"x\\"` and break raw JSON.
+			if pass > 0 && shadow[i] == '\\' && shadow[i+1] == '"' && !hasBit(ends, i+2) {
+				continue
+			}
 			n, last := escapeAt(shadow, i)
 			if n == 0 {
 				continue

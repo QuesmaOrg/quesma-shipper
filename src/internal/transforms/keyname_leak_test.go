@@ -55,7 +55,8 @@ func TestKeyNameRuleRedactsBareNamesAndQuotedKeys(t *testing.T) {
 }
 
 // What the wider rule must still leave alone: words that only contain a secret word, a secret
-// word with no value after it, and prose where a space follows the word.
+// word with no value after it, prose where a space follows the word, and code: `:=` and `==`,
+// a call or an index, a placeholder or a format verb, and a value too short to be a secret.
 func TestKeyNameRuleLeavesNonAssignmentsAlone(t *testing.T) {
 	s, err := New(DefaultConfig())
 	if err != nil {
@@ -68,6 +69,15 @@ func TestKeyNameRuleLeavesNonAssignmentsAlone(t *testing.T) {
 		"MYTOKEN=visible-on-purpose",
 		"the password is safe",
 		"token count: 4096",
+		"token := bearerToken(r)",
+		`if token == "" {`,
+		`Credentials: credentials.NewStaticCredentialsProvider(key, secret, "")}`,
+		"token: m[k]",
+		"TOKEN=$TOKEN",
+		"token: <token>",
+		"password: {password}",
+		"token: %v",
+		"token: abc",
 	} {
 		res, err := s.Scrub([]byte(text+"\n"), Hint{Family: "claude-code"})
 		if err != nil {
@@ -118,6 +128,10 @@ func TestKeyNameRuleKeepsRawJSONValid(t *testing.T) {
 		`{"api_key": ["a", "b"]}`,
 		`{"GITHUB_TOKEN": "ghp_x"}`,
 		"{\n  \"env\": {\n    \"MY_PASSWORD\": \"hunter2 with spaces\"\n  }\n}",
+		`{"password": "x\\"}`,
+		`{"MY_PASSWORD": "x\\"}`,
+		`{"password": "a\"b-tail"}`,
+		`{"token": "tail\\", "n": 1}`,
 	} {
 		res, err := s.Scrub([]byte(doc+"\n"), Hint{Family: "claude-code"})
 		if err != nil {
@@ -126,5 +140,32 @@ func TestKeyNameRuleKeepsRawJSONValid(t *testing.T) {
 		if out := res.Out.Bytes(); !json.Valid(out) {
 			t.Errorf("%s scrubbed to invalid JSON: %s", doc, out)
 		}
+	}
+}
+
+// A name served in scrub.secret_key_names keeps meaning the suffix only: `*_KEY` redacts
+// `MY_KEY=…` and not every `key:`.
+func TestServedKeyNamesStaySuffixes(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SecretKeyNames = append(cfg.SecretKeyNames, "*_KEY", "*_ID")
+	s, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{`{"key": "src/main.go", "id": "msg_01ABC"}`, "map key: users, id=7"} {
+		res, err := s.Scrub([]byte(text+"\n"), Hint{Family: "claude-code"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := string(res.Out.Bytes()); got != text+"\n" {
+			t.Errorf("%q changed to %q", text, got)
+		}
+	}
+	res, err := s.Scrub([]byte("MY_KEY=abc1234\n"), Hint{Family: "claude-code"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(res.Out.Bytes()), "abc1234") {
+		t.Errorf("the served suffix did not redact: %s", res.Out.Bytes())
 	}
 }
