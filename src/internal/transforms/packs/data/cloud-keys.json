@@ -49,7 +49,8 @@
       "id": "cookie",
       "regex": "(?i)\\bcookie:[ \\t]*([^\\s=;,\"'`\\\\]+=[^\\s;,\"'`\\\\]*(?:;[ \\t]*[^\\s=;,\"'`\\\\]+=[^\\s;,\"'`\\\\]*)*)",
       "keywords": ["cookie:"],
-      "capture": 1
+      "capture": 1,
+      "sweep": true
     },
     {
       "id": "ssh-private-key-openssh",

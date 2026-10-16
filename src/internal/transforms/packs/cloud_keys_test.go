@@ -60,8 +60,8 @@ func TestCloudKeysBareNameShapes(t *testing.T) {
 			for _, s := range r.MatchScanned(p.in) {
 				got = append(got, p.in[s.Start:s.End])
 			}
-			if p.want == "" && len(got) != 0 || p.want != "" && (len(got) != 1 || got[0] != p.want) {
-				t.Errorf("%s: %q: want %q, got %q", id, p.in, p.want, got)
+			if g := strings.Join(got, " | "); g != p.want {
+				t.Errorf("%s: %q: want %q, got %q", id, p.in, p.want, g)
 			}
 		}
 	}

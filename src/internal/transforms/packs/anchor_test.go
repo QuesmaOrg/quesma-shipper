@@ -73,8 +73,8 @@ func TestAnchorLiterals(t *testing.T) {
 		"langsmith-api-key":               `wb ["lsv2_pt_" "lsv2_sk_"]`,
 		"pinecone-api-key":                `wb ["pcsk_"]`,
 		"azure-sas-token":                 `wb ["sig="]`,
-		// cloud-keys. private-key-block sweeps for cost, a failed candidate running to the
-		// value's end (see TestPEMHeaderFloodStaysLinear); url-userinfo-credentials for head-ness.
+		// cloud-keys. private-key-block and cookie sweep for cost, a failed candidate running to
+		// the value's end (see TestHeaderFloodsStayLinear); url-userinfo-credentials for head-ness.
 		"private-key-block":        "sweep",
 		"jwt":                      `wb ["eyJ"]`,
 		"authorization-bearer":     `fold ["authorization"]`,
@@ -82,7 +82,7 @@ func TestAnchorLiterals(t *testing.T) {
 		"url-userinfo-credentials": "sweep",
 		"kubeconfig-token":         `fold wb ["token"]`,
 		"token":                    `fold wb ["token="]`,
-		"cookie":                   `fold wb ["cookie:"]`,
+		"cookie":                   "sweep",
 		"ssh-private-key-openssh":  `wb ["OPENSSH PRIVATE KEY"]`,
 		// pii-core. The scanner rules never consult an anchor: the regex is not run.
 		"email":    "sweep",
@@ -302,51 +302,55 @@ func TestAnchorOverlapTraps(t *testing.T) {
 	}
 }
 
-// The regression for the shape that made anchoring quadratic: every line a PEM header, none a
-// footer, so every candidate ran the body to the value's end. Both assertions are needed, the rule
-// unanchored and doubled input not blowing the time up. The bound is loose on purpose: a shape
-// test, not a throughput budget.
-func TestPEMHeaderFloodStaysLinear(t *testing.T) {
+// The regression for the shape that made anchoring quadratic: every candidate fails only at the
+// value's end (a PEM header with no footer, a cookie name with no `=`), so each one costs the
+// whole value. Both assertions are needed, the rule unanchored and doubled input not blowing the
+// time up. The bound is loose on purpose: a shape test, not a throughput budget.
+func TestHeaderFloodsStayLinear(t *testing.T) {
 	rules, err := Load(CloudKeys)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var pem *Rule
+	byID := map[string]*Rule{}
 	for _, r := range rules {
-		if r.id == "private-key-block" {
-			pem = r
+		byID[r.id] = r
+	}
+	floods := map[string]func(i int) string{
+		"private-key-block": func(i int) string {
+			return fmt.Sprintf("src/testdata/key%d.pem:1:-----BEGIN PRIVATE KEY-----\n", i)
+		},
+		"cookie": func(int) string { return "cookie:" },
+	}
+	for id, unit := range floods {
+		r := byID[id]
+		if r == nil {
+			t.Fatalf("cloud-keys no longer carries %s", id)
 		}
-	}
-	if pem == nil {
-		t.Fatal("cloud-keys no longer carries private-key-block")
-	}
-	if pem.anchor != nil {
-		t.Fatal("private-key-block is anchored: its unbounded body makes a failed " +
-			"candidate cost the whole value, which is why the corpus declares \"sweep\"")
-	}
+		if r.anchor != nil {
+			t.Errorf("%s is anchored: a failed candidate costs the whole value, which is why "+
+				"the corpus declares \"sweep\"", id)
+			continue
+		}
+		timeFlood := func(units int) time.Duration {
+			var b strings.Builder
+			for i := 0; i < units; i++ {
+				b.WriteString(unit(i))
+			}
+			v := b.String()
+			start := time.Now()
+			if spans := r.MatchScanned(v); len(spans) != 0 {
+				t.Fatalf("%s, %d units: %d spans, want none", id, units, len(spans))
+			}
+			return time.Since(start)
+		}
 
-	flood := func(headers int) string {
-		var b strings.Builder
-		for i := 0; i < headers; i++ {
-			fmt.Fprintf(&b, "src/testdata/key%d.pem:1:-----BEGIN PRIVATE KEY-----\n", i)
+		// Warm the code paths first, so the small case does not pay the large one's page faults.
+		timeFlood(200)
+		small := timeFlood(1600)
+		large := timeFlood(3200)
+		if large > 8*small+2*time.Millisecond {
+			t.Errorf("%s: doubling the flood took %v against %v: that is the quadratic shape back",
+				id, large, small)
 		}
-		return b.String()
-	}
-	timeFlood := func(headers int) time.Duration {
-		v := flood(headers)
-		start := time.Now()
-		if spans := pem.MatchScanned(v); len(spans) != 0 {
-			t.Fatalf("%d headers: %d spans, want none (no footer in the value)", headers, len(spans))
-		}
-		return time.Since(start)
-	}
-
-	// Warm the code paths first, so the small case does not pay the large one's page faults.
-	timeFlood(200)
-	small := timeFlood(1600)
-	large := timeFlood(3200)
-	if large > 8*small+2*time.Millisecond {
-		t.Errorf("doubling the headers took %v against %v: that is the quadratic shape back",
-			large, small)
 	}
 }
