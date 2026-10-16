@@ -230,7 +230,7 @@ var checksums = map[string]func(string) bool{
 	"pan":   panValid,
 }
 
-// Context checks a rule can declare: a guard sees the characters around the match, which
+// Checks a rule can declare: a guard sees the match and the characters around it, which
 // is how "not part of a decimal number" is expressed where \b cannot say it.
 var guards = map[string]func(value string, start, end int) bool{
 	// Rejects a match that is a piece of a larger decimal number: preceded by a dot, or
@@ -244,6 +244,11 @@ var guards = map[string]func(value string, start, end int) bool{
 			return false
 		}
 		return true
+	},
+	// Rejects a value with no digit: behind a bare `token=` that is an identifier or a word
+	// (`token=undefined`, `token=os.Getenv`), while a generated credential carries digits.
+	"has-digit": func(value string, start, end int) bool {
+		return strings.ContainsAny(value[start:end], "0123456789")
 	},
 }
 

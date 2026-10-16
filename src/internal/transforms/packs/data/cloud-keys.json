@@ -39,6 +39,20 @@
       "capture": 1
     },
     {
+      "id": "token",
+      "regex": "(?i)\\btoken=[\"']?([A-Za-z0-9%][A-Za-z0-9._~+/%=-]{7,})",
+      "keywords": ["token="],
+      "capture": 1,
+      "guard": "has-digit"
+    },
+    {
+      "id": "cookie",
+      "regex": "(?i)\\bcookie:[ \\t]*([^\\s=;,\"'`\\\\]+=(?:\"[^\\s\";,\\\\]*\"|[^\\s;,\"'`\\\\]*)(?:[ \\t]*[;,][ \\t]*[^\\s=;,\"'`\\\\]+=(?:\"[^\\s\";,\\\\]*\"|[^\\s;,\"'`\\\\]*))*)",
+      "keywords": ["cookie:"],
+      "capture": 1,
+      "sweep": true
+    },
+    {
       "id": "ssh-private-key-openssh",
       "regex": "\\b(OPENSSH PRIVATE KEY)\\b",
       "keywords": ["OPENSSH PRIVATE KEY"]
