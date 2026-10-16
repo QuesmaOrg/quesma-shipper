@@ -39,14 +39,14 @@
       "capture": 1
     },
     {
-      "id": "token-assignment",
+      "id": "token",
       "regex": "(?i)\\btoken=[\"']?([A-Za-z0-9%][A-Za-z0-9._~+/%=-]{7,})",
       "keywords": ["token="],
       "capture": 1,
       "guard": "has-digit"
     },
     {
-      "id": "cookie-header",
+      "id": "cookie",
       "regex": "(?i)\\bcookie:[ \\t]*([^\\s=;,\"'`\\\\]+=[^\\s;,\"'`\\\\]*(?:;[ \\t]*[^\\s=;,\"'`\\\\]+=[^\\s;,\"'`\\\\]*)*)",
       "keywords": ["cookie:"],
       "capture": 1

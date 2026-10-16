@@ -13,7 +13,7 @@ func TestCloudKeysBareNameShapes(t *testing.T) {
 	alnum32 := strings.Repeat("k3v9q2x7", 4)
 	uuid := "1f0e2d3c-4b5a-4968-8776-655443322110"
 	cases := map[string][]struct{ in, want string }{
-		"token-assignment": {
+		"token": {
 			{`curl -s "https://x.workers.dev/flush?token=` + hex48 + `"`, hex48},
 			{"agent -invite token=" + alnum32 + " -public-url http://127.0.0.1", alnum32},
 			{`invalid value "token=` + alnum32 + `" for flag -invite`, alnum32},
@@ -31,7 +31,7 @@ func TestCloudKeysBareNameShapes(t *testing.T) {
 			{"ACCESS_TOKEN=" + alnum32, ""}, // the key-name rule's, not this one's
 			{"max_tokens=40960000", ""},
 		},
-		"cookie-header": {
+		"cookie": {
 			{"Cookie: sid=" + alnum32 + "; csrf=%7B%7D\nAccept: */*", "sid=" + alnum32 + "; csrf=%7B%7D"},
 			{"set-cookie: sid=x9; Path=/; HttpOnly", "sid=x9; Path=/"},
 			{"curl -H 'Cookie: a=1' https://x.example", "a=1"},

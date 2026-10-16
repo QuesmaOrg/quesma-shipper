@@ -81,8 +81,8 @@ func TestAnchorLiterals(t *testing.T) {
 		"basic-auth-header":        `fold ["authorization"]`,
 		"url-userinfo-credentials": "sweep",
 		"kubeconfig-token":         `fold wb ["token"]`,
-		"token-assignment":         `fold wb ["token="]`,
-		"cookie-header":            `fold wb ["cookie:"]`,
+		"token":                    `fold wb ["token="]`,
+		"cookie":                   `fold wb ["cookie:"]`,
 		"ssh-private-key-openssh":  `wb ["OPENSSH PRIVATE KEY"]`,
 		// pii-core. The scanner rules never consult an anchor: the regex is not run.
 		"email":    "sweep",
