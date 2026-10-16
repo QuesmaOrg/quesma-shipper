@@ -245,6 +245,11 @@ var guards = map[string]func(value string, start, end int) bool{
 		}
 		return true
 	},
+	// Rejects a value with no digit: behind a bare `token=` that is an identifier or a word
+	// (`token=undefined`, `token=os.Getenv`), while a generated credential carries digits.
+	"has-digit": func(value string, start, end int) bool {
+		return strings.ContainsAny(value[start:end], "0123456789")
+	},
 }
 
 // Load compiles one pack's corpus.
