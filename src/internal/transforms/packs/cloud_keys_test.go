@@ -34,6 +34,10 @@ func TestCloudKeysBareNameShapes(t *testing.T) {
 		"cookie": {
 			{"Cookie: sid=" + alnum32 + "; csrf=%7B%7D\nAccept: */*", "sid=" + alnum32 + "; csrf=%7B%7D"},
 			{"set-cookie: sid=x9; Path=/; HttpOnly", "sid=x9; Path=/"},
+			{`Cookie: sid="` + alnum32 + `"; x=1`, `sid="` + alnum32 + `"; x=1`},
+			{"Cookie: a=1 ; sid=" + alnum32, "a=1 ; sid=" + alnum32},
+			{"Cookie: a=1, sid=" + alnum32, "a=1, sid=" + alnum32},
+			{"set-cookie: id=a1; Expires=Wed, 21 Oct 2015 07:28:00 GMT", "id=a1; Expires=Wed"},
 			{"curl -H 'Cookie: a=1' https://x.example", "a=1"},
 			{"send `Cookie: a=b` with every request", "a=b"},
 			{"cookie: string;", ""},
