@@ -118,14 +118,16 @@ func TestSourcePatchingNormalizesExceptionalBytesInDirtyStrings(t *testing.T) {
 }
 
 // A string value is walked as JSON exactly when encoding/json would accept it, so the nested
-// walk inherits the line walk's acceptance parity.
+// walk inherits the line walk's acceptance parity. The probe key is camelCase because only the
+// walker reads it as a secret; the text scan also redacts `"password":…` now, so that key could
+// no longer tell a walk from a scan.
 func TestEmbeddedJSONAcceptanceMatchesEncodingJSON(t *testing.T) {
 	s := sourcePatchScrubber(t)
 	for _, doc := range []string{
 		`[]`, `{}`, ` { "a" : [1, {"b":"x"}], "a": 2 } `, `[1e+9, -0, null]`,
 		"[\"a\xffb\"]", `[`, `[1,]`, `{"a":}`, `[01]`, `[NaN]`, `[true false]`, `["\q"]`, "[\"\n\"]", `{"a":1,}`,
 	} {
-		inner := `[` + doc + `,{"password":"hunter2"}]`
+		inner := `[` + doc + `,{"clientSecret":"hunter2"}]`
 		line, err := json.Marshal(map[string]string{"out": inner})
 		if err != nil {
 			t.Fatal(err)
@@ -167,7 +169,7 @@ func TestEmbeddedFieldsDoNotInheritOuterExemptions(t *testing.T) {
 // rejected, and the line still counts as parsed.
 func TestEmbeddedJSONPastTheDepthBoundIsScannedAsText(t *testing.T) {
 	s := sourcePatchScrubber(t)
-	value, err := json.Marshal(strings.Repeat("[", 20) + `{"password":"hunter2"}` + strings.Repeat("]", 20))
+	value, err := json.Marshal(strings.Repeat("[", 20) + `{"clientSecret":"hunter2"}` + strings.Repeat("]", 20))
 	if err != nil {
 		t.Fatal(err)
 	}
