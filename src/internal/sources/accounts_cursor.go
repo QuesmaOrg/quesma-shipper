@@ -33,10 +33,20 @@ func cursorAccount(ctx context.Context, req Request) (map[string]json.RawMessage
 	return values, token, true, err
 }
 
+// At most two Cursor API calls at once, however many day loads the engine runs in parallel.
+var cursorSlots = make(chan struct{}, 2)
+
 // cursorCall asks one DashboardService endpoint; as with fetch, obs names the call and receives the answer.
 func (p *Accounts) cursorCall(ctx context.Context, token, endpoint, body string, obs accountObservation) accountObservation {
 	if token == "" {
 		obs.Error = "credentials_unavailable"
+		return obs
+	}
+	select {
+	case cursorSlots <- struct{}{}:
+		defer func() { <-cursorSlots }()
+	case <-ctx.Done():
+		obs.Error = "request_failed"
 		return obs
 	}
 	request, err := http.NewRequestWithContext(ctx, "POST", "https://api2.cursor.sh/aiserver.v1.DashboardService/"+endpoint, strings.NewReader(body))
