@@ -6,15 +6,15 @@ require (
 	filippo.io/age v1.3.2
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/QuesmaOrg/quesma-shipper/shipper-protocol v0.0.0
-	github.com/Shopify/toxiproxy/v2 v2.12.0
+	github.com/Shopify/toxiproxy/v2 v2.13.0
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
-	github.com/bmatcuk/doublestar/v4 v4.10.2
+	github.com/bmatcuk/doublestar/v4 v4.10.3
 	github.com/creativeprojects/go-selfupdate v1.6.0
-	github.com/ebitengine/purego v0.11.1
+	github.com/ebitengine/purego v0.11.2
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.20.1
+	github.com/klauspost/compress v1.20.3
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -25,7 +25,7 @@ require (
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/libc v1.77.1
+	modernc.org/libc v1.79.0
 	modernc.org/sqlite v1.60.1
 )
 
@@ -54,7 +54,7 @@ require (
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -73,7 +73,7 @@ require (
 	github.com/moby/sys/user v0.4.1 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
-	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
