@@ -11,8 +11,6 @@ sources:
       - $XDG_DATA_HOME/opencode
       - ~/.local/share/opencode
     include: ["opencode.db", "opencode-*.db"]
-    # A pre-split 2.x store that OpenCode imports into opencode.db and leaves behind.
-    exclude: ["opencode-next.db"]
     max_file_bytes: 67108864
     sniff:
       kind: jsonl

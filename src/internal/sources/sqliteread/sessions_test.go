@@ -230,3 +230,31 @@ func TestOpenCodeChannelRecordKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenCodeNextDatabase(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "opencode-next.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE session(id TEXT,parent_id TEXT,directory TEXT,title TEXT,version TEXT,time_created INTEGER,time_updated INTEGER);
+ INSERT INTO session VALUES ('ses_next',NULL,'/work/next','next','1.2.27',1000,1000);`); err != nil {
+		t.Fatal(err)
+	}
+	// A 1.x "next" channel database is the only copy of its history.
+	if sessions, err := reader("opencode").List(context.Background(), path); err != nil || len(sessions) != 1 {
+		t.Fatalf("1.x next channel: %v %v", sessions, err)
+	}
+	// A pre-split 2.x store is what OpenCode imports into opencode.db.
+	if _, err := db.Exec(`CREATE TABLE session_message(id TEXT,session_id TEXT,type TEXT,seq INTEGER,time_created INTEGER,time_updated INTEGER,data TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	if sessions, err := reader("opencode").List(context.Background(), path); err != nil || len(sessions) != 0 {
+		t.Fatalf("imported pre-split store: %v %v", sessions, err)
+	}
+}

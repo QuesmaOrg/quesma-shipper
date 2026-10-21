@@ -11,7 +11,13 @@ import (
 type OpenCodeSessions struct{}
 
 func (OpenCodeSessions) List(ctx context.Context, path string) ([]Session, error) {
-	return listSessions(ctx, path, `SELECT id, directory AS cwd FROM session ORDER BY time_created, id LIMIT 100001`)
+	query := `SELECT id, directory AS cwd FROM session ORDER BY time_created, id LIMIT 100001`
+	// OpenCode 2.x imports a pre-split opencode-next.db (one with session_message) into opencode.db and leaves it behind;
+	// a 1.x "next" channel database has no other copy.
+	if filepath.Base(path) == "opencode-next.db" {
+		query = `SELECT id, directory AS cwd FROM session WHERE NOT EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_message') ORDER BY time_created, id LIMIT 100001`
+	}
+	return listSessions(ctx, path, query)
 }
 func (OpenCodeSessions) Read(ctx context.Context, path, relPath, id string, maxBytes int64) ([]byte, error) {
 	namespace := "opencode"
