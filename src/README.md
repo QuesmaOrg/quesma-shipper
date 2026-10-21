@@ -115,6 +115,10 @@ One more record is produced by the shipper itself:
   account metadata and provider usage JSON in UTC buckets matching the collection interval (default
   15 minutes), only when it changed since the last upload, and at least once per UTC day. Unknown
   fields are preserved; these records skip scrubbing and ship encrypted.
+- **Cursor usage.** A separate `cursor-usage` source uploads the signed-in user's own requests
+  (model, token counts, cost, conversation id) as one object per account and UTC day,
+  `cursor.usage.<account>.YYYYMMDD.jsonl`, for the past 90 days and as they happen. `<account>` is
+  a short hash of the account id, never the email. It skips scrubbing too.
 
 All other files above pass through the scrub stage before encryption. The control plane receives no
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.
