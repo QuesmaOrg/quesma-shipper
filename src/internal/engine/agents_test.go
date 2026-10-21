@@ -17,7 +17,7 @@ import (
 )
 
 func TestAgentSessionPipeline(t *testing.T) {
-	for _, family := range []string{"pi", "opencode", "hermes"} {
+	for _, family := range []string{"pi", "opencode", "opencode-channel", "hermes"} {
 		t.Run(family, func(t *testing.T) {
 			f := newFixture(t)
 			root := filepath.Join(f.home, family)
@@ -28,7 +28,8 @@ func TestAgentSessionPipeline(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			spec, _ := catalog.Source(family + "-sessions")
+			agent, _, _ := strings.Cut(family, "-")
+			spec, _ := catalog.Source(agent + "-sessions")
 			var update func()
 			if family == "pi" {
 				path := filepath.Join(root, "test.jsonl")
@@ -43,8 +44,12 @@ func TestAgentSessionPipeline(t *testing.T) {
 				}
 			} else {
 				name := "opencode.db"
-				if family == "hermes" {
+				switch family {
+				case "hermes":
 					name = "state.db"
+				case "opencode-channel":
+					// A channel-only install: no opencode.db at all.
+					name = "opencode-stable.db"
 				}
 				db, err := sql.Open("sqlite", filepath.Join(root, name))
 				if err != nil {
@@ -68,6 +73,17 @@ func TestAgentSessionPipeline(t *testing.T) {
 				}
 				if _, err = db.Exec(schema); err != nil {
 					t.Fatal(err)
+				}
+				if family == "opencode-channel" {
+					// The imported pre-split store stays on disk and must not ship a second copy.
+					next, err := sql.Open("sqlite", filepath.Join(root, "opencode-next.db"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer next.Close()
+					if _, err = next.Exec(schema); err != nil {
+						t.Fatal(err)
+					}
 				}
 				update = func() {
 					if _, err := db.Exec(updateSQL); err != nil {

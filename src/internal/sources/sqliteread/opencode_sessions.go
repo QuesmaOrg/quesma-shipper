@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 )
 
 // OpenCodeSessions reads only OpenCode transcript and usage columns.
@@ -12,8 +13,13 @@ type OpenCodeSessions struct{}
 func (OpenCodeSessions) List(ctx context.Context, path string) ([]Session, error) {
 	return listSessions(ctx, path, `SELECT id, directory AS cwd FROM session ORDER BY time_created, id LIMIT 100001`)
 }
-func (OpenCodeSessions) Read(ctx context.Context, path, _, id string, maxBytes int64) ([]byte, error) {
-	return readSession(ctx, path, "opencode", id, maxBytes, func(tx *sessionConnection, emit func(string, string) error) error {
+func (OpenCodeSessions) Read(ctx context.Context, path, relPath, id string, maxBytes int64) ([]byte, error) {
+	namespace := "opencode"
+	// Channel databases (opencode-<channel>.db) are separate histories that may reuse session IDs.
+	if relPath = filepath.ToSlash(filepath.Clean(relPath)); relPath != "opencode.db" {
+		namespace += ":" + sessionKey("opencode-database", relPath)
+	}
+	return readSession(ctx, path, namespace, id, maxBytes, func(tx *sessionConnection, emit func(string, string) error) error {
 		err := emit("session", `SELECT id, parent_id, directory AS cwd, title, version, time_created, time_updated FROM session WHERE id = ?`)
 		if err == nil {
 			err = emit("message", `SELECT id, time_created, time_updated, data FROM message WHERE session_id = ? ORDER BY time_created,id`)

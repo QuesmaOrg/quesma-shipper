@@ -207,3 +207,26 @@ func TestHermesProfileRecordKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenCodeChannelRecordKeys(t *testing.T) {
+	path, _ := sessionStore(t, "opencode")
+	keys := map[string]string{}
+	for _, rel := range []string{"opencode.db", "opencode-stable.db", "opencode-dev.db"} {
+		raw, err := reader("opencode").Read(context.Background(), path, rel, "ses_../weird", 1<<20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var row map[string]any
+		if err := json.Unmarshal([]byte(strings.SplitN(string(raw), "\n", 2)[0]), &row); err != nil {
+			t.Fatal(err)
+		}
+		key, _ := row["session_key"].(string)
+		if previous, exists := keys[key]; exists {
+			t.Fatalf("%s and %s share session key %s", previous, rel, key)
+		}
+		keys[key] = rel
+		if rel == "opencode.db" && key != "e4b7a824-333d-ecfe-dc1c-3e4ae6ac1e80" {
+			t.Fatalf("default database key changed: %s", key)
+		}
+	}
+}
