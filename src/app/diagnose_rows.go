@@ -80,8 +80,9 @@ type sourceProbe struct {
 }
 
 func pending(doc engine.Document, src config.ResolvedSource, d sources.Discovery) (files int, bytes int64) {
+	checked := lastChecked(doc, src, d)
 	for _, c := range d.Candidates {
-		if pendingFile(doc, src, c) {
+		if pendingFile(doc, src, c, checked) {
 			files++
 			bytes += c.Size
 		}
@@ -89,14 +90,24 @@ func pending(doc engine.Document, src config.ResolvedSource, d sources.Discovery
 	return files, bytes
 }
 
-func pendingFile(doc engine.Document, src config.ResolvedSource, c sources.Candidate) bool {
+// lastChecked is the newest run that committed a database session: every run re-commits the sessions it read, with that run's time.
+func lastChecked(doc engine.Document, src config.ResolvedSource, d sources.Discovery) (latest time.Time) {
+	for _, c := range d.Candidates {
+		if fp, seen := doc.Entries[engine.KeyOf(src.ID, c)]; c.AlwaysLoad && seen && fp.SourceMTime.After(latest) {
+			latest = fp.SourceMTime
+		}
+	}
+	return latest
+}
+
+func pendingFile(doc engine.Document, src config.ResolvedSource, c sources.Candidate, checked time.Time) bool {
 	if stored, known := doc.SourceSpecs[src.ID]; known && stored != src.SpecFingerprint {
 		return true
 	}
 	fp, seen := doc.Entries[engine.KeyOf(src.ID, c)]
-	// A database session's size and mtime are placeholders (the cap and now), so only a missing ship or a failure is news.
+	// A database session's size and mtime are placeholders (the cap and now); a failed upload commits nothing, so it is the session the last run left behind.
 	if c.AlwaysLoad {
-		return !seen || fp.SourceHash == "" || fp.Parked
+		return !seen || fp.SourceHash == "" || fp.Parked || fp.SourceMTime.Before(checked)
 	}
 	return !seen || fp.SourceSize != c.Size || fp.SourceMTime.UnixNano() != c.MTime.UnixNano()
 }
