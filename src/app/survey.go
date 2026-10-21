@@ -67,8 +67,9 @@ func Survey(eff *config.Effective, paths config.Paths, attr *sources.RepoFilter)
 			continue
 		}
 		row.PendingKnown = docErr == nil
+		checked := lastChecked(doc, src, d)
 		for _, c := range d.Candidates {
-			row.Add(attr.RepoDir(src, c), c, markerOf(attr.CWD(src, c)), docErr == nil && pendingFile(doc, src, c))
+			row.Add(attr.RepoDir(src, c), c, markerOf(attr.CWD(src, c)), docErr == nil && pendingFile(doc, src, c, checked))
 		}
 	}
 
