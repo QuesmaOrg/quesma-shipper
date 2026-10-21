@@ -260,19 +260,30 @@ func TestOpenCodeLayouts(t *testing.T) {
 	if _, err := db.Exec(`CREATE TABLE session(id TEXT,parent_id TEXT,directory TEXT,title TEXT,version TEXT,time_created INTEGER,time_updated INTEGER);
  CREATE TABLE message(id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
  CREATE TABLE part(id TEXT,message_id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
- INSERT INTO session VALUES ('ses_../weird',NULL,'/work/with spaces','test','1.2.27',1000,1000);
+ INSERT INTO session VALUES ('ses_../weird',NULL,'/work/before move','test','1.2.27',1000,1000);
  INSERT INTO message VALUES ('msg_a','ses_../weird',1000,1000,'{"role":"user"}');
  INSERT INTO session VALUES ('legacy',NULL,'/work/legacy','old','1.2.27',500,500);
- INSERT INTO message VALUES ('m1','legacy',500,500,'{"role":"user"}');`); err != nil {
+ INSERT INTO message VALUES ('m1','legacy',500,500,'{"role":"user"}');
+ INSERT INTO session VALUES ('moved',NULL,'/work/allowed','empty','1.2.27',3000,3000);
+ INSERT INTO session_v2 VALUES ('moved','prj',NULL,NULL,NULL,'/work/marked','',NULL,'2.0.22',NULL,3000,3000);
+ INSERT INTO session_message VALUES ('msg_m','moved','user',1,3000,3000,'{"text":"continued in 2.x"}');`); err != nil {
 		t.Fatal(err)
 	}
 	sessions, err := reader("opencode").List(ctx, path)
 	var listed []string
 	for _, s := range sessions {
 		listed = append(listed, s.ID)
+		// Repository markers are checked against the listed directory, so it must be the exported one.
+		if rows := records(path, "opencode.db", s.ID); rows[0]["cwd"] != s.CWD {
+			t.Fatalf("%s listed in %s but exported from %v", s.ID, s.CWD, rows[0]["cwd"])
+		}
 	}
-	if err != nil || strings.Join(listed, ",") != "legacy,ses_../weird,other" {
+	if err != nil || strings.Join(listed, ",") != "legacy,ses_../weird,other,moved" {
 		t.Fatalf("migrated listing: %v %v", listed, err)
+	}
+	// An empty 1.x session continued in 2.x ships its 2.x copy.
+	if rows := records(path, "opencode.db", "moved"); len(rows) != 2 || rows[0]["cwd"] != "/work/marked" || rows[1]["type"] != "session_message" {
+		t.Fatalf("migrated empty session: %v", rows)
 	}
 	got = nil
 	for _, row := range records(path, "opencode.db", "ses_../weird") {
@@ -308,5 +319,29 @@ func TestOpenCodeLayouts(t *testing.T) {
 	}
 	if rows := records(path, "opencode.db", "ses_../weird"); len(rows) != 3 || rows[1]["type"] != "message" {
 		t.Fatalf("shared layout legacy session: %v", rows)
+	}
+}
+
+func TestOpenCodeV2ExecutionKeys(t *testing.T) {
+	path, db := sessionStore(t, "opencode-v2")
+	if _, err := db.Exec(`INSERT INTO session_v2 VALUES ('twins','prj',NULL,NULL,NULL,'/work','',NULL,'2.0.22',NULL,3000,3000);
+ INSERT INTO session_message VALUES ('msg_s','twins','system',1,3000,3000,'{"text":"same"}');
+ INSERT INTO session_message VALUES ('msg_y','twins','synthetic',2,3000,3000,'{"text":"same"}');`); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := reader("opencode").Read(context.Background(), path, "opencode.db", "twins", 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := map[any]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n")[1:] {
+		var row map[string]any
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			t.Fatal(err)
+		}
+		keys[row["execution_key"]] = true
+	}
+	if len(keys) != 2 {
+		t.Fatalf("system and synthetic records with the same payload share an execution key: %s", raw)
 	}
 }

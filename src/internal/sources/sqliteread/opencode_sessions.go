@@ -4,25 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 )
 
 // OpenCodeSessions reads only OpenCode transcript and usage columns.
 type OpenCodeSessions struct{}
 
+// Upstream migration copies 1.x sessions into session_v2 and session_message under the same IDs and keeps the originals.
+// A session with 1.x messages ships its 1.x copy, which is the one already archived; any other ships its 2.x copy.
+// List and Read pick the same copy, so the directory checked for repository markers is the one exported.
 func (OpenCodeSessions) List(ctx context.Context, path string) ([]Session, error) {
 	return listSessions(ctx, path, func(tx *sessionConnection) (string, error) {
 		tables, err := opencodeTables(ctx, tx)
 		if err != nil {
 			return "", err
 		}
-		var from []string
-		for _, table := range []string{"session", "session_v2"} {
-			if tables[table] {
-				from = append(from, "SELECT id, directory AS cwd, time_created FROM "+table)
-			}
+		v1 := `SELECT id, directory AS cwd, time_created FROM session s`
+		v2 := `SELECT id, directory AS cwd, time_created FROM session_v2 v`
+		switch {
+		case tables["session"] && tables["session_v2"]:
+			v1 += ` WHERE id NOT IN (SELECT id FROM session_v2) OR EXISTS (SELECT 1 FROM message WHERE session_id = s.id)`
+			v2 += ` WHERE id NOT IN (SELECT id FROM session) OR NOT EXISTS (SELECT 1 FROM message WHERE session_id = v.id)`
+			v1 += ` UNION ALL ` + v2
+		case tables["session_v2"]:
+			v1 = v2
 		}
-		return `SELECT id, cwd FROM (` + strings.Join(from, " UNION ALL ") + `) GROUP BY id ORDER BY min(time_created), id LIMIT 100001`, nil
+		return `SELECT id, cwd FROM (` + v1 + `) ORDER BY time_created, id LIMIT 100001`, nil
 	})
 }
 func (OpenCodeSessions) Read(ctx context.Context, path, _, id string, maxBytes int64) ([]byte, error) {
@@ -33,32 +39,38 @@ func (OpenCodeSessions) Read(ctx context.Context, path, _, id string, maxBytes i
 				err = tx.query(ctx, query, []string{id}, func(map[string]any) error { *found = true; return nil })
 			}
 		}
-		// Upstream migration copies 1.x sessions into session_v2 and session_message under the same IDs and keeps the originals: ship one copy, the 1.x one.
-		var inV1, legacy, inV2, native bool
+		var legacy, native bool
 		if tables["session"] {
-			exists(`SELECT 1 FROM session WHERE id = ?`, &inV1)
 			exists(`SELECT 1 FROM message WHERE session_id = ? LIMIT 1`, &legacy)
-		}
-		if tables["session_v2"] {
-			exists(`SELECT 1 FROM session_v2 WHERE id = ?`, &inV2)
 		}
 		if tables["session_message"] {
 			exists(`SELECT 1 FROM session_message WHERE session_id = ? LIMIT 1`, &native)
 		}
-		switch {
-		case err != nil:
-		case inV2 && !inV1:
-			err = emit("session", `SELECT id, parent_id, fork_session_id, fork_boundary, directory AS cwd, title, version, time_created, time_updated FROM session_v2 WHERE id = ?`)
-		case tables["session"]:
-			err = emit("session", `SELECT id, parent_id, directory AS cwd, title, version, time_created, time_updated FROM session WHERE id = ?`)
+		inV2 := false
+		if tables["session_v2"] {
+			exists(`SELECT 1 FROM session_v2 WHERE id = ?`, &inV2)
 		}
+		// V2 keeps the message kind in a column and orders by seq; time_created can tie.
+		messages := `SELECT id, type AS message_type, seq, time_created, time_updated, data FROM session_message WHERE session_id = ? ORDER BY seq`
+		v1Session := `SELECT id, parent_id, directory AS cwd, title, version, time_created, time_updated FROM session WHERE id = ?`
 		switch {
 		case err != nil:
+		case !legacy && (inV2 || !tables["session"]):
+			err = emit("session", `SELECT id, parent_id, fork_session_id, fork_boundary, directory AS cwd, title, version, time_created, time_updated FROM session_v2 WHERE id = ?`)
+			if err == nil {
+				err = emit("session_message", messages)
+			}
 		case native && !legacy:
-			// V2 keeps the message kind in a column and orders by seq; time_created can tie.
-			err = emit("session_message", `SELECT id, type AS message_type, seq, time_created, time_updated, data FROM session_message WHERE session_id = ? ORDER BY seq`)
-		case tables["session"]:
-			err = emit("message", `SELECT id, time_created, time_updated, data FROM message WHERE session_id = ? ORDER BY time_created,id`)
+			// The shared 2.x layout keeps 1.x session rows but writes their messages to session_message.
+			err = emit("session", v1Session)
+			if err == nil {
+				err = emit("session_message", messages)
+			}
+		default:
+			err = emit("session", v1Session)
+			if err == nil {
+				err = emit("message", `SELECT id, time_created, time_updated, data FROM message WHERE session_id = ? ORDER BY time_created,id`)
+			}
 			if err == nil {
 				err = emit("part", `SELECT id, message_id, time_created, time_updated, data FROM part WHERE session_id = ? ORDER BY time_created,id`)
 			}
@@ -84,7 +96,12 @@ func (OpenCodeSessions) Read(ctx context.Context, path, _, id string, maxBytes i
 			if err != nil {
 				return err
 			}
-			record["execution_key"] = sessionKey("opencode:"+kind, fmt.Sprint(record["time_created"])+":"+string(canonical))
+			scope := "opencode:" + kind
+			// V2 keeps the message kind outside data, so it must separate otherwise identical records.
+			if messageType, ok := record["message_type"].(string); ok {
+				scope += ":" + messageType
+			}
+			record["execution_key"] = sessionKey(scope, fmt.Sprint(record["time_created"])+":"+string(canonical))
 		}
 
 		return nil
