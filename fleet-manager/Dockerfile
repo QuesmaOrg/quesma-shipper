@@ -1,6 +1,6 @@
 # One image runs directly on Cloud Run and behind the pinned Lambda Web Adapter on Lambda.
 # Built from the repository root: go.mod replaces the protocol module with ../shipper-protocol.
-FROM --platform=$BUILDPLATFORM golang:1.27 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3 AS build
 ARG TARGETOS
 ARG TARGETARCH
 # What `fleet-manager` with no arguments reports. Left unset, the binary says "dev", which is the
