@@ -17,6 +17,8 @@ func TestAgentJoinIdsSurvive(t *testing.T) {
 			`{"type":"session","id":"ses_f041cb039ffebeDrMjfIBP7C83","parent_id":"ses_e9b2c71a4ffeXq8RtLmN3vKd5w","session_id":"ses_f041cb039ffebeDrMjfIBP7C83"}`,
 			`{"type":"message","id":"msg_0fbe350ac001FqtpJHCRuFI7xt","session_id":"ses_f041cb039ffebeDrMjfIBP7C83","data":{"role":"assistant","parentID":"msg_0fbe34fdf001Z6a2yMHKixDAkN"}}`,
 			`{"type":"part","id":"prt_0fbe35a2c0011NbcDjFmzrK4wr","message_id":"msg_0fbe350ac001FqtpJHCRuFI7xt","session_id":"ses_f041cb039ffebeDrMjfIBP7C83","data":{"type":"tool","tool":"glob","callID":"` + agentCall + `"}}`,
+			`{"type":"session","id":"ses_f041cb039ffebeDrMjfIBP7C83","fork_session_id":"ses_e9b2c71a4ffeXq8RtLmN3vKd5w"}`,
+			`{"type":"session_message","id":"msg_10668d51f001M43mSqDw30K3PL","message_type":"assistant","seq":7,"data":{"content":[{"type":"tool","id":"` + agentCall + `","name":"read"}]}}`,
 		},
 		"hermes": {
 			`{"type":"message","id":2,"role":"assistant","tool_calls":"[{\"id\": \"` + agentCall + `\", \"call_id\": \"` + agentCall + `\", \"response_item_id\": \"fc_` + agentCall + `\", \"type\": \"function\"}]"}`,
@@ -34,13 +36,21 @@ func TestAgentJoinIdsSurvive(t *testing.T) {
 func TestAgentExemptFieldsStillMeetThePatternRules(t *testing.T) {
 	for family, line := range map[string]string{
 		"pi":       `{"message":{"role":"toolResult","toolCallId":"` + pat + `"}}`,
-		"opencode": `{"type":"part","data":{"callID":"` + pat + `"}}`,
+		"opencode": `{"type":"part","data":{"callID":"` + pat + `","content":[{"id":"` + pat + `"}]}}`,
 		"hermes":   `{"tool_calls":"[{\"id\": \"` + pat + `\"}]"}`,
 	} {
 		res := scrubJSONL(t, newScrubber(t), family, line+"\n")
 		if strings.Contains(string(res.Out.Bytes()), pat) {
 			t.Errorf("%s: token survived in an exempt field: %s", family, res.Out.Bytes())
 		}
+	}
+}
+
+func TestOpenCodeDropsEncryptedReasoning(t *testing.T) {
+	line := `{"type":"session_message","data":{"content":[{"type":"reasoning","text":"hm","state":{"itemId":"rs_1","reasoningEncryptedContent":"` + strings.Repeat(opaque, 5) + `"}}]}}` + "\n"
+	res := scrubJSONL(t, newScrubber(t), "opencode", line)
+	if out := string(res.Out.Bytes()); strings.Contains(out, opaque[:12]) || !strings.Contains(out, `"text":"hm"`) || res.RuleHits["dropped"] != 1 {
+		t.Errorf("not dropped (hits %v): %s", res.RuleHits, out)
 	}
 }
 
