@@ -86,7 +86,7 @@ sources:
       kind: jsonl
 
   - id: cursor-usage
-    description: The signed-in user's own requests (model, token counts, cost, conversation id), one object per UTC day, the past 90 days and as they happen.
+    description: The signed-in user's own requests (model, token counts, cost, conversation id), one object per account and UTC day, the past 90 days and as they happen.
     gather: cursor_usage
     scrub: false
     roots:
