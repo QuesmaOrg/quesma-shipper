@@ -94,6 +94,10 @@ func pendingFile(doc engine.Document, src config.ResolvedSource, c sources.Candi
 		return true
 	}
 	fp, seen := doc.Entries[engine.KeyOf(src.ID, c)]
+	// A database session's size and mtime are placeholders (the cap and now), so only a missing ship or a failure is news.
+	if c.AlwaysLoad {
+		return !seen || fp.SourceHash == "" || fp.Parked
+	}
 	return !seen || fp.SourceSize != c.Size || fp.SourceMTime.UnixNano() != c.MTime.UnixNano()
 }
 
