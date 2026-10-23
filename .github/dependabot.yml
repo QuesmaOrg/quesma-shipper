@@ -11,6 +11,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
   # Fleet Manager, the control plane: its own module, image and deployment templates. A Go
   # update also needs `make -C fleet-manager licenses`, which fleet-manager-check enforces.
   - package-ecosystem: gomod

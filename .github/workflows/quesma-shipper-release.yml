@@ -40,7 +40,7 @@ jobs:
     outputs:
       value: ${{ steps.version.outputs.value }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Compute the release version
@@ -70,12 +70,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The version IS the history: rev-list --count needs all of it.
           fetch-depth: 0
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
@@ -104,7 +104,7 @@ jobs:
               }
             }' > bin/dist/release.json
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Windows signs its two payloads before promoting this intermediate build for release.
           name: shipper-build-binaries
@@ -127,8 +127,8 @@ jobs:
       name: tuf-publishing-testing
       deployment: false
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: shipper-build-binaries
           path: bin/dist
@@ -148,13 +148,13 @@ jobs:
             }
           }
       - name: Authenticate for Windows code signing
-        uses: azure/login@v3
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ secrets.WINDOWS_SIGNING_AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.WINDOWS_SIGNING_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.WINDOWS_SIGNING_AZURE_SUBSCRIPTION_ID }}
       - name: Sign the application payloads
-        uses: azure/artifact-signing-action@v2
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
         with:
           endpoint: ${{ secrets.WINDOWS_SIGNING_ENDPOINT }}
           signing-account-name: ${{ secrets.WINDOWS_SIGNING_ACCOUNT }}
@@ -179,7 +179,7 @@ jobs:
               -OutputDir "bin/dist"
           }
       - name: Sign the setup executables
-        uses: azure/artifact-signing-action@v2
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
         with:
           endpoint: ${{ secrets.WINDOWS_SIGNING_ENDPOINT }}
           signing-account-name: ${{ secrets.WINDOWS_SIGNING_ACCOUNT }}
@@ -199,7 +199,7 @@ jobs:
               throw "$($_.Name) has invalid Authenticode status: $($signature.Status)"
             }
           }
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shipper-release-binaries
           path: |
@@ -219,22 +219,22 @@ jobs:
       name: tuf-publishing-testing
       deployment: false
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
 
-      - uses: apple-actions/import-codesign-certs@v7
+      - uses: apple-actions/import-codesign-certs@77ba2a2a8f5cfc8c405ebf3159f767c323e238f9 # v7.1.0
         id: application-certificate
         with:
           p12-file-base64: ${{ secrets.MACOS_APPLICATION_CERT_P12_B64 }}
           p12-password: ${{ secrets.MACOS_APPLICATION_CERT_P12_PASSWORD }}
 
-      - uses: apple-actions/import-codesign-certs@v7
+      - uses: apple-actions/import-codesign-certs@77ba2a2a8f5cfc8c405ebf3159f767c323e238f9 # v7.1.0
         with:
           keychain: signing_temp
           create-keychain: false
@@ -253,7 +253,7 @@ jobs:
           make macos-pkg RELEASE_VERSION="${{ needs.version.outputs.value }}"
           src/packaging/macos/pkg/notarize.sh bin/dist
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shipper-release-macos
           path: |
@@ -268,7 +268,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Enforce the 30-day renewal window
         run: |
           roots=src/packaging/common/roots
@@ -285,7 +285,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/cache/restore@v6
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: tuftool-cache
         with:
           path: ~/.cache/quesma-ci/tuftool/0.17.0
@@ -309,13 +309,13 @@ jobs:
           sha256sum --check --strict tuftool.sha256
           [[ "$(./tuftool --version)" == "tuftool 0.17.0" ]]
 
-      - uses: actions/cache/save@v6
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: steps.tuftool-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/quesma-ci/tuftool/0.17.0
           key: tuftool-v1-${{ runner.os }}-${{ runner.arch }}-0.17.0
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-tuftool
           path: |
@@ -341,9 +341,9 @@ jobs:
       name: tuf-publishing-testing
       deployment: false
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-tuftool
           path: ${{ runner.temp }}/tuftool
@@ -356,7 +356,7 @@ jobs:
           [[ "$(./tuftool --version)" == "tuftool 0.17.0" ]]
           echo "$RUNNER_TEMP/tuftool" >> "$GITHUB_PATH"
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: github.event_name == 'push'
         with:
           pattern: shipper-release-*
@@ -444,9 +444,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: shipper-release-*
           path: artifacts
