@@ -3,7 +3,7 @@ family: opencode
 display_name: OpenCode
 sources:
   - id: opencode-sessions
-    description: Read-only per-session JSONL snapshots of OpenCode's SQLite messages and parts.
+    description: Read-only per-session JSONL snapshots of OpenCode's SQLite sessions and messages.
     gather: sidecar
     emit: opencode_sessions
     artifact_class: trajectory

@@ -10,7 +10,9 @@ import (
 type HermesSessions struct{}
 
 func (HermesSessions) List(ctx context.Context, path string) ([]Session, error) {
-	return listSessions(ctx, path, `SELECT id, coalesce(cwd, '') AS cwd FROM sessions ORDER BY started_at, id LIMIT 100001`)
+	return listSessions(ctx, path, func(*sessionConnection) (string, error) {
+		return `SELECT id, coalesce(cwd, '') AS cwd FROM sessions ORDER BY started_at, id LIMIT 100001`, nil
+	})
 }
 func (HermesSessions) Read(ctx context.Context, path, relPath, id string, maxBytes int64) ([]byte, error) {
 	namespace := "hermes"
