@@ -246,15 +246,25 @@ func TestOpenCodeNextDatabase(t *testing.T) {
  INSERT INTO session VALUES ('ses_next',NULL,'/work/next','next','1.2.27',1000,1000);`); err != nil {
 		t.Fatal(err)
 	}
-	// A 1.x "next" channel database is the only copy of its history.
+	// Without opencode.db, or before OpenCode imports it, opencode-next.db is the only copy of its history.
 	if sessions, err := reader("opencode").List(context.Background(), path); err != nil || len(sessions) != 1 {
-		t.Fatalf("1.x next channel: %v %v", sessions, err)
+		t.Fatalf("only database: %v %v", sessions, err)
 	}
-	// A pre-split 2.x store is what OpenCode imports into opencode.db.
-	if _, err := db.Exec(`CREATE TABLE session_message(id TEXT,session_id TEXT,type TEXT,seq INTEGER,time_created INTEGER,time_updated INTEGER,data TEXT)`); err != nil {
+	main, err := sql.Open("sqlite", filepath.Join(root, "opencode.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer main.Close()
+	if _, err := main.Exec(`CREATE TABLE session_v2(id TEXT); INSERT INTO session_v2 VALUES ('ses_other')`); err != nil {
+		t.Fatal(err)
+	}
+	if sessions, err := reader("opencode").List(context.Background(), path); err != nil || len(sessions) != 1 {
+		t.Fatalf("not imported: %v %v", sessions, err)
+	}
+	if _, err := main.Exec(`INSERT INTO session_v2 VALUES ('ses_next')`); err != nil {
 		t.Fatal(err)
 	}
 	if sessions, err := reader("opencode").List(context.Background(), path); err != nil || len(sessions) != 0 {
-		t.Fatalf("imported pre-split store: %v %v", sessions, err)
+		t.Fatalf("imported: %v %v", sessions, err)
 	}
 }

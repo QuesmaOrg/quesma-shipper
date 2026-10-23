@@ -74,17 +74,6 @@ func TestAgentSessionPipeline(t *testing.T) {
 				if _, err = db.Exec(schema); err != nil {
 					t.Fatal(err)
 				}
-				if family == "opencode-channel" {
-					// A pre-split 2.x store that OpenCode imported into opencode.db stays on disk and must not ship a second copy.
-					next, err := sql.Open("sqlite", filepath.Join(root, "opencode-next.db"))
-					if err != nil {
-						t.Fatal(err)
-					}
-					defer next.Close()
-					if _, err = next.Exec(schema + ` CREATE TABLE session_message(id TEXT,session_id TEXT,type TEXT,seq INTEGER,time_created INTEGER,time_updated INTEGER,data TEXT);`); err != nil {
-						t.Fatal(err)
-					}
-				}
 				update = func() {
 					if _, err := db.Exec(updateSQL); err != nil {
 						t.Fatal(err)
