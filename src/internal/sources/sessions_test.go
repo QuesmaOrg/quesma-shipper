@@ -248,3 +248,38 @@ func TestHermesProfileKeysSurviveRootMove(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionLoadRejectsCopyMovedAfterDiscovery(t *testing.T) {
+	root, allowed, ignored := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(ignored, ".notrajectories"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(root, "opencode.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE session(id TEXT,parent_id TEXT,directory TEXT,title TEXT,version TEXT,time_created INTEGER,time_updated INTEGER);
+CREATE TABLE message(id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
+CREATE TABLE part(id TEXT,message_id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
+CREATE TABLE session_v2(id TEXT,parent_id TEXT,fork_session_id TEXT,fork_boundary TEXT,directory TEXT,title TEXT,version TEXT,time_created INTEGER,time_updated INTEGER);
+CREATE TABLE session_message(id TEXT,session_id TEXT,type TEXT,seq INTEGER,time_created INTEGER,time_updated INTEGER,data TEXT);
+INSERT INTO session VALUES ('s',NULL,?,'t','1',1,1)`, allowed); err != nil {
+		t.Fatal(err)
+	}
+	src := Resolved{Source: Source{ID: "opencode-sessions", Include: []string{"opencode.db"}}, Root: root}
+	d, err := discoverSessions(Request{Source: src}, sqliteread.OpenCodeSessions{})
+	if err != nil || len(d.Candidates) != 1 {
+		t.Fatalf("discovery: %+v %v", d, err)
+	}
+	if _, err := d.Candidates[0].Load(context.Background()); err != nil {
+		t.Fatalf("unchanged session: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO session_v2 VALUES ('s',NULL,NULL,NULL,?,'t','2',1,1);
+INSERT INTO session_message VALUES ('m','s','user',1,1,1,'{"text":"IGNORED-CONTENT"}')`, ignored); err != nil {
+		t.Fatal(err)
+	}
+	if payload, err := d.Candidates[0].Load(context.Background()); err == nil || len(payload.Bytes) != 0 {
+		t.Fatalf("copy from an ignored directory loaded: %s %v", payload.Bytes, err)
+	}
+}
