@@ -266,7 +266,10 @@ func TestOpenCodeLayouts(t *testing.T) {
  INSERT INTO message VALUES ('m1','legacy',500,500,'{"role":"user"}');
  INSERT INTO session VALUES ('moved',NULL,'/work/allowed','empty','1.2.27',3000,3000);
  INSERT INTO session_v2 VALUES ('moved','prj',NULL,NULL,NULL,'/work/marked','',NULL,'2.0.22',NULL,3000,3000);
- INSERT INTO session_message VALUES ('msg_m','moved','user',1,3000,3000,'{"text":"continued in 2.x"}');`); err != nil {
+ INSERT INTO session_message VALUES ('msg_m','moved','user',1,3000,3000,'{"text":"continued in 2.x"}');
+ INSERT INTO session VALUES ('reverted',NULL,'/work/reverted','r','1.2.27',4000,4000);
+ INSERT INTO message VALUES ('m_r','reverted',4000,4000,'{"role":"user","text":"REVERTED-LEGACY"}');
+ INSERT INTO session_v2 VALUES ('reverted','prj',NULL,NULL,NULL,'/work/reverted','',NULL,'2.0.22',NULL,4000,4000);`); err != nil {
 		t.Fatal(err)
 	}
 	sessions, err := reader("opencode").List(ctx, path)
@@ -278,7 +281,7 @@ func TestOpenCodeLayouts(t *testing.T) {
 			t.Fatalf("%s listed in %s but exported from %v", s.ID, s.CWD, rows[0]["cwd"])
 		}
 	}
-	if err != nil || strings.Join(listed, ",") != "legacy,ses_../weird,other,moved" {
+	if err != nil || strings.Join(listed, ",") != "legacy,ses_../weird,other,moved,reverted" {
 		t.Fatalf("migrated listing: %v %v", listed, err)
 	}
 	// An empty 1.x session continued in 2.x ships its 2.x copy.
@@ -289,8 +292,12 @@ func TestOpenCodeLayouts(t *testing.T) {
 	for _, row := range records(path, "opencode.db", "ses_../weird") {
 		got = append(got, fmt.Sprint(row["type"], "/", row["version"]))
 	}
-	if strings.Join(got, " ") != "session/1.2.27 message/<nil>" {
-		t.Fatalf("migrated session must ship once, from the 1.x copy: %v", got)
+	if strings.Join(got, " ") != "session/2.0.22 session_message/<nil> session_message/<nil>" {
+		t.Fatalf("migrated session must ship once, from the 2.x copy: %v", got)
+	}
+	// Reverting to the first message deletes the 2.x messages; the stale 1.x ones must not come back.
+	if rows := records(path, "opencode.db", "reverted"); len(rows) != 1 || rows[0]["version"] != "2.0.22" {
+		t.Fatalf("reverted 2.x session: %v", rows)
 	}
 	if rows := records(path, "opencode.db", "other"); len(rows) != 2 || rows[0]["version"] != "2.0.22" || rows[1]["type"] != "session_message" {
 		t.Fatalf("2.x-only session in migrated store: %v", rows)
