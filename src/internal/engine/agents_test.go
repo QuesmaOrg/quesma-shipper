@@ -17,7 +17,7 @@ import (
 )
 
 func TestAgentSessionPipeline(t *testing.T) {
-	for _, family := range []string{"pi", "opencode", "opencode-channel", "hermes"} {
+	for _, family := range []string{"pi", "opencode", "opencode-v2", "opencode-channel", "hermes"} {
 		t.Run(family, func(t *testing.T) {
 			f := newFixture(t)
 			root := filepath.Join(f.home, family)
@@ -63,6 +63,14 @@ func TestAgentSessionPipeline(t *testing.T) {
  INSERT INTO session VALUES ('ses_f2a37fe70ffe5gsGOoFrPMZOtR',NULL,'/work/test','test','1.18.20',1000,1000);
  INSERT INTO message VALUES ('m','ses_f2a37fe70ffe5gsGOoFrPMZOtR',1000,1000,'{"role":"user","text":"test@example.com"}');`
 				updateSQL := `UPDATE message SET data='{"role":"user","text":"next"}'`
+				if family == "opencode-v2" {
+					schema = `PRAGMA journal_mode=WAL;
+ CREATE TABLE session_v2(id TEXT,parent_id TEXT,fork_session_id TEXT,fork_boundary TEXT,directory TEXT,title TEXT,version TEXT,time_created INTEGER,time_updated INTEGER);
+ CREATE TABLE session_message(id TEXT,session_id TEXT,type TEXT,seq INTEGER,time_created INTEGER,time_updated INTEGER,data TEXT);
+ INSERT INTO session_v2 VALUES ('ses_ef9972b77ffeoeqv6e7BpmRlq8',NULL,NULL,NULL,'/work/test',NULL,'2.0.22',1000,1000);
+ INSERT INTO session_message VALUES ('msg_10668d48e001iI11nfwFD0XvGD','ses_ef9972b77ffeoeqv6e7BpmRlq8','user',1,1000,1000,'{"text":"test@example.com"}');`
+					updateSQL = `UPDATE session_message SET data='{"text":"next"}'`
+				}
 				if family == "hermes" {
 					schema = `PRAGMA journal_mode=WAL;
  CREATE TABLE sessions(id TEXT,parent_session_id TEXT,source TEXT,model TEXT,cwd TEXT,started_at REAL,ended_at REAL,title TEXT,input_tokens INTEGER,output_tokens INTEGER,cache_read_tokens INTEGER,cache_write_tokens INTEGER);

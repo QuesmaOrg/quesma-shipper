@@ -526,3 +526,29 @@ func TestControlPlaneRowsDistinguishRejectedConfigFromUnreachableServer(t *testi
 		t.Fatalf("transport failure mislabeled: %+v", rows)
 	}
 }
+
+// Database sessions report the cap as their size and now as their mtime, so stat changes say nothing about them.
+func TestPendingDatabaseSessions(t *testing.T) {
+	src := config.ResolvedSource{Source: sources.Source{ID: "opencode-sessions"}}
+	now, cap := time.Now(), int64(64<<20)
+	session := func(name string) sources.Candidate {
+		return sources.Candidate{Path: "/db/sessions/" + name, Size: cap, MTime: now, AlwaysLoad: true}
+	}
+	shipped, unseen, parked, unsent, failed := session("shipped"), session("unseen"), session("parked"), session("unsent"), session("failed")
+	lastRun := now.Add(-time.Hour)
+	doc := engine.Document{Entries: map[engine.Key]engine.Fingerprint{
+		engine.KeyOf(src.ID, shipped): {SourceSize: cap, SourceMTime: lastRun, SourceHash: "h"},
+		engine.KeyOf(src.ID, parked):  {SourceSize: cap, SourceMTime: lastRun, SourceHash: "h", Parked: true},
+		engine.KeyOf(src.ID, unsent):  {SourceSize: cap, SourceMTime: lastRun, Attempts: 1},
+		// Shipped once, then changed and failed to upload in the last run, which commits nothing.
+		engine.KeyOf(src.ID, failed): {SourceSize: cap, SourceMTime: lastRun.Add(-time.Hour), SourceHash: "h"},
+	}}
+	d := sources.Discovery{Candidates: []sources.Candidate{shipped, unseen, parked, unsent, failed}}
+	files, bytes := pending(doc, src, d)
+	if files != 4 || bytes != 4*cap {
+		t.Fatalf("pending = %d files, %d bytes; want every session except the shipped one", files, bytes)
+	}
+	if doc.SourceSpecs = map[string]string{src.ID: "old"}; !pendingFile(doc, src, shipped, lastChecked(doc, src, d)) {
+		t.Fatal("a changed source spec re-checks every session")
+	}
+}

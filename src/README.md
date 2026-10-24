@@ -87,7 +87,7 @@ The shipper collects more than chat transcripts. Per agent, from the agent's own
 | Cursor | Agent transcripts, enriched with conversation text, tool calls, and model names read from Cursor's database | Spilled tool output, terminal captures, agent scratchpad notes |
 | GitHub Copilot | Copilot CLI session event logs; Copilot Chat transcripts and VS Code's chat session store, which holds tool results and token counts, including chats opened with no folder and sessions moved between workspaces | CLI session plans, checkpoints, research reports, session files and rewind snapshots; personal `copilot-instructions.md` and `instructions/*.instructions.md`; VS Code chat editing checkpoints and file baselines |
 | Pi (experimental) | Native JSONL session trees, messages, usage, branches and tool results | None |
-| OpenCode (experimental) | Per-session JSONL snapshots of session, message and part records from `opencode.db` and channel databases such as `opencode-stable.db` | None |
+| OpenCode (experimental) | Per-session JSONL snapshots from `opencode.db` and channel databases such as `opencode-stable.db`: session, message and part records (1.x), or session and `session_message` records (2.x) | None |
 | Hermes (experimental) | Per-session JSONL snapshots of messages and model usage from `state.db`, including named profiles | None |
 
 Pi uses `$PI_CODING_AGENT_SESSION_DIR`, `$PI_CODING_AGENT_DIR/sessions`, or
