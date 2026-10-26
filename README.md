@@ -46,7 +46,6 @@ Pi, OpenCode, and Hermes support may change or be withdrawn.
 To run a self-managed Quesma Shipper fleet that sends data to a bucket you own, first deploy
 Fleet Manager in your cloud account. Fleet Manager is the shared service that enrolls developer
 machines, supplies their collection settings and encryption recipients, and authorizes uploads.
-Each shipper scrubs and encrypts files locally, then uploads them directly to your bucket.
 
 The steps below walk you through a reference setup on **AWS ECS Express Mode with an S3 bucket**
 or **Google Cloud Run with a Cloud Storage (GCS) bucket**. The deployment script creates Fleet
