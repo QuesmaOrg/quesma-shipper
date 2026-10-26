@@ -240,8 +240,8 @@ label.
 
 ### Metadata and MDM inventory
 
-Use **Installs → Metadata** to add, edit, or remove fields. Only administrator credentials may
-write these fields; shipper and reporter credentials cannot. Metadata has at most 16 keys matching
+Use **Installs → Metadata** to add, edit, or remove fields. Administrator and partner credentials
+may write these fields; shipper and reporter credentials cannot. Metadata has at most 16 keys matching
 `^[a-z][a-z0-9_]{0,31}$`; values are strings of at most 256 Unicode characters without control
 characters. `email`, `department`, and `mdm` are useful conventions, not reserved fields.
 

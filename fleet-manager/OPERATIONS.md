@@ -48,6 +48,16 @@ for enrollment, so you can push it out ahead of everything else and enroll later
 apply and the old credential stops working immediately. Locally, delete
 `fleet-manager/data/admin-credential` and run `make -C fleet-manager run` again.
 
+**Give a third party one organization.** **Partner → Create credential** in the administration UI
+(or `POST /v1/admin/orgs/{org}/partner`) shows an `fmp1.` credential once. It can manage that
+organization's machines, report their health and edit collection settings
+(`PUT /v1/admin/orgs/{org}/collection`, with the ETag from `GET /config`). It cannot change
+recipients, Quesma ETL or telemetry, and cannot reach another organization. An organization has one
+partner credential: creating another replaces it, and the old one stops working on the next
+request, so hand the new one over before the third party's next call. **Revoke** (or
+`POST /v1/admin/orgs/{org}/partner/revoke`) stops it the same way. Upgrade every replica before
+creating one: an older replica refuses it with 401.
+
 **Revoke.** Installs, invites and grants are revoked from the administration UI. A revoked install
 can still be given a name, because the objects it already uploaded remain in the bucket. There is
 no organization deletion: retention, credential revocation and key destruction need answers first.
@@ -108,6 +118,7 @@ v1/control/admin/credential.json                     sha256 of the administrator
 v1/control/reporter/credential.json                  sha256 of the reporter credential (optional)
 private/fleet-manager/telemetry-identity.json        the deployment's Ed25519 signing seed
 v1/organization=<org>/control/…                      config, grants, invites, install records
+v1/organization=<org>/control/partner/credential.json sha256 of the partner credential (optional)
 v1/organization=<org>/control/seen/<install>.json    check-in records (tagged ephemeral)
 v1/organization=<org>/control/catalogs/<sha256>.json reported source catalogs, written once each
 v1/organization=<org>/install=<install-id>/tags.json the install's display name

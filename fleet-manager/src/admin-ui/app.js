@@ -428,6 +428,18 @@ async function loadTags(generation) {
   });
 }
 
+async function loadPartner(generation) {
+  let record = null;
+  try { record = await (await api(orgPath('/partner'))).json(); } catch (error) { if (error.status !== 404) throw error; }
+  if (generation !== tableGeneration) return;
+  const active = record && !record.revoked_at;
+  $('#partner-status').textContent = !record ? 'No partner credential.'
+    : active ? `Active since ${new Date(record.created_at).toLocaleString()}.`
+      : `Revoked ${new Date(record.revoked_at).toLocaleString()}.`;
+  $('#revoke-partner').classList.toggle('hidden', !active);
+  $('#mint-partner').dataset.replaces = active ? 'true' : '';
+}
+
 async function loadTables() {
   const generation = ++tableGeneration;
   const [grants, invites, installs] = await Promise.all(['/grants', '/invites', '/installs'].map(async (path) => (await api(orgPath(path))).json()));
@@ -438,6 +450,9 @@ async function loadTables() {
   });
   loadTags(generation).catch((error) => {
     if (generation === tableGeneration) toast(`Install tags unavailable: ${error.message}`);
+  });
+  loadPartner(generation).catch((error) => {
+    if (generation === tableGeneration) toast(`Partner credential unavailable: ${error.message}`);
   });
 }
 
@@ -525,11 +540,32 @@ $('#create-dialog form').addEventListener('submit', async (event) => {
     const response = await api(orgPath('/' + createKind), {method: 'POST', body: JSON.stringify({expires_at: expiresAt.toISOString()})});
     const result = await response.json();
     $('#create-dialog').close();
-    $('#secret').textContent = result.secret;
-    $('#enroll-command').textContent = `quesma-shipper login --server ${location.origin} ${result.secret}`;
-    $('#secret-dialog').showModal();
+    showSecret(result.secret, true);
     await loadTables();
   } catch (error) { toast(error.message); } finally { button.disabled = false; }
+});
+function showSecret(secret, enrollment) {
+  $('#secret-title').textContent = enrollment ? 'Enroll with this credential' : 'Partner credential';
+  $('#secret').textContent = secret;
+  $('#enroll-command').textContent = enrollment ? `quesma-shipper login --server ${location.origin} ${secret}` : '';
+  $('#enroll-command-row').classList.toggle('hidden', !enrollment);
+  $('#copy-command').classList.toggle('hidden', !enrollment);
+  $('#secret-dialog').showModal();
+}
+$('#mint-partner').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  if (button.dataset.replaces && !window.confirm('Replace the partner credential? The current one stops working immediately.')) return;
+  button.disabled = true;
+  try {
+    const result = await (await api(orgPath('/partner'), {method: 'POST'})).json();
+    showSecret(result.secret, false);
+    await loadTables();
+  } catch (error) { toast(error.message); } finally { button.disabled = false; }
+});
+$('#revoke-partner').addEventListener('click', async (event) => {
+  if (!window.confirm('Revoke the partner credential? It stops working immediately.')) return;
+  const button = event.currentTarget; button.disabled = true;
+  try { await mutate('/partner/revoke', 'Partner credential revoked'); } catch (error) { toast(error.message); } finally { button.disabled = false; }
 });
 let renameInstall = null;
 function openRename(installID, current) {

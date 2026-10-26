@@ -25,8 +25,8 @@ and for operators to deploy it before you publish details.
 
 In scope:
 
-- **Credential handling.** A path that accepts a wrong administrator, reporter or invite
-  credential. An invite that can be used twice. A revoked install that is still served
+- **Credential handling.** A path that accepts a wrong administrator, reporter, partner or invite
+  credential, or a revoked partner credential. An invite that can be used twice. A revoked install that is still served
   configuration or still granted upload tickets.
 - **Organization isolation.** A credential or an install scoped to one organization that reaches
   another organization's control records, configuration or objects.
@@ -39,7 +39,10 @@ In scope:
   appearing while `allow_quesma_etl` is off, or was never set on a deployment whose
   `FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL` is `false`.
 - **The administration surface.** Anything under `/v1/admin` or `/admin/` reachable without the
-  deployment credential. A reporter credential that reaches an administrator operation. The
+  deployment credential. A reporter credential that reaches an administrator operation. A partner
+  credential that changes `age_recipients`, `include_install_recipient`, `allow_quesma_etl` or
+  `telemetry_collector_url`, mints a partner credential, or reaches another organization or a
+  deployment-level route. The
   credential escaping tab-scoped `sessionStorage`, or being sent anywhere but the `Authorization`
   header.
 - **Telemetry forwarding.** Forwarding to a collector the organization did not configure. Relaying
