@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"path/filepath"
 	"runtime"
@@ -55,6 +57,16 @@ func (p *Accounts) collectClaude(ctx context.Context, req Request) ([]accountObs
 		} `json:"claudeAiOauth"`
 	}
 	credentialErr := json.Unmarshal(raw, &creds)
+	settings, settingsErr := accountJSON(filepath.Join(home, "settings.json"), accountResponseLimit)
+	configErr := err
+	if errors.Is(configErr, fs.ErrNotExist) || configErr == nil {
+		configErr = settingsErr
+	}
+	if errors.Is(configErr, fs.ErrNotExist) {
+		configErr = nil
+	}
+	body, _ := json.Marshal(claudeConfig(doc, settings, raw))
+	out = append(out, localAccount(req, "claude.local.config", body, configErr))
 	token := creds.OAuth.Token
 	if credentialErr != nil || !slices.Contains(creds.OAuth.Scopes, "user:profile") {
 		token = ""
@@ -78,4 +90,62 @@ func (p *Accounts) collectClaude(ctx context.Context, req Request) ([]accountObs
 		out = append(out, obs)
 	}
 	return out, true
+}
+
+// Settings that pick who bills Claude Code's model calls. A variable holding a credential ships only as present.
+var (
+	claudeEnvValues   = []string{"CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_BASE_URL"}
+	claudeEnvPresence = []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"}
+)
+
+// claudeConfig keeps each auth-relevant value under its file and field name, for the ETL to interpret.
+func claudeConfig(doc, settings map[string]json.RawMessage, credentials []byte) map[string]any {
+	stored := map[string]any{}
+	if accountValuePresent(settings["apiKeyHelper"]) {
+		stored["apiKeyHelper"] = true
+	}
+	var env map[string]json.RawMessage
+	_ = json.Unmarshal(settings["env"], &env)
+	envOut := map[string]any{}
+	for _, k := range claudeEnvValues {
+		if accountValuePresent(env[k]) {
+			envOut[k] = env[k]
+		}
+	}
+	for _, k := range claudeEnvPresence {
+		if accountValuePresent(env[k]) {
+			envOut[k] = true
+		}
+	}
+	if len(envOut) > 0 {
+		stored["env"] = envOut
+	}
+	global := map[string]any{}
+	if accountValuePresent(doc["primaryApiKey"]) {
+		global["primaryApiKey"] = true
+	}
+	var responses map[string][]json.RawMessage
+	if json.Unmarshal(doc["customApiKeyResponses"], &responses) == nil && responses != nil {
+		counts := map[string]int{}
+		for k, v := range responses {
+			counts[k] = len(v)
+		}
+		global["customApiKeyResponses"] = counts
+	}
+	var creds struct {
+		OAuth map[string]json.RawMessage `json:"claudeAiOauth"`
+	}
+	_ = json.Unmarshal(credentials, &creds)
+	login := map[string]any{}
+	for _, k := range []string{"subscriptionType", "rateLimitTier", "scopes"} {
+		if accountValuePresent(creds.OAuth[k]) {
+			login[k] = creds.OAuth[k]
+		}
+	}
+	return map[string]any{"settings.json": stored, ".claude.json": global, "credentials": map[string]any{"claudeAiOauth": login}}
+}
+
+func accountValuePresent(raw json.RawMessage) bool {
+	v := string(bytes.TrimSpace(raw))
+	return v != "" && v != "null" && v != `""`
 }
