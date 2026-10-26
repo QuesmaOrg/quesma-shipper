@@ -546,6 +546,8 @@ $('#create-dialog form').addEventListener('submit', async (event) => {
 });
 function showSecret(secret, enrollment) {
   $('#secret-title').textContent = enrollment ? 'Enroll with this credential' : 'Partner credential';
+  $('#secret-note').textContent = enrollment ? 'Copy the command or secret now. They cannot be recovered after this dialog is closed.'
+    : 'Copy the secret now. It cannot be recovered after this dialog is closed.';
   $('#secret').textContent = secret;
   $('#enroll-command').textContent = enrollment ? `quesma-shipper login --server ${location.origin} ${secret}` : '';
   $('#enroll-command-row').classList.toggle('hidden', !enrollment);
