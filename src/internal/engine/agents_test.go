@@ -17,7 +17,7 @@ import (
 )
 
 func TestAgentSessionPipeline(t *testing.T) {
-	for _, family := range []string{"pi", "opencode", "opencode-v2", "hermes"} {
+	for _, family := range []string{"pi", "opencode", "opencode-v2", "opencode-channel", "hermes"} {
 		t.Run(family, func(t *testing.T) {
 			f := newFixture(t)
 			root := filepath.Join(f.home, family)
@@ -44,8 +44,12 @@ func TestAgentSessionPipeline(t *testing.T) {
 				}
 			} else {
 				name := "opencode.db"
-				if family == "hermes" {
+				switch family {
+				case "hermes":
 					name = "state.db"
+				case "opencode-channel":
+					// A channel-only install: no opencode.db at all.
+					name = "opencode-stable.db"
 				}
 				db, err := sql.Open("sqlite", filepath.Join(root, name))
 				if err != nil {
