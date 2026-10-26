@@ -37,11 +37,23 @@ Pi, OpenCode, and Hermes support may change or be withdrawn.
 
 | | |
 | --- | --- |
-| **Try it first** | [**WALKTHROUGH.md**](fleet-manager/WALKTHROUGH.md): every step below on a throwaway deployment, a container as the developer machine, torn down at the end. About fifteen minutes. |
-| **Set it up** | [Operator: set up Fleet Manager](#operator-set-up-fleet-manager-once), once, in your AWS account or Google Cloud project. |
-| **Join it** | [Developer: install the shipper](#developer-install-the-shipper-each-machine), on each machine. |
+| **Try&nbsp;it&nbsp;first** | [**WALKTHROUGH.md**](fleet-manager/WALKTHROUGH.md): every step below on a throwaway deployment, a container as the developer machine, torn down at the end. About fifteen minutes. |
+| **Set&nbsp;it&nbsp;up** | [Operator: set up Fleet Manager](#operator-set-up-fleet-manager-once), once, in your AWS account or Google Cloud project. |
+| **Join&nbsp;it** | [Developer: install the shipper](#developer-install-the-shipper-each-machine), on each machine. |
 
 ## Operator: set up Fleet Manager (once)
+
+To run a self-managed Quesma Shipper fleet that sends data to a bucket you own, first deploy
+Fleet Manager in your cloud account. Fleet Manager is the shared service that enrolls developer
+machines, supplies their collection settings and encryption recipients, and authorizes uploads.
+Each shipper scrubs and encrypts files locally, then uploads them directly to your bucket.
+
+The steps below walk you through a reference setup on **AWS ECS Express Mode with an S3 bucket**
+or **Google Cloud Run with a Cloud Storage (GCS) bucket**. The deployment script creates Fleet
+Manager, the bucket, and the cloud permissions they need. You then use its admin UI to create
+your organisation and invite developers to join. Set this up once for your fleet; developers
+can then follow [the shipper installation steps](#developer-install-the-shipper-each-machine)
+on each machine.
 
 1. **Have ready:** an AWS account or Google Cloud project you can create resources in, and on your
    laptop Terraform or OpenTofu, `curl`, `age`, `age-keygen`, `zstd`, and the `aws` CLI signed in,
