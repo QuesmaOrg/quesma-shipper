@@ -59,6 +59,11 @@ func (p *Accounts) collectClaude(ctx context.Context, req Request) ([]accountObs
 	if credentialErr != nil || !slices.Contains(creds.OAuth.Scopes, "user:profile") {
 		token = ""
 	}
+	settings, _ := accountJSON(filepath.Join(home, "settings.json"), accountResponseLimit)
+	out = append(out, authObservation(req, claudeAuth(claudeAuthInput{
+		OAuthAccount: doc["oauthAccount"], HasAPIKey: jsonPresent(doc["primaryApiKey"]),
+		Credentials: raw, Settings: settings,
+	})))
 	for _, endpoint := range []string{"profile", "usage"} {
 		obs := accountObservation{Source: "claude.oauth." + endpoint, ObservedAt: req.Now().UTC()}
 		if token == "" {

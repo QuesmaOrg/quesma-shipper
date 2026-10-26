@@ -1,8 +1,8 @@
 package formats
 
 // The shipper's wire contracts as JSON Schema documents: fingerprint-state (the local
-// state/fingerprints.json), manifest (the first tar entry of every object) and source-spec (a
-// catalog file's sources). Every object sets additionalProperties: false, so unknown fields fail.
+// state/fingerprints.json), manifest (the first tar entry of every object), source-spec (a
+// catalog file's sources) and agent-auth (the sign-in record of an account snapshot). Every object sets additionalProperties: false, so unknown fields fail.
 
 import (
 	"bytes"
@@ -26,10 +26,11 @@ const (
 	FingerprintState = "fingerprint-state.schema.json"
 	Manifest         = "manifest.schema.json"
 	SourceSpec       = "source-spec.schema.json"
+	AgentAuth        = "agent-auth.schema.json"
 )
 
 // All lists every embedded schema, so tests can assert the set is complete.
-var All = []string{FingerprintState, Manifest, SourceSpec}
+var All = []string{FingerprintState, Manifest, SourceSpec, AgentAuth}
 
 var (
 	mu       sync.Mutex

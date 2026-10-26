@@ -250,3 +250,26 @@ func TestManifestRejectsBundleFields(t *testing.T) {
 		}
 	}
 }
+
+// --- agent auth -------------------------------------------------------------
+
+func TestAgentAuthMinimal(t *testing.T) {
+	doc := `{"schema":"agent-auth/v1","agent":"codex","billing":"unknown","auth_method":"unknown","evidence":[]}`
+	if err := formats.Validate(formats.AgentAuth, decode(t, doc)); err != nil {
+		t.Fatalf("minimal document should validate: %v", err)
+	}
+}
+
+func TestAgentAuthRejects(t *testing.T) {
+	for name, doc := range map[string]string{
+		"foreign version": `{"schema":"agent-auth/v2","agent":"codex","billing":"api","auth_method":"api_key","evidence":[]}`,
+		"open billing":    `{"schema":"agent-auth/v1","agent":"codex","billing":"free","auth_method":"api_key","evidence":[]}`,
+		"unknown field":   `{"schema":"agent-auth/v1","agent":"codex","billing":"api","auth_method":"api_key","evidence":[],"api_key":"sk-x"}`,
+		"account token":   `{"schema":"agent-auth/v1","agent":"codex","billing":"api","auth_method":"api_key","evidence":[],"account":{"token":"x"}}`,
+		"empty account":   `{"schema":"agent-auth/v1","agent":"codex","billing":"api","auth_method":"api_key","evidence":[],"account":{}}`,
+	} {
+		if err := formats.Validate(formats.AgentAuth, decode(t, doc)); err == nil {
+			t.Errorf("%s: accepted %s", name, doc)
+		}
+	}
+}

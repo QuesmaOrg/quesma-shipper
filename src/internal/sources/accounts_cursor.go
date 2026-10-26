@@ -18,6 +18,7 @@ func (p *Accounts) collectCursor(ctx context.Context, req Request) ([]accountObs
 	}
 	body, _ := json.Marshal(values)
 	out = append(out, localAccount(req, "cursor.local.account", body, err))
+	out = append(out, authObservation(req, cursorAuth(values, token != "")))
 	for _, endpoint := range []string{"GetPlanInfo", "GetCurrentPeriodUsage"} {
 		out = append(out, p.cursorCall(ctx, token, endpoint, "{}", accountObservation{Source: "cursor.dashboard." + endpoint, ObservedAt: req.Now().UTC()}))
 	}

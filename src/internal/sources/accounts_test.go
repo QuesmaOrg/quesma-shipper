@@ -185,10 +185,10 @@ func TestClaudeUsesActiveCredentialsAndPreservesLocalAccount(t *testing.T) {
 	}
 	raw := payload.Bytes
 	lines := bytes.Split(raw, []byte("\n"))
-	if len(lines) != 4 || len(lines[3]) != 0 {
-		t.Fatalf("expected three newline-terminated records: %s", raw)
+	if len(lines) != 5 || len(lines[4]) != 0 {
+		t.Fatalf("expected four newline-terminated records: %s", raw)
 	}
-	for i, line := range lines[:3] {
+	for i, line := range lines[:4] {
 		var record struct {
 			BucketStart time.Time `json:"bucket_start"`
 			accountObservation
@@ -200,7 +200,8 @@ func TestClaudeUsesActiveCredentialsAndPreservesLocalAccount(t *testing.T) {
 			t.Fatalf("incomplete record %d: %s", i, line)
 		}
 	}
-	if bytes.Contains(raw, []byte(`"observations"`)) || bytes.Contains(raw, []byte("not collected")) || !bytes.Contains(raw, []byte(`"future":42`)) {
+	if bytes.Contains(raw, []byte(`"observations"`)) || bytes.Contains(raw, []byte("not collected")) || !bytes.Contains(raw, []byte(`"future":42`)) ||
+		!bytes.Contains(raw, []byte(`"source":"claude.auth"`)) || bytes.Contains(raw, []byte("correct")) {
 		t.Fatalf("%s", raw)
 	}
 }

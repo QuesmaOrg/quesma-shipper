@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/QuesmaOrg/quesma-shipper/schemas/agent-auth.schema.json",
+  "title": "Agent sign-in and billing",
+  "description": "The body of the <agent>.auth record in an account snapshot: one shape for every agent, saying how the agent is signed in and who pays for its model calls. Built from named fields only; it never carries a token, key, or a hash of one.",
+  "type": "object",
+  "required": ["schema", "agent", "billing", "auth_method", "evidence"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "description": "Record version. Unknown values are a downstream hard error, not a partial read.",
+      "const": "agent-auth/v1"
+    },
+    "agent": {
+      "description": "The catalog family without its suffix, as in the snapshot's file name.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "billing": {
+      "description": "Who pays for model calls. subscription: a seat or plan with the agent's vendor. api: metered per call on a key. cloud: a cloud provider's account, such as Bedrock or Vertex. local: a model served on the machine. unknown: nothing on disk says, as when a key comes only from the shell environment.",
+      "enum": ["subscription", "api", "cloud", "local", "unknown"]
+    },
+    "auth_method": {
+      "description": "How the agent proves itself to its provider.",
+      "enum": ["oauth", "api_key", "cloud_credentials", "none", "unknown"]
+    },
+    "provider": {
+      "description": "Who serves the model calls: the vendor, a cloud, or the provider id the agent's config names.",
+      "type": "string",
+      "maxLength": 128
+    },
+    "plan": {
+      "description": "The vendor's own plan name, as stored, such as pro, max, team or enterprise.",
+      "type": "string",
+      "maxLength": 128
+    },
+    "subscription_until": {
+      "description": "End of the current paid period, when the vendor stores one.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "email": { "type": "string", "maxLength": 320 },
+        "user_id": { "type": "string", "maxLength": 256 },
+        "org_id": { "type": "string", "maxLength": 256 },
+        "org_name": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "evidence": {
+      "description": "The file and field each decision came from, as file:field, in the order they were weighed.",
+      "type": "array",
+      "items": { "type": "string", "maxLength": 256 }
+    }
+  }
+}

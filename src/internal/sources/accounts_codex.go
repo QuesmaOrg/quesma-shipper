@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
 
 func (p *Accounts) collectCodex(ctx context.Context, req Request) ([]accountObservation, bool) {
@@ -29,15 +31,18 @@ func (p *Accounts) collectCodex(ctx context.Context, req Request) ([]accountObse
 	if mode := doc["auth_mode"]; len(mode) > 0 {
 		metadata["auth_mode"] = mode
 	}
-	parts := strings.Split(tokens.ID, ".")
-	if len(parts) == 3 {
-		claims, decodeErr := base64.RawURLEncoding.DecodeString(parts[1])
-		if decodeErr == nil && json.Valid(claims) {
+	var claims []byte
+	if parts := strings.Split(tokens.ID, "."); len(parts) == 3 {
+		decoded, decodeErr := base64.RawURLEncoding.DecodeString(parts[1])
+		if decodeErr == nil && json.Valid(decoded) {
+			claims = decoded
 			metadata["id_token_claims"] = claims
 		}
 	}
 	body, _ := json.Marshal(metadata)
 	out = append(out, localAccount(req, "codex.local.account", body, err))
+	config, _, _ := platform.ReadWhole(filepath.Join(home, "config.toml"), accountResponseLimit)
+	out = append(out, authObservation(req, codexAuth(doc, claims, config)))
 	obs := accountObservation{Source: "codex.wham.usage", ObservedAt: req.Now().UTC()}
 	if tokens.Access == "" {
 		obs.Error = "credentials_unavailable"
