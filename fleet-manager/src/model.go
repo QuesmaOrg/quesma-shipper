@@ -45,9 +45,10 @@ type FleetConfig struct {
 // the organization's own account, encrypted with the context {purpose: analytics-identity,
 // organization: <slug>}. Nobody opens what it seals until the organization grants a processor Decrypt.
 type AnalyticsIdentity struct {
-	Recipient  string `json:"recipient"`
-	Ciphertext string `json:"ciphertext"`
-	KMSKeyARN  string `json:"kms_key_arn"`
+	Organization string `json:"organization"`
+	Recipient    string `json:"recipient"`
+	Ciphertext   string `json:"ciphertext"`
+	KMSKeyARN    string `json:"kms_key_arn"`
 }
 
 var kmsKeyARNPattern = regexp.MustCompile(`^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$`)
@@ -284,6 +285,10 @@ func validateConfig(c FleetConfig) error {
 		seen[recipient] = true
 	}
 	if a := c.AnalyticsIdentity; a != nil {
+		// Encrypted for another slug, it would never decrypt under this organization's context.
+		if a.Organization != c.Organization {
+			return fmt.Errorf("the analytics identity was made for organization %q, not %q", a.Organization, c.Organization)
+		}
 		if err := validateRecipient(a.Recipient); err != nil {
 			return fmt.Errorf("analytics identity: %w", err)
 		}

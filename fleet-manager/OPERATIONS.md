@@ -99,11 +99,11 @@ terraform apply … -var='etl_reader_role_arns=["arn:aws:iam::123456789012:role/
 It permits listing the bucket below `v1/` and reading two kinds of object: everything under an
 install's root, and each organization's `control/config.json`. Reading is not decrypting: the ETL
 can open objects only while the organization keeps Quesma's recipient (`allow_quesma_etl`, on by
-default). The two revoke separately. Empty the list to stop the reading, which takes effect
-immediately; turn off `allow_quesma_etl` to stop the decrypting of objects sealed from then on.
-An organization with an analytics identity is opened instead through `analytics_decrypt_role_arns`,
-which grants `kms:Decrypt` on the analytics key and is revoked by removing the role
-([AWS template](terraform/aws/README.md#an-analytics-identity-under-your-own-key)).
+default), or while `analytics_decrypt_role_arns` names it for an organization created with an
+analytics identity ([AWS template](terraform/aws/README.md#an-analytics-identity-under-your-own-key)).
+Reading and decrypting revoke separately. Empty the list to stop the reading, which takes effect
+immediately. Turn off `allow_quesma_etl` to stop the decrypting of objects sealed from then on, or
+remove the role from `analytics_decrypt_role_arns` to stop the decrypting of the analytics identity.
 
 **Running without egress.** Fleet Manager needs no outbound internet access beyond its cloud's own
 APIs: object storage, plus IAM Credentials `SignBlob` on Google Cloud, which signs every upload

@@ -117,13 +117,15 @@ run_analytics_key() {
 		--key-id "$key" --plaintext fileb:///dev/stdin --query CiphertextBlob --output text \
 		--encryption-context "purpose=analytics-identity,organization=$ARG") || die "aws kms encrypt failed"
 	identity=
-	printf '{"recipient":"%s","ciphertext":"%s","kms_key_arn":"%s"}\n' "$recipient" "$ciphertext" "$key"
+	printf '{"organization":"%s","recipient":"%s","ciphertext":"%s","kms_key_arn":"%s"}\n' "$ARG" "$recipient" "$ciphertext" "$key"
 }
 
 run_destroy() {
 	[ -f "$DIR/terraform.tfstate" ] || die "nothing deployed in $DIR yet"
 	say "this removes the service, its roles and the bucket $(tf output -raw bucket)"
 	say "a bucket holding objects is refused: empty it first if that is what you want"
+	[ -z "$(tf output -raw analytics_key_arn 2>/dev/null || true)" ] \
+		|| say "the analytics key is scheduled for deletion in 30 days, even if the bucket stays; aws kms cancel-key-deletion undoes that"
 	tf destroy -input=false ${YES:+-auto-approve}
 }
 
