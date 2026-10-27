@@ -205,9 +205,10 @@ holds the private identity and still has no permission to read trajectory object
 access those ciphertexts only when the customer separately provides bucket access or sends selected
 objects. It is on by default because sealing cannot be added later: turning the recipient on
 covers only uploads from then on, so analytics over an organization's history needs it from the
-start. Turning it off removes the recipient from future configurations and makes Quesma ETL,
-dashboards, and dependent features unavailable for those uploads; objects already sealed to it stay
-openable by it.
+start. An AWS deployment with the analytics key below turns it off by default, because the
+analytics recipient keeps that history open instead. Turning it off removes the recipient from
+future configurations and makes Quesma ETL, dashboards, and dependent features unavailable for
+those uploads; objects already sealed to it stay openable by it.
 
 An organization can also be sealed, from its first upload, to an analytics recipient whose private
 key is held only as ciphertext under a KMS key in your own AWS account. Set-up asks for it beside the

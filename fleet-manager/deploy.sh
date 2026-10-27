@@ -261,7 +261,8 @@ Options, remembered between runs:
   --image IMAGE           the container image, by digest if you build your own
   --bucket NAME           on gcp, instead of <project>-trajectories
   --no-quesma-etl         do not seal uploads to Quesma's recipient unless an organization asks
-  --analytics-key         on aws, create the KMS key analytics identities are encrypted under
+  --analytics-key         on aws, create the KMS key analytics identities are encrypted under;
+                          Quesma's recipient is then off unless --quesma-etl or an organization asks
   --telemetry URL         forward shipper telemetry there for organizations that name nowhere
   --ref REF               the template's git ref, main unless set once; --dir DIR where state is kept
   -y, --yes               apply without asking

@@ -58,7 +58,7 @@ providers as OpenTofu resolves them; Terraform rewrites it with its own registry
 | `bucket` | required | S3 bucket names are global |
 | `name` | `fleet-manager` | the service and the prefix of its roles |
 | `image_uri` | `docker.io/quesma/fleet-manager:latest` | a moving tag Quesma publishes; see below |
-| `default_allow_quesma_etl` | `true` | seal uploads to Quesma's recipient for organizations that never chose |
+| `default_allow_quesma_etl` | unset | seal uploads to Quesma's recipient for organizations that never chose; unset means on without `analytics_key` and off with it |
 | `default_telemetry_collector_url` | empty | forward shipper telemetry there for organizations that name nowhere |
 | `etl_reader_role_arns` | `[]` | who outside the service may read the sealed objects; see below |
 | `analytics_key` | `false` | create the KMS key analytics identities are encrypted under; see below |
@@ -131,7 +131,9 @@ processor included, until you grant that processor `kms:Decrypt` on the key.
 1. Apply with `analytics_key = true` (`sh deploy.sh aws --analytics-key`). The key's policy lets the
    account administer it and encrypt with it. It grants no principal `kms:Decrypt`,
    `kms:ReEncrypt*` or `kms:CreateGrant`, so even the account's administrators must first change
-   the policy, which CloudTrail records.
+   the policy, which CloudTrail records. With the key, organizations that never chose are no longer
+   sealed to Quesma's recipient, organizations created before included. Set
+   `default_allow_quesma_etl = true` (`--quesma-etl`) to keep it.
 2. Before creating the organization, run `sh deploy.sh aws analytics-key <org>`. It generates an
    `age` identity, sends it to `kms:Encrypt` with the encryption context
    `{purpose: analytics-identity, organization: <org>}`, and prints the organization, the recipient,

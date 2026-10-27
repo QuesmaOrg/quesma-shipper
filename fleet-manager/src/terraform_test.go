@@ -378,8 +378,8 @@ func TestTerraformGrantsIdentityObjectAndExportsPublicKey(t *testing.T) {
 }
 
 // A deployment that changes nothing seals to Quesma's recipient, so history stays open to analytics
-// the organization may ask for later, and forwards telemetry nowhere. Both defaults are pinned, and
-// each template passes them to the service by the names it reads.
+// the organization may ask for later, unless the AWS analytics key keeps it open instead. Telemetry
+// goes nowhere. The defaults are pinned, and each template passes them by the names the service reads.
 func TestTerraformOrganizationDefaults(t *testing.T) {
 	for _, module := range []string{"aws", "gcp"} {
 		read := func(name string) string {
@@ -391,13 +391,20 @@ func TestTerraformOrganizationDefaults(t *testing.T) {
 			return string(raw)
 		}
 		vars, main := read("variables.tf"), read("main.tf")
+		quesma, value := "true", "tostring(var.default_allow_quesma_etl)"
+		if module == "aws" {
+			quesma, value = "null", "tostring(coalesce(var.default_allow_quesma_etl, !var.analytics_key))"
+		}
 		for _, pinned := range []string{
-			"variable \"default_allow_quesma_etl\" {\n  type        = bool\n  default     = true\n",
+			"variable \"default_allow_quesma_etl\" {\n  type        = bool\n  default     = " + quesma + "\n",
 			"variable \"default_telemetry_collector_url\" {\n  type        = string\n  default     = \"\"\n",
 		} {
 			if !strings.Contains(vars, pinned) {
 				t.Errorf("%s/variables.tf does not contain %q", module, pinned)
 			}
+		}
+		if !strings.Contains(main, "value = "+value+"\n") {
+			t.Errorf("%s/main.tf does not pass the Quesma ETL default as %s", module, value)
 		}
 		for _, env := range []string{"FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL", "FLEET_MANAGER_DEFAULT_TELEMETRY_COLLECTOR_URL"} {
 			if !strings.Contains(main, "\""+env+"\"") {
