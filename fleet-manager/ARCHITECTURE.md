@@ -41,7 +41,8 @@ testable against an in-memory store and what makes a fourth provider a new file 
 change to the service.
 
 **The service never reads a trajectory.** It has no decrypt path, and it holds no identity that
-could decrypt one. Below `install=` it reads `tags.json`, the install's name and administrator-managed
+could decrypt one. An organization's analytics identity is stored as KMS ciphertext, and the runtime
+has no KMS permission. Below `install=` it reads `tags.json`, the install's name and administrator-managed
 inventory metadata, and the metadata of mirror objects, which the upload deduplication probe HEADs
 for their `source-hash` and `shipped-hash`: an object is already present only when both match, so
 one scrubbed under older rules is uploaded again as a new version. S3 and GCS authorize that HEAD

@@ -197,6 +197,10 @@ The templates are where the least-privilege argument is made; `src/terraform_tes
   like that key, or absence surfaces as 403 and a generic 500; the `InstallAbsence` statements are
   the model. GCS not-found is matched with `errors.Is` against `storage.ErrObjectNotExist`, never
   with `==` (#74).
+- The analytics key in `terraform/aws/analytics_key.tf` decrypts for nobody unless
+  `analytics_decrypt_role_arns` names a role. `kms:Decrypt`, `kms:ReEncrypt*`, `kms:CreateGrant` or
+  a wildcard covering them on the account's statements is a P1: each opens every organization's
+  analytics identity without a policy change.
 - What one template grants or describes, the other grants or describes too, or the description
   says why not. A variable description must not name a variable that exists only in the other
   module.

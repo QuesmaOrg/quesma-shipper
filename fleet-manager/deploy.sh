@@ -18,10 +18,10 @@ main() {
 
 	ACTION=apply
 	case ${1:-} in
-	output | destroy | plan) ACTION=$1; shift ;;
+	output | destroy | plan | analytics-key) ACTION=$1; shift ;;
 	esac
 
-	BUCKET= REGION= NAME= IMAGE= PROJECT= TELEMETRY= QUESMA_ETL= YES= OUTPUT_NAME=
+	BUCKET= REGION= NAME= IMAGE= PROJECT= TELEMETRY= QUESMA_ETL= ANALYTICS_KEY= YES= ARG=
 	while [ $# -gt 0 ]; do
 		case $1 in
 		--bucket) BUCKET=$2; shift 2 ;;
@@ -32,14 +32,16 @@ main() {
 		--telemetry) TELEMETRY=$2; shift 2 ;;
 		--no-quesma-etl) QUESMA_ETL=false; shift ;;
 		--quesma-etl) QUESMA_ETL=true; shift ;;
+		--analytics-key) ANALYTICS_KEY=true; shift ;;
 		--ref) REF=$2; shift 2 ;;
 		--dir) HOME_DIR=$2; shift 2 ;;
 		-y | --yes) YES=1; shift ;;
 		-h | --help) usage; exit 0 ;;
 		--*) die "unknown option $1 (see --help)" ;;
 		*)
-			[ "$ACTION" = output ] && [ -z "$OUTPUT_NAME" ] || die "unexpected argument $1 (see --help)"
-			OUTPUT_NAME=$1; shift ;;
+			case $ACTION in output | analytics-key) ;; *) die "unexpected argument $1 (see --help)" ;; esac
+			[ -z "$ARG" ] || die "unexpected argument $1 (see --help)"
+			ARG=$1; shift ;;
 		esac
 	done
 
@@ -50,6 +52,7 @@ main() {
 
 	case $ACTION in
 	output) run_output ;;
+	analytics-key) run_analytics_key ;;
 	destroy) run_destroy ;;
 	plan | apply) run_apply ;;
 	esac
@@ -95,7 +98,26 @@ EOF
 
 run_output() {
 	[ -f "$DIR/terraform.tfstate" ] || die "nothing deployed in $DIR yet"
-	if [ -n "$OUTPUT_NAME" ]; then tf output -raw "$OUTPUT_NAME"; else tf output; fi
+	if [ -n "$ARG" ]; then tf output -raw "$ARG"; else tf output; fi
+}
+
+# An organization's analytics identity, printed only as KMS ciphertext beside its public recipient.
+# The private key lives in this shell's memory and pipes; printf is a builtin, so it is in no argv.
+run_analytics_key() {
+	[ "$CLOUD" = aws ] || die "analytics-key needs AWS KMS; Google Cloud is not supported yet"
+	printf '%s\n' "$ARG" | grep -Eqx '[a-z0-9][a-z0-9._-]{0,63}' \
+		|| die "analytics-key takes the organization slug: $0 aws analytics-key acme"
+	[ -f "$DIR/terraform.tfstate" ] || die "nothing deployed in $DIR yet"
+	need aws age-keygen
+	key=$(tf output -raw analytics_key_arn 2>/dev/null || true)
+	[ -n "$key" ] || die "this deployment has no analytics key: run \`$0 aws --analytics-key\` first"
+	identity=$(age-keygen 2>/dev/null | grep '^AGE-SECRET-KEY-') || die "age-keygen failed"
+	recipient=$(printf '%s\n' "$identity" | age-keygen -y) || die "age-keygen -y failed"
+	ciphertext=$(printf '%s\n' "$identity" | aws kms encrypt --region "$(echo "$key" | cut -d: -f4)" \
+		--key-id "$key" --plaintext fileb:///dev/stdin --query CiphertextBlob --output text \
+		--encryption-context "purpose=analytics-identity,organization=$ARG") || die "aws kms encrypt failed"
+	identity=
+	printf '{"recipient":"%s","ciphertext":"%s","kms_key_arn":"%s"}\n' "$recipient" "$ciphertext" "$key"
 }
 
 run_destroy() {
@@ -114,6 +136,7 @@ collect_vars() {
 	[ -n "$PROJECT" ] || PROJECT=$(stored project)
 	[ -n "$TELEMETRY" ] || TELEMETRY=$(stored default_telemetry_collector_url)
 	[ -n "$QUESMA_ETL" ] || QUESMA_ETL=$(stored default_allow_quesma_etl)
+	[ -n "$ANALYTICS_KEY" ] || ANALYTICS_KEY=$(stored analytics_key)
 	case $CLOUD in
 	aws)
 		[ -n "$BUCKET" ] || die "--bucket NAME is required: S3 bucket names are global, so pick one nobody has"
@@ -150,6 +173,8 @@ write_vars() {
 	[ -z "$TELEMETRY" ] || v="$v  \"default_telemetry_collector_url\": \"$TELEMETRY\",
 "
 	[ -z "$QUESMA_ETL" ] || v="$v  \"default_allow_quesma_etl\": $QUESMA_ETL,
+"
+	[ -z "$ANALYTICS_KEY" ] || v="$v  \"analytics_key\": $ANALYTICS_KEY,
 "
 	{ echo '{'; printf '%s' "$v" | sed '$ s/,$//'; echo '}'; } >"$VARS"
 }
@@ -225,6 +250,7 @@ Deploys Fleet Manager into your cloud account and prints the admin URL and crede
   deploy.sh aws --bucket NAME [--region REGION]      AWS: S3 bucket, roles, ECS Express service
   deploy.sh gcp --project ID [--region REGION]       Google Cloud: GCS bucket, roles, Cloud Run
   deploy.sh aws|gcp output [NAME]                    the outputs, or one of them (admin_credential)
+  deploy.sh aws analytics-key ORG                    an organization's analytics identity, as KMS ciphertext
   deploy.sh aws|gcp plan                             show what a run would change
   deploy.sh aws|gcp destroy                          remove it all; refuses a bucket with objects
 
@@ -233,6 +259,7 @@ Options, remembered between runs:
   --image IMAGE           the container image, by digest if you build your own
   --bucket NAME           on gcp, instead of <project>-trajectories
   --no-quesma-etl         do not seal uploads to Quesma's recipient unless an organization asks
+  --analytics-key         on aws, create the KMS key analytics identities are encrypted under
   --telemetry URL         forward shipper telemetry there for organizations that name nowhere
   --ref REF               the template's git ref, main unless set once; --dir DIR where state is kept
   -y, --yes               apply without asking
