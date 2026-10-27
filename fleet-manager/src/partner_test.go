@@ -61,7 +61,8 @@ func TestAPartnerCannotChangeCustody(t *testing.T) {
 		t.Fatal(err)
 	}
 	off, collector := false, "https://collector.example.com"
-	cfg.AllowQuesmaETL, cfg.TelemetryCollectorURL, cfg.DisplayName = &off, &collector, "Acme"
+	_, analytics := testAnalyticsIdentity(t, "acme")
+	cfg.AllowQuesmaETL, cfg.TelemetryCollectorURL, cfg.DisplayName, cfg.AnalyticsIdentity = &off, &collector, "Acme", &analytics
 	if err := acme.ApplyConfig(context.Background(), cfg, version); err != nil {
 		t.Fatal(err)
 	}
@@ -78,12 +79,15 @@ func TestAPartnerCannotChangeCustody(t *testing.T) {
 	}
 
 	recipients, _ := json.Marshal(twoRecipients(t))
+	_, other := testAnalyticsIdentity(t, "acme")
+	replacement, _ := json.Marshal(other)
 	for _, field := range []string{
 		`"age_recipients":` + string(recipients),
 		`"include_install_recipient":false`,
 		`"allow_quesma_etl":false`,
 		`"telemetry_collector_url":"https://collector.example.com"`,
 		`"display_name":"Renamed"`,
+		`"analytics_identity":` + string(replacement),
 	} {
 		put := adminRequest(http.MethodPut, "/v1/admin/orgs/acme/collection", `{"authored_yaml":"mode: {schedule: 1m}",`+field+`}`, partner)
 		put.Header.Set("If-Match", etag)
@@ -96,7 +100,7 @@ func TestAPartnerCannotChangeCustody(t *testing.T) {
 	}
 
 	stored, _, _ := acme.LoadConfig(context.Background())
-	if stored.AllowQuesmaETL == nil || *stored.AllowQuesmaETL || stored.TelemetryCollectorURL == nil {
+	if stored.AllowQuesmaETL == nil || *stored.AllowQuesmaETL || stored.TelemetryCollectorURL == nil || stored.AnalyticsIdentity == nil {
 		t.Fatalf("fixture custody not set: %+v", stored)
 	}
 	put = adminRequest(http.MethodPut, "/v1/admin/orgs/acme/collection", `{"authored_yaml":"mode: {schedule: 5m}"}`, partner)
@@ -107,7 +111,7 @@ func TestAPartnerCannotChangeCustody(t *testing.T) {
 	after, _, _ := acme.LoadConfig(context.Background())
 	// DeepEqual follows the pointers, so an unset field does not equal a stored false.
 	custody := func(c FleetConfig) []any {
-		return []any{c.AgeRecipients, c.IncludeInstallRecipient, c.AllowQuesmaETL, c.TelemetryCollectorURL, c.DisplayName}
+		return []any{c.AgeRecipients, c.IncludeInstallRecipient, c.AllowQuesmaETL, c.TelemetryCollectorURL, c.DisplayName, c.AnalyticsIdentity}
 	}
 	if !reflect.DeepEqual(custody(after), custody(stored)) {
 		t.Fatalf("collection write changed custody: %+v -> %+v", stored, after)

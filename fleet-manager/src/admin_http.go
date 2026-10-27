@@ -687,7 +687,8 @@ func (s *Server) handleAdminPutCollection(w http.ResponseWriter, r *http.Request
 	}
 	cfg := FleetConfig{DisplayName: current.DisplayName, AgeRecipients: current.AgeRecipients,
 		IncludeInstallRecipient: current.IncludeInstallRecipient, AllowQuesmaETL: current.AllowQuesmaETL,
-		TelemetryCollectorURL: current.TelemetryCollectorURL, Collection: req.Collection, AuthoredYAML: req.AuthoredYAML}
+		TelemetryCollectorURL: current.TelemetryCollectorURL, AnalyticsIdentity: current.AnalyticsIdentity,
+		Collection: req.Collection, AuthoredYAML: req.AuthoredYAML}
 	if !s.validateAdminConfig(w, manager, cfg) || !s.validateCollectionForFleet(w, r, manager, cfg, current.Collection, req.UnverifiedSources) {
 		return
 	}
