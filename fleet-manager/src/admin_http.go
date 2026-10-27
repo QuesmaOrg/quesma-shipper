@@ -240,8 +240,25 @@ func (s *Server) adminAuth(next http.Handler) http.Handler {
 		}
 		r = r.WithContext(context.WithValue(r.Context(), callerKey{}, who))
 		w.Header().Del("WWW-Authenticate")
-		next.ServeHTTP(w, r)
+		if who.who != callerPartner || r.Method == http.MethodGet {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// config.json records no author, so the log is where a partner's change can be told from an administrator's.
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		s.logger.Printf("organization %s: the partner credential's %s %s answered %d", who.org, r.Method, r.URL.EscapedPath(), recorder.status)
 	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
 }
 
 func (s *Server) adminHandler() http.Handler {
@@ -691,6 +708,10 @@ func (s *Server) handleAdminGetPartner(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAdminMintPartner(w http.ResponseWriter, r *http.Request) {
 	manager, _ := s.adminManager(r)
 	secret, err := manager.MintPartnerCredential(r.Context())
+	if errors.Is(err, ErrConflict) {
+		writeAdminError(w, http.StatusConflict, "a partner credential is active: revoke it before minting another")
+		return
+	}
 	if err != nil {
 		s.adminOperationError(w, "mint partner credential", err)
 		return

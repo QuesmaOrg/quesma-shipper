@@ -151,10 +151,13 @@ func (m *Manager) MintPartnerCredential(ctx context.Context) (string, error) {
 	digest := sha256.Sum256([]byte(credential))
 	rec := PartnerCredentialRecord{Schema: schemaVersion, SecretDigest: hex.EncodeToString(digest[:]), CreatedAt: m.time()}
 	key := partnerCredentialKey(m.org)
-	_, version, err := getRecord[PartnerCredentialRecord](ctx, m.store, key)
+	current, version, err := getRecord[PartnerCredentialRecord](ctx, m.store, key)
 	switch {
 	case errors.Is(err, ErrNotFound):
 		err = createRecord(ctx, m.store, key, rec)
+	case err == nil && current.RevokedAt == nil:
+		// Replacing would cut the partner off at once; a provisioning script run twice must not.
+		err = ErrConflict
 	case err == nil:
 		err = replaceRecord(ctx, m.store, key, version, rec)
 	}

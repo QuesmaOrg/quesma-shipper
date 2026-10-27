@@ -438,6 +438,7 @@ async function loadPartner(generation) {
       : `Revoked ${new Date(record.revoked_at).toLocaleString()}.`;
   $('#revoke-partner').classList.toggle('hidden', !active);
   $('#mint-partner').dataset.replaces = active ? 'true' : '';
+  $('#mint-partner').textContent = active ? 'Replace credential' : 'Create credential';
 }
 
 async function loadTables() {
@@ -456,7 +457,13 @@ async function loadTables() {
   });
 }
 
-$('#login-form').addEventListener('submit', (event) => { event.preventDefault(); credential = $('#credential').value.trim(); connect(); });
+$('#login-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const value = $('#credential').value.trim();
+  // A partner credential reaches one organization's API and none of the deployment routes this UI starts from.
+  if (value.startsWith('fmp1.')) { toast('Partner credentials are for the API only. The admin UI needs the administrator credential.'); return; }
+  credential = value; connect();
+});
 $('#home').addEventListener('click', (event) => {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   event.preventDefault();
@@ -559,10 +566,12 @@ $('#mint-partner').addEventListener('click', async (event) => {
   if (button.dataset.replaces && !window.confirm('Replace the partner credential? The current one stops working immediately.')) return;
   button.disabled = true;
   try {
+    // Minting is refused while one is active, so a replacement revokes first.
+    if (button.dataset.replaces) await api(orgPath('/partner/revoke'), {method: 'POST'});
     const result = await (await api(orgPath('/partner'), {method: 'POST'})).json();
     showSecret(result.secret, false);
     await loadTables();
-  } catch (error) { toast(error.message); } finally { button.disabled = false; }
+  } catch (error) { toast(error.message); loadTables().catch(() => {}); } finally { button.disabled = false; }
 });
 $('#revoke-partner').addEventListener('click', async (event) => {
   if (!window.confirm('Revoke the partner credential? It stops working immediately.')) return;

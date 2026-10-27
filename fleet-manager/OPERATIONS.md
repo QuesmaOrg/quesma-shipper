@@ -53,11 +53,14 @@ apply and the old credential stops working immediately. Locally, delete
 organization's machines, report their health and edit collection settings
 (`PUT /v1/admin/orgs/{org}/collection`, with the ETag from `GET /config`). It cannot change
 recipients, Quesma ETL or telemetry, and cannot reach another organization. An organization has one
-partner credential: creating another replaces it, and the old one stops working on the next
-request, so hand the new one over before the third party's next call. **Revoke** (or
-`POST /v1/admin/orgs/{org}/partner/revoke`) stops it the same way. `GET
-/v1/admin/orgs/{org}/partner` says when the current one was created and whether it is revoked, and
-answers 404 when none was ever created. Upgrade every replica before creating one: an older replica
+partner credential, and creating another while it is active answers 409. **Revoke** (or
+`POST /v1/admin/orgs/{org}/partner/revoke`) stops it on the next request. To rotate, revoke and
+create again, which **Partner → Replace credential** does in one step, then hand the new one over before the
+third party's next call. `GET /v1/admin/orgs/{org}/partner` says when the current one was created
+and whether it is revoked, and answers 404 when none was ever created. Each partner call that
+changes something is logged as `organization <org>: the partner credential's <method> <path>
+answered <status>`, because `config.json` does not record who wrote it. The administration UI
+does not accept a partner credential. Upgrade every replica before creating one: an older replica
 refuses it with 401.
 
 **Revoke.** Installs, invites and grants are revoked from the administration UI. A revoked install

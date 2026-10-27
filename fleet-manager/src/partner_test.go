@@ -1,14 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 const partnerRefusal = "this credential may not call this route"
@@ -253,29 +257,33 @@ func TestThePartnersOrganizationIsTheHandlers(t *testing.T) {
 }
 
 func TestPartnerRevocationAndRotation(t *testing.T) {
-	server, _, first := partnerServer(t)
+	server, store, first := partnerServer(t)
 	installs := func(credential string) int {
 		return serveAdmin(t, server, adminRequest(http.MethodGet, "/v1/admin/orgs/acme/installs", "", credential)).Code
 	}
 	if got := installs(first); got != http.StatusOK {
 		t.Fatalf("minted credential = %d", got)
 	}
-	second := mintPartner(t, server, "acme")
-	if installs(first) != http.StatusUnauthorized || installs(second) != http.StatusOK {
-		t.Fatalf("after rotation: old = %d, new = %d", installs(first), installs(second))
+	// A provisioning script run twice must not cut the partner off: rotation is revoke, then mint.
+	_, before, _ := store.Get(context.Background(), partnerCredentialKey("acme"))
+	if w := serveAdmin(t, server, adminRequest(http.MethodPost, "/v1/admin/orgs/acme/partner", "", testAdminCredential)); w.Code != http.StatusConflict {
+		t.Fatalf("mint while active = %d %s", w.Code, w.Body.String())
+	}
+	if _, after, _ := store.Get(context.Background(), partnerCredentialKey("acme")); after != before || installs(first) != http.StatusOK {
+		t.Fatal("a refused mint changed the active credential")
 	}
 	if w := serveAdmin(t, server, adminRequest(http.MethodPost, "/v1/admin/orgs/acme/partner/revoke", "", testAdminCredential)); w.Code != http.StatusNoContent {
 		t.Fatalf("revoke = %d %s", w.Code, w.Body.String())
 	}
-	if got := installs(second); got != http.StatusUnauthorized {
+	if got := installs(first); got != http.StatusUnauthorized {
 		t.Fatalf("revoked credential = %d", got)
 	}
 	w := serveAdmin(t, server, adminRequest(http.MethodGet, "/v1/admin/orgs/acme/partner", "", testAdminCredential))
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"revoked_at"`) || strings.Contains(w.Body.String(), "digest") {
 		t.Fatalf("partner status = %d %s", w.Code, w.Body.String())
 	}
-	third := mintPartner(t, server, "acme")
-	if installs(third) != http.StatusOK || installs(second) != http.StatusUnauthorized {
+	second := mintPartner(t, server, "acme")
+	if installs(second) != http.StatusOK || installs(first) != http.StatusUnauthorized {
 		t.Fatal("a mint after revocation did not restore exactly the new credential")
 	}
 	for _, route := range []struct{ method, path string }{
@@ -328,5 +336,30 @@ func TestAPartnerReportsHealthForItsOwnOrganization(t *testing.T) {
 	request := adminRequest(http.MethodPost, "/v1/admin/orgs/globex/installs/"+installID+"/health", `{"faults":[]}`, partner)
 	if w := serveAdmin(t, server, request); w.Code != http.StatusUnauthorized {
 		t.Fatalf("other organization = %d", w.Code)
+	}
+}
+
+// config.json records no author, so each partner write is logged with its outcome. Reads are not,
+// and neither credential nor secret reaches the line.
+func TestAPartnerWriteIsLogged(t *testing.T) {
+	server, _, partner := partnerServer(t)
+	var logged bytes.Buffer
+	server.logger = log.New(&logged, "", 0)
+	invite := fmt.Sprintf(`{"expires_at":%q}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+	for _, credential := range []string{partner, testAdminCredential} {
+		if w := serveAdmin(t, server, adminRequest(http.MethodPost, "/v1/admin/orgs/acme/invites", invite, credential)); w.Code != http.StatusCreated {
+			t.Fatalf("invite = %d %s", w.Code, w.Body.String())
+		}
+	}
+	serveAdmin(t, server, adminRequest(http.MethodGet, "/v1/admin/orgs/acme/installs", "", partner))
+	serveAdmin(t, server, adminRequest(http.MethodPost, "/v1/admin/orgs/acme/invites", "{}", partner))
+
+	want := "organization acme: the partner credential's POST /v1/admin/orgs/acme/invites answered 201\n" +
+		"organization acme: the partner credential's POST /v1/admin/orgs/acme/invites answered 400\n"
+	if logged.String() != want {
+		t.Errorf("logged\n%s\nwant\n%s", logged.String(), want)
+	}
+	if strings.Contains(logged.String(), "fmp1.") || strings.Contains(logged.String(), "fmi2.") {
+		t.Error("a credential or invite secret reached the log")
 	}
 }
