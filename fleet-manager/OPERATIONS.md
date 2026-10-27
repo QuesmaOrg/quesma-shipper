@@ -33,6 +33,9 @@ recipients registered at the time of upload. Changing the recipients later does 
 existing files, even after a shipper's `state reset`: upload deduplication writes a new version of a
 stored file only when its scrubbed bytes changed, for example after a scrub-rule change.
 
+An analytics identity is fixed the same way, and earlier: it can be set only when the organization is
+created, so an organization created without one has no history a processor can open later.
+
 **A re-uploaded file keeps its earlier versions.** The bucket is versioned and nothing expires mirror
 objects, so a value that leaked under old scrub rules is still readable in the earlier version until
 an operator deletes it by hand. A `state reset` after a shipper upgrade that changed scrubbing
@@ -98,6 +101,9 @@ install's root, and each organization's `control/config.json`. Reading is not de
 can open objects only while the organization keeps Quesma's recipient (`allow_quesma_etl`, on by
 default). The two revoke separately. Empty the list to stop the reading, which takes effect
 immediately; turn off `allow_quesma_etl` to stop the decrypting of objects sealed from then on.
+An organization with an analytics identity is opened instead through `analytics_decrypt_role_arns`,
+which grants `kms:Decrypt` on the analytics key and is revoked by removing the role
+([AWS template](terraform/aws/README.md#an-analytics-identity-under-your-own-key)).
 
 **Running without egress.** Fleet Manager needs no outbound internet access beyond its cloud's own
 APIs: object storage, plus IAM Credentials `SignBlob` on Google Cloud, which signs every upload

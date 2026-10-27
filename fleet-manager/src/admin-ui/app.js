@@ -131,10 +131,27 @@ function configBody(form) {
   const collector = form.elements.telemetry_collector_url;
   const value = form.elements['telemetry-enabled'].checked ? collector.value.trim() : '';
   if (value !== collector.dataset.initialValue) body.telemetry_collector_url = value;
+  if (form.elements.analytics?.checked) body.analytics_identity = analyticsIdentity(form);
   // Only a configuration write checks source IDs; creating an organization takes none of this.
   const unverified = unverifiedSources(form);
   if (form.id === 'config-form' && unverified.length) body.unverified_sources = unverified;
   return body;
+}
+
+function analyticsIdentity(form) {
+  try {
+    const value = JSON.parse(form.elements.analytics_identity.value);
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  } catch (_) { /* Reported below. */ }
+  throw new Error('Paste the line that deploy.sh aws analytics-key printed');
+}
+
+function syncAnalytics(form) {
+  const on = form.elements.analytics.checked;
+  form.querySelector('[data-analytics-identity]').classList.toggle('hidden', !on);
+  form.querySelector('[data-analytics-none]').classList.toggle('hidden', on);
+  form.elements.analytics_identity.required = on;
+  form.querySelector('[data-analytics-command]').textContent = `sh deploy.sh aws analytics-key ${form.elements.slug.value.trim() || 'acme'}`;
 }
 
 function syncTelemetry(form) {
@@ -158,6 +175,7 @@ function resetOrganizationForm() {
   form.elements['telemetry-enabled'].checked = collector.value !== '';
   syncTelemetry(form);
   syncQuesmaRecipient(form);
+  syncAnalytics(form);
 }
 
 function fillConfig(config) {
@@ -170,6 +188,10 @@ function fillConfig(config) {
   setRecipients(form, config.age_recipients);
   form.elements['quesma-etl'].checked = config.allow_quesma_etl !== false;
   syncQuesmaRecipient(form);
+  const analytics = config.analytics_identity;
+  form.querySelector('[data-analytics-status]').textContent = analytics
+    ? `Uploads are also sealed to ${analytics.recipient}, whose private key is held under ${analytics.kms_key_arn}. Set when the organization was created.`
+    : 'None. A processor granted later opens uploads from then on, not the history.';
   const collector = form.elements.telemetry_collector_url;
   collector.value = config.telemetry_collector_url || '';
   collector.dataset.initialValue = collector.value;
@@ -481,8 +503,8 @@ $('#cancel-org').addEventListener('click', () => show('dashboard'));
 $('#organization-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget; const data = new FormData(form);
-  const body = {...configBody(form), slug: String(data.get('slug')).trim(), display_name: String(data.get('display_name')).trim()};
   try {
+    const body = {...configBody(form), slug: String(data.get('slug')).trim(), display_name: String(data.get('display_name')).trim()};
     const response = await api('/orgs', {method: 'POST', body: JSON.stringify(body)});
     const org = await response.json(); organizations.push(org); organizations.sort((a, b) => a.slug.localeCompare(b.slug));
     selectOrganization(org.slug); resetOrganizationForm(); await loadConfig(); await loadTables(); show('dashboard'); toast('Organization created');
@@ -503,6 +525,9 @@ all('[data-create]').forEach((button) => button.addEventListener('click', () => 
 }));
 all('[data-close-create]').forEach((button) => button.addEventListener('click', () => $('#create-dialog').close()));
 $('#create-dialog').addEventListener('close', () => expiryPicker.close());
+
+$('#organization-form').elements.analytics.addEventListener('change', (event) => syncAnalytics(event.target.form));
+$('#organization-form').elements.slug.addEventListener('input', (event) => syncAnalytics(event.target.form));
 
 all('[data-add-recipient]').forEach((button) => button.addEventListener('click', () => {
   const list = button.parentElement.querySelector('[data-recipient-list]');

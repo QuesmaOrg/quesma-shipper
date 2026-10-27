@@ -30,8 +30,9 @@ variable "image_uri" {
 # It grants read, and read is not the same as decrypt. Every object is sealed to the
 # organization's age recipients, and the reader can open them only because the organization keeps
 # Quesma's built-in recipient -- the `allow_quesma_etl` setting, which is on unless the organization
-# or `default_allow_quesma_etl` below turns it off, and separately revocable. Removing the
-# recipient stops the decryption; emptying this list stops the reading.
+# or `default_allow_quesma_etl` below turns it off, and separately revocable -- or because
+# analytics_decrypt_role_arns below grants it the organization's analytics identity. Removing the
+# recipient or the decrypt grant stops the decryption; emptying this list stops the reading.
 #
 # The ARNs are role ARNs, one per ETL that reads this bucket, supplied by whoever runs it.
 variable "etl_reader_role_arns" {
@@ -58,4 +59,18 @@ variable "default_telemetry_collector_url" {
   type        = string
   default     = ""
   description = "Where an organization that names no collector forwards shipper telemetry: a hostname or HTTPS URL, or empty for nowhere."
+}
+
+# An analytics identity per organization, its private half held only as ciphertext under a KMS key
+# in this account (analytics_key.tf). Off by default. Granting a processor is naming its role in
+# analytics_decrypt_role_arns, alongside etl_reader_role_arns for the read; removing it revokes.
+variable "analytics_key" {
+  type        = bool
+  default     = false
+  description = "Create the KMS key that `deploy.sh aws analytics-key <org>` encrypts each organization's analytics identity under. Nobody can decrypt with it until analytics_decrypt_role_arns names someone."
+}
+variable "analytics_decrypt_role_arns" {
+  type        = list(string)
+  default     = []
+  description = "Role ARNs permitted to decrypt analytics identities under the analytics key, and nothing else with it. Empty grants nobody."
 }
