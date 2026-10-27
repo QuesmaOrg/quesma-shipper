@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -27,6 +28,13 @@ type adminConfigRequest struct {
 	TelemetryCollectorURL   *string           `json:"telemetry_collector_url,omitempty"`
 	// UnverifiedSources acknowledges, for this write only, source IDs no install reports. Never stored.
 	UnverifiedSources []string `json:"unverified_sources,omitempty"`
+}
+
+// The collection alone: strict decoding refuses any other field, including one added to the config later.
+type adminCollectionRequest struct {
+	AuthoredYAML      string            `json:"authored_yaml,omitempty"`
+	Collection        *CollectionConfig `json:"collection,omitempty"`
+	UnverifiedSources []string          `json:"unverified_sources,omitempty"`
 }
 
 type adminCreateOrganizationRequest struct {
@@ -82,11 +90,28 @@ func (m *Manager) verifyCredential(ctx context.Context, credential, key string) 
 	if err != nil {
 		return false, err
 	}
-	if rec.Schema != schemaVersion {
+	return matchesDigest(credential, rec.Schema, rec.SecretDigest)
+}
+
+// VerifyPartnerCredential: a missing or revoked record authenticates nothing.
+func (m *Manager) VerifyPartnerCredential(ctx context.Context, credential string) (bool, error) {
+	rec, _, err := getRecord[PartnerCredentialRecord](ctx, m.store, partnerCredentialKey(m.org))
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	ok, err := matchesDigest(credential, rec.Schema, rec.SecretDigest)
+	return ok && rec.RevokedAt == nil, err
+}
+
+func matchesDigest(credential string, schema int, digest string) (bool, error) {
+	if schema != schemaVersion {
 		return false, errors.New("credential has unsupported schema")
 	}
-	want, err := hex.DecodeString(rec.SecretDigest)
-	if err != nil || len(want) != sha256.Size || rec.SecretDigest != strings.ToLower(rec.SecretDigest) {
+	want, err := hex.DecodeString(digest)
+	if err != nil || len(want) != sha256.Size || digest != strings.ToLower(digest) {
 		return false, errors.New("credential has invalid digest")
 	}
 	got := sha256.Sum256([]byte(credential))
@@ -97,11 +122,14 @@ func validAdminCredential(value string) bool { return wellFormedCredential(value
 
 func validReporterCredential(value string) bool { return wellFormedCredential(value, reporterPrefix) }
 
+func validPartnerCredential(value string) bool { return wellFormedCredential(value, partnerPrefix) }
+
 // The prefixes differ so a credential pasted into the wrong place is obvious at a glance, and so a
 // reporter credential cannot be mistaken for administrative authority by anything reading a log.
 const (
 	adminPrefix    = "fma1."
 	reporterPrefix = "fmr1."
+	partnerPrefix  = "fmp1."
 )
 
 func wellFormedCredential(value, prefix string) bool {
@@ -118,21 +146,36 @@ func wellFormedCredential(value, prefix string) bool {
 
 // caller is what a request authenticated AS. Routes ask for what they need rather than trusting
 // that authentication implies authority: the reporter credential authenticates, and authorises one
-// route.
+// route; a partner credential authorises the routes partnerRoute lists, in one organization.
 type caller int
 
 const (
 	callerAdmin caller = iota
 	callerReporter
+	callerPartner
 )
+
+type principal struct {
+	who caller
+	org string // the partner's organization; empty for the deployment-wide credentials
+}
 
 type callerKey struct{}
 
-func callerOf(r *http.Request) caller {
-	if who, ok := r.Context().Value(callerKey{}).(caller); ok {
-		return who
+func callerOf(r *http.Request) principal {
+	if p, ok := r.Context().Value(callerKey{}).(principal); ok {
+		return p
 	}
-	return callerReporter
+	return principal{who: callerReporter}
+}
+
+// refuse names what the credential may do, so a 403 says which credential was presented.
+func refuse(w http.ResponseWriter, who caller) {
+	message := "this credential may only report health"
+	if who == callerPartner {
+		message = "this credential may not call this route"
+	}
+	writeAdminError(w, http.StatusForbidden, message)
 }
 
 func (s *Server) adminAuth(next http.Handler) http.Handler {
@@ -149,7 +192,7 @@ func (s *Server) adminAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		who, verify := callerAdmin, s.manager.VerifyAdminCredential
+		who, verify := principal{who: callerAdmin}, s.manager.VerifyAdminCredential
 		switch {
 		case validAdminCredential(credential):
 		case validReporterCredential(credential):
@@ -158,10 +201,23 @@ func (s *Server) adminAuth(next http.Handler) http.Handler {
 			// default let a reporter read and rewrite organization configuration -- including its
 			// age recipients, which is custody.
 			if !reporterRoute(r) {
-				writeAdminError(w, http.StatusForbidden, "this credential may only report health")
+				refuse(w, callerReporter)
 				return
 			}
-			who, verify = callerReporter, s.manager.VerifyReporterCredential
+			who, verify = principal{who: callerReporter}, s.manager.VerifyReporterCredential
+		case validPartnerCredential(credential):
+			segments, ok := adminPathSegments(r)
+			if !ok || len(segments) < 4 {
+				refuse(w, callerPartner)
+				return
+			}
+			// Looked up by the path's organization, so another organization's path fails as 401.
+			manager, err := s.manager.ForOrganization(segments[3])
+			if err != nil {
+				writeAdminError(w, http.StatusUnauthorized, "invalid bearer authorization")
+				return
+			}
+			who, verify = principal{who: callerPartner, org: segments[3]}, manager.VerifyPartnerCredential
 		default:
 			writeAdminError(w, http.StatusUnauthorized, "invalid bearer authorization")
 			return
@@ -177,10 +233,32 @@ func (s *Server) adminAuth(next http.Handler) http.Handler {
 			writeAdminError(w, http.StatusUnauthorized, "invalid bearer authorization")
 			return
 		}
+		// After verification, unlike the reporter's, so another organization answers 401 on every route.
+		if who.who == callerPartner && !partnerRoute(r) {
+			refuse(w, callerPartner)
+			return
+		}
 		r = r.WithContext(context.WithValue(r.Context(), callerKey{}, who))
 		w.Header().Del("WWW-Authenticate")
-		next.ServeHTTP(w, r)
+		if who.who != callerPartner || r.Method == http.MethodGet {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// config.json records no author, so the log is where a partner's change can be told from an administrator's.
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		s.logger.Printf("organization %s: the partner credential's %s %s answered %d", who.org, r.Method, r.URL.EscapedPath(), recorder.status)
 	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
 }
 
 func (s *Server) adminHandler() http.Handler {
@@ -197,27 +275,75 @@ func (s *Server) adminHandler() http.Handler {
 	return s.adminAuth(mux)
 }
 
-func registerOrganizationRoutes(mux *http.ServeMux, prefix string, s *Server) {
-	mux.HandleFunc("GET "+prefix+"/config", s.adminOnly(s.handleAdminGetConfig))
+// routeRegistrar is what registerOrganizationRoutes needs of a mux, so a test can list every route.
+type routeRegistrar interface {
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+}
+
+func registerOrganizationRoutes(mux routeRegistrar, prefix string, s *Server) {
+	mux.HandleFunc("GET "+prefix+"/config", s.partnerToo(s.handleAdminGetConfig))
 	mux.HandleFunc("PUT "+prefix+"/config", s.adminOnly(s.handleAdminPutConfig))
-	mux.HandleFunc("GET "+prefix+"/sources", s.scopedAdmin(s.handleAdminListSources))
-	mux.HandleFunc("GET "+prefix+"/grants", s.scopedAdmin(s.handleAdminListGrants))
-	mux.HandleFunc("POST "+prefix+"/grants", s.scopedAdmin(s.handleAdminCreateGrant))
-	mux.HandleFunc("POST "+prefix+"/grants/{id}/revoke", s.scopedAdmin(s.handleAdminRevokeGrant))
-	mux.HandleFunc("GET "+prefix+"/invites", s.scopedAdmin(s.handleAdminListInvites))
-	mux.HandleFunc("POST "+prefix+"/invites", s.scopedAdmin(s.handleAdminCreateInvite))
-	mux.HandleFunc("POST "+prefix+"/invites/{id}/revoke", s.scopedAdmin(s.handleAdminRevokeInvite))
-	mux.HandleFunc("POST "+prefix+"/invites/{id}/release", s.scopedAdmin(s.handleAdminReleaseInvite))
-	mux.HandleFunc("GET "+prefix+"/installs", s.scopedAdmin(s.handleAdminListInstalls))
-	mux.HandleFunc("GET "+prefix+"/installs/seen", s.scopedAdmin(s.handleAdminListSeen))
-	mux.HandleFunc("GET "+prefix+"/installs/health", s.scopedAdmin(s.handleAdminListHealth))
-	// The one route a reporter credential reaches, so it is scoped rather than scopedAdmin.
-	mux.HandleFunc("POST "+prefix+"/installs/{id}/health", s.scoped(s.handleAdminReportHealth))
-	mux.HandleFunc("GET "+prefix+"/installs/tags", s.scopedAdmin(s.handleAdminListTags))
-	mux.HandleFunc("PUT "+prefix+"/installs/{id}/tags", s.scopedAdmin(s.handleAdminSetTag))
-	mux.HandleFunc("PATCH "+prefix+"/installs/{id}/metadata", s.scopedAdmin(s.handleAdminPatchMetadata))
-	mux.HandleFunc("POST "+prefix+"/installs/metadata/import", s.scopedAdmin(s.handleAdminImportMetadata))
-	mux.HandleFunc("POST "+prefix+"/installs/{id}/revoke", s.scopedAdmin(s.handleAdminRevokeInstall))
+	mux.HandleFunc("PUT "+prefix+"/collection", s.partnerToo(s.handleAdminPutCollection))
+	mux.HandleFunc("GET "+prefix+"/partner", s.scopedAdmin(s.handleAdminGetPartner))
+	mux.HandleFunc("POST "+prefix+"/partner", s.scopedAdmin(s.handleAdminMintPartner))
+	mux.HandleFunc("POST "+prefix+"/partner/revoke", s.scopedAdmin(s.handleAdminRevokePartner))
+	mux.HandleFunc("GET "+prefix+"/sources", s.scopedPartner(s.handleAdminListSources))
+	mux.HandleFunc("GET "+prefix+"/grants", s.scopedPartner(s.handleAdminListGrants))
+	mux.HandleFunc("POST "+prefix+"/grants", s.scopedPartner(s.handleAdminCreateGrant))
+	mux.HandleFunc("POST "+prefix+"/grants/{id}/revoke", s.scopedPartner(s.handleAdminRevokeGrant))
+	mux.HandleFunc("GET "+prefix+"/invites", s.scopedPartner(s.handleAdminListInvites))
+	mux.HandleFunc("POST "+prefix+"/invites", s.scopedPartner(s.handleAdminCreateInvite))
+	mux.HandleFunc("POST "+prefix+"/invites/{id}/revoke", s.scopedPartner(s.handleAdminRevokeInvite))
+	mux.HandleFunc("POST "+prefix+"/invites/{id}/release", s.scopedPartner(s.handleAdminReleaseInvite))
+	mux.HandleFunc("GET "+prefix+"/installs", s.scopedPartner(s.handleAdminListInstalls))
+	mux.HandleFunc("GET "+prefix+"/installs/seen", s.scopedPartner(s.handleAdminListSeen))
+	mux.HandleFunc("GET "+prefix+"/installs/health", s.scopedPartner(s.handleAdminListHealth))
+	// The one route a reporter credential reaches, so it is not scopedAdmin. A partner reaches it too.
+	mux.HandleFunc("POST "+prefix+"/installs/{id}/health", s.scoped(s.ownOrganization(s.handleAdminReportHealth)))
+	mux.HandleFunc("GET "+prefix+"/installs/tags", s.scopedPartner(s.handleAdminListTags))
+	mux.HandleFunc("PUT "+prefix+"/installs/{id}/tags", s.scopedPartner(s.handleAdminSetTag))
+	mux.HandleFunc("PATCH "+prefix+"/installs/{id}/metadata", s.scopedPartner(s.handleAdminPatchMetadata))
+	mux.HandleFunc("POST "+prefix+"/installs/metadata/import", s.scopedPartner(s.handleAdminImportMetadata))
+	mux.HandleFunc("POST "+prefix+"/installs/{id}/revoke", s.scopedPartner(s.handleAdminRevokeInstall))
+}
+
+// Split as the mux matches, segment by escaped segment, so acme%2Fx is never read as acme.
+func adminPathSegments(r *http.Request) ([]string, bool) {
+	segments := strings.Split(strings.Trim(r.URL.EscapedPath(), "/"), "/")
+	for i, segment := range segments {
+		unescaped, err := url.PathUnescape(segment)
+		if err != nil {
+			return nil, false
+		}
+		segments[i] = unescaped
+	}
+	ok := len(segments) >= 3 && segments[0] == "v1" && segments[1] == "admin" && segments[2] == "orgs"
+	return segments, ok
+}
+
+// What a partner may call under /v1/admin/orgs/{slug}, as path.Match patterns.
+var partnerRoutes = []string{
+	"GET config", "GET sources", "GET grants", "GET invites",
+	"GET installs", "GET installs/seen", "GET installs/health", "GET installs/tags",
+	"PUT collection",
+	"POST grants", "POST grants/*/revoke",
+	"POST invites", "POST invites/*/revoke", "POST invites/*/release",
+	"PUT installs/*/tags", "PATCH installs/*/metadata", "POST installs/metadata/import",
+	"POST installs/*/revoke", "POST installs/*/health",
+}
+
+func partnerRoute(r *http.Request) bool {
+	segments, ok := adminPathSegments(r)
+	if !ok || len(segments) < 5 {
+		return false
+	}
+	route := r.Method + " " + strings.Join(segments[4:], "/")
+	for _, pattern := range partnerRoutes {
+		if matched, _ := path.Match(pattern, route); matched {
+			return true
+		}
+	}
+	return false
 }
 
 // scopedAdmin is administrative authority. A reporter credential authenticates but is refused here,
@@ -237,8 +363,8 @@ func reporterRoute(r *http.Request) bool {
 // it twice changes which failure an unreachable store reports.
 func (s *Server) adminOnly(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if callerOf(r) != callerAdmin {
-			writeAdminError(w, http.StatusForbidden, "this credential may only report health")
+		if who := callerOf(r).who; who != callerAdmin {
+			refuse(w, who)
 			return
 		}
 		next(w, r)
@@ -246,13 +372,33 @@ func (s *Server) adminOnly(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) scopedAdmin(next http.HandlerFunc) http.HandlerFunc {
-	return s.scoped(func(w http.ResponseWriter, r *http.Request) {
-		if callerOf(r) != callerAdmin {
-			writeAdminError(w, http.StatusForbidden, "this credential may only report health")
+	return s.scoped(s.adminOnly(next))
+}
+
+// partnerToo admits an administrator, or a partner whose organization is the handler's.
+func (s *Server) partnerToo(next http.HandlerFunc) http.HandlerFunc {
+	return s.ownOrganization(func(w http.ResponseWriter, r *http.Request) {
+		if who := callerOf(r).who; who != callerAdmin && who != callerPartner {
+			refuse(w, who)
 			return
 		}
 		next(w, r)
 	})
+}
+
+func (s *Server) scopedPartner(next http.HandlerFunc) http.HandlerFunc {
+	return s.scoped(s.partnerToo(next))
+}
+
+// ownOrganization refuses a partner whose organization is not the path's. Other callers pass.
+func (s *Server) ownOrganization(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if p := callerOf(r); p.who == callerPartner && p.org != r.PathValue("slug") {
+			refuse(w, callerPartner)
+			return
+		}
+		next(w, r)
+	}
 }
 
 // scoped resolves the organization without asking what the caller is.
@@ -295,7 +441,7 @@ func readAdminJSON[T any](w http.ResponseWriter, r *http.Request, out *T) bool {
 		return false
 	}
 	switch any(out).(type) {
-	case *adminConfigRequest, *adminCreateOrganizationRequest:
+	case *adminConfigRequest, *adminCreateOrganizationRequest, *adminCollectionRequest:
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(body, &fields) == nil {
 			for name, value := range fields {
@@ -437,15 +583,23 @@ func (s *Server) handleAdminDefaults(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.defaults)
 }
 
-func (s *Server) handleAdminPutConfig(w http.ResponseWriter, r *http.Request) {
+func requireConfigETag(w http.ResponseWriter, r *http.Request) (string, bool) {
 	match := r.Header.Get("If-Match")
 	if match == "" {
 		writeAdminError(w, http.StatusPreconditionRequired, "If-Match is required")
-		return
+		return "", false
 	}
 	version, ok := decodeETag(match)
 	if !ok {
 		writeAdminError(w, http.StatusBadRequest, "If-Match must contain the configuration ETag")
+		return "", false
+	}
+	return version, true
+}
+
+func (s *Server) handleAdminPutConfig(w http.ResponseWriter, r *http.Request) {
+	version, ok := requireConfigETag(w, r)
+	if !ok {
 		return
 	}
 	var req adminConfigRequest
@@ -484,7 +638,11 @@ func (s *Server) handleAdminPutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	err = manager.ApplyConfig(r.Context(), cfg, version)
+	s.applyConfig(w, r, manager, cfg, version)
+}
+
+func (s *Server) applyConfig(w http.ResponseWriter, r *http.Request, manager *Manager, cfg FleetConfig, version string) {
+	err := manager.ApplyConfig(r.Context(), cfg, version)
 	if errors.Is(err, ErrConflict) {
 		writeAdminError(w, http.StatusPreconditionFailed, "configuration changed")
 		return
@@ -494,6 +652,77 @@ func (s *Server) handleAdminPutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleAdminPutCollection replaces the collection and keeps every other setting as stored.
+func (s *Server) handleAdminPutCollection(w http.ResponseWriter, r *http.Request) {
+	version, ok := requireConfigETag(w, r)
+	if !ok {
+		return
+	}
+	var req adminCollectionRequest
+	if !readAdminJSON(w, r, &req) {
+		return
+	}
+	if req.Collection == nil && req.AuthoredYAML == "" {
+		writeAdminError(w, http.StatusBadRequest, "collection or authored_yaml is required")
+		return
+	}
+	manager, err := s.adminManager(r)
+	if err != nil {
+		writeAdminError(w, http.StatusNotFound, "not found")
+		return
+	}
+	current, _, err := manager.LoadConfig(r.Context())
+	if errors.Is(err, ErrNotFound) {
+		writeAdminError(w, http.StatusNotFound, "organization not found")
+		return
+	}
+	if err != nil {
+		s.adminOperationError(w, "load config", err)
+		return
+	}
+	cfg := FleetConfig{DisplayName: current.DisplayName, AgeRecipients: current.AgeRecipients,
+		IncludeInstallRecipient: current.IncludeInstallRecipient, AllowQuesmaETL: current.AllowQuesmaETL,
+		TelemetryCollectorURL: current.TelemetryCollectorURL, Collection: req.Collection, AuthoredYAML: req.AuthoredYAML}
+	if !s.validateAdminConfig(w, manager, cfg) || !s.validateCollectionForFleet(w, r, manager, cfg, current.Collection, req.UnverifiedSources) {
+		return
+	}
+	s.applyConfig(w, r, manager, cfg, version)
+}
+
+// Whether the organization has a partner credential, without its digest.
+func (s *Server) handleAdminGetPartner(w http.ResponseWriter, r *http.Request) {
+	manager, _ := s.adminManager(r)
+	rec, _, err := getRecord[PartnerCredentialRecord](r.Context(), manager.store, partnerCredentialKey(manager.org))
+	if err != nil {
+		s.adminOperationError(w, "read partner credential", err)
+		return
+	}
+	writeJSON(w, struct {
+		CreatedAt time.Time  `json:"created_at"`
+		RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	}{rec.CreatedAt, rec.RevokedAt})
+}
+
+func (s *Server) handleAdminMintPartner(w http.ResponseWriter, r *http.Request) {
+	manager, _ := s.adminManager(r)
+	secret, err := manager.MintPartnerCredential(r.Context())
+	if errors.Is(err, ErrConflict) {
+		writeAdminError(w, http.StatusConflict, "a partner credential is active: revoke it before minting another")
+		return
+	}
+	if err != nil {
+		s.adminOperationError(w, "mint partner credential", err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSONStatus(w, http.StatusCreated, adminSecretResponse{Secret: secret})
+}
+
+func (s *Server) handleAdminRevokePartner(w http.ResponseWriter, r *http.Request) {
+	manager, _ := s.adminManager(r)
+	s.adminEmptyMutation(w, "revoke partner credential", manager.RevokePartnerCredential(r.Context()))
 }
 
 func (s *Server) handleAdminListGrants(w http.ResponseWriter, r *http.Request) {

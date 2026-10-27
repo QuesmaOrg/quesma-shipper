@@ -108,6 +108,14 @@ type AdminCredentialRecord struct {
 	SecretDigest string `json:"secret_digest"`
 }
 
+// Revocation is a field rather than a delete, because nothing here deletes.
+type PartnerCredentialRecord struct {
+	Schema       int        `json:"schema"`
+	SecretDigest string     `json:"secret_digest"`
+	CreatedAt    time.Time  `json:"created_at"`
+	RevokedAt    *time.Time `json:"revoked_at,omitempty"`
+}
+
 type InstallStatus string
 
 const (
@@ -189,6 +197,9 @@ func deploymentAdminCredentialKey() string { return "v1/control/admin/credential
 // The reporter credential sits beside the administrator's and carries the same record: one digest,
 // no lifecycle of its own. Terraform provisions both.
 func deploymentReporterCredentialKey() string { return "v1/control/reporter/credential.json" }
+
+// Writable by the runtime, unlike the deployment credentials: it can already rewrite config.json.
+func partnerCredentialKey(org string) string { return controlPrefix(org) + "partner/credential.json" }
 func installKey(org, id string) string {
 	return controlPrefix(org) + "installs/" + id + ".json"
 }
