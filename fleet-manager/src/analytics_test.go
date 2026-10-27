@@ -22,7 +22,7 @@ func testAnalyticsIdentity(t *testing.T, org string) (*age.X25519Identity, Analy
 		t.Fatal(err)
 	}
 	return identity, AnalyticsIdentity{Organization: org, Recipient: identity.Recipient().String(),
-		Ciphertext: base64.StdEncoding.EncodeToString([]byte("opaque KMS ciphertext blob")), KMSKeyARN: testAnalyticsKeyARN}
+		Ciphertext: base64.StdEncoding.EncodeToString([]byte("opaque KMS ciphertext blob")), KMSKey: testAnalyticsKeyARN}
 }
 
 func createWithAnalytics(t *testing.T, server *Server, slug string, analytics *AnalyticsIdentity) int {
@@ -102,7 +102,7 @@ func TestAnAnalyticsIdentityIsCheckedBeforeItIsStored(t *testing.T) {
 		"no recipient":                  func(a *AnalyticsIdentity) { a.Recipient = "" },
 		"made for another organization": func(a *AnalyticsIdentity) { a.Organization = "acme-prod" },
 		"an alias, not a key ARN": func(a *AnalyticsIdentity) {
-			a.KMSKeyARN = "arn:aws:kms:eu-central-1:123456789012:alias/fleet-manager-analytics"
+			a.KMSKey = "arn:aws:kms:eu-central-1:123456789012:alias/fleet-manager-analytics"
 		},
 		"no ciphertext":            func(a *AnalyticsIdentity) { a.Ciphertext = "" },
 		"ciphertext not in base64": func(a *AnalyticsIdentity) { a.Ciphertext = "not base64!" },

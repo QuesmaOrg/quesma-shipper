@@ -48,7 +48,7 @@ type AnalyticsIdentity struct {
 	Organization string `json:"organization"`
 	Recipient    string `json:"recipient"`
 	Ciphertext   string `json:"ciphertext"`
-	KMSKeyARN    string `json:"kms_key_arn"`
+	KMSKey       string `json:"kms_key"`
 }
 
 var kmsKeyARNPattern = regexp.MustCompile(`^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$`)
@@ -295,8 +295,8 @@ func validateConfig(c FleetConfig) error {
 		if seen[a.Recipient] {
 			return errors.New("the analytics recipient must not also be a custodian's")
 		}
-		if !kmsKeyARNPattern.MatchString(a.KMSKeyARN) {
-			return errors.New("analytics identity: kms_key_arn must be a KMS key ARN")
+		if !kmsKeyARNPattern.MatchString(a.KMSKey) {
+			return errors.New("analytics identity: kms_key must be a KMS key ARN")
 		}
 		blob, err := base64.StdEncoding.DecodeString(a.Ciphertext)
 		if err != nil || len(blob) == 0 || len(blob) > 6144 {
