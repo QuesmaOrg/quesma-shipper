@@ -55,8 +55,10 @@ organization's machines, report their health and edit collection settings
 recipients, Quesma ETL or telemetry, and cannot reach another organization. An organization has one
 partner credential: creating another replaces it, and the old one stops working on the next
 request, so hand the new one over before the third party's next call. **Revoke** (or
-`POST /v1/admin/orgs/{org}/partner/revoke`) stops it the same way. Upgrade every replica before
-creating one: an older replica refuses it with 401.
+`POST /v1/admin/orgs/{org}/partner/revoke`) stops it the same way. `GET
+/v1/admin/orgs/{org}/partner` says when the current one was created and whether it is revoked, and
+answers 404 when none was ever created. Upgrade every replica before creating one: an older replica
+refuses it with 401.
 
 **Revoke.** Installs, invites and grants are revoked from the administration UI. A revoked install
 can still be given a name, because the objects it already uploaded remain in the bucket. There is

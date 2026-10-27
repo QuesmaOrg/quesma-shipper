@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 )
 
-const partnerRefusal = "this credential may not change custody or reach the deployment"
+const partnerRefusal = "this credential may not call this route"
 
 // partnerServer has organizations acme and globex, and a partner credential minted for acme.
 func partnerServer(t *testing.T) (*Server, *memoryStore, string) {
@@ -49,6 +50,17 @@ func configVersion(t *testing.T, store *memoryStore, org string) string {
 // can decrypt the organization's uploads.
 func TestAPartnerCannotChangeCustody(t *testing.T) {
 	server, store, partner := partnerServer(t)
+	// Every custody field set away from its default, so a collection write that dropped one shows.
+	acme := server.manager.mustOrg(t, "acme")
+	cfg, version, err := acme.LoadConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	off, collector := false, "https://collector.example.com"
+	cfg.AllowQuesmaETL, cfg.TelemetryCollectorURL, cfg.DisplayName = &off, &collector, "Acme"
+	if err := acme.ApplyConfig(context.Background(), cfg, version); err != nil {
+		t.Fatal(err)
+	}
 	w := serveAdmin(t, server, adminRequest(http.MethodGet, "/v1/admin/orgs/acme/config", "", partner))
 	if w.Code != http.StatusOK || w.Header().Get("ETag") == "" {
 		t.Fatalf("partner config GET = %d %s", w.Code, w.Body.String())
@@ -79,15 +91,21 @@ func TestAPartnerCannotChangeCustody(t *testing.T) {
 		t.Fatal("a refused write changed config.json")
 	}
 
-	stored, _, _ := server.manager.mustOrg(t, "acme").LoadConfig(context.Background())
+	stored, _, _ := acme.LoadConfig(context.Background())
+	if stored.AllowQuesmaETL == nil || *stored.AllowQuesmaETL || stored.TelemetryCollectorURL == nil {
+		t.Fatalf("fixture custody not set: %+v", stored)
+	}
 	put = adminRequest(http.MethodPut, "/v1/admin/orgs/acme/collection", `{"authored_yaml":"mode: {schedule: 5m}"}`, partner)
 	put.Header.Set("If-Match", etag)
 	if w := serveAdmin(t, server, put); w.Code != http.StatusNoContent {
 		t.Fatalf("partner collection PUT = %d %s", w.Code, w.Body.String())
 	}
-	after, _, _ := server.manager.mustOrg(t, "acme").LoadConfig(context.Background())
-	if !slices.Equal(after.AgeRecipients, stored.AgeRecipients) || after.IncludeInstallRecipient != stored.IncludeInstallRecipient ||
-		after.AllowQuesmaETL != stored.AllowQuesmaETL || after.TelemetryCollectorURL != stored.TelemetryCollectorURL || after.DisplayName != stored.DisplayName {
+	after, _, _ := acme.LoadConfig(context.Background())
+	// DeepEqual follows the pointers, so an unset field does not equal a stored false.
+	custody := func(c FleetConfig) []any {
+		return []any{c.AgeRecipients, c.IncludeInstallRecipient, c.AllowQuesmaETL, c.TelemetryCollectorURL, c.DisplayName}
+	}
+	if !reflect.DeepEqual(custody(after), custody(stored)) {
 		t.Fatalf("collection write changed custody: %+v -> %+v", stored, after)
 	}
 	if after.Collection == nil || after.Collection.Mode == nil || after.Collection.Mode.Schedule == nil || *after.Collection.Mode.Schedule != "5m" {

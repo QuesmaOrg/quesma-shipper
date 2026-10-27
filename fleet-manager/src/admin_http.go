@@ -173,7 +173,7 @@ func callerOf(r *http.Request) principal {
 func refuse(w http.ResponseWriter, who caller) {
 	message := "this credential may only report health"
 	if who == callerPartner {
-		message = "this credential may not change custody or reach the deployment"
+		message = "this credential may not call this route"
 	}
 	writeAdminError(w, http.StatusForbidden, message)
 }
