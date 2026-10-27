@@ -134,12 +134,13 @@ processor included, until you grant that processor `kms:Decrypt` on the key.
    the policy, which CloudTrail records.
 2. Before creating the organization, run `sh deploy.sh aws analytics-key <org>`. It generates an
    `age` identity, sends it to `kms:Encrypt` with the encryption context
-   `{purpose: analytics-identity, organization: <org>}`, and prints the recipient, the ciphertext and
-   the key ARN on one line. The private key is never written to a file or printed. KMS receives it
+   `{purpose: analytics-identity, organization: <org>}`, and prints the organization, the recipient,
+   the ciphertext and the key ARN on one line. The private key is never written to a file or printed. KMS receives it
    for the encryption and does not keep it.
 3. Paste that line into the organization form, under "Let an analytics service process this
    organization's data later". It is stored in the organization's `control/config.json`, and only
-   at creation: an organization created without it cannot add one later.
+   at creation: an organization created without it cannot add one later. A line made for another
+   organization is refused, because it would never decrypt under this one's context.
 
 To grant a processor, apply with its role in both lists. The bucket read and the decrypt are
 separate, and removing either revokes:

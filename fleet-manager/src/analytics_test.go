@@ -15,13 +15,13 @@ import (
 
 const testAnalyticsKeyARN = "arn:aws:kms:eu-central-1:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"
 
-func testAnalyticsIdentity(t *testing.T) (*age.X25519Identity, AnalyticsIdentity) {
+func testAnalyticsIdentity(t *testing.T, org string) (*age.X25519Identity, AnalyticsIdentity) {
 	t.Helper()
 	identity, err := age.GenerateX25519Identity()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return identity, AnalyticsIdentity{Recipient: identity.Recipient().String(),
+	return identity, AnalyticsIdentity{Organization: org, Recipient: identity.Recipient().String(),
 		Ciphertext: base64.StdEncoding.EncodeToString([]byte("opaque KMS ciphertext blob")), KMSKeyARN: testAnalyticsKeyARN}
 }
 
@@ -54,7 +54,7 @@ func servedRecipients(t *testing.T, server *Server, slug string) []string {
 // cannot name it: replacing it would leave the history sealed to a ciphertext nobody keeps.
 func TestAnAnalyticsIdentityIsSetOnceAtCreation(t *testing.T) {
 	server, _ := testMultiTenantAdminServer(t)
-	_, analytics := testAnalyticsIdentity(t)
+	_, analytics := testAnalyticsIdentity(t, "acme")
 	if code := createWithAnalytics(t, server, "acme", &analytics); code != http.StatusCreated {
 		t.Fatalf("create = %d", code)
 	}
@@ -78,7 +78,7 @@ func TestAnAnalyticsIdentityIsSetOnceAtCreation(t *testing.T) {
 	if res := put(configJSON(t, twoRecipients(t))); res.StatusCode != http.StatusNoContent {
 		t.Fatalf("PUT /config = %d", res.StatusCode)
 	}
-	_, other := testAnalyticsIdentity(t)
+	_, other := testAnalyticsIdentity(t, "acme")
 	replace, _ := json.Marshal(map[string]any{"age_recipients": twoRecipients(t), "include_install_recipient": true, "analytics_identity": other})
 	if res := put(string(replace)); res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("PUT /config naming analytics_identity = %d, want 400", res.StatusCode)
@@ -94,12 +94,13 @@ func TestAnAnalyticsIdentityIsSetOnceAtCreation(t *testing.T) {
 }
 
 func TestAnAnalyticsIdentityIsCheckedBeforeItIsStored(t *testing.T) {
-	_, valid := testAnalyticsIdentity(t)
+	_, valid := testAnalyticsIdentity(t, "acme")
 	custodian := twoRecipients(t)[0]
 	for name, mutate := range map[string]func(*AnalyticsIdentity){
-		"the Quesma recipient": func(a *AnalyticsIdentity) { a.Recipient = quesmaETLAgeRecipient },
-		"a private identity":   func(a *AnalyticsIdentity) { a.Recipient = "AGE-SECRET-KEY-1QQQ" },
-		"no recipient":         func(a *AnalyticsIdentity) { a.Recipient = "" },
+		"the Quesma recipient":          func(a *AnalyticsIdentity) { a.Recipient = quesmaETLAgeRecipient },
+		"a private identity":            func(a *AnalyticsIdentity) { a.Recipient = "AGE-SECRET-KEY-1QQQ" },
+		"no recipient":                  func(a *AnalyticsIdentity) { a.Recipient = "" },
+		"made for another organization": func(a *AnalyticsIdentity) { a.Organization = "acme-prod" },
 		"an alias, not a key ARN": func(a *AnalyticsIdentity) {
 			a.KMSKeyARN = "arn:aws:kms:eu-central-1:123456789012:alias/fleet-manager-analytics"
 		},
@@ -141,7 +142,7 @@ func TestAnAnalyticsIdentityIsCheckedBeforeItIsStored(t *testing.T) {
 // processor decrypts later: the recipient is served from the first configuration on.
 func TestHistorySealedBeforeAGrantOpensWithTheAnalyticsIdentity(t *testing.T) {
 	server, _ := testMultiTenantAdminServer(t)
-	identity, analytics := testAnalyticsIdentity(t)
+	identity, analytics := testAnalyticsIdentity(t, "acme")
 	if code := createWithAnalytics(t, server, "acme", &analytics); code != http.StatusCreated {
 		t.Fatalf("create = %d", code)
 	}

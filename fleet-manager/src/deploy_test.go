@@ -56,8 +56,8 @@ printf '# created: 2026-10-27\n# public key: `+identity.Recipient().String()+`\n
 			t.Errorf("aws kms encrypt read %q on stdin, want the identity line", stdin)
 		}
 		var printed AnalyticsIdentity
-		if jsonErr := json.Unmarshal([]byte(out.String()), &printed); jsonErr != nil || printed.Recipient != identity.Recipient().String() {
-			t.Errorf("printed %q (%v), want the identity's recipient", out.String(), jsonErr)
+		if jsonErr := json.Unmarshal([]byte(out.String()), &printed); jsonErr != nil || printed.Recipient != identity.Recipient().String() || printed.Organization != args[0] {
+			t.Errorf("printed %q (%v), want the organization and the identity's recipient", out.String(), jsonErr)
 		}
 	}
 	return dir, out.String(), errOut.String(), err
