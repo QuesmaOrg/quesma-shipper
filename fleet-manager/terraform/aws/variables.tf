@@ -29,8 +29,8 @@ variable "image_uri" {
 #
 # It grants read, and read is not the same as decrypt. Every object is sealed to the
 # organization's age recipients, and the reader can open them only because the organization keeps
-# Quesma's built-in recipient -- the `allow_quesma_etl` setting, which is on unless the organization
-# or `default_allow_quesma_etl` below turns it off, and separately revocable -- or because
+# Quesma's built-in recipient -- the `allow_quesma_etl` setting, whose default for organizations
+# that never chose is `default_allow_quesma_etl` below, and separately revocable -- or because
 # analytics_decrypt_role_arns below grants it the organization's analytics identity. Removing the
 # recipient or the decrypt grant stops the decryption; emptying this list stops the reading.
 #
@@ -45,15 +45,15 @@ variable "etl_reader_role_arns" {
 # wins, and these reach every organization that left it unset, including ones created before the
 # setting existed.
 #
-# Quesma's recipient is on by default, because sealing cannot be added after the fact: turning it on
-# later covers only uploads from then on, so analytics over an organization's history needs it from
-# the start. It grants nothing by itself -- Quesma reads no object without `etl_reader_role_arns` --
-# and false here turns it off for every organization that did not choose. Telemetry is off unless a
-# collector is named.
+# Sealing cannot be added after the fact, so analytics over an organization's history needs a
+# recipient from the start. With analytics_key that is the organization's analytics identity, and
+# Quesma's recipient is off by default. Without it, Quesma's recipient is the only one and is on.
+# Neither grants anything by itself: Quesma reads no object without `etl_reader_role_arns`.
+# Telemetry is off unless a collector is named.
 variable "default_allow_quesma_etl" {
   type        = bool
-  default     = true
-  description = "Seal an organization's future uploads to Quesma's built-in ETL recipient unless the organization turned it off. False opts every such organization out."
+  default     = null
+  description = "Seal an organization's future uploads to Quesma's built-in ETL recipient unless the organization turned it off. Unset means on without analytics_key and off with it; true or false applies to every organization that did not choose."
 }
 variable "default_telemetry_collector_url" {
   type        = string

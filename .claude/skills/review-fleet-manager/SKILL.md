@@ -236,7 +236,8 @@ stored-record and configuration changes, and for a human to confirm any diff in
 ### Pass 4: defaults and posture
 
 - The Quesma recipient is on by default with an explicit opt-out, because sealing cannot be added
-  to an upload after the fact. Telemetry forwarding is off unless a collector is named, because it
+  to an upload after the fact. The exception is an AWS deployment with `analytics_key`, where the
+  analytics identity keeps history open and the recipient is off unless set. Telemetry forwarding is off unless a collector is named, because it
   sends something out of the deployment. `defaults_test.go` and
   `TestTerraformOrganizationDefaults` pin both; Quesma's own deployments set the values explicitly
   so a module default cannot silently change production.
