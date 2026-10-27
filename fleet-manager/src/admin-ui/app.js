@@ -190,7 +190,7 @@ function fillConfig(config) {
   syncQuesmaRecipient(form);
   const analytics = config.analytics_identity;
   form.querySelector('[data-analytics-status]').textContent = analytics
-    ? `Uploads are also sealed to ${analytics.recipient}, whose private key is held under ${analytics.kms_key_arn}. Set when the organization was created.`
+    ? `Uploads are also sealed to ${analytics.recipient}, whose private key is held under ${analytics.kms_key}. Set when the organization was created.`
     : 'None. A processor granted later opens uploads from then on, not the history.';
   const collector = form.elements.telemetry_collector_url;
   collector.value = config.telemetry_collector_url || '';

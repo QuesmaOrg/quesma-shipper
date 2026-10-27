@@ -117,7 +117,7 @@ run_analytics_key() {
 		--key-id "$key" --plaintext fileb:///dev/stdin --query CiphertextBlob --output text \
 		--encryption-context "purpose=analytics-identity,organization=$ARG") || die "aws kms encrypt failed"
 	identity=
-	printf '{"organization":"%s","recipient":"%s","ciphertext":"%s","kms_key_arn":"%s"}\n' "$ARG" "$recipient" "$ciphertext" "$key"
+	printf '{"organization":"%s","recipient":"%s","ciphertext":"%s","kms_key":"%s"}\n' "$ARG" "$recipient" "$ciphertext" "$key"
 }
 
 run_destroy() {
