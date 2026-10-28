@@ -50,10 +50,10 @@ func sessionStore(t *testing.T, family string) (string, *sql.DB) {
  INSERT INTO part VALUES ('p1','m1','ses_../weird',1000,1000,'{"type":"text","text":"hello"}');`
 	} else if family == "opencode-v2" {
 		schema += `
- CREATE TABLE session_v2(id TEXT PRIMARY KEY,project_id TEXT,parent_id TEXT,fork_session_id TEXT,fork_boundary TEXT,directory TEXT,path TEXT,title TEXT,version TEXT,permission TEXT,time_created INTEGER,time_updated INTEGER);
+ CREATE TABLE session_v2(id TEXT PRIMARY KEY,project_id TEXT,parent_id TEXT,fork_session_id TEXT,fork_boundary TEXT,directory TEXT,path TEXT,title TEXT,version TEXT,permission TEXT,time_created INTEGER,time_updated INTEGER,cost REAL,tokens_input INTEGER,tokens_output INTEGER,tokens_reasoning INTEGER,tokens_cache_read INTEGER,tokens_cache_write INTEGER);
  CREATE TABLE session_message(id TEXT PRIMARY KEY,session_id TEXT,type TEXT,seq INTEGER,time_created INTEGER,time_updated INTEGER,data TEXT);
- INSERT INTO session_v2 VALUES ('ses_../weird','prj','parent','ses_fork','{"seq":3}','/work/with spaces','sub',NULL,'2.0.22','NEVER-SHIP-PERMISSION',1000,1000);
- INSERT INTO session_v2 VALUES ('other','prj',NULL,NULL,NULL,'/work/other','','other','2.0.22',NULL,2000,2000);
+ INSERT INTO session_v2 VALUES ('ses_../weird','prj','parent','ses_fork','{"seq":3}','/work/with spaces','sub',NULL,'2.0.22','NEVER-SHIP-PERMISSION',1000,1000,0.75,100,20,5,300,4);
+ INSERT INTO session_v2 VALUES ('other','prj',NULL,NULL,NULL,'/work/other','','other','2.0.22',NULL,2000,2000,0,0,0,0,0,0);
  INSERT INTO session_message VALUES ('msg_b','ses_../weird','assistant',2,1000,1000,'{"content":[{"type":"text","text":"hello"}]}');
  INSERT INTO session_message VALUES ('msg_a','ses_../weird','user',1,1000,1000,'{"text":"hi"}');
  INSERT INTO session_message VALUES ('msg_c','other','user',1,2000,2000,'{"text":"OTHER-SESSION"}');`
@@ -315,6 +315,9 @@ func TestOpenCodeLayouts(t *testing.T) {
 	if rows[0]["title"] != nil || rows[0]["fork_session_id"] != "ses_fork" || rows[0]["cwd"] != "/work/with spaces" {
 		t.Fatalf("V2 session metadata: %v", rows[0])
 	}
+	if fmt.Sprint(rows[0]["cost"], rows[0]["tokens_input"], rows[0]["tokens_output"], rows[0]["tokens_reasoning"], rows[0]["tokens_cache_read"], rows[0]["tokens_cache_write"]) != "0.75 100 20 5 300 4" {
+		t.Fatalf("V2 session usage totals: %v", rows[0])
+	}
 	if rows[0]["session_key"] != "e4b7a824-333d-ecfe-dc1c-3e4ae6ac1e80" {
 		t.Fatalf("default database key changed: %v", rows[0]["session_key"])
 	}
@@ -328,11 +331,11 @@ func TestOpenCodeLayouts(t *testing.T) {
  INSERT INTO session VALUES ('legacy',NULL,'/work/legacy','old','1.2.27',500,500);
  INSERT INTO message VALUES ('m1','legacy',500,500,'{"role":"user"}');
  INSERT INTO session VALUES ('moved',NULL,'/work/allowed','empty','1.2.27',3000,3000);
- INSERT INTO session_v2 VALUES ('moved','prj',NULL,NULL,NULL,'/work/marked','',NULL,'2.0.22',NULL,3000,3000);
+ INSERT INTO session_v2 VALUES ('moved','prj',NULL,NULL,NULL,'/work/marked','',NULL,'2.0.22',NULL,3000,3000,0,0,0,0,0,0);
  INSERT INTO session_message VALUES ('msg_m','moved','user',1,3000,3000,'{"text":"continued in 2.x"}');
  INSERT INTO session VALUES ('reverted',NULL,'/work/reverted','r','1.2.27',4000,4000);
  INSERT INTO message VALUES ('m_r','reverted',4000,4000,'{"role":"user","text":"REVERTED-LEGACY"}');
- INSERT INTO session_v2 VALUES ('reverted','prj',NULL,NULL,NULL,'/work/reverted','',NULL,'2.0.22',NULL,4000,4000);`); err != nil {
+ INSERT INTO session_v2 VALUES ('reverted','prj',NULL,NULL,NULL,'/work/reverted','',NULL,'2.0.22',NULL,4000,4000,0,0,0,0,0,0);`); err != nil {
 		t.Fatal(err)
 	}
 	sessions, err := reader("opencode").List(ctx, path)
@@ -394,7 +397,7 @@ func TestOpenCodeLayouts(t *testing.T) {
 
 func TestOpenCodeV2ExecutionKeys(t *testing.T) {
 	path, db := sessionStore(t, "opencode-v2")
-	if _, err := db.Exec(`INSERT INTO session_v2 VALUES ('twins','prj',NULL,NULL,NULL,'/work','',NULL,'2.0.22',NULL,3000,3000);
+	if _, err := db.Exec(`INSERT INTO session_v2 VALUES ('twins','prj',NULL,NULL,NULL,'/work','',NULL,'2.0.22',NULL,3000,3000,0,0,0,0,0,0);
  INSERT INTO session_message VALUES ('msg_s','twins','system',1,3000,3000,'{"text":"same"}');
  INSERT INTO session_message VALUES ('msg_y','twins','synthetic',2,3000,3000,'{"text":"same"}');`); err != nil {
 		t.Fatal(err)

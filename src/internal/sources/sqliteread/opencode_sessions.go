@@ -83,16 +83,15 @@ func (OpenCodeSessions) Read(ctx context.Context, path, relPath, id string, maxB
 				err = tx.query(ctx, query, []string{id}, func(map[string]any) error { *found = true; return nil })
 			}
 		}
-		var legacy, native bool
-		if tables["session"] {
+		var inV2, legacy, native bool
+		if tables["session_v2"] {
+			exists(`SELECT 1 FROM session_v2 WHERE id = ?`, &inV2)
+		}
+		if tables["session"] && !inV2 {
 			exists(`SELECT 1 FROM message WHERE session_id = ? LIMIT 1`, &legacy)
 		}
 		if tables["session_message"] {
 			exists(`SELECT 1 FROM session_message WHERE session_id = ? LIMIT 1`, &native)
-		}
-		inV2 := false
-		if tables["session_v2"] {
-			exists(`SELECT 1 FROM session_v2 WHERE id = ?`, &inV2)
 		}
 		// V2 keeps the message kind in a column and orders by seq; time_created can tie.
 		messages := `SELECT id, type AS message_type, seq, time_created, time_updated, data FROM session_message WHERE session_id = ? ORDER BY seq`
@@ -100,7 +99,9 @@ func (OpenCodeSessions) Read(ctx context.Context, path, relPath, id string, maxB
 		switch {
 		case err != nil:
 		case inV2 || !tables["session"]:
-			err = emit("session", `SELECT id, parent_id, fork_session_id, fork_boundary, directory AS cwd, title, version, time_created, time_updated FROM session_v2 WHERE id = ?`)
+			// The totals keep usage that migration drops from messages, such as compaction summaries.
+			err = emit("session", `SELECT id, parent_id, fork_session_id, fork_boundary, directory AS cwd, title, version, time_created, time_updated,
+				cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write FROM session_v2 WHERE id = ?`)
 			if err == nil {
 				err = emit("session_message", messages)
 			}

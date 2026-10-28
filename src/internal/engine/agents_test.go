@@ -65,9 +65,9 @@ func TestAgentSessionPipeline(t *testing.T) {
 				updateSQL := `UPDATE message SET data='{"role":"user","text":"next"}'`
 				if family == "opencode-v2" {
 					schema = `PRAGMA journal_mode=WAL;
- CREATE TABLE session_v2(id TEXT,parent_id TEXT,fork_session_id TEXT,fork_boundary TEXT,directory TEXT,title TEXT,version TEXT,time_created INTEGER,time_updated INTEGER);
+ CREATE TABLE session_v2(id TEXT,parent_id TEXT,fork_session_id TEXT,fork_boundary TEXT,directory TEXT,title TEXT,version TEXT,time_created INTEGER,time_updated INTEGER,cost REAL,tokens_input INTEGER,tokens_output INTEGER,tokens_reasoning INTEGER,tokens_cache_read INTEGER,tokens_cache_write INTEGER);
  CREATE TABLE session_message(id TEXT,session_id TEXT,type TEXT,seq INTEGER,time_created INTEGER,time_updated INTEGER,data TEXT);
- INSERT INTO session_v2 VALUES ('ses_ef9972b77ffeoeqv6e7BpmRlq8',NULL,NULL,NULL,'/work/test',NULL,'2.0.22',1000,1000);
+ INSERT INTO session_v2 VALUES ('ses_ef9972b77ffeoeqv6e7BpmRlq8',NULL,NULL,NULL,'/work/test',NULL,'2.0.22',1000,1000,0,0,0,0,0,0);
  INSERT INTO session_message VALUES ('msg_10668d48e001iI11nfwFD0XvGD','ses_ef9972b77ffeoeqv6e7BpmRlq8','user',1,1000,1000,'{"text":"test@example.com"}');`
 					updateSQL = `UPDATE session_message SET data='{"text":"next"}'`
 				}
