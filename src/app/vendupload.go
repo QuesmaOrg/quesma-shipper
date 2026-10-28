@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -21,7 +23,9 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/identity"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
+	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 	"github.com/QuesmaOrg/quesma-shipper/internal/upload"
 )
 
@@ -135,15 +139,8 @@ func (p *vendPort) send(ctx context.Context, obj engine.PreparedObject, issued c
 	if issued.AlreadyPresent {
 		return nil
 	}
-	prepared := upload.PreparedUpload{
-		ObjectID:   obj.ObjectID,
-		Key:        obj.Key,
-		Body:       obj.Body,
-		SourceHash: obj.SourceHash,
-		Metadata:   obj.Metadata,
-	}
 	ticket := toUploadTicket(issued)
-	if err := upload.ValidateTicket(p.targets, prepared, ticket); err != nil {
+	if err := upload.ValidateTicket(p.targets, toPreparedUpload(obj), ticket); err != nil {
 		return err
 	}
 	// Nothing the store said crosses back: the local fingerprint document is the sole progress authority.
@@ -321,4 +318,114 @@ func toUploadTicket(t controlplane.Ticket) upload.Ticket {
 		ContentLength:       t.ContentLength,
 		ContentLengthSigned: t.ContentLengthSigned,
 	}
+}
+
+func toPreparedUpload(obj engine.PreparedObject) upload.PreparedUpload {
+	return upload.PreparedUpload{
+		ObjectID:   obj.ObjectID,
+		Key:        obj.Key,
+		Body:       obj.Body,
+		SourceHash: obj.SourceHash,
+		Metadata:   obj.Metadata,
+	}
+}
+
+// Sink is the bucket a ticket names, read from its origin and the path above the key. The query
+// is the credential and is never read.
+type Sink struct {
+	Provider string // s3, gcs or azure; empty for an origin not recognized here
+	Origin   string
+	Bucket   string
+	Region   string // only S3 hosts name one
+	Prefix   string // the organization's root, as rclone and quesma-unseal take it
+}
+
+// ProbeSink asks the control plane for one heartbeat ticket and never spends it. The heartbeat key
+// is rewritten every tick, and it is the one key the plane signs without looking it up in the store.
+func ProbeSink(ctx context.Context) (Sink, error) {
+	eff, paths, err := ResolveEffective()
+	if err != nil {
+		return Sink{}, err
+	}
+	unit, err := identity.Load(paths.StateDir)
+	if err != nil {
+		return Sink{}, fmt.Errorf("%w\n\nRun `quesma-shipper login <token>` first: only an enrolled install is issued tickets", err)
+	}
+	client, err := newControlPlaneClient(paths.StateDir)
+	if err != nil {
+		return Sink{}, err
+	}
+	port, err := newUploadPort(client, eff)
+	if err != nil {
+		return Sink{}, err
+	}
+	return port.probeSink(ctx, eff.OrganizationID, unit.InstallID.String())
+}
+
+func (p *vendPort) probeSink(ctx context.Context, org, installID string) (Sink, error) {
+	key, err := formats.StateKey(org, installID, engine.Name+".age")
+	if err != nil {
+		return Sink{}, err
+	}
+	body := []byte("probe")
+	obj := engine.PreparedObject{ObjectID: "heartbeat", Key: key, Body: body,
+		SourceHash: transforms.Hash(body), Metadata: map[string]string{"kind": "heartbeat"}}
+	req, err := p.request([]engine.PreparedObject{obj})
+	if err != nil {
+		return Sink{}, err
+	}
+	resp, err := p.client.AuthorizeUploads(ctx, req)
+	if err != nil {
+		return Sink{}, err
+	}
+	issued := resp.Tickets[0]
+	if issued.AlreadyPresent {
+		return Sink{}, errors.New("bucket: the control plane answered already_present for the heartbeat, so it named no URL")
+	}
+	ticket := toUploadTicket(issued)
+	if err := upload.ValidateTicket(p.targets, toPreparedUpload(obj), ticket); err != nil {
+		return Sink{}, err
+	}
+	orgRoot, _, _ := strings.Cut(key, "/install=")
+	return sinkFromURL(ticket.URL, key, orgRoot+"/")
+}
+
+var (
+	s3Host    = regexp.MustCompile(`^(?:(.+)\.)?s3(?:[.-]dualstack)?(?:[.-]([a-z]{2}(?:-[a-z]+)+-[0-9]+))?\.amazonaws\.com$`)
+	gcsHost   = regexp.MustCompile(`^(?:(.+)\.)?storage\.googleapis\.com$`)
+	azureHost = regexp.MustCompile(`^[a-z0-9]+\.blob\.core\.windows\.net$`)
+)
+
+// sinkFromURL takes the bucket from the host (virtual-hosted) or the one path segment above the
+// key (path-style); ValidateTicket has already pinned that path to the key.
+func sinkFromURL(raw, key, prefix string) (Sink, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return Sink{}, errors.New("bucket: the ticket URL does not parse")
+	}
+	s := Sink{Origin: u.Scheme + "://" + u.Host, Prefix: prefix}
+	above, ok := strings.CutSuffix(u.Path, "/"+key)
+	if !ok {
+		return Sink{}, fmt.Errorf("bucket: the ticket path at %s does not end in the heartbeat key", s.Origin)
+	}
+	pathBucket := strings.TrimPrefix(above, "/")
+	var hostBucket string
+	host := u.Hostname()
+	if m := s3Host.FindStringSubmatch(host); m != nil {
+		s.Provider, hostBucket, s.Region = "s3", m[1], m[2]
+	} else if m := gcsHost.FindStringSubmatch(host); m != nil {
+		s.Provider, hostBucket = "gcs", m[1]
+	} else if azureHost.MatchString(host) {
+		s.Provider = "azure"
+	}
+	switch {
+	case strings.Contains(pathBucket, "/"):
+		return Sink{}, fmt.Errorf("bucket: the ticket path at %s has %q above the key, not one bucket", s.Origin, above)
+	case hostBucket != "" && pathBucket != "":
+		return Sink{}, fmt.Errorf("bucket: the ticket at %s names a bucket in both host and path", s.Origin)
+	case hostBucket == "" && pathBucket == "":
+		return Sink{}, fmt.Errorf("bucket: the ticket at %s names no bucket in host or path", s.Origin)
+	}
+	s.Bucket = hostBucket + pathBucket
+	return s, nil
 }
