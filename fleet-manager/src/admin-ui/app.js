@@ -428,6 +428,19 @@ async function loadTags(generation) {
   });
 }
 
+async function loadPartner(generation) {
+  let record = null;
+  try { record = await (await api(orgPath('/partner'))).json(); } catch (error) { if (error.status !== 404) throw error; }
+  if (generation !== tableGeneration) return;
+  const active = record && !record.revoked_at;
+  $('#partner-status').textContent = !record ? 'No partner credential.'
+    : active ? `Active since ${new Date(record.created_at).toLocaleString()}.`
+      : `Revoked ${new Date(record.revoked_at).toLocaleString()}.`;
+  $('#revoke-partner').classList.toggle('hidden', !active);
+  $('#mint-partner').dataset.replaces = active ? 'true' : '';
+  $('#mint-partner').textContent = active ? 'Replace credential' : 'Create credential';
+}
+
 async function loadTables() {
   const generation = ++tableGeneration;
   const [grants, invites, installs] = await Promise.all(['/grants', '/invites', '/installs'].map(async (path) => (await api(orgPath(path))).json()));
@@ -439,9 +452,18 @@ async function loadTables() {
   loadTags(generation).catch((error) => {
     if (generation === tableGeneration) toast(`Install tags unavailable: ${error.message}`);
   });
+  loadPartner(generation).catch((error) => {
+    if (generation === tableGeneration) toast(`Partner credential unavailable: ${error.message}`);
+  });
 }
 
-$('#login-form').addEventListener('submit', (event) => { event.preventDefault(); credential = $('#credential').value.trim(); connect(); });
+$('#login-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const value = $('#credential').value.trim();
+  // A partner credential reaches one organization's API and none of the deployment routes this UI starts from.
+  if (value.startsWith('fmp1.')) { toast('Partner credentials are for the API only. The admin UI needs the administrator credential.'); return; }
+  credential = value; connect();
+});
 $('#home').addEventListener('click', (event) => {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   event.preventDefault();
@@ -525,11 +547,36 @@ $('#create-dialog form').addEventListener('submit', async (event) => {
     const response = await api(orgPath('/' + createKind), {method: 'POST', body: JSON.stringify({expires_at: expiresAt.toISOString()})});
     const result = await response.json();
     $('#create-dialog').close();
-    $('#secret').textContent = result.secret;
-    $('#enroll-command').textContent = `quesma-shipper login --server ${location.origin} ${result.secret}`;
-    $('#secret-dialog').showModal();
+    showSecret(result.secret, true);
     await loadTables();
   } catch (error) { toast(error.message); } finally { button.disabled = false; }
+});
+function showSecret(secret, enrollment) {
+  $('#secret-title').textContent = enrollment ? 'Enroll with this credential' : 'Partner credential';
+  $('#secret-note').textContent = enrollment ? 'Copy the command or secret now. They cannot be recovered after this dialog is closed.'
+    : 'Copy the secret now. It cannot be recovered after this dialog is closed.';
+  $('#secret').textContent = secret;
+  $('#enroll-command').textContent = enrollment ? `quesma-shipper login --server ${location.origin} ${secret}` : '';
+  $('#enroll-command-row').classList.toggle('hidden', !enrollment);
+  $('#copy-command').classList.toggle('hidden', !enrollment);
+  $('#secret-dialog').showModal();
+}
+$('#mint-partner').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  if (button.dataset.replaces && !window.confirm('Replace the partner credential? The current one stops working immediately.')) return;
+  button.disabled = true;
+  try {
+    // Minting is refused while one is active, so a replacement revokes first.
+    if (button.dataset.replaces) await api(orgPath('/partner/revoke'), {method: 'POST'});
+    const result = await (await api(orgPath('/partner'), {method: 'POST'})).json();
+    showSecret(result.secret, false);
+    await loadTables();
+  } catch (error) { toast(error.message); loadTables().catch(() => {}); } finally { button.disabled = false; }
+});
+$('#revoke-partner').addEventListener('click', async (event) => {
+  if (!window.confirm('Revoke the partner credential? It stops working immediately.')) return;
+  const button = event.currentTarget; button.disabled = true;
+  try { await mutate('/partner/revoke', 'Partner credential revoked'); } catch (error) { toast(error.message); } finally { button.disabled = false; }
 });
 let renameInstall = null;
 function openRename(installID, current) {

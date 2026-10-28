@@ -158,7 +158,10 @@ The reflex P1. Read the permission, the route and the record together.
   the health report route is the only one meant to use it, and `reporterRoute` in `admin_http.go`
   pins that. A new route wrapped in bare `scoped` is a P1 unless the description says a reporter
   must reach it: a reporter that can read or write configuration can take custody of the
-  recipients. Decide at the choke point, not per route.
+  recipients. A partner credential (`fmp1.*`) reaches only the routes `partnerRoutes` lists, through
+  `partnerToo` or `scopedPartner`, in its own organization; adding a route to that list, or a
+  custody field to `adminCollectionRequest`, needs the description to say why. Decide at the choke
+  point, not per route.
 - Device routes (`/v1/config`, `/v2/uploads/authorize`, `/v1/telemetry`) stay behind `deviceAuth`;
   an install reaches its own organization's records and its own prefix, never another's.
 - An invite is single-use; a revoked install is served no configuration and no tickets. Known gaps

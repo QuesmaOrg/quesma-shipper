@@ -221,6 +221,69 @@ func TestHermesProfileRecordKeys(t *testing.T) {
 	}
 }
 
+func TestOpenCodeChannelRecordKeys(t *testing.T) {
+	path, _ := sessionStore(t, "opencode")
+	keys := map[string]string{}
+	for _, rel := range []string{"opencode.db", "opencode-stable.db", "opencode-dev.db"} {
+		raw, err := reader("opencode").Read(context.Background(), path, rel, "ses_../weird", 1<<20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var row map[string]any
+		if err := json.Unmarshal([]byte(strings.SplitN(string(raw), "\n", 2)[0]), &row); err != nil {
+			t.Fatal(err)
+		}
+		key, _ := row["session_key"].(string)
+		if previous, exists := keys[key]; exists {
+			t.Fatalf("%s and %s share session key %s", previous, rel, key)
+		}
+		keys[key] = rel
+		if rel == "opencode.db" && key != "e4b7a824-333d-ecfe-dc1c-3e4ae6ac1e80" {
+			t.Fatalf("default database key changed: %s", key)
+		}
+	}
+}
+
+func TestOpenCodeNextDatabase(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "opencode-next.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE session(id TEXT,parent_id TEXT,directory TEXT,title TEXT,version TEXT,time_created INTEGER,time_updated INTEGER);
+ CREATE TABLE message(id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
+ CREATE TABLE part(id TEXT,message_id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
+ INSERT INTO session VALUES ('ses_next',NULL,'/work/next','next','1.2.27',1000,1000);`); err != nil {
+		t.Fatal(err)
+	}
+	// Without opencode.db, or before OpenCode imports it, opencode-next.db is the only copy of its history.
+	if sessions, err := reader("opencode").List(context.Background(), path); err != nil || len(sessions) != 1 {
+		t.Fatalf("only database: %v %v", sessions, err)
+	}
+	main, err := sql.Open("sqlite", filepath.Join(root, "opencode.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer main.Close()
+	if _, err := main.Exec(`CREATE TABLE session_v2(id TEXT); INSERT INTO session_v2 VALUES ('ses_other')`); err != nil {
+		t.Fatal(err)
+	}
+	if sessions, err := reader("opencode").List(context.Background(), path); err != nil || len(sessions) != 1 {
+		t.Fatalf("not imported: %v %v", sessions, err)
+	}
+	if _, err := main.Exec(`INSERT INTO session_v2 VALUES ('ses_next')`); err != nil {
+		t.Fatal(err)
+	}
+	if sessions, err := reader("opencode").List(context.Background(), path); err != nil || len(sessions) != 0 {
+		t.Fatalf("imported: %v %v", sessions, err)
+	}
+}
+
 func TestOpenCodeLayouts(t *testing.T) {
 	ctx := context.Background()
 	records := func(path, rel, id string) []map[string]any {

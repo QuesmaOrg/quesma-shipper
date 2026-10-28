@@ -14,7 +14,7 @@ test that holds it.
 src/
   main.go           flags, environment, the one --serve command
   server.go         the shipper-facing routes and the device auth in front of them
-  admin_http.go     /v1/admin, and the two credential scopes
+  admin_http.go     /v1/admin, and the three credential scopes
   ui.go             /admin/, serving the embedded assets in admin-ui/
   manager.go        organizations, enrollment, revocation
   model.go          the records, and what a valid one is
@@ -84,7 +84,10 @@ place, and lands in the same pull request as its handler here and the shipper's 
 protocol is tagged as a module version when it is released. A new storage backend is a new provider file and
 nothing else. A new administrative operation is a route in `admin_http.go`, a method on `Manager`,
 and a decision about which credential scope may call it — the reporter credential exists so that
-whatever reports collection health cannot also create organizations or revoke installs.
+whatever reports collection health cannot also create organizations or revoke installs, and the
+partner credential so that whoever manages one organization's machines cannot change its recipients
+or reach another organization. A new route refuses both until `reporterRoute` or `partnerRoutes`
+names it.
 
 A change that needs a payload, a database, a lock, or a delete is not a fleet-manager change. It is
 a constitutional one.

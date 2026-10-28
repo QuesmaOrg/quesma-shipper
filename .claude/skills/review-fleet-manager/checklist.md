@@ -31,7 +31,9 @@ and report only what the PR introduced or made worse.
    `adminOnly` for the organization list, create, defaults and configuration routes. Bare `scoped`
    admits a reporter credential (`fmr1.*`); only the health report route uses it, and
    `reporterRoute` plus `health_test.go` pin that. A reporter that can read configuration and its
-   ETag can also replace it. [H, codified in SECURITY.md]
+   ETag can also replace it. A partner credential (`fmp1.*`) reaches only `partnerRoutes`, wrapped
+   in `partnerToo` or `scopedPartner`; `partner_test.go` lists every registered route and fails
+   until a new one is classified. [H, codified in SECURITY.md]
 2. **Decide at the choke point.** Credential kind is known in `adminAuth`; anything added later is
    administrative by default. A per-route check is a finding waiting to be forgotten. [H]
 3. **Device routes stay behind `deviceAuth`.** `/v1/config`, `/v2/uploads/authorize` and

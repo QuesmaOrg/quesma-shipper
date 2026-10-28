@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"path"
@@ -126,6 +130,46 @@ func (m *Manager) RevokeGrant(ctx context.Context, id string) error {
 	}
 	key := grantKey(m.org, id)
 	rec, version, err := getRecord[GrantRecord](ctx, m.store, key)
+	if err != nil {
+		return err
+	}
+	if rec.RevokedAt != nil {
+		return nil
+	}
+	now := m.time()
+	rec.RevokedAt = &now
+	return replaceRecord(ctx, m.store, key, version, rec)
+}
+
+// MintPartnerCredential replaces any earlier credential, which stops working on the next request.
+func (m *Manager) MintPartnerCredential(ctx context.Context) (string, error) {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		return "", err
+	}
+	credential := partnerPrefix + base64.RawURLEncoding.EncodeToString(secret)
+	digest := sha256.Sum256([]byte(credential))
+	rec := PartnerCredentialRecord{Schema: schemaVersion, SecretDigest: hex.EncodeToString(digest[:]), CreatedAt: m.time()}
+	key := partnerCredentialKey(m.org)
+	current, version, err := getRecord[PartnerCredentialRecord](ctx, m.store, key)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		err = createRecord(ctx, m.store, key, rec)
+	case err == nil && current.RevokedAt == nil:
+		// Replacing would cut the partner off at once; a provisioning script run twice must not.
+		err = ErrConflict
+	case err == nil:
+		err = replaceRecord(ctx, m.store, key, version, rec)
+	}
+	if err != nil {
+		return "", err
+	}
+	return credential, nil
+}
+
+func (m *Manager) RevokePartnerCredential(ctx context.Context) error {
+	key := partnerCredentialKey(m.org)
+	rec, version, err := getRecord[PartnerCredentialRecord](ctx, m.store, key)
 	if err != nil {
 		return err
 	}
