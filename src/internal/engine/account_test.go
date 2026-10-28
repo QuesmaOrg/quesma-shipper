@@ -68,10 +68,10 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 			t.Fatalf("not a collector: %+v", manifest)
 		}
 		lines := bytes.Split(payload, []byte("\n"))
-		if len(lines) != 3 || len(lines[2]) != 0 {
-			t.Fatalf("expected two newline-terminated records: %s", payload)
+		if len(lines) != 4 || len(lines[3]) != 0 {
+			t.Fatalf("expected three newline-terminated records: %s", payload)
 		}
-		for _, line := range lines[:2] {
+		for _, line := range lines[:3] {
 			if !json.Valid(line) || !bytes.Contains(line, []byte(`"bucket_start":`)) {
 				t.Fatalf("invalid account record: %s", line)
 			}

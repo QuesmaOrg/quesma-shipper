@@ -185,10 +185,10 @@ func TestClaudeUsesActiveCredentialsAndPreservesLocalAccount(t *testing.T) {
 	}
 	raw := payload.Bytes
 	lines := bytes.Split(raw, []byte("\n"))
-	if len(lines) != 4 || len(lines[3]) != 0 {
-		t.Fatalf("expected three newline-terminated records: %s", raw)
+	if len(lines) != 5 || len(lines[4]) != 0 {
+		t.Fatalf("expected four newline-terminated records: %s", raw)
 	}
-	for i, line := range lines[:3] {
+	for i, line := range lines[:4] {
 		var record struct {
 			BucketStart time.Time `json:"bucket_start"`
 			accountObservation
@@ -306,5 +306,104 @@ func TestAccountCompareIgnoresReadTimeAndCountdowns(t *testing.T) {
 	}
 	if rolled := load(start.Add(3*time.Hour), window("23", "495459", "2026-10-05T21:20:00.5+00:00", "2026-10-05T15:00:00Z")); bytes.Equal(first.Compare, rolled.Compare) {
 		t.Fatal("a new window compared equal")
+	}
+}
+
+// Every value that can be a credential is planted with "secret"; the snapshot keeps only names and flags.
+func TestAccountConfigShipsStoredValuesWithoutCredentials(t *testing.T) {
+	load := func(t *testing.T, req Request) map[string]json.RawMessage {
+		t.Helper()
+		p := Accounts{keychain: func(context.Context, string) ([]byte, error) { return nil, errors.New("locked") }, client: &http.Client{Transport: accountTransport(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}}, nil
+		})}}
+		d, err := p.Discover(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload, err := d.Candidates[0].Load(req.Context)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(payload.Bytes, []byte("secret")) {
+			t.Fatalf("credential leaked: %s", payload.Bytes)
+		}
+		bodies := map[string]json.RawMessage{}
+		for _, line := range bytes.Split(bytes.TrimSpace(payload.Bytes), []byte("\n")) {
+			var obs accountObservation
+			if err := json.Unmarshal(line, &obs); err != nil {
+				t.Fatal(err)
+			}
+			if obs.Error != "" && strings.HasSuffix(obs.Source, ".config") {
+				t.Fatalf("%s: %s", obs.Source, obs.Error)
+			}
+			bodies[obs.Source] = obs.Body
+		}
+		return bodies
+	}
+	t.Run("claude", func(t *testing.T) {
+		req := accountFixture(t)
+		req.Source.ID, req.Source.Family = "claude-account", "claude-code"
+		req.Source.Root = filepath.Join(req.Env.Home, ".claude")
+		accountFile(t, filepath.Join(req.Env.Home, ".claude.json"), `{"oauthAccount":{"billingType":"stripe_subscription"},"primaryApiKey":"sk-ant-secret","customApiKeyResponses":{"approved":["secret1"],"rejected":["secret2","secret3"]}}`)
+		accountFile(t, filepath.Join(req.Source.Root, ".credentials.json"), `{"claudeAiOauth":{"accessToken":"secret","refreshToken":"secret","subscriptionType":"max","rateLimitTier":"default_claude_max_20x","scopes":["user:profile"]}}`)
+		accountFile(t, filepath.Join(req.Source.Root, "settings.json"), `{"apiKeyHelper":"echo secret","model":"opus","env":{"CLAUDE_CODE_USE_BEDROCK":"1","ANTHROPIC_API_KEY":"secret","ANTHROPIC_BASE_URL":"https://openrouter.ai/api","OTHER":"secret"}}`)
+		want := `{".claude.json":{"customApiKeyResponses":{"approved":1,"rejected":2},"primaryApiKey":true},"credentials":{"claudeAiOauth":{"rateLimitTier":"default_claude_max_20x","scopes":["user:profile"],"subscriptionType":"max"}},"settings.json":{"apiKeyHelper":true,"env":{"ANTHROPIC_API_KEY":true,"ANTHROPIC_BASE_URL":"https://openrouter.ai/api","CLAUDE_CODE_USE_BEDROCK":"1"}}}`
+		if got := string(load(t, req)["claude.local.config"]); got != want {
+			t.Fatalf("got  %s\nwant %s", got, want)
+		}
+	})
+	t.Run("claude without settings", func(t *testing.T) {
+		req := accountFixture(t)
+		req.Source.ID, req.Source.Family = "claude-account", "claude-code"
+		req.Source.Root = filepath.Join(req.Env.Home, ".claude")
+		accountFile(t, filepath.Join(req.Env.Home, ".claude.json"), `{}`)
+		want := `{".claude.json":{},"credentials":{"claudeAiOauth":{}},"settings.json":{}}`
+		if got := string(load(t, req)["claude.local.config"]); got != want {
+			t.Fatalf("got  %s\nwant %s", got, want)
+		}
+	})
+	t.Run("claude with malformed settings", func(t *testing.T) {
+		req := accountFixture(t)
+		req.Source.ID, req.Source.Family = "claude-account", "claude-code"
+		req.Source.Root = filepath.Join(req.Env.Home, ".claude")
+		accountFile(t, filepath.Join(req.Env.Home, ".claude.json"), `{"primaryApiKey":"secret"}`)
+		accountFile(t, filepath.Join(req.Source.Root, ".credentials.json"), `{"claudeAiOauth":{"subscriptionType":"pro"}}`)
+		accountFile(t, filepath.Join(req.Source.Root, "settings.json"), `{"apiKeyHelper":"secret",}`)
+		want := `{".claude.json":{"primaryApiKey":true},"credentials":{"claudeAiOauth":{"subscriptionType":"pro"}},"settings.json":{"error":"store_unreadable"}}`
+		if got := string(load(t, req)["claude.local.config"]); got != want {
+			t.Fatalf("got  %s\nwant %s", got, want)
+		}
+	})
+	t.Run("codex", func(t *testing.T) {
+		req := accountFixture(t)
+		accountFile(t, filepath.Join(req.Source.Root, "auth.json"), `{"auth_mode":"apikey","OPENAI_API_KEY":"sk-secret"}`)
+		accountFile(t, filepath.Join(req.Source.Root, "config.toml"), "model = \"gpt-5\"\nmodel_provider = \"openrouter\" # comment\n[model_providers.openrouter]\nenv_key = \"secret\"\n")
+		bodies := load(t, req)
+		if got := string(bodies["codex.local.config"]); got != `{"model_provider":"openrouter"}` {
+			t.Fatal(got)
+		}
+		if got := string(bodies["codex.local.account"]); got != `{"OPENAI_API_KEY":true,"auth_mode":"apikey"}` {
+			t.Fatal(got)
+		}
+	})
+	t.Run("codex without config", func(t *testing.T) {
+		req := accountFixture(t)
+		accountFile(t, filepath.Join(req.Source.Root, "auth.json"), `{"auth_mode":"chatgpt"}`)
+		if got := string(load(t, req)["codex.local.config"]); got != `{}` {
+			t.Fatal(got)
+		}
+	})
+}
+
+func TestTOMLTopLevelStringStopsAtFirstTable(t *testing.T) {
+	for raw, want := range map[string]string{
+		`model_provider = "ollama"`:                     "ollama",
+		"model_provider='lmstudio' # local":             "lmstudio",
+		"[profiles.x]\nmodel_provider = \"openrouter\"": "",
+		"model_provider_extra = \"x\"":                  "",
+	} {
+		if got, ok := tomlTopLevelString([]byte(raw), "model_provider"); got != want || ok != (want != "") {
+			t.Errorf("%q: got %q want %q", raw, got, want)
+		}
 	}
 }
