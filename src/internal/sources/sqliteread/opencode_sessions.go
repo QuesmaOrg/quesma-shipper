@@ -15,7 +15,7 @@ import (
 type OpenCodeSessions struct{}
 
 // Upstream migration copies 1.x sessions into session_v2 and session_message under the same IDs and keeps the originals.
-// A session with 1.x messages ships its 1.x copy, which is the one already archived; any other ships its 2.x copy.
+// A session with a 2.x copy ships it, since upstream continues sessions only there; any other ships its 1.x copy.
 // List and Read pick the same copy, so the directory checked for repository markers is the one exported.
 func (OpenCodeSessions) List(ctx context.Context, path string) ([]Session, error) {
 	sessions, err := listSessions(ctx, path, func(tx *sessionConnection) (string, error) {
@@ -23,13 +23,11 @@ func (OpenCodeSessions) List(ctx context.Context, path string) ([]Session, error
 		if err != nil {
 			return "", err
 		}
-		v1 := `SELECT id, directory AS cwd, time_created FROM session s`
-		v2 := `SELECT id, directory AS cwd, time_created FROM session_v2 v`
+		v1 := `SELECT id, directory AS cwd, time_created FROM session`
+		v2 := `SELECT id, directory AS cwd, time_created FROM session_v2`
 		switch {
 		case tables["session"] && tables["session_v2"]:
-			v1 += ` WHERE id NOT IN (SELECT id FROM session_v2) OR EXISTS (SELECT 1 FROM message WHERE session_id = s.id)`
-			v2 += ` WHERE id NOT IN (SELECT id FROM session) OR NOT EXISTS (SELECT 1 FROM message WHERE session_id = v.id)`
-			v1 += ` UNION ALL ` + v2
+			v1 += ` WHERE id NOT IN (SELECT id FROM session_v2) UNION ALL ` + v2
 		case tables["session_v2"]:
 			v1 = v2
 		}
@@ -85,24 +83,25 @@ func (OpenCodeSessions) Read(ctx context.Context, path, relPath, id string, maxB
 				err = tx.query(ctx, query, []string{id}, func(map[string]any) error { *found = true; return nil })
 			}
 		}
-		var legacy, native bool
-		if tables["session"] {
+		var inV2, legacy, native bool
+		if tables["session_v2"] {
+			exists(`SELECT 1 FROM session_v2 WHERE id = ?`, &inV2)
+		}
+		if tables["session"] && !inV2 {
 			exists(`SELECT 1 FROM message WHERE session_id = ? LIMIT 1`, &legacy)
 		}
 		if tables["session_message"] {
 			exists(`SELECT 1 FROM session_message WHERE session_id = ? LIMIT 1`, &native)
-		}
-		inV2 := false
-		if tables["session_v2"] {
-			exists(`SELECT 1 FROM session_v2 WHERE id = ?`, &inV2)
 		}
 		// V2 keeps the message kind in a column and orders by seq; time_created can tie.
 		messages := `SELECT id, type AS message_type, seq, time_created, time_updated, data FROM session_message WHERE session_id = ? ORDER BY seq`
 		v1Session := `SELECT id, parent_id, directory AS cwd, title, version, time_created, time_updated FROM session WHERE id = ?`
 		switch {
 		case err != nil:
-		case !legacy && (inV2 || !tables["session"]):
-			err = emit("session", `SELECT id, parent_id, fork_session_id, fork_boundary, directory AS cwd, title, version, time_created, time_updated FROM session_v2 WHERE id = ?`)
+		case inV2 || !tables["session"]:
+			// The totals keep usage that migration drops from messages, such as compaction summaries.
+			err = emit("session", `SELECT id, parent_id, fork_session_id, fork_boundary, directory AS cwd, title, version, time_created, time_updated,
+				cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write FROM session_v2 WHERE id = ?`)
 			if err == nil {
 				err = emit("session_message", messages)
 			}

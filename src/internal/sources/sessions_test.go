@@ -262,7 +262,7 @@ func TestSessionLoadRejectsCopyMovedAfterDiscovery(t *testing.T) {
 	if _, err := db.Exec(`CREATE TABLE session(id TEXT,parent_id TEXT,directory TEXT,title TEXT,version TEXT,time_created INTEGER,time_updated INTEGER);
 CREATE TABLE message(id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
 CREATE TABLE part(id TEXT,message_id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
-CREATE TABLE session_v2(id TEXT,parent_id TEXT,fork_session_id TEXT,fork_boundary TEXT,directory TEXT,title TEXT,version TEXT,time_created INTEGER,time_updated INTEGER);
+CREATE TABLE session_v2(id TEXT,parent_id TEXT,fork_session_id TEXT,fork_boundary TEXT,directory TEXT,title TEXT,version TEXT,time_created INTEGER,time_updated INTEGER,cost REAL,tokens_input INTEGER,tokens_output INTEGER,tokens_reasoning INTEGER,tokens_cache_read INTEGER,tokens_cache_write INTEGER);
 CREATE TABLE session_message(id TEXT,session_id TEXT,type TEXT,seq INTEGER,time_created INTEGER,time_updated INTEGER,data TEXT);
 INSERT INTO session VALUES ('s',NULL,?,'t','1',1,1)`, allowed); err != nil {
 		t.Fatal(err)
@@ -275,7 +275,7 @@ INSERT INTO session VALUES ('s',NULL,?,'t','1',1,1)`, allowed); err != nil {
 	if _, err := d.Candidates[0].Load(context.Background()); err != nil {
 		t.Fatalf("unchanged session: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO session_v2 VALUES ('s',NULL,NULL,NULL,?,'t','2',1,1);
+	if _, err := db.Exec(`INSERT INTO session_v2 VALUES ('s',NULL,NULL,NULL,?,'t','2',1,1,0,0,0,0,0,0);
 INSERT INTO session_message VALUES ('m','s','user',1,1,1,'{"text":"IGNORED-CONTENT"}')`, ignored); err != nil {
 		t.Fatal(err)
 	}
