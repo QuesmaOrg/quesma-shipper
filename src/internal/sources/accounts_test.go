@@ -362,6 +362,18 @@ func TestAccountConfigShipsStoredValuesWithoutCredentials(t *testing.T) {
 			t.Fatalf("got  %s\nwant %s", got, want)
 		}
 	})
+	t.Run("claude with malformed settings", func(t *testing.T) {
+		req := accountFixture(t)
+		req.Source.ID, req.Source.Family = "claude-account", "claude-code"
+		req.Source.Root = filepath.Join(req.Env.Home, ".claude")
+		accountFile(t, filepath.Join(req.Env.Home, ".claude.json"), `{"primaryApiKey":"secret"}`)
+		accountFile(t, filepath.Join(req.Source.Root, ".credentials.json"), `{"claudeAiOauth":{"subscriptionType":"pro"}}`)
+		accountFile(t, filepath.Join(req.Source.Root, "settings.json"), `{"apiKeyHelper":"secret",}`)
+		want := `{".claude.json":{"primaryApiKey":true},"credentials":{"claudeAiOauth":{"subscriptionType":"pro"}},"settings.json":{"error":"store_unreadable"}}`
+		if got := string(load(t, req)["claude.local.config"]); got != want {
+			t.Fatalf("got  %s\nwant %s", got, want)
+		}
+	})
 	t.Run("codex", func(t *testing.T) {
 		req := accountFixture(t)
 		accountFile(t, filepath.Join(req.Source.Root, "auth.json"), `{"auth_mode":"apikey","OPENAI_API_KEY":"sk-secret"}`)
@@ -390,7 +402,7 @@ func TestTOMLTopLevelStringStopsAtFirstTable(t *testing.T) {
 		"[profiles.x]\nmodel_provider = \"openrouter\"": "",
 		"model_provider_extra = \"x\"":                  "",
 	} {
-		if got, _ := tomlTopLevelString([]byte(raw), "model_provider"); got != want {
+		if got, ok := tomlTopLevelString([]byte(raw), "model_provider"); got != want || ok != (want != "") {
 			t.Errorf("%q: got %q want %q", raw, got, want)
 		}
 	}

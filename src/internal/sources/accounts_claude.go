@@ -58,15 +58,14 @@ func (p *Accounts) collectClaude(ctx context.Context, req Request) ([]accountObs
 	}
 	credentialErr := json.Unmarshal(raw, &creds)
 	settings, settingsErr := accountJSON(filepath.Join(home, "settings.json"), accountResponseLimit)
-	configErr := err
-	if errors.Is(configErr, fs.ErrNotExist) || configErr == nil {
-		configErr = settingsErr
+	stored := claudeConfig(doc, settings, raw)
+	for file, fileErr := range map[string]error{".claude.json": err, "settings.json": settingsErr} {
+		if fileErr != nil && !errors.Is(fileErr, fs.ErrNotExist) {
+			stored[file] = map[string]string{"error": "store_unreadable"}
+		}
 	}
-	if errors.Is(configErr, fs.ErrNotExist) {
-		configErr = nil
-	}
-	body, _ := json.Marshal(claudeConfig(doc, settings, raw))
-	out = append(out, localAccount(req, "claude.local.config", body, configErr))
+	body, _ := json.Marshal(stored)
+	out = append(out, localAccount(req, "claude.local.config", body, nil))
 	token := creds.OAuth.Token
 	if credentialErr != nil || !slices.Contains(creds.OAuth.Scopes, "user:profile") {
 		token = ""
@@ -99,6 +98,7 @@ var (
 )
 
 // claudeConfig keeps each auth-relevant value under its file and field name, for the ETL to interpret.
+// An unreadable file is reported in its own entry, so the files that were read still ship.
 func claudeConfig(doc, settings map[string]json.RawMessage, credentials []byte) map[string]any {
 	stored := map[string]any{}
 	if accountValuePresent(settings["apiKeyHelper"]) {

@@ -88,8 +88,12 @@ func tomlTopLevelString(raw []byte, key string) (string, bool) {
 		if !ok || strings.TrimSpace(name) != key || len(value) < 2 || value[0] != '"' && value[0] != '\'' {
 			continue
 		}
-		if end := strings.IndexByte(value[1:], value[0]); end >= 0 {
-			return value[1 : end+1], true
+		quote := value[:1]
+		if strings.HasPrefix(value, strings.Repeat(quote, 3)) {
+			quote = strings.Repeat(quote, 3)
+		}
+		if end := strings.Index(value[len(quote):], quote); end > 0 {
+			return value[len(quote) : len(quote)+end], true
 		}
 	}
 	return "", false
