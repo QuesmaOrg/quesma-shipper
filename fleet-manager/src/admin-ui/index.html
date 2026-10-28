@@ -41,6 +41,12 @@
           <label class="check"><input name="quesma-etl" type="checkbox" checked aria-labelledby="organization-etl-title" aria-describedby="organization-etl-help"><span id="organization-etl-help">This enables Quesma ETL to process future uploads for dashboards, analytics, and other Quesma features. Quesma cannot access your bucket unless you separately provide bucket access.</span></label>
         </fieldset>
         <fieldset class="setting-fieldset">
+          <legend id="organization-analytics-title">Let an analytics service process this organization's data later</legend>
+          <label class="check"><input name="analytics" type="checkbox" aria-labelledby="organization-analytics-title" aria-describedby="organization-analytics-help"><span id="organization-analytics-help">Seals every upload to an analytics recipient whose private key is held only as ciphertext under a KMS key in your AWS account. Nobody can open anything with it until you grant a processor Decrypt on that key.</span></label>
+          <div class="telemetry-help hidden" data-analytics-identity><p class="recipient-help">Run this where you ran <code>deploy.sh</code>, and paste what it prints:</p><div class="keygen-commands"><pre><code data-analytics-command>sh deploy.sh aws analytics-key acme</code></pre><button type="button" class="quiet copy-icon" data-copy-keygen aria-label="Copy analytics key command" title="Copy command"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="1"></rect><path d="M16 8V5H5v11h3"></path></svg></button></div><label>Analytics identity<textarea name="analytics_identity" rows="3" spellcheck="false" autocomplete="off" placeholder="{&quot;organization&quot;:&quot;acme&quot;,&quot;recipient&quot;:&quot;age1…&quot;,&quot;ciphertext&quot;:&quot;…&quot;,&quot;kms_key&quot;:&quot;arn:aws:kms:…&quot;}"></textarea></label></div>
+          <p class="telemetry-help" data-analytics-none>Without it, a processor granted later opens uploads from then on, not the history. It cannot be added after the organization is created.</p>
+        </fieldset>
+        <fieldset class="setting-fieldset">
           <legend id="organization-telemetry-title">Shipper health telemetry</legend>
           <label class="check"><input name="telemetry-enabled" type="checkbox" aria-labelledby="organization-telemetry-title" aria-describedby="organization-telemetry-help"><span id="organization-telemetry-help">Enable forwarding of this organization's shipper health events through Fleet Manager to the collector below.</span></label>
           <label class="telemetry-collector">Collector URL<input name="telemetry_collector_url" type="text" autocomplete="off" spellcheck="false" placeholder="collector.example" pattern=".*\S.*" aria-describedby="organization-collector-help"></label>
@@ -73,6 +79,7 @@
             <legend id="config-etl-title">Encrypt uploads with the Quesma ETL public key</legend>
             <label class="check"><input name="quesma-etl" type="checkbox" checked aria-labelledby="config-etl-title" aria-describedby="config-etl-help"><span id="config-etl-help">This enables Quesma ETL to process future uploads for dashboards, analytics, and other Quesma features. Quesma cannot access your bucket unless you separately provide bucket access.</span></label>
           </fieldset>
+          <fieldset class="setting-fieldset"><legend>Analytics recipient</legend><p class="telemetry-help" data-analytics-status></p></fieldset>
           <fieldset class="setting-fieldset">
             <legend id="config-telemetry-title">Shipper health telemetry</legend>
             <label class="check"><input name="telemetry-enabled" type="checkbox" aria-labelledby="config-telemetry-title" aria-describedby="config-telemetry-help"><span id="config-telemetry-help">Enable forwarding of this organization's shipper health events through Fleet Manager to the collector below.</span></label>

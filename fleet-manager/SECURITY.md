@@ -48,6 +48,10 @@ In scope:
 - **Telemetry forwarding.** Forwarding to a collector the organization did not configure. Relaying
   a collector's response body. Any path that exposes the signing seed at
   `private/fleet-manager/telemetry-identity.json`.
+- **The analytics key.** A principal that can decrypt an analytics identity while
+  `analytics_decrypt_role_arns` does not name it. Ciphertext for one organization that decrypts
+  under another's encryption context. A path that writes, prints or logs the identity's plaintext.
+  An organization's analytics identity replaced or removed after creation.
 - **The deployment templates.** A grant in `terraform/aws` or `terraform/gcp` wider than the
   service needs — in particular anything that lets the runtime identity read a trajectory payload.
 

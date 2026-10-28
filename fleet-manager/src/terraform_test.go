@@ -406,3 +406,52 @@ func TestTerraformOrganizationDefaults(t *testing.T) {
 		}
 	}
 }
+
+// The analytics key decrypts for nobody unless analytics_decrypt_role_arns names a processor. The
+// account administers it and encrypts with it, but holds no action that reaches the plaintext
+// another way: CreateGrant would hand Decrypt out without a policy change, ReEncrypt decrypts.
+func TestTerraformAnalyticsKeyDecryptsForNobodyByDefault(t *testing.T) {
+	read := func(name string) string {
+		t.Helper()
+		raw, err := os.ReadFile("../terraform/aws/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	key, vars := read("analytics_key.tf"), read("variables.tf")
+	for _, pinned := range []string{
+		"variable \"analytics_key\" {\n  type        = bool\n  default     = false\n",
+		"variable \"analytics_decrypt_role_arns\" {\n  type        = list(string)\n  default     = []\n",
+	} {
+		if !strings.Contains(vars, pinned) {
+			t.Errorf("variables.tf does not contain %q", pinned)
+		}
+	}
+
+	decrypt := strings.Index(key, "dynamic \"statement\"")
+	if decrypt < 0 {
+		t.Fatal("analytics_key.tf has no conditional processor statement")
+	}
+	account, processors := key[:decrypt], key[decrypt:]
+	for _, forbidden := range []string{"kms:*", "kms:Decrypt", "kms:ReEncrypt", "kms:Re*", "kms:CreateGrant", "kms:Create*",
+		"kms:GenerateDataKey", "kms:Generate*", "kms:Import", "kms:Sign", "kms:Derive", "bypass_policy_lockout_safety_check"} {
+		if strings.Contains(account, forbidden) {
+			t.Errorf("the account's statements contain %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"for_each = length(var.analytics_decrypt_role_arns) > 0 ? [1] : []",
+		"actions   = [\"kms:Decrypt\"]",
+		"identifiers = var.analytics_decrypt_role_arns",
+		"variable = \"kms:EncryptionContext:purpose\"",
+		"values   = [\"analytics-identity\"]",
+	} {
+		if !strings.Contains(processors, required) {
+			t.Errorf("the processor statement does not contain %q", required)
+		}
+	}
+	if strings.Count(key, "kms:Decrypt") != 1 || strings.Contains(processors, "kms:CreateGrant") || strings.Contains(processors, "kms:ReEncrypt") {
+		t.Error("Decrypt appears outside the processor statement, or the processors get more than Decrypt")
+	}
+}

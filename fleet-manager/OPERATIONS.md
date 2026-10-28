@@ -33,6 +33,9 @@ recipients registered at the time of upload. Changing the recipients later does 
 existing files, even after a shipper's `state reset`: upload deduplication writes a new version of a
 stored file only when its scrubbed bytes changed, for example after a scrub-rule change.
 
+An analytics identity is fixed the same way, and earlier: it can be set only when the organization is
+created, so an organization created without one has no history a processor can open later.
+
 **A re-uploaded file keeps its earlier versions.** The bucket is versioned and nothing expires mirror
 objects, so a value that leaked under old scrub rules is still readable in the earlier version until
 an operator deletes it by hand. A `state reset` after a shipper upgrade that changed scrubbing
@@ -96,8 +99,11 @@ terraform apply … -var='etl_reader_role_arns=["arn:aws:iam::123456789012:role/
 It permits listing the bucket below `v1/` and reading two kinds of object: everything under an
 install's root, and each organization's `control/config.json`. Reading is not decrypting: the ETL
 can open objects only while the organization keeps Quesma's recipient (`allow_quesma_etl`, on by
-default). The two revoke separately. Empty the list to stop the reading, which takes effect
-immediately; turn off `allow_quesma_etl` to stop the decrypting of objects sealed from then on.
+default), or while `analytics_decrypt_role_arns` names it for an organization created with an
+analytics identity ([AWS template](terraform/aws/README.md#an-analytics-identity-under-your-own-key)).
+Reading and decrypting revoke separately. Empty the list to stop the reading, which takes effect
+immediately. Turn off `allow_quesma_etl` to stop the decrypting of objects sealed from then on, or
+remove the role from `analytics_decrypt_role_arns` to stop the decrypting of the analytics identity.
 
 **Running without egress.** Fleet Manager needs no outbound internet access beyond its cloud's own
 APIs: object storage, plus IAM Credentials `SignBlob` on Google Cloud, which signs every upload

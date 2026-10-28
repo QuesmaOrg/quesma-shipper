@@ -314,6 +314,9 @@ func renderConfig(cfg FleetConfig) string {
 	if cfg.quesmaETLEnabled() {
 		recipients = append(recipients, quesmaETLAgeRecipient)
 	}
+	if cfg.AnalyticsIdentity != nil {
+		recipients = append(recipients, cfg.AnalyticsIdentity.Recipient)
+	}
 	endpoint := ""
 	if cfg.telemetryCollectorURL() != "" {
 		endpoint = telemetryPath

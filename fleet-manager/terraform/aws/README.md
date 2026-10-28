@@ -61,6 +61,8 @@ providers as OpenTofu resolves them; Terraform rewrites it with its own registry
 | `default_allow_quesma_etl` | `true` | seal uploads to Quesma's recipient for organizations that never chose |
 | `default_telemetry_collector_url` | empty | forward shipper telemetry there for organizations that name nowhere |
 | `etl_reader_role_arns` | `[]` | who outside the service may read the sealed objects; see below |
+| `analytics_key` | `false` | create the KMS key analytics identities are encrypted under; see below |
+| `analytics_decrypt_role_arns` | `[]` | who may decrypt an analytics identity with that key; see below |
 
 ## Your own image
 
@@ -107,7 +109,8 @@ role allows more still reads only these.
 
 Reading is not decrypting. Every object is sealed to your organization's `age` recipients, and
 Quesma can open one only while the organization keeps its built-in recipient, the
-`allow_quesma_etl` setting. The two are separately revocable, and revoking either is enough:
+`allow_quesma_etl` setting, or through an analytics identity it was granted (below). The two are
+separately revocable, and revoking either is enough:
 
 | to stop | do |
 | --- | --- |
@@ -118,6 +121,41 @@ Turning off the setting does not re-seal what was already written, which is why 
 bucket grant is the one that takes effect immediately. Uploads are sealed to Quesma's recipient
 whether or not the grant exists, so granting the list later opens your history to Quesma's
 analytics, not only what comes after.
+
+## An analytics identity under your own key
+
+An organization can be sealed from its first upload to an analytics recipient whose private key
+exists only as ciphertext under a KMS key in this account. Nobody can open anything with it, a
+processor included, until you grant that processor `kms:Decrypt` on the key.
+
+1. Apply with `analytics_key = true` (`sh deploy.sh aws --analytics-key`). The key's policy lets the
+   account administer it and encrypt with it. It grants no principal `kms:Decrypt`,
+   `kms:ReEncrypt*` or `kms:CreateGrant`, so even the account's administrators must first change
+   the policy, which CloudTrail records.
+2. Before creating the organization, run `sh deploy.sh aws analytics-key <org>`. It generates an
+   `age` identity, sends it to `kms:Encrypt` with the encryption context
+   `{purpose: analytics-identity, organization: <org>}`, and prints the organization, the recipient,
+   the ciphertext and the key ARN on one line. The private key is never written to a file or printed. KMS receives it
+   for the encryption and does not keep it.
+3. Paste that line into the organization form, under "Let an analytics service process this
+   organization's data later". It is stored in the organization's `control/config.json`, and only
+   at creation: an organization created without it cannot add one later. A line made for another
+   organization is refused, because it would never decrypt under this one's context.
+
+To grant a processor, apply with its role in both lists. The bucket read and the decrypt are
+separate, and removing either revokes:
+
+```sh
+terraform apply … -var="etl_reader_role_arns=[\"$ROLE\"]" -var="analytics_decrypt_role_arns=[\"$ROLE\"]"
+```
+
+The processor reads the ciphertext from `control/config.json`, decrypts it under the encryption
+context of that organization, and opens the history and everything after it. Ciphertext from one
+organization does not decrypt under another's context. Removing the role from
+`analytics_decrypt_role_arns` and applying takes effect at the processor's next decrypt. Disabling
+the key by hand does too, but the next apply enables it again.
+
+Google Cloud has no equivalent yet.
 
 ## Operations
 
