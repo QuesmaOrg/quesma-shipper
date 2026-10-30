@@ -10,8 +10,8 @@ import (
 )
 
 // Install names and metadata, written to each install's own root. Reads fan out over the installs list rather
-// than listing the payload prefix: the runtime identity is granted a listing of control/ and of
-// the organization roots, never of an install's objects.
+// than listing the payload prefix: on S3 the runtime identity is granted a listing of control/ and of
+// the organization roots, never of an install's objects (GCS can only grant listing bucket-wide).
 
 const tagsReadConcurrency = 16
 

@@ -89,7 +89,19 @@ resource "google_service_account" "fleet_manager" {
 resource "google_project_iam_custom_role" "control" {
   role_id     = "${replace(var.name, "-", "_")}_control"
   title       = "Fleet manager control objects"
-  permissions = ["storage.objects.get", "storage.objects.list", "storage.objects.create", "storage.objects.update", "storage.objects.delete"]
+  permissions = ["storage.objects.get", "storage.objects.create", "storage.objects.update", "storage.objects.delete"]
+}
+
+# GCS authorizes `storage.objects.list` against the bucket, never against the names a listing
+# returns, so no `resource.name` condition can confine a listing to a prefix, and the
+# `objectListPrefix` request attribute is honoured only in Credential Access Boundaries, not in a
+# role binding. Listing is therefore granted on the whole bucket, in a role of its own so that the
+# conditional roles below stay tight. The runtime can thus see every object name; the data role
+# already lets it fetch the sealed payloads, and nothing it holds can open one.
+resource "google_project_iam_custom_role" "listing" {
+  role_id     = "${replace(var.name, "-", "_")}_listing"
+  title       = "Fleet manager object listing"
+  permissions = ["storage.objects.list"]
 }
 
 # `get` reads install names and the source-hash the deduplication probe stats. GCS has no
@@ -120,19 +132,33 @@ resource "google_storage_bucket_iam_member" "control" {
   bucket = google_storage_bucket.fleet.name
   role   = google_project_iam_custom_role.control.name
   member = "serviceAccount:${google_service_account.fleet_manager.email}"
+  # IAM Conditions offer no regular expressions, only startsWith, endsWith and extract, and
+  # extract('prefix{id}suffix') yields the text between the first prefix and the first later suffix,
+  # or '' when either is absent. Two extractions therefore pin the segment after `organization=`: the
+  # one ending at the next `/` must equal the one ending at the next `/control/`, which holds only
+  # when `control/` is that segment's immediate child. The organization slug's alphabet is enforced
+  # where organizations are created, not here.
   condition {
     title      = "control-prefix-only"
-    expression = "resource.name.matches('^${local.object_root}v1/organization=[a-z0-9][a-z0-9._-]{0,63}/control/.*$') || resource.name == '${local.object_root}${local.telemetry_identity_key}' || api.getAttribute('storage.googleapis.com/objectListPrefix', '').matches('^v1/organization=[a-z0-9][a-z0-9._-]{0,63}/control/.*$') || api.getAttribute('storage.googleapis.com/objectListPrefix', '') == 'v1/organization='"
+    expression = "(resource.name.extract('${local.object_root}v1/organization={org}/') != '' && resource.name.extract('${local.object_root}v1/organization={org}/') == resource.name.extract('${local.object_root}v1/organization={org}/control/')) || resource.name == '${local.object_root}${local.telemetry_identity_key}'"
   }
+}
+
+resource "google_storage_bucket_iam_member" "listing" {
+  bucket = google_storage_bucket.fleet.name
+  role   = google_project_iam_custom_role.listing.name
+  member = "serviceAccount:${google_service_account.fleet_manager.email}"
 }
 
 resource "google_storage_bucket_iam_member" "data" {
   bucket = google_storage_bucket.fleet.name
   role   = google_project_iam_custom_role.data.name
   member = "serviceAccount:${google_service_account.fleet_manager.email}"
+  # As above: `install=` must be the organization segment's immediate child, and the install id must
+  # be non-empty and followed by `/`, so the install root itself and a bare `install=` are excluded.
   condition {
     title      = "install-prefix"
-    expression = "resource.name.matches('^${local.object_root}v1/organization=[a-z0-9][a-z0-9._-]{0,63}/install=[0-9a-f-]{36}/.*$')"
+    expression = "resource.name.extract('${local.object_root}v1/organization={org}/') != '' && resource.name.extract('${local.object_root}v1/organization={org}/') == resource.name.extract('${local.object_root}v1/organization={org}/install=') && resource.name.extract('/install={id}/') != ''"
   }
 }
 
