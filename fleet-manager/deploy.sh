@@ -178,15 +178,14 @@ preflight_gcp() {
 	curl -fsS -H "Authorization: Bearer $token" \
 		"https://cloudresourcemanager.googleapis.com/v1/projects/$PROJECT" >/dev/null 2>&1 \
 		|| die "project $PROJECT not found or not visible to ${account:-these credentials}; --project takes" \
-			"the project ID, the PROJECT_ID column of \`gcloud projects list\`, not the project name, and" \
-			"this script never creates a project: the README addendum covers setting one up"
+			"an existing project ID (\`gcloud projects list\`), and this script never creates a project"
 	billing=$(curl -fsS -H "Authorization: Bearer $token" \
 		"https://cloudbilling.googleapis.com/v1/projects/$PROJECT/billingInfo" 2>/dev/null | tr -d ' \n')
 	case $billing in
 	*'"billingEnabled":true'*) ;;
 	*'"name":'*) die "project $PROJECT has no billing account linked, and Cloud Run and Cloud Storage" \
-		"need one: \`gcloud billing projects link $PROJECT --billing-account ID\`, with the ID from the" \
-		"ACCOUNT_ID column of \`gcloud billing accounts list\`; the README addendum walks through it" ;;
+		"need one: \`gcloud billing projects link $PROJECT --billing-account ID\`, with the ID from" \
+		"\`gcloud billing accounts list\`" ;;
 	*) say "could not check billing on $PROJECT; Terraform fails later if none is linked" ;;
 	esac
 	say "Google Cloud project $PROJECT, region $REGION, as ${account:-?}"

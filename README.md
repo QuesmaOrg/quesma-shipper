@@ -57,10 +57,6 @@ on each machine.
 1. **Have ready:** an AWS account or Google Cloud project you can create resources in, and on your
    laptop Terraform or OpenTofu, `curl`, `age`, `age-keygen`, `zstd`, and the `aws` CLI signed in,
    or `gcloud` with `gcloud auth application-default login`. On AWS the Region needs a default VPC.
-   On Google Cloud, make sure the project is set up with billing before you deploy: the script
-   deploys into an existing project and never creates one. If you are unsure how, or which of the
-   identifiers Google shows you is the one to pass, follow the
-   [addendum](#addendum-set-up-a-google-cloud-project-with-billing) at the bottom of this page.
 
 2. **Decide two things** before anything enrolls. Ask two custodians to each run `age-keygen -o
    name.agekey` and send you only their `age1…` public recipient (`age-keygen -y name.agekey`
@@ -74,7 +70,8 @@ on each machine.
    curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/fleet-manager/deploy.sh
 
    sh deploy.sh aws --bucket globally-unique-acme-trajectories --region eu-central-1   # AWS, or
-   sh deploy.sh gcp --project acme-prod --region europe-central2                        # Google Cloud
+   # Google Cloud: make sure the project you pass already exists and has a billing account linked
+   sh deploy.sh gcp --project acme-prod --region europe-central2
    ```
 
    It shows the plan, asks for `yes`, and after a few minutes prints the service URL, the admin UI
@@ -158,91 +155,3 @@ license and every bundled dependency's license text; Fleet Manager keeps its own
 Shipper, Quesma Fleet Manager, and the Quesma logo are trademarks of Quesma Inc.; the license does
 not grant trademark rights. If you distribute a modified build, read [TRADEMARKS.md](TRADEMARKS.md)
 before you name it.
-
-## Addendum: set up a Google Cloud project with billing
-
-`deploy.sh gcp` deploys into a project you already have. It never creates a project and never
-touches billing. Before step 3 of the operator section you need a project, an open billing account,
-and the two linked. Google shows several identifiers for each, and only one of each is the one to
-pass. Check what you have against this table before you type anything.
-
-| Identifier | Looks like | Where you see it | Used here for |
-| --- | --- | --- | --- |
-| Project ID | `acme-fleet-manager`: 6 to 30 lowercase letters, digits and hyphens, starts with a letter, unique across all of Google Cloud, cannot change | `PROJECT_ID` column of `gcloud projects list`; in the console's project picker, the small text under the name | `--project` in step 3 |
-| Project name | `Acme Fleet Manager`: free text with spaces and capitals, can change, not unique | `NAME` column; the large text in the console | nothing; the script does not accept it |
-| Project number | `123456789012`: digits only | `PROJECT_NUMBER` column | nothing |
-| Billing account ID | `0A1B2C-3D4E5F-6A7B8C`: three groups of six hex characters joined by hyphens | `ACCOUNT_ID` column of `gcloud billing accounts list`; on the console's Billing page, the small text under the account name | `--billing-account` below |
-| Billing account name | `Acme Billing`: free text | `NAME` column | nothing |
-
-**Two logins.** `gcloud` keeps two separate credentials. `gcloud auth login` is for the `gcloud`
-commands below. `gcloud auth application-default login` is what Terraform, and so `deploy.sh`,
-uses. Step 1 asks only for the second; this addendum needs the first too. Use the same Google
-account for both.
-
-```sh
-gcloud auth login
-gcloud auth application-default login
-```
-
-**1. A project.** If you already have one, find its ID:
-
-```sh
-gcloud projects list
-```
-
-```
-PROJECT_ID          NAME                PROJECT_NUMBER
-acme-fleet-manager  Acme Fleet Manager  123456789012
-```
-
-Otherwise create one. Choose the ID carefully, it is permanent; the name is only display text.
-With a Google Workspace account the project usually has to sit under your organization:
-`gcloud organizations list` prints its numeric ID, and `--organization` places the project there.
-
-```sh
-gcloud projects create acme-fleet-manager --name="Acme Fleet Manager" --organization 123456789012
-```
-
-A permission error here means your account lacks the Project Creator role in the organization.
-Ask an organization administrator for the role, or for a project.
-
-**2. An open billing account.** Nothing in Cloud Run or Cloud Storage works without one.
-
-```sh
-gcloud billing accounts list
-```
-
-```
-ACCOUNT_ID            NAME          OPEN   MASTER_ACCOUNT_ID
-0A1B2C-3D4E5F-6A7B8C  Acme Billing  True
-```
-
-`OPEN` must be `True`. An empty list, or only `False` rows, means you have no billing account
-you may use. Ask whoever administers billing for your organization to grant your account the
-Billing Account User role on theirs, or to link it to your project for you. Do not open a
-personal billing account to get past this on a company project.
-
-**3. Link them, then verify.**
-
-```sh
-gcloud billing projects link acme-fleet-manager --billing-account 0A1B2C-3D4E5F-6A7B8C
-gcloud billing projects describe acme-fleet-manager
-```
-
-```
-billingAccountName: billingAccounts/0A1B2C-3D4E5F-6A7B8C
-billingEnabled: true
-name: projects/acme-fleet-manager/billingInfo
-projectId: acme-fleet-manager
-```
-
-`billingEnabled: true` is the line that matters. Now step 3 of the operator section, with the
-project ID:
-
-```sh
-sh deploy.sh gcp --project acme-fleet-manager --region europe-central2
-```
-
-The script checks the project and its billing again before it changes anything, and prints the
-account it deploys as. A permission error from Terraform after that point means that account
-lacks a role on the project; Owner or Editor on a project you created yourself is enough.
