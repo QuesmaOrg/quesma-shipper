@@ -237,11 +237,11 @@ usage() {
 	cat <<EOF
 Deploys Fleet Manager into your cloud account and prints the admin URL and credential.
 
-  deploy.sh aws --bucket NAME [--region REGION]      AWS: S3 bucket, roles, ECS Express service
-  deploy.sh gcp --project ID [--region REGION]       Google Cloud: GCS bucket, roles, Cloud Run
-  deploy.sh aws|gcp output [NAME]                    the outputs, or one of them (admin_credential)
-  deploy.sh aws|gcp plan                             show what a run would change
-  deploy.sh aws|gcp destroy                          remove it all; refuses a bucket with objects
+  deploy.sh aws --bucket NAME [--region REGION]                  AWS: S3 bucket, roles, ECS Express service
+  deploy.sh gcp --project ID [--bucket NAME] [--region REGION]   Google Cloud: GCS bucket, roles, Cloud Run
+  deploy.sh aws|gcp output [NAME]                                the outputs, or one of them (admin_credential)
+  deploy.sh aws|gcp plan                                         show what a run would change
+  deploy.sh aws|gcp destroy                                      remove it all; refuses a bucket with objects
 
 Options, remembered between runs:
   --name NAME             what the service and its roles are called (default fleet-manager)

@@ -69,9 +69,11 @@ on each machine.
    ```sh
    curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/fleet-manager/deploy.sh
 
-   sh deploy.sh aws --bucket globally-unique-acme-trajectories --region eu-central-1   # AWS, or
-   # Google Cloud: make sure the project you pass already exists and has a billing account linked
-   sh deploy.sh gcp --project acme-prod --region europe-central2
+   BUCKET_NAME=acme-trajectories   # has to be globally unique: no other AWS or Google Cloud customer has it
+   GCLOUD_PROJECT_ID=acme-prod     # Google Cloud only: an existing project ID with a billing account linked
+
+   sh deploy.sh aws --bucket $BUCKET_NAME --region eu-central-1                                # AWS, or
+   sh deploy.sh gcp --bucket $BUCKET_NAME --project $GCLOUD_PROJECT_ID --region europe-central2  # Google Cloud
    ```
 
    It shows the plan, asks for `yes`, and after a few minutes prints the service URL, the admin UI
