@@ -59,7 +59,7 @@ on each machine.
    or `gcloud` with `gcloud auth application-default login`. On AWS the Region needs a default VPC.
    On Google Cloud the project must already exist with billing linked, since the script deploys
    into a project and never creates one: `gcloud projects create ID`, then `gcloud billing
-   projects link ID --billing-account ACCOUNT`.
+   projects link ID --billing-account ACCOUNT` with an ID from `gcloud billing accounts list`.
 
 2. **Decide two things** before anything enrolls. Ask two custodians to each run `age-keygen -o
    name.agekey` and send you only their `age1…` public recipient (`age-keygen -y name.agekey`

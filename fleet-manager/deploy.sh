@@ -185,7 +185,8 @@ preflight_gcp() {
 	case $billing in
 	*'"billingEnabled":true'*) ;;
 	*'"name":'*) die "project $PROJECT has no billing account linked, and Cloud Run and Cloud Storage" \
-		"need one: \`gcloud billing projects link $PROJECT --billing-account ACCOUNT_ID\`" ;;
+		"need one: \`gcloud billing projects link $PROJECT --billing-account ID\`, with an ID from" \
+		"\`gcloud billing accounts list\`" ;;
 	*) say "could not check billing on $PROJECT; Terraform fails later if none is linked" ;;
 	esac
 	say "Google Cloud project $PROJECT, region $REGION, as ${account:-?}"
