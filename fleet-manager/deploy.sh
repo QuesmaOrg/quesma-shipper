@@ -170,9 +170,24 @@ preflight_aws() {
 
 preflight_gcp() {
 	need gcloud
-	gcloud auth application-default print-access-token >/dev/null 2>&1 \
+	token=$(gcloud auth application-default print-access-token 2>/dev/null) \
 		|| die "no application default credentials: \`gcloud auth application-default login\`"
-	account=$(gcloud config get-value account 2>/dev/null || true)
+	account=$(curl -fsS -H "Authorization: Bearer $token" https://www.googleapis.com/oauth2/v3/tokeninfo \
+		2>/dev/null | sed -n 's/.*"email": *"\([^"]*\)".*/\1/p')
+	# Google answers 403 both for a project that does not exist and for one this identity cannot see.
+	curl -fsS -H "Authorization: Bearer $token" \
+		"https://cloudresourcemanager.googleapis.com/v1/projects/$PROJECT" >/dev/null 2>&1 \
+		|| die "project $PROJECT not found or not visible to ${account:-these credentials}; --project takes" \
+			"an existing project ID (\`gcloud projects list\`), and this script never creates a project"
+	billing=$(curl -fsS -H "Authorization: Bearer $token" \
+		"https://cloudbilling.googleapis.com/v1/projects/$PROJECT/billingInfo" 2>/dev/null | tr -d ' \n')
+	case $billing in
+	*'"billingEnabled":true'*) ;;
+	*'"name":'*) die "project $PROJECT has no billing account linked, and Cloud Run and Cloud Storage" \
+		"need one: \`gcloud billing projects link $PROJECT --billing-account ID\`, with the ID from" \
+		"\`gcloud billing accounts list\`" ;;
+	*) say "could not check billing on $PROJECT; Terraform fails later if none is linked" ;;
+	esac
 	say "Google Cloud project $PROJECT, region $REGION, as ${account:-?}"
 }
 
@@ -222,11 +237,11 @@ usage() {
 	cat <<EOF
 Deploys Fleet Manager into your cloud account and prints the admin URL and credential.
 
-  deploy.sh aws --bucket NAME [--region REGION]      AWS: S3 bucket, roles, ECS Express service
-  deploy.sh gcp --project ID [--region REGION]       Google Cloud: GCS bucket, roles, Cloud Run
-  deploy.sh aws|gcp output [NAME]                    the outputs, or one of them (admin_credential)
-  deploy.sh aws|gcp plan                             show what a run would change
-  deploy.sh aws|gcp destroy                          remove it all; refuses a bucket with objects
+  deploy.sh aws --bucket NAME [--region REGION]                  AWS: S3 bucket, roles, ECS Express service
+  deploy.sh gcp --project ID [--bucket NAME] [--region REGION]   Google Cloud: GCS bucket, roles, Cloud Run
+  deploy.sh aws|gcp output [NAME]                                the outputs, or one of them (admin_credential)
+  deploy.sh aws|gcp plan                                         show what a run would change
+  deploy.sh aws|gcp destroy                                      remove it all; refuses a bucket with objects
 
 Options, remembered between runs:
   --name NAME             what the service and its roles are called (default fleet-manager)
