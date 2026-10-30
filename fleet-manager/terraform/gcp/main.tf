@@ -140,7 +140,7 @@ resource "google_storage_bucket_iam_member" "control" {
   # where organizations are created, not here.
   condition {
     title      = "control-prefix-only"
-    expression = "(resource.name.extract('${local.object_root}v1/organization={org}/') != '' && resource.name.extract('${local.object_root}v1/organization={org}/') == resource.name.extract('${local.object_root}v1/organization={org}/control/')) || resource.name == '${local.object_root}${local.telemetry_identity_key}'"
+    expression = "(resource.name.startsWith('${local.object_root}v1/organization=') && resource.name.extract('${local.object_root}v1/organization={org}/') != '' && resource.name.extract('${local.object_root}v1/organization={org}/') == resource.name.extract('${local.object_root}v1/organization={org}/control/')) || resource.name == '${local.object_root}${local.telemetry_identity_key}'"
   }
 }
 
@@ -158,7 +158,7 @@ resource "google_storage_bucket_iam_member" "data" {
   # be non-empty and followed by `/`, so the install root itself and a bare `install=` are excluded.
   condition {
     title      = "install-prefix"
-    expression = "resource.name.extract('${local.object_root}v1/organization={org}/') != '' && resource.name.extract('${local.object_root}v1/organization={org}/') == resource.name.extract('${local.object_root}v1/organization={org}/install=') && resource.name.extract('/install={id}/') != ''"
+    expression = "resource.name.startsWith('${local.object_root}v1/organization=') && resource.name.extract('${local.object_root}v1/organization={org}/') != '' && resource.name.extract('${local.object_root}v1/organization={org}/') == resource.name.extract('${local.object_root}v1/organization={org}/install=') && resource.name.extract('/install={id}/') != ''"
   }
 }
 

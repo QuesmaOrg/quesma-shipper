@@ -265,6 +265,15 @@ func TestTerraformScopesMultiTenantControlAndData(t *testing.T) {
 	if strings.Contains(gcp, `resource.name.startsWith(local.object_root)`) {
 		t.Fatal("GCP runtime can access every object")
 	}
+	// extract() can match a prefix embedded later in the name; anchor both organization grants.
+	for _, required := range []string{
+		`expression = "(resource.name.startsWith('${local.object_root}v1/organization=') && resource.name.extract(`,
+		`expression = "resource.name.startsWith('${local.object_root}v1/organization=') && resource.name.extract(`,
+	} {
+		if !strings.Contains(gcp, required) {
+			t.Errorf("GCP condition lacks anchored organization prefix %q", required)
+		}
+	}
 	// IAM Conditions compile a CEL subset: no matches(), and the objectListPrefix attribute only
 	// inside Credential Access Boundaries. Either in a binding fails at apply.
 	for _, unsupported := range []string{`.matches(`, `api.getAttribute(`} {
