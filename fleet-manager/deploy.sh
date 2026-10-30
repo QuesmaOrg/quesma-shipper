@@ -170,9 +170,24 @@ preflight_aws() {
 
 preflight_gcp() {
 	need gcloud
-	gcloud auth application-default print-access-token >/dev/null 2>&1 \
+	token=$(gcloud auth application-default print-access-token 2>/dev/null) \
 		|| die "no application default credentials: \`gcloud auth application-default login\`"
-	account=$(gcloud config get-value account 2>/dev/null || true)
+	account=$(curl -fsS -H "Authorization: Bearer $token" https://www.googleapis.com/oauth2/v3/tokeninfo \
+		2>/dev/null | sed -n 's/.*"email": *"\([^"]*\)".*/\1/p')
+	# Google answers 403 both for a project that does not exist and for one this identity cannot see.
+	curl -fsS -H "Authorization: Bearer $token" \
+		"https://cloudresourcemanager.googleapis.com/v1/projects/$PROJECT" >/dev/null 2>&1 \
+		|| die "project $PROJECT not found or not visible to ${account:-these credentials}; this script" \
+			"deploys into a project and never creates one: \`gcloud projects create $PROJECT\` and" \
+			"link billing, or \`gcloud projects list\` for one you can use"
+	billing=$(curl -fsS -H "Authorization: Bearer $token" \
+		"https://cloudbilling.googleapis.com/v1/projects/$PROJECT/billingInfo" 2>/dev/null | tr -d ' \n')
+	case $billing in
+	*'"billingEnabled":true'*) ;;
+	*'"name":'*) die "project $PROJECT has no billing account linked, and Cloud Run and Cloud Storage" \
+		"need one: \`gcloud billing projects link $PROJECT --billing-account ACCOUNT_ID\`" ;;
+	*) say "could not check billing on $PROJECT; Terraform fails later if none is linked" ;;
+	esac
 	say "Google Cloud project $PROJECT, region $REGION, as ${account:-?}"
 }
 

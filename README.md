@@ -57,6 +57,9 @@ on each machine.
 1. **Have ready:** an AWS account or Google Cloud project you can create resources in, and on your
    laptop Terraform or OpenTofu, `curl`, `age`, `age-keygen`, `zstd`, and the `aws` CLI signed in,
    or `gcloud` with `gcloud auth application-default login`. On AWS the Region needs a default VPC.
+   On Google Cloud the project must already exist with billing linked, since the script deploys
+   into a project and never creates one: `gcloud projects create ID`, then `gcloud billing
+   projects link ID --billing-account ACCOUNT`.
 
 2. **Decide two things** before anything enrolls. Ask two custodians to each run `age-keygen -o
    name.agekey` and send you only their `age1…` public recipient (`age-keygen -y name.agekey`
