@@ -35,6 +35,10 @@ const usage = `usage: quesma-unseal -i IDENTITY_FILE [-i IDENTITY_FILE]... ENC_D
 
 const sidecarSuffix = ".manifest.json"
 
+// indexName maps each object's key to the output it last wrote, so an object whose native path
+// moved, as a Codex session does when archived, does not leave its earlier copy behind.
+const indexName = ".unseal-index.json"
+
 // stagingDir holds every file before its rename into place. A run removes it first and last, so an
 // interrupted run leaves nothing partial beside an output.
 const stagingDir = ".unseal-tmp"
@@ -115,6 +119,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "quesma-unseal: %s: %v\n", outName, err)
 		return 2
 	}
+	if len(resealTo) == 0 {
+		u.loadIndex()
+	}
 	objects := u.collect()
 	if len(objects) == 0 {
 		fmt.Fprintf(stderr, "warning: no objects under %s; it should be a copy of v1/organization=<org>\n", flags.Arg(0))
@@ -128,6 +135,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 			u.decrypted++
 		default:
 			u.unchanged++
+		}
+	}
+	if u.index != nil {
+		if err := u.saveIndex(); err != nil {
+			u.fail(indexName, err)
 		}
 	}
 	fmt.Fprintf(stdout, "%s %d, %s %d, failed %d in %.1fs\n",
@@ -179,13 +191,14 @@ type unsealer struct {
 	claimed     map[string]string // output path, folded as PLAIN_DIR folds names -> .age rel path that claimed it
 	foldCase    bool              // PLAIN_DIR's filesystem treats names differing only in case as one
 	foldNFC     bool              // and names differing only in Unicode normalization
+	index       map[string]string // object key from install= on -> output path; nil under -reseal-to
 
 	decrypted, unchanged, failed int // under -reseal-to: resealed, already sealed, failed
 }
 
 // object is one mirror .age file, with the ids its key claims for it.
 type object struct {
-	rel, installRel, installID, sourceID string
+	rel, key, installRel, installID, sourceID string
 }
 
 func (u *unsealer) fail(rel string, err error) {
@@ -212,6 +225,7 @@ func (u *unsealer) collect() []object {
 			n := len(segs)
 			objects = append(objects, object{
 				rel:        p,
+				key:        strings.Join(segs[n-4:], "/"),
 				installRel: strings.Join(segs[:n-3], "/"),
 				installID:  strings.TrimPrefix(segs[n-4], "install="),
 				sourceID:   strings.TrimPrefix(segs[n-2], "source="),
@@ -259,10 +273,64 @@ func (u *unsealer) object(o object) (bool, error) {
 		return false, err
 	}
 
-	if ok, err := u.upToDate(out, m); err != nil || ok {
+	ok, err := u.upToDate(out, m)
+	if err != nil {
 		return false, err
 	}
-	return true, u.write(obj, out, info.ModTime())
+	if !ok {
+		if err := u.write(obj, out, info.ModTime()); err != nil {
+			return false, err
+		}
+	}
+	if prev := u.index[o.key]; prev != "" && u.fold(prev) != u.fold(out) {
+		u.removeSuperseded(o, prev)
+	}
+	u.index[o.key] = out
+	return !ok, nil
+}
+
+// removeSuperseded deletes the output o wrote before its native path moved, unless another object
+// holds that path this run or it is not an output, a payload with its sidecar beside it.
+func (u *unsealer) removeSuperseded(o object, prev string) {
+	if holder, ok := u.claimedBy(prev); ok && holder != o.rel {
+		return
+	}
+	for _, p := range []string{prev, prev + sidecarSuffix} {
+		if info, err := u.plain.Lstat(p); err != nil || !info.Mode().IsRegular() {
+			return
+		}
+	}
+	for _, p := range []string{prev, prev + sidecarSuffix} {
+		if err := u.plain.Remove(p); err != nil {
+			fmt.Fprintf(u.stderr, "warning %s: removing %s: %s\n", oneLine(o.rel), oneLine(p), oneLine(err.Error()))
+			return
+		}
+	}
+}
+
+// loadIndex starts from an empty index when there is none; an unreadable one only costs this run
+// its removals.
+func (u *unsealer) loadIndex() {
+	u.index = map[string]string{}
+	raw, err := u.plain.ReadFile(indexName)
+	if errors.Is(err, fs.ErrNotExist) {
+		return
+	}
+	if err == nil {
+		err = json.Unmarshal(raw, &u.index)
+	}
+	if err != nil {
+		u.index = map[string]string{}
+		fmt.Fprintf(u.stderr, "warning %s: %s; outputs whose object moved are kept this run\n", indexName, oneLine(err.Error()))
+	}
+}
+
+func (u *unsealer) saveIndex() error {
+	raw, err := json.MarshalIndent(u.index, "", "  ")
+	if err != nil {
+		return err
+	}
+	return u.place(indexName, raw, time.Now())
 }
 
 // claim reserves out and its sidecar for o. Where PLAIN_DIR would merge them with another object's
@@ -436,6 +504,10 @@ func (u *unsealer) outputPath(o object, m transforms.Manifest) (string, error) {
 	native, err := nativeRelPath(m.NativePath)
 	if err != nil {
 		return "", err
+	}
+	// The shipper decompresses a .zst source before sealing it, so its payload is not zstd.
+	if leaf := path.Base(native); len(leaf) > len(".zst") && strings.HasSuffix(leaf, ".zst") {
+		native = strings.TrimSuffix(native, ".zst")
 	}
 	dir, err := u.installDir(o.installRel, o.installID)
 	if err != nil {

@@ -27,6 +27,7 @@ const (
 	installB = "9b8c7d6e-0000-4000-8000-000000000002"
 	claude   = "claude-code-transcripts"
 	cursor   = "cursor-transcripts"
+	codex    = "codex-transcripts"
 )
 
 var t0 = time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
@@ -203,7 +204,7 @@ func (a *archive) wantSidecar(rel, native string, mtime time.Time) {
 	}
 }
 
-// listPlain returns every file under PLAIN_DIR, slash-separated, for exact-layout assertions.
+// listPlain returns every file under PLAIN_DIR but the index, slash-separated, for exact-layout assertions.
 func (a *archive) listPlain() []string {
 	a.t.Helper()
 	var files []string
@@ -212,7 +213,9 @@ func (a *archive) listPlain() []string {
 			return err
 		}
 		rel, _ := filepath.Rel(a.plain, p)
-		files = append(files, filepath.ToSlash(rel))
+		if rel != indexName {
+			files = append(files, filepath.ToSlash(rel))
+		}
 		return nil
 	})
 	if err != nil {
@@ -309,7 +312,8 @@ func TestResealedSameMtimeRewrites(t *testing.T) {
 	a.wantSummary(a.run(), 0, 0, 1, 0)
 }
 
-func TestInstallRenameKeepsOldDir(t *testing.T) {
+// A renamed install's outputs move to the new directory rather than staying twice.
+func TestInstallRenameMovesOutputs(t *testing.T) {
 	a := newArchive(t)
 	a.tags(installA, "old name")
 	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
@@ -317,7 +321,7 @@ func TestInstallRenameKeepsOldDir(t *testing.T) {
 
 	a.tags(installA, "new name")
 	a.wantSummary(a.run(), 0, 1, 0, 0)
-	a.wantPlain(out("new name (3f2a1b2c)", claude, "a/1.jsonl"), out("old name (3f2a1b2c)", claude, "a/1.jsonl"))
+	a.wantPlain(out("new name (3f2a1b2c)", claude, "a/1.jsonl"))
 }
 
 func TestWrongIdentityFailsOnlyThatObject(t *testing.T) {
@@ -551,6 +555,56 @@ func TestSymlinkOutsideArchiveIgnored(t *testing.T) {
 	}
 
 	a.wantSummary(a.run(), 0, 1, 0, 0)
+	a.wantStderr()
+}
+
+// A Codex session archived and compressed keeps its key under a new native path; its earlier copy
+// goes, and the output is named for what the payload is, decompressed JSONL.
+func TestMovedObjectReplacesItsOutput(t *testing.T) {
+	a := newArchive(t)
+	key := objectKey(installA, codex, "11aa")
+	a.put(key, manifest(installA, codex, "/h/.codex/sessions/2026/07/01/rollout-1.jsonl"), "v1\n", t0)
+	a.put(objectKey(installA, codex, "22bb"), manifest(installA, codex, "/h/.codex/sessions/2026/07/01/rollout-2.jsonl"), "x\n", t0)
+	a.wantSummary(a.run(), 0, 2, 0, 0)
+
+	a.put(key, manifest(installA, codex, "/h/.codex/archived_sessions/rollout-1.jsonl.zst"), "v1\nv2\n", t0.Add(time.Hour))
+	a.wantSummary(a.run(), 0, 1, 1, 0)
+	a.wantStderr()
+	a.wantPlain(out(installA, codex, "h/.codex/archived_sessions/rollout-1.jsonl"),
+		out(installA, codex, "h/.codex/sessions/2026/07/01/rollout-2.jsonl"))
+	a.wantFile(out(installA, codex, "h/.codex/archived_sessions/rollout-1.jsonl"), "v1\nv2\n", t0.Add(time.Hour))
+	a.wantSummary(a.run(), 0, 0, 2, 0)
+}
+
+// The index only names what to remove: a file that is not an output stays, and a lost index costs
+// one run its removals.
+func TestIndexRemovesOnlyOutputs(t *testing.T) {
+	a := newArchive(t)
+	key := objectKey(installA, claude, "11aa")
+	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+
+	notes := filepath.Join(a.plain, "notes.txt")
+	if err := os.WriteFile(notes, []byte("mine\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	index := `{"install=` + installA + `/mirror/source=` + claude + `/11aa.age": "notes.txt"}`
+	if err := os.WriteFile(filepath.Join(a.plain, indexName), []byte(index), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.wantSummary(a.run(), 0, 0, 1, 0)
+	if _, err := os.Stat(notes); err != nil {
+		t.Fatalf("a file without a sidecar was removed: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(a.plain, indexName), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.wantSummary(a.run(), 0, 0, 1, 0)
+	if !strings.HasPrefix(a.stderrStr, "warning "+indexName+": ") {
+		t.Fatalf("stderr:\n%s", a.stderrStr)
+	}
+	a.wantSummary(a.run(), 0, 0, 1, 0)
 	a.wantStderr()
 }
 

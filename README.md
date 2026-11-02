@@ -113,8 +113,10 @@ on each machine.
    On Google Cloud, `deploy.sh gcp output bucket` and a `gcs` remote; on Azure, the container name
    and an `azureblob` remote. `plain/` holds `<install name> (<id prefix>)/<source>/<native path>`,
    or the install id when unnamed, each file beside a `.manifest.json` sidecar. Re-running both
-   commands fetches and decrypts only changed objects and never deletes anything; an object that
-   fails is named on stderr, retried on the next run, and makes the exit status 1.
+   commands fetches and decrypts only changed objects. An object whose output moved, because its
+   install was renamed or its session archived, leaves no copy at the old path; nothing else is
+   deleted, so an erased install's files stay. An object that fails is named on stderr, retried on
+   the next run, and makes the exit status 1.
 
 What the script creates, and running the template by hand with your own image or your own
 state: [fleet-manager/terraform/aws](fleet-manager/terraform/aws/README.md),
