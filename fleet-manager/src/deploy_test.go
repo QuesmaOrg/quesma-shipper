@@ -179,6 +179,7 @@ func TestDeployDestroyKeepsTheAnalyticsKeyWhileTheBucketHoldsObjects(t *testing.
 exit 0
 `)
 			stub("aws", `case '`+tc.left+`' in NoSuchBucket | AccessDenied) echo "An error occurred (`+tc.left+`) when calling the ListObjectVersions operation" >&2; exit 254 ;; esac
+echo "a warning the CLI printed" >&2
 printf '`+tc.left+`\n'`+"\n")
 			cmd := exec.Command("sh", "../deploy.sh", "aws", "destroy", "-y", "--dir", filepath.Join(dir, "state"))
 			cmd.Env = []string{"PATH=" + filepath.Join(dir, "bin") + ":/usr/bin:/bin", "HOME=" + filepath.Join(dir, "home"),
