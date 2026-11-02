@@ -34,7 +34,9 @@ existing files, even after a shipper's `state reset`: upload deduplication write
 stored file only when its scrubbed bytes changed, for example after a scrub-rule change.
 
 An analytics identity is fixed the same way, and earlier: it can be set only when the organization is
-created, so an organization created without one has no history a processor can open later.
+created, so an organization created without one has no history a processor can open later. Upgrade
+every replica before creating the first one: an older replica cannot read a configuration that has
+it, and then lists no organizations at all.
 
 **A re-uploaded file keeps its earlier versions.** The bucket is versioned and nothing expires mirror
 objects, so a value that leaked under old scrub rules is still readable in the earlier version until
@@ -104,6 +106,8 @@ analytics identity ([AWS template](terraform/aws/README.md#an-analytics-identity
 Reading and decrypting revoke separately. Empty the list to stop the reading, which takes effect
 immediately. Turn off `allow_quesma_etl` to stop the decrypting of objects sealed from then on, or
 remove the role from `analytics_decrypt_role_arns` to stop the decrypting of the analytics identity.
+That stops new unwraps only: a processor that already unwrapped the identity can keep it, so only
+removing its bucket read stops it.
 
 **Running without egress.** Fleet Manager needs no outbound internet access beyond its cloud's own
 APIs: object storage, plus IAM Credentials `SignBlob` on Google Cloud, which signs every upload

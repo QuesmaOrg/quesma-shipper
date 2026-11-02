@@ -110,7 +110,7 @@ role allows more still reads only these.
 Reading is not decrypting. Every object is sealed to your organization's `age` recipients, and
 Quesma can open one only while the organization keeps its built-in recipient, the
 `allow_quesma_etl` setting, or through an analytics identity it was granted (below). The two are
-separately revocable, and revoking either is enough:
+separately revocable, and only removing the bucket grant takes effect on everything at once:
 
 | to stop | do |
 | --- | --- |
@@ -136,14 +136,17 @@ processor included, until you grant that processor `kms:Decrypt` on the key.
    `age` identity, sends it to `kms:Encrypt` with the encryption context
    `{purpose: analytics-identity, organization: <org>}`, and prints the organization, the recipient,
    the ciphertext and the key ARN on one line. The private key is never written to a file or printed. KMS receives it
-   for the encryption and does not keep it.
+   for the encryption and does not keep it. The command refuses while the AWS CLI's `cli_history`
+   is enabled, because the history would record the identity.
 3. Paste that line into the organization form, under "Let an analytics service process this
    organization's data later". It is stored in the organization's `control/config.json`, and only
    at creation: an organization created without it cannot add one later. A line made for another
-   organization is refused, because it would never decrypt under this one's context.
+   organization is refused, because it would never decrypt under this one's context, and so is a
+   line made under another deployment's key. Upgrade every replica first: an older one cannot read
+   a configuration that has the line, and then lists no organizations at all.
 
 To grant a processor, apply with its role in both lists. The bucket read and the decrypt are
-separate, and removing either revokes:
+separate grants:
 
 ```sh
 terraform apply … -var="etl_reader_role_arns=[\"$ROLE\"]" -var="analytics_decrypt_role_arns=[\"$ROLE\"]"
@@ -153,7 +156,9 @@ The processor reads the ciphertext from `control/config.json`, decrypts it under
 context of that organization, and opens the history and everything after it. Ciphertext from one
 organization does not decrypt under another's context. Removing the role from
 `analytics_decrypt_role_arns` and applying takes effect at the processor's next decrypt. Disabling
-the key by hand does too, but the next apply enables it again.
+the key by hand does too, but the next apply enables it again. Either stops new unwraps only: a
+processor that already unwrapped the identity can keep it, so only removing its bucket read stops
+it.
 
 Google Cloud has no equivalent yet.
 
@@ -170,5 +175,8 @@ terraform output -raw admin_credential
 Protect that credential, the Terraform state, and the private `age` identities according to your
 organization's backup and access-control requirements. Do not run `terraform destroy` after
 enrollment without a reviewed data-retention plan: the bucket contains fleet state and encrypted
-trajectory data, and a non-empty bucket prevents normal destruction. The rest is in
+trajectory data, and a non-empty bucket prevents normal destruction. With the analytics key,
+`terraform destroy` still schedules the key's deletion when it refuses the bucket, and a new key
+opens nothing sealed under the old one: `deploy.sh aws destroy` refuses first while the bucket holds
+any object version. The rest is in
 [OPERATIONS.md](../../OPERATIONS.md).

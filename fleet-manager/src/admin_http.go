@@ -523,6 +523,15 @@ func (s *Server) handleAdminCreateOrganization(w http.ResponseWriter, r *http.Re
 		writeAdminError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// The only place the field is set: another deployment's key would seal to what this one can't grant.
+	if a := req.AnalyticsIdentity; a != nil && (s.analyticsKMSKey == "" || a.KMSKey != s.analyticsKMSKey) {
+		message := "analytics identity: kms_key is not this deployment's analytics key"
+		if s.analyticsKMSKey == "" {
+			message = "analytics identity: this deployment has no analytics key"
+		}
+		writeAdminError(w, http.StatusBadRequest, message)
+		return
+	}
 	manager, _ := s.manager.ForOrganization(req.Slug)
 	cfg := FleetConfig{DisplayName: req.DisplayName, AgeRecipients: req.AgeRecipients,
 		IncludeInstallRecipient: req.IncludeInstallRecipient, AllowQuesmaETL: req.AllowQuesmaETL,

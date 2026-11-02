@@ -451,6 +451,10 @@ func TestTerraformAnalyticsKeyDecryptsForNobodyByDefault(t *testing.T) {
 			t.Errorf("variables.tf does not contain %q", pinned)
 		}
 	}
+	// The service refuses an identity under any other key, so it must be told which key is this one.
+	if env := "name  = \"FLEET_MANAGER_ANALYTICS_KMS_KEY\"\n      value = var.analytics_key ? aws_kms_key.analytics[0].arn : \"\"\n"; !strings.Contains(read("main.tf"), env) {
+		t.Errorf("main.tf does not pass the analytics key as %q", env)
+	}
 
 	decrypt := strings.Index(key, "dynamic \"statement\"")
 	if decrypt < 0 {

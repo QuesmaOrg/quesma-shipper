@@ -108,6 +108,10 @@ func runServe(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	analyticsKMSKey := os.Getenv("FLEET_MANAGER_ANALYTICS_KMS_KEY")
+	if analyticsKMSKey != "" && !kmsKeyARNPattern.MatchString(analyticsKMSKey) {
+		return fmt.Errorf("FLEET_MANAGER_ANALYTICS_KMS_KEY must be a KMS key ARN, not %q", analyticsKMSKey)
+	}
 	manager, signer, err := openTarget(ctx, target)
 	if err != nil {
 		return err
@@ -117,6 +121,7 @@ func runServe(ctx context.Context, args []string) error {
 		return err
 	}
 	server.defaults = defaults
+	server.analyticsKMSKey = analyticsKMSKey
 	identityContext, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	server.telemetry, err = telemetryForManager(identityContext, manager)

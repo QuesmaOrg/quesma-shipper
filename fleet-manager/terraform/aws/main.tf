@@ -265,6 +265,10 @@ resource "aws_ecs_express_gateway_service" "fleet_manager" {
       name  = "FLEET_MANAGER_DEFAULT_TELEMETRY_COLLECTOR_URL"
       value = var.default_telemetry_collector_url
     }
+    environment {
+      name  = "FLEET_MANAGER_ANALYTICS_KMS_KEY"
+      value = var.analytics_key ? aws_kms_key.analytics[0].arn : ""
+    }
   }
 
   depends_on = [
