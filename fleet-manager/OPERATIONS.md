@@ -33,8 +33,25 @@ recipients registered at the time of upload. Changing the recipients later does 
 existing files, even after a shipper's `state reset`: upload deduplication writes a new version of a
 stored file only when its scrubbed bytes changed, for example after a scrub-rule change.
 
+A custodian can reseal the history to a recipient added later. Resealing is the organization's
+decision; the fleet manager keeps no record of it. Add the recipient to the organization first, so
+a file shipped meanwhile is sealed to it, then, with `$W/enc` copied as in the README's step 6 (`W`
+outside the clone):
+
+```sh
+(cd src && go run ./cmd/quesma-unseal -i "$W/name.agekey" -reseal-to age1… "$W/enc" "$W/resealed")
+rclone copy --update "$W/resealed/" "aws:$B/v1/organization=acme" --include 'install=*/**'
+```
+
+Each object whose manifest does not list that recipient lands in `$W/resealed` under its own key, with
+the same payload, sealed to the recipients it lists plus the new one. `--update` skips a key a
+shipper rewrote after the copy. The upload adds a version and keeps the earlier one. rclone does not
+carry the metadata the fleet manager stored with the object, so after a shipper's `state reset`
+those files upload once more.
+
 An analytics identity is fixed the same way, and earlier: it can be set only when the organization is
-created, so an organization created without one has no history a processor can open later. Upgrade
+created, so an organization created without one has no history a processor can open later, unless a
+custodian reseals it to the processor's recipient. Upgrade
 every replica before creating the first one: an older replica cannot read a configuration that has
 it, and then lists no organizations at all.
 

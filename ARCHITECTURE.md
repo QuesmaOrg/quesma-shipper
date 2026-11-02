@@ -16,6 +16,7 @@ three triggers that differ only in *when*.
 quesma-shipper/
   src/                    Go module root
     cmd/quesma-shipper/   main
+    cmd/quesma-unseal/    a custodian's tool: decrypt or reseal a local copy of the bucket; not in the shipper
     app/                  the facade: resolve config into a run, flush it — the one public package
     packaging/            install, update, service lifecycle; thin current-OS dispatch
       common/             TUF verification, re-exec, shared service types and run markers
@@ -59,6 +60,7 @@ would compile, so the table is the reference for what direction is intended.
 | --- | --- |
 | `src/app` | `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/identity`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/sources`, `src/internal/transforms`, `src/internal/transforms/cursorjoin`, `src/internal/upload`, `src/packaging` |
 | `src/cmd/quesma-shipper` | `src/app`, `src/internal/cli`, `src/internal/platform` |
+| `src/cmd/quesma-unseal` | `src/internal/transforms` |
 | `src/e2e` | — |
 | `src/internal/cli` | `src/app`, `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/identity`, `src/internal/legal`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/platform/crashjournal`, `src/internal/sources`, `src/packaging` |
 | `src/internal/config` | `src/internal/platform`, `src/internal/sources`, `src/internal/transforms`, `src/internal/transforms/packs` |
@@ -109,7 +111,9 @@ These are checked by tests or held in review, because no directory layout can ex
 - **Write-path lint** (`src/internal/platform/writepath_lint_test.go`): only the packages (and,
   inside merged packages, the specific *files*) that own a durable artifact may call the
   os-level write functions; everything else routes through safeio. The shipper never writes
-  inside an agent's store.
+  inside an agent's store. `cmd/quesma-unseal` is not the shipper and runs on a custodian's
+  machine: it writes only under the output directory it is given, through `os.Root`, which the
+  lint does not see.
 - **Third-party confinement**: an SDK stops in the package that owns it — sqlite never
   past sqliteread, zstd only in transforms (seal) and sources (2026-09-23: the loader decodes
   cold `.zst` files so they are scrubbed like plaintext). No AWS, Azure or Google client is
