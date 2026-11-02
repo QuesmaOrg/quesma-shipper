@@ -199,8 +199,8 @@ printf '`+tc.left+`\n'`+"\n")
 	}
 }
 
-// A new deployment leaves Quesma's recipient to the template's default, off. One deployed before
-// that default changed keeps it on for organizations that never chose, until told otherwise.
+// A new deployment stores the template's default, off, so its own later runs keep it. One deployed
+// before that default changed keeps it on for organizations that never chose, until told otherwise.
 func TestDeployKeepsQuesmasRecipientOnWhereItWasDeployedOn(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("deploy.sh is a POSIX shell script")
@@ -211,12 +211,14 @@ func TestDeployKeepsQuesmasRecipientOnWhereItWasDeployedOn(t *testing.T) {
 		args     []string
 		want     string
 		says     bool
+		again    bool // run once more after the first run deployed
 	}{
-		"new":                      {false, "", nil, "", false},
-		"existing":                 {true, "", nil, "true", true},
-		"existing, told off":       {true, "", []string{"--no-quesma-etl"}, "false", false},
-		"existing, stored off":     {true, "false", nil, "false", false},
-		"existing, already pinned": {true, "true", nil, "true", false},
+		"new":                      {false, "", nil, "false", false, false},
+		"new, then run again":      {false, "", nil, "false", false, true},
+		"existing":                 {true, "", nil, "true", true, false},
+		"existing, told off":       {true, "", []string{"--no-quesma-etl"}, "false", false, false},
+		"existing, stored off":     {true, "false", nil, "false", false, false},
+		"existing, already pinned": {true, "true", nil, "true", false, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -249,6 +251,14 @@ func TestDeployKeepsQuesmasRecipientOnWhereItWasDeployedOn(t *testing.T) {
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("deploy.sh: %v\n%s", err, out)
+			}
+			if tc.again {
+				write("state/aws/terraform.tfstate", "{}", 0o600)
+				again := exec.Command("sh", args...)
+				again.Env = cmd.Env
+				if out, err = again.CombinedOutput(); err != nil {
+					t.Fatalf("deploy.sh, second run: %v\n%s", err, out)
+				}
 			}
 			vars, err := os.ReadFile(filepath.Join(dir, "state/aws/terraform.tfvars.json"))
 			if err != nil {
