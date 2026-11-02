@@ -522,6 +522,23 @@ func TestSymlinkOutsideArchiveIgnored(t *testing.T) {
 	a.wantStderr()
 }
 
+// What an interrupted run staged is gone after the next one, and a run leaves no staging behind.
+func TestInterruptedRunLeavesNothing(t *testing.T) {
+	a := newArchive(t)
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
+	if err := os.MkdirAll(filepath.Join(a.plain, stagingDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(a.plain, stagingDir, "partial"), []byte("half a sess"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+	if _, err := os.Stat(filepath.Join(a.plain, stagingDir)); !os.IsNotExist(err) {
+		t.Fatalf("%s after a run: %v", stagingDir, err)
+	}
+	a.wantPlain(out(installA, claude, "a/1.jsonl"))
+}
+
 // A payload is streamed to disk, never held whole in memory.
 func TestPayloadStreamed(t *testing.T) {
 	a := newArchive(t)

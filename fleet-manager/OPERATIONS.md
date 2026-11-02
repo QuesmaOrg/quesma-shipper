@@ -38,7 +38,7 @@ a file shipped meanwhile is sealed to it, then, with `enc/` copied as in the REA
 
 ```sh
 (cd src && go run ./cmd/quesma-unseal -i ../name.agekey -reseal-to age1… ../enc ../resealed)
-rclone copy --update resealed/ "aws:$B/v1/organization=acme"
+rclone copy --update resealed/ "aws:$B/v1/organization=acme" --include 'install=*/**'
 ```
 
 Each object whose manifest does not list that recipient lands in `resealed/` under its own key, with

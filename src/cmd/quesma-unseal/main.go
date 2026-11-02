@@ -35,6 +35,10 @@ const usage = `usage: quesma-unseal -i IDENTITY_FILE [-i IDENTITY_FILE]... ENC_D
 
 const sidecarSuffix = ".manifest.json"
 
+// stagingDir holds every file before its rename into place. A run removes it first and last, so an
+// interrupted run leaves nothing partial beside an output.
+const stagingDir = ".unseal-tmp"
+
 // maxTagsBytes bounds tags.json, which holds a name and a few labels; a huge one is hostile.
 const maxTagsBytes = 1 << 20
 
@@ -93,6 +97,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	defer plain.Close()
+	if err := plain.RemoveAll(stagingDir); err != nil {
+		fmt.Fprintf(stderr, "quesma-unseal: %s: %v\n", outName, err)
+		return 2
+	}
+	if err := plain.Mkdir(stagingDir, 0o700); err != nil {
+		fmt.Fprintf(stderr, "quesma-unseal: %s: %v\n", outName, err)
+		return 2
+	}
+	defer plain.RemoveAll(stagingDir)
 
 	u := &unsealer{
 		enc: enc, plain: plain, ids: ids, resealTo: resealTo, stderr: stderr,
@@ -323,7 +336,7 @@ func (u *unsealer) place(rel string, body []byte, mtime time.Time) error {
 	if info, err := u.plain.Lstat(rel); err == nil && !info.Mode().IsRegular() {
 		return fmt.Errorf("output %s exists and is not a regular file", rel)
 	}
-	tmp, err := u.stage(dir, mtime, func(w io.Writer) error {
+	tmp, err := u.stage(mtime, func(w io.Writer) error {
 		_, err := w.Write(body)
 		return err
 	})
@@ -493,13 +506,13 @@ func (u *unsealer) write(obj *io.SectionReader, out string, mtime time.Time) (er
 		}
 	}()
 	var m transforms.Manifest
-	if payload, err = u.stage(dir, mtime, func(w io.Writer) (err error) {
+	if payload, err = u.stage(mtime, func(w io.Writer) (err error) {
 		m, err = transforms.OpenTo(io.NewSectionReader(obj, 0, obj.Size()), w, u.ids...)
 		return err
 	}); err != nil {
 		return err
 	}
-	if sidecar, err = u.stage(dir, mtime, func(w io.Writer) error {
+	if sidecar, err = u.stage(mtime, func(w io.Writer) error {
 		b, err := sidecarJSON(m)
 		if err == nil {
 			_, err = w.Write(b)
@@ -528,9 +541,9 @@ func sidecarJSON(m transforms.Manifest) ([]byte, error) {
 	return b.Bytes(), err
 }
 
-// stage writes a synced temp file in dir stamped with mtime; its fixed-length name fits beside any leaf.
-func (u *unsealer) stage(dir string, mtime time.Time, fill func(io.Writer) error) (string, error) {
-	tmp := path.Join(dir, tempName("tmp"))
+// stage writes a synced file in stagingDir stamped with mtime, for a rename into place.
+func (u *unsealer) stage(mtime time.Time, fill func(io.Writer) error) (string, error) {
+	tmp := path.Join(stagingDir, tempName())
 	f, err := u.plain.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return "", err
@@ -552,10 +565,10 @@ func (u *unsealer) stage(dir string, mtime time.Time, fill func(io.Writer) error
 	return tmp, nil
 }
 
-func tempName(kind string) string {
-	var suffix [8]byte
-	_, _ = rand.Read(suffix[:])
-	return ".unseal-" + hex.EncodeToString(suffix[:]) + "." + kind
+func tempName() string {
+	var name [8]byte
+	_, _ = rand.Read(name[:])
+	return hex.EncodeToString(name[:])
 }
 
 // syncDir makes the renames durable, best-effort like platform.syncDir: Windows cannot sync a directory.
