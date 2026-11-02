@@ -33,6 +33,11 @@ recipients registered at the time of upload. Changing the recipients later does 
 existing files, even after a shipper's `state reset`: upload deduplication writes a new version of a
 stored file only when its scrubbed bytes changed, for example after a scrub-rule change.
 
+An analytics identity is fixed the same way, and earlier: it can be set only when the organization is
+created, so an organization created without one has no history a processor can open later. Upgrade
+every replica before creating the first one: an older replica cannot read a configuration that has
+it, and then lists no organizations at all.
+
 **A re-uploaded file keeps its earlier versions.** The bucket is versioned and nothing expires mirror
 objects, so a value that leaked under old scrub rules is still readable in the earlier version until
 an operator deletes it by hand. A `state reset` after a shipper upgrade that changed scrubbing
@@ -47,6 +52,21 @@ for enrollment, so you can push it out ahead of everything else and enroll later
 `terraform apply -replace=random_bytes.admin_credential`; the digest object changes during the
 apply and the old credential stops working immediately. Locally, delete
 `fleet-manager/data/admin-credential` and run `make -C fleet-manager run` again.
+
+**Give a third party one organization.** **Partner → Create credential** in the administration UI
+(or `POST /v1/admin/orgs/{org}/partner`) shows an `fmp1.` credential once. It can manage that
+organization's machines, report their health and edit collection settings
+(`PUT /v1/admin/orgs/{org}/collection`, with the ETag from `GET /config`). It cannot change
+recipients, Quesma ETL or telemetry, and cannot reach another organization. An organization has one
+partner credential, and creating another while it is active answers 409. **Revoke** (or
+`POST /v1/admin/orgs/{org}/partner/revoke`) stops it on the next request. To rotate, revoke and
+create again, which **Partner → Replace credential** does in one step, then hand the new one over before the
+third party's next call. `GET /v1/admin/orgs/{org}/partner` says when the current one was created
+and whether it is revoked, and answers 404 when none was ever created. Each partner call that
+changes something is logged as `organization <org>: the partner credential's <method> <path>
+answered <status>`, because `config.json` does not record who wrote it. The administration UI
+does not accept a partner credential. Upgrade every replica before creating one: an older replica
+refuses it with 401.
 
 **Revoke.** Installs, invites and grants are revoked from the administration UI. A revoked install
 can still be given a name, because the objects it already uploaded remain in the bucket. There is
@@ -81,8 +101,13 @@ terraform apply … -var='etl_reader_role_arns=["arn:aws:iam::123456789012:role/
 It permits listing the bucket below `v1/` and reading two kinds of object: everything under an
 install's root, and each organization's `control/config.json`. Reading is not decrypting: the ETL
 can open objects only while the organization keeps Quesma's recipient (`allow_quesma_etl`, on by
-default). The two revoke separately. Empty the list to stop the reading, which takes effect
-immediately; turn off `allow_quesma_etl` to stop the decrypting of objects sealed from then on.
+default), or while `analytics_decrypt_role_arns` names it for an organization created with an
+analytics identity ([AWS template](terraform/aws/README.md#an-analytics-identity-under-your-own-key)).
+Reading and decrypting revoke separately. Empty the list to stop the reading, which takes effect
+immediately. Turn off `allow_quesma_etl` to stop the decrypting of objects sealed from then on, or
+remove the role from `analytics_decrypt_role_arns` to stop the decrypting of the analytics identity.
+That stops new unwraps only: a processor that already unwrapped the identity can keep it, so only
+removing its bucket read stops it.
 
 **Running without egress.** Fleet Manager needs no outbound internet access beyond its cloud's own
 APIs: object storage, plus IAM Credentials `SignBlob` on Google Cloud, which signs every upload
@@ -108,7 +133,9 @@ v1/control/admin/credential.json                     sha256 of the administrator
 v1/control/reporter/credential.json                  sha256 of the reporter credential (optional)
 private/fleet-manager/telemetry-identity.json        the deployment's Ed25519 signing seed
 v1/organization=<org>/control/…                      config, grants, invites, install records
+v1/organization=<org>/control/partner/credential.json sha256 of the partner credential (optional)
 v1/organization=<org>/control/seen/<install>.json    check-in records (tagged ephemeral)
+v1/organization=<org>/control/catalogs/<sha256>.json reported source catalogs, written once each
 v1/organization=<org>/install=<install-id>/tags.json the install's display name
 v1/organization=<org>/install=<install-id>/…         the sealed trajectory objects
 ```

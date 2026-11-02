@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/QuesmaOrg/shipper-protocol/schemas/v2/uploads-authorize-response.schema.json",
+  "title": "POST /v2/uploads/authorize response",
+  "description": "One entry for every request object: a short-lived PUT ticket, or the already-present answer that carries no capability. URLs and query strings are bearer credentials and must never be logged. The shipper strictly decodes each answer and validates every PUT ticket against the original object and its machine-owner upload target before sending bytes.",
+  "type": "object",
+  "required": ["tickets"],
+  "additionalProperties": false,
+  "properties": {
+    "tickets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/ticket" }
+    }
+  },
+
+  "$defs": {
+    "ticket": {
+      "oneOf": [
+        { "$ref": "#/$defs/put_ticket" },
+        { "$ref": "#/$defs/already_present_ticket" }
+      ]
+    },
+    "put_ticket": {
+      "type": "object",
+      "required": ["ticket_id", "object_id", "method", "url", "expires_at", "required_headers", "content_length", "content_length_signed"],
+      "additionalProperties": false,
+      "properties": {
+        "ticket_id": {
+          "description": "Stable server-generated UUID for authorization intent and future receipt correlation. It is also signed into object metadata.",
+          "$ref": "#/$defs/uuid"
+        },
+        "object_id": {
+          "description": "Exact request object_id correlated by the shipper.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "method": { "const": "PUT" },
+        "url": {
+          "description": "Short-lived presigned URL. This bearer credential is used only after local target and exact-key validation and is never logged.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "expires_at": { "$ref": "#/$defs/timestamp" },
+        "required_headers": {
+          "description": "Exact provider header map. Every entry is sent unchanged. The source hash comes only from the validated dedicated request field, and the ticket ID comes only from the server.",
+          "$ref": "#/$defs/required_headers"
+        },
+        "content_length": {
+          "description": "Expected PUT body size, which must exactly equal the matching request size.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "content_length_signed": {
+          "description": "The provider signature enforces the exact Content-Length.",
+          "const": true
+        }
+      }
+    },
+    "already_present_ticket": {
+      "description": "The archive already holds this key under the request's source_hash, so no capability was minted and the shipper uploads nothing for it. A full ticket is always a valid answer too, so a server may still authorize such an object as new.",
+      "type": "object",
+      "required": ["ticket_id", "object_id", "already_present"],
+      "additionalProperties": false,
+      "properties": {
+        "ticket_id": {
+          "description": "Server-generated UUID for this answer. Nothing was signed with it, since no capability was minted.",
+          "$ref": "#/$defs/uuid"
+        },
+        "object_id": {
+          "description": "Exact request object_id correlated by the shipper.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "already_present": { "const": true }
+      }
+    },
+    "required_headers": {
+      "oneOf": [
+        { "$ref": "#/$defs/aws_headers" },
+        { "$ref": "#/$defs/gcs_headers" },
+        { "$ref": "#/$defs/azure_headers" }
+      ]
+    },
+    "aws_headers": {
+      "type": "object",
+      "required": ["x-amz-meta-source-hash", "x-amz-meta-ticket-id"],
+      "additionalProperties": false,
+      "properties": {
+        "x-amz-meta-source-hash": { "$ref": "#/$defs/hash" },
+        "x-amz-meta-ticket-id": { "$ref": "#/$defs/uuid" },
+        "x-amz-meta-manifest-version": { "type": "string", "pattern": "^[1-9][0-9]{0,8}$" },
+        "x-amz-meta-source-id": { "$ref": "#/$defs/identifier" },
+        "x-amz-meta-shipped-hash": { "$ref": "#/$defs/hash" },
+        "x-amz-meta-artifact-class": { "$ref": "#/$defs/identifier" },
+        "x-amz-meta-agent-version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "x-amz-meta-shape-sniff": { "$ref": "#/$defs/identifier" },
+        "x-amz-meta-derived": { "const": "true" },
+        "x-amz-meta-enrich-status": { "$ref": "#/$defs/identifier" },
+        "x-amz-meta-kind": { "const": "heartbeat" },
+        "x-amz-tagging": {
+          "description": "Optional server-derived object tag header. The client cannot request arbitrary tags.",
+          "enum": ["class=trajectory", "class=context"]
+        }
+      }
+    },
+    "gcs_headers": {
+      "type": "object",
+      "required": ["x-goog-meta-source-hash", "x-goog-meta-ticket-id"],
+      "additionalProperties": false,
+      "properties": {
+        "x-goog-meta-source-hash": { "$ref": "#/$defs/hash" },
+        "x-goog-meta-ticket-id": { "$ref": "#/$defs/uuid" },
+        "x-goog-meta-manifest-version": { "type": "string", "pattern": "^[1-9][0-9]{0,8}$" },
+        "x-goog-meta-source-id": { "$ref": "#/$defs/identifier" },
+        "x-goog-meta-shipped-hash": { "$ref": "#/$defs/hash" },
+        "x-goog-meta-artifact-class": { "$ref": "#/$defs/identifier" },
+        "x-goog-meta-agent-version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "x-goog-meta-shape-sniff": { "$ref": "#/$defs/identifier" },
+        "x-goog-meta-derived": { "const": "true" },
+        "x-goog-meta-enrich-status": { "$ref": "#/$defs/identifier" },
+        "x-goog-meta-kind": { "const": "heartbeat" }
+      }
+    },
+    "azure_headers": {
+      "type": "object",
+      "required": ["x-ms-meta-source_hash", "x-ms-meta-ticket_id", "x-ms-blob-type"],
+      "additionalProperties": false,
+      "properties": {
+        "x-ms-meta-source_hash": { "$ref": "#/$defs/hash" },
+        "x-ms-meta-ticket_id": { "$ref": "#/$defs/uuid" },
+        "x-ms-meta-manifest_version": { "type": "string", "pattern": "^[1-9][0-9]{0,8}$" },
+        "x-ms-meta-source_id": { "$ref": "#/$defs/identifier" },
+        "x-ms-meta-shipped_hash": { "$ref": "#/$defs/hash" },
+        "x-ms-meta-artifact_class": { "$ref": "#/$defs/identifier" },
+        "x-ms-meta-agent_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "x-ms-meta-shape_sniff": { "$ref": "#/$defs/identifier" },
+        "x-ms-meta-derived": { "const": "true" },
+        "x-ms-meta-enrich_status": { "$ref": "#/$defs/identifier" },
+        "x-ms-meta-kind": { "const": "heartbeat" },
+        "x-ms-blob-type": { "const": "BlockBlob" },
+        "x-ms-tags": { "enum": ["class=trajectory", "class=context"] }
+      }
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    }
+  }
+}

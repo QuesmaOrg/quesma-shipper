@@ -3,23 +3,122 @@ package sqliteread
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
 )
 
 // OpenCodeSessions reads only OpenCode transcript and usage columns.
 type OpenCodeSessions struct{}
 
+// Upstream migration copies 1.x sessions into session_v2 and session_message under the same IDs and keeps the originals.
+// A session with a 2.x copy ships it, since upstream continues sessions only there; any other ships its 1.x copy.
+// List and Read pick the same copy, so the directory checked for repository markers is the one exported.
 func (OpenCodeSessions) List(ctx context.Context, path string) ([]Session, error) {
-	return listSessions(ctx, path, `SELECT id, directory AS cwd FROM session ORDER BY time_created, id LIMIT 100001`)
-}
-func (OpenCodeSessions) Read(ctx context.Context, path, _, id string, maxBytes int64) ([]byte, error) {
-	return readSession(ctx, path, "opencode", id, maxBytes, func(tx *sessionConnection, emit func(string, string) error) error {
-		err := emit("session", `SELECT id, parent_id, directory AS cwd, title, version, time_created, time_updated FROM session WHERE id = ?`)
-		if err == nil {
-			err = emit("message", `SELECT id, time_created, time_updated, data FROM message WHERE session_id = ? ORDER BY time_created,id`)
+	sessions, err := listSessions(ctx, path, func(tx *sessionConnection) (string, error) {
+		tables, err := opencodeTables(ctx, tx)
+		if err != nil {
+			return "", err
 		}
+		v1 := `SELECT id, directory AS cwd, time_created FROM session`
+		v2 := `SELECT id, directory AS cwd, time_created FROM session_v2`
+		switch {
+		case tables["session"] && tables["session_v2"]:
+			v1 += ` WHERE id NOT IN (SELECT id FROM session_v2) UNION ALL ` + v2
+		case tables["session_v2"]:
+			v1 = v2
+		}
+		return `SELECT id, cwd FROM (` + v1 + `) ORDER BY time_created, id LIMIT 100001`, nil
+	})
+	main := filepath.Join(filepath.Dir(path), "opencode.db")
+	if err != nil || filepath.Base(path) != "opencode-next.db" {
+		return sessions, err
+	}
+	if _, err := os.Lstat(main); errors.Is(err, fs.ErrNotExist) {
+		return sessions, nil
+	}
+	// OpenCode 2.x imports opencode-next.db into opencode.db and leaves it behind; a 1.x "next" channel, or an import
+	// that has not run or finished, leaves sessions with no other copy.
+	imported, err := opencodeSessionIDs(ctx, main)
+	return slices.DeleteFunc(sessions, func(s Session) bool { return imported[s.ID] }), err
+}
+
+func opencodeSessionIDs(ctx context.Context, path string) (map[string]bool, error) {
+	db, err := openSessions(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	var tables []string
+	err = db.query(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name IN ('session','session_v2')`, nil, func(row map[string]any) error {
+		tables = append(tables, row["name"].(string))
+		return nil
+	})
+	ids := map[string]bool{}
+	for _, table := range tables {
 		if err == nil {
-			err = emit("part", `SELECT id, message_id, time_created, time_updated, data FROM part WHERE session_id = ? ORDER BY time_created,id`)
+			err = db.query(ctx, `SELECT id FROM `+table, nil, func(row map[string]any) error {
+				id, _ := row["id"].(string)
+				ids[id] = true
+				return nil
+			})
+		}
+	}
+	return ids, err
+}
+
+func (OpenCodeSessions) Read(ctx context.Context, path, relPath, id string, maxBytes int64) ([]byte, error) {
+	namespace := "opencode"
+	// Channel databases (opencode-<channel>.db) are separate histories that may reuse session IDs.
+	if relPath = filepath.ToSlash(filepath.Clean(relPath)); relPath != "opencode.db" {
+		namespace += ":" + sessionKey("opencode-database", relPath)
+	}
+	return readSession(ctx, path, namespace, id, maxBytes, func(tx *sessionConnection, emit func(string, string) error) error {
+		tables, err := opencodeTables(ctx, tx)
+		exists := func(query string, found *bool) {
+			if err == nil {
+				err = tx.query(ctx, query, []string{id}, func(map[string]any) error { *found = true; return nil })
+			}
+		}
+		var inV2, legacy, native bool
+		if tables["session_v2"] {
+			exists(`SELECT 1 FROM session_v2 WHERE id = ?`, &inV2)
+		}
+		if tables["session"] && !inV2 {
+			exists(`SELECT 1 FROM message WHERE session_id = ? LIMIT 1`, &legacy)
+		}
+		if tables["session_message"] {
+			exists(`SELECT 1 FROM session_message WHERE session_id = ? LIMIT 1`, &native)
+		}
+		// V2 keeps the message kind in a column and orders by seq; time_created can tie.
+		messages := `SELECT id, type AS message_type, seq, time_created, time_updated, data FROM session_message WHERE session_id = ? ORDER BY seq`
+		v1Session := `SELECT id, parent_id, directory AS cwd, title, version, time_created, time_updated FROM session WHERE id = ?`
+		switch {
+		case err != nil:
+		case inV2 || !tables["session"]:
+			// The totals keep usage that migration drops from messages, such as compaction summaries.
+			err = emit("session", `SELECT id, parent_id, fork_session_id, fork_boundary, directory AS cwd, title, version, time_created, time_updated,
+				cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write FROM session_v2 WHERE id = ?`)
+			if err == nil {
+				err = emit("session_message", messages)
+			}
+		case native && !legacy:
+			// The shared 2.x layout keeps 1.x session rows but writes their messages to session_message.
+			err = emit("session", v1Session)
+			if err == nil {
+				err = emit("session_message", messages)
+			}
+		default:
+			err = emit("session", v1Session)
+			if err == nil {
+				err = emit("message", `SELECT id, time_created, time_updated, data FROM message WHERE session_id = ? ORDER BY time_created,id`)
+			}
+			if err == nil {
+				err = emit("part", `SELECT id, message_id, time_created, time_updated, data FROM part WHERE session_id = ? ORDER BY time_created,id`)
+			}
 		}
 
 		return err
@@ -42,9 +141,31 @@ func (OpenCodeSessions) Read(ctx context.Context, path, _, id string, maxBytes i
 			if err != nil {
 				return err
 			}
-			record["execution_key"] = sessionKey("opencode:"+kind, fmt.Sprint(record["time_created"])+":"+string(canonical))
+			scope := "opencode:" + kind
+			// V2 keeps the message kind outside data, so it must separate otherwise identical records.
+			if messageType, ok := record["message_type"].(string); ok {
+				scope += ":" + messageType
+			}
+			record["execution_key"] = sessionKey(scope, fmt.Sprint(record["time_created"])+":"+string(canonical))
 		}
 
 		return nil
 	})
+}
+
+// opencodeTables accepts V1 (session, message, part), V2 (session_v2, session_message), and migrated stores holding both.
+// A partial layout fails loudly rather than shipping sessions without their transcript.
+func opencodeTables(ctx context.Context, tx *sessionConnection) (map[string]bool, error) {
+	tables := map[string]bool{}
+	err := tx.query(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name IN ('session','message','part','session_v2','session_message')`, nil, func(row map[string]any) error {
+		tables[row["name"].(string)] = true
+		return nil
+	})
+	v1 := tables["session"] && tables["message"] && tables["part"]
+	v2 := tables["session_v2"] && tables["session_message"]
+	partial := tables["session"] && !v1 || tables["session_v2"] && !v2
+	if err == nil && (partial || !v1 && !v2) {
+		err = fmt.Errorf("unsupported OpenCode database schema: want session, message and part, or session_v2 and session_message tables")
+	}
+	return tables, err
 }

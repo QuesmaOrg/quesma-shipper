@@ -46,7 +46,7 @@ const (
 // newAnchorScan builds a rule's entry points from its corpus keywords, or (nil, nil) when the rule
 // cannot be soundly or profitably anchored: refusing costs only speed. Only the checks decidable
 // from the pattern's text; a rule that must not anchor for correctness or cost declares "sweep":
-// true in the corpus (see TestPEMHeaderFloodStaysLinear).
+// true in the corpus (see TestHeaderFloodsStayLinear).
 func newAnchorScan(pattern string, keywords []string, sweep bool) (*anchorScan, error) {
 	if sweep || len(keywords) == 0 || len(keywords) > maxAnchorLits {
 		return nil, nil

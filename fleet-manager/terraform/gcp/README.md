@@ -17,7 +17,10 @@ creating the organization and enrolling the shippers, are
   name installs and to deduplicate uploads; it can fetch ciphertext, never decrypt it); read of the
   two credential digests; and `signBlob` on itself, because GCS presigned URLs are signed through
   the IAM API. Delete is included because GCS requires delete-plus-create to replace object bytes;
-  versioning preserves the displaced version.
+  versioning preserves the displaced version. Listing is the exception: GCS authorizes it against
+  the bucket, not the names returned, so it is granted on the whole bucket and the runtime can see
+  every object name. IAM Conditions have no regular expressions, so the prefixes are matched with
+  `extract()`; the organization slug's alphabet is enforced where organizations are created.
 - The administrator and reporter credentials, as random values whose SHA-256 digests are written to
   the bucket. Only the digests leave Terraform; the values are sensitive outputs.
 - A publicly invocable Cloud Run service. Shippers authenticate at the application layer after
@@ -78,7 +81,8 @@ export REGISTRY='europe-central2-docker.pkg.dev/acme-prod/images'
 rev=$(git rev-parse --short=12 HEAD)
 gcloud auth configure-docker europe-central2-docker.pkg.dev
 docker buildx build --platform linux/amd64 --target cloud-run \
-  --build-arg VERSION="$(cat VERSION)+$rev" -t "$REGISTRY/fleet-manager:$rev" --push .
+  --build-arg VERSION="$(cat VERSION)+$rev" -t "$REGISTRY/fleet-manager:$rev" --push \
+  -f Dockerfile ..                          # the context is the repository root
 docker buildx imagetools inspect "$REGISTRY/fleet-manager:$rev" \
   --format '{{json .Manifest.Digest}}' | tr -d '"'
 

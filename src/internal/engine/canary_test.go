@@ -27,6 +27,7 @@ var canaryUnscrubbed = map[string]string{
 	"claude-account": "scrub: false, account and usage snapshots fetched from the provider, not user files",
 	"codex-account":  "scrub: false, account and usage snapshots fetched from the provider, not user files",
 	"cursor-account": "scrub: false, account and usage snapshots fetched from the provider, not user files",
+	"cursor-usage":   "scrub: false, usage events fetched from the provider, not user files",
 }
 
 const canaryUUID = "0199cccc-dddd-7eee-8fff-000011112222"

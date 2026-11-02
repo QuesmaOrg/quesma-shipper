@@ -37,11 +37,22 @@ Pi, OpenCode, and Hermes support may change or be withdrawn.
 
 | | |
 | --- | --- |
-| **Try it first** | [**WALKTHROUGH.md**](fleet-manager/WALKTHROUGH.md): every step below on a throwaway deployment, a container as the developer machine, torn down at the end. About fifteen minutes. |
-| **Set it up** | [Operator: set up Fleet Manager](#operator-set-up-fleet-manager-once), once, in your AWS account or Google Cloud project. |
-| **Join it** | [Developer: install the shipper](#developer-install-the-shipper-each-machine), on each machine. |
+| **Try&nbsp;it&nbsp;first** | [**WALKTHROUGH.md**](fleet-manager/WALKTHROUGH.md): every step below on a throwaway deployment, a container as the developer machine, torn down at the end. About fifteen minutes. |
+| **Set&nbsp;it&nbsp;up** | [Operator: set up Fleet Manager](#operator-set-up-fleet-manager-once), once, in your AWS account or Google Cloud project. |
+| **Join&nbsp;it** | [Developer: install the shipper](#developer-install-the-shipper-each-machine), on each machine. |
 
 ## Operator: set up Fleet Manager (once)
+
+To run a self-managed Quesma Shipper fleet that sends data to a bucket you own, first deploy
+Fleet Manager in your cloud account. Fleet Manager is the shared service that enrolls developer
+machines, supplies their collection settings and encryption recipients, and authorizes uploads.
+
+The steps below walk you through a reference setup on **AWS ECS Express Mode with an S3 bucket**
+or **Google Cloud Run with a Cloud Storage (GCS) bucket**. The deployment script creates Fleet
+Manager, the bucket, and the cloud permissions they need. You then use its admin UI to create
+your organisation and invite developers to join. Set this up once for your fleet; developers
+can then follow [the shipper installation steps](#developer-install-the-shipper-each-machine)
+on each machine.
 
 1. **Have ready:** an AWS account or Google Cloud project you can create resources in, and on your
    laptop Terraform or OpenTofu, `curl`, `age`, `age-keygen`, `rclone`, Go, and the `aws` CLI signed
@@ -59,8 +70,11 @@ Pi, OpenCode, and Hermes support may change or be withdrawn.
    ```sh
    curl -fsSLO https://raw.githubusercontent.com/QuesmaOrg/quesma-shipper/main/fleet-manager/deploy.sh
 
-   sh deploy.sh aws --bucket globally-unique-acme-trajectories --region eu-central-1   # AWS, or
-   sh deploy.sh gcp --project acme-prod --region europe-central2                        # Google Cloud
+   BUCKET_NAME=acme-trajectories   # has to be globally unique: no other AWS or Google Cloud customer has it
+   GCLOUD_PROJECT_ID=acme-prod     # Google Cloud only: an existing project ID with a billing account linked
+
+   sh deploy.sh aws --bucket $BUCKET_NAME --region eu-central-1                                # AWS, or
+   sh deploy.sh gcp --bucket $BUCKET_NAME --project $GCLOUD_PROJECT_ID --region europe-central2  # Google Cloud
    ```
 
    It shows the plan, asks for `yes`, and after a few minutes prints the service URL, the admin UI
@@ -136,8 +150,8 @@ Uninstalling, MDM and Intune deployment, what is collected, and how to pause or 
 throwaway deployment; [fleet-manager/README.md](fleet-manager/README.md) covers the control plane;
 [CONSTITUTION.md](CONSTITUTION.md) the design rules; [ARCHITECTURE.md](ARCHITECTURE.md) the code
 layout; [CONTRIBUTING.md](CONTRIBUTING.md) building, testing and releases; [SECURITY.md](SECURITY.md)
-reporting a vulnerability. The wire contract is the public
-[shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) module. Do not attach real
+reporting a vulnerability. The wire contract is the [shipper-protocol/](shipper-protocol/) module.
+Do not attach real
 trajectories, agent databases, logs or credentials to issues or pull requests.
 
 ## License

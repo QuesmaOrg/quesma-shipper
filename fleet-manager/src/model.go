@@ -27,18 +27,31 @@ const quesmaETLAgeRecipient = "age1ge6plfgzzhzagl7qkp8k74qa90zxh4qvp84sgsw3up2zx
 var orgPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 type FleetConfig struct {
-	Schema                  int               `json:"schema"`
-	Organization            string            `json:"organization"`
-	DisplayName             string            `json:"display_name,omitempty"`
-	AgeRecipients           []string          `json:"age_recipients"`
-	IncludeInstallRecipient bool              `json:"include_install_recipient"`
-	AllowQuesmaETL          *bool             `json:"allow_quesma_etl,omitempty"`
-	AuthoredYAML            string            `json:"authored_yaml,omitempty"`
-	Collection              *CollectionConfig `json:"collection"`
-	CollectionError         string            `json:"collection_error,omitempty"`
-	UpdatedAt               time.Time         `json:"updated_at"`
-	TelemetryCollectorURL   *string           `json:"telemetry_collector_url,omitempty"`
+	Schema                  int                `json:"schema"`
+	Organization            string             `json:"organization"`
+	DisplayName             string             `json:"display_name,omitempty"`
+	AgeRecipients           []string           `json:"age_recipients"`
+	IncludeInstallRecipient bool               `json:"include_install_recipient"`
+	AllowQuesmaETL          *bool              `json:"allow_quesma_etl,omitempty"`
+	AnalyticsIdentity       *AnalyticsIdentity `json:"analytics_identity,omitempty"`
+	AuthoredYAML            string             `json:"authored_yaml,omitempty"`
+	Collection              *CollectionConfig  `json:"collection"`
+	CollectionError         string             `json:"collection_error,omitempty"`
+	UpdatedAt               time.Time          `json:"updated_at"`
+	TelemetryCollectorURL   *string            `json:"telemetry_collector_url,omitempty"`
 }
+
+// AnalyticsIdentity is a recipient whose private half exists only as ciphertext under a KMS key in
+// the organization's own account, encrypted with the context {purpose: analytics-identity,
+// organization: <slug>}. Nobody opens what it seals until the organization grants a processor Decrypt.
+type AnalyticsIdentity struct {
+	Organization string `json:"organization"`
+	Recipient    string `json:"recipient"`
+	Ciphertext   string `json:"ciphertext"`
+	KMSKey       string `json:"kms_key"`
+}
+
+var kmsKeyARNPattern = regexp.MustCompile(`^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$`)
 
 // quesmaETLEnabled reports whether to seal to Quesma's recipient as well. Unset is on here, as in
 // defaultOrganizationDefaults; a deployment that wants it off for organizations that never said
@@ -108,6 +121,14 @@ type AdminCredentialRecord struct {
 	SecretDigest string `json:"secret_digest"`
 }
 
+// Revocation is a field rather than a delete, because nothing here deletes.
+type PartnerCredentialRecord struct {
+	Schema       int        `json:"schema"`
+	SecretDigest string     `json:"secret_digest"`
+	CreatedAt    time.Time  `json:"created_at"`
+	RevokedAt    *time.Time `json:"revoked_at,omitempty"`
+}
+
 type InstallStatus string
 
 const (
@@ -142,6 +163,9 @@ type SeenRecord struct {
 	LastConfigAt  *time.Time `json:"last_config_at,omitempty"`
 	LastVendAt    *time.Time `json:"last_vend_at,omitempty"`
 	LastSeenAt    time.Time  `json:"last_seen_at"`
+	// CatalogDigest names the catalog the latest config fetch carried, reported at LastConfigAt;
+	// empty when that fetch carried none.
+	CatalogDigest string `json:"catalog_digest,omitempty"`
 }
 
 // TagsRecord names an install for a human reader and carries what an administrator says about the
@@ -186,11 +210,20 @@ func deploymentAdminCredentialKey() string { return "v1/control/admin/credential
 // The reporter credential sits beside the administrator's and carries the same record: one digest,
 // no lifecycle of its own. Terraform provisions both.
 func deploymentReporterCredentialKey() string { return "v1/control/reporter/credential.json" }
+
+// Writable by the runtime, unlike the deployment credentials: it can already rewrite config.json.
+func partnerCredentialKey(org string) string { return controlPrefix(org) + "partner/credential.json" }
 func installKey(org, id string) string {
 	return controlPrefix(org) + "installs/" + id + ".json"
 }
 func grantKey(org, id string) string { return controlPrefix(org) + "grants/" + id + ".json" }
 func seenKey(org, id string) string  { return controlPrefix(org) + "seen/" + id + ".json" }
+
+// catalogKey names a reported catalog by the SHA-256 of its canonical encoding. Under control/, so
+// the ETL reader grant, which names install roots and config.json only, does not reach it.
+func catalogKey(org, digest string) string {
+	return controlPrefix(org) + "catalogs/" + digest + ".json"
+}
 func healthKey(org, id string) string {
 	return controlPrefix(org) + "health/" + id + ".json"
 }
@@ -243,23 +276,52 @@ func validateConfig(c FleetConfig) error {
 	}
 	seen := map[string]bool{}
 	for _, recipient := range c.AgeRecipients {
-		if recipient == quesmaETLAgeRecipient {
-			return errors.New("the Quesma ETL recipient is managed by allow_quesma_etl")
-		}
-		if strings.HasPrefix(recipient, "AGE-SECRET-KEY-") {
-			return errors.New("private age identities are forbidden")
-		}
-		parsed, err := age.ParseRecipients(strings.NewReader(recipient + "\n"))
-		if err != nil {
-			return fmt.Errorf("invalid public age recipient: %w", err)
-		}
-		if len(parsed) != 1 {
-			return errors.New("each age recipient entry must contain exactly one public recipient")
+		if err := validateRecipient(recipient); err != nil {
+			return err
 		}
 		if seen[recipient] {
 			return errors.New("age recipients must be unique")
 		}
 		seen[recipient] = true
+	}
+	if a := c.AnalyticsIdentity; a != nil {
+		// Encrypted for another slug, it would never decrypt under this organization's context.
+		if a.Organization != c.Organization {
+			return fmt.Errorf("the analytics identity was made for organization %q, not %q", a.Organization, c.Organization)
+		}
+		if err := validateRecipient(a.Recipient); err != nil {
+			return fmt.Errorf("analytics identity: %w", err)
+		}
+		if seen[a.Recipient] {
+			return errors.New("the analytics recipient must not also be a custodian's")
+		}
+		if !kmsKeyARNPattern.MatchString(a.KMSKey) {
+			return errors.New("analytics identity: kms_key must be a KMS key ARN")
+		}
+		blob, err := base64.StdEncoding.DecodeString(a.Ciphertext)
+		if err != nil || len(blob) == 0 || len(blob) > 6144 {
+			return errors.New("analytics identity: ciphertext must be the base64 KMS ciphertext, at most 6 KiB")
+		}
+		if bytes.Contains(blob, []byte("AGE-SECRET-KEY-")) || strings.Contains(a.Ciphertext, "AGE-SECRET-KEY-") {
+			return errors.New("private age identities are forbidden")
+		}
+	}
+	return nil
+}
+
+func validateRecipient(recipient string) error {
+	if recipient == quesmaETLAgeRecipient {
+		return errors.New("the Quesma ETL recipient is managed by allow_quesma_etl")
+	}
+	if strings.HasPrefix(recipient, "AGE-SECRET-KEY-") {
+		return errors.New("private age identities are forbidden")
+	}
+	parsed, err := age.ParseRecipients(strings.NewReader(recipient + "\n"))
+	if err != nil {
+		return fmt.Errorf("invalid public age recipient: %w", err)
+	}
+	if len(parsed) != 1 {
+		return errors.New("each age recipient entry must contain exactly one public recipient")
 	}
 	return nil
 }

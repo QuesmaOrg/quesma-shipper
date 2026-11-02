@@ -73,9 +73,9 @@ explicitly rejected. Nothing pending.
   tests under `src/`, including `src/internal/platform/writepath_lint_test.go`. It
   governs how code is arranged;
   this document governs what the product assumes.
-- [shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) — the shipper ⇄ control-plane wire
+- [shipper-protocol/](shipper-protocol/) — the shipper ⇄ control-plane wire
   contract: message schemas, golden fixtures, and the served config's authority
-  rulebook, released as a Go module and enforced here by contract tests. Where the
-  doc and the tests disagree, the tests are right.
+  rulebook, a Go module both components build against and enforce by contract
+  tests. Where the doc and the tests disagree, the tests are right.
 - [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) — repo hygiene
   and disclosure.

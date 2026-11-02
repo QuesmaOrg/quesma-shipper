@@ -163,7 +163,7 @@ func TestNoDatabaseShippingSources(t *testing.T) {
 			}
 			sessionExport := s.Gather == "sidecar" && ((s.ID == "opencode-sessions" && s.Emit == "opencode_sessions") || (s.ID == "hermes-sessions" && s.Emit == "hermes_sessions"))
 			if sessionExport {
-				want := []string{"opencode.db"}
+				want := []string{"opencode.db", "opencode-*.db"}
 				if s.ID == "hermes-sessions" {
 					want = []string{"state.db", "profiles/*/state.db"}
 				}

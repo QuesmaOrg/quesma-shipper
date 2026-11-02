@@ -11,6 +11,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
   # Fleet Manager, the control plane: its own module, image and deployment templates. A Go
   # update also needs `make -C fleet-manager licenses`, which fleet-manager-check enforces.
   - package-ecosystem: gomod
@@ -19,6 +24,14 @@ updates:
       interval: weekly
     groups:
       fleet-manager-go-deps:
+        patterns: ["*"]
+  # The wire contract: its own module, which the two components above build against in place.
+  - package-ecosystem: gomod
+    directory: /shipper-protocol
+    schedule:
+      interval: weekly
+    groups:
+      shipper-protocol-go-deps:
         patterns: ["*"]
   - package-ecosystem: docker
     directory: /fleet-manager

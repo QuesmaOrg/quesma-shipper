@@ -33,11 +33,8 @@ removal; enrollment and upload history remain per user. Re-running setup repairs
 without changing enrollment. Uninstall the previous scope without purging state before switching.
 For Intune, see the [Intune guide](packaging/windows/intune/README.md), including
 [System deployment before first login](packaging/windows/intune/README-System.md).
-Release signing is temporarily disabled while the publisher identity is validated, so Microsoft
-Defender SmartScreen may warn about the download, and devices whose application-control policy
-requires a trusted publisher may block it. The raw `quesma-shipper-windows-<arch>.exe` files remain
-available for portable use and are what the self-updater installs; a portable copy has no
-scheduled task or uninstaller.
+The raw `quesma-shipper-windows-<arch>.exe` files remain available for portable use and are what
+the self-updater installs; a portable copy has no scheduled task or uninstaller.
 
 **Updates.** Personal installations of released builds keep themselves current from Quesma's signed
 [TUF](https://theupdateframework.io/) repository; `quesma-shipper update` updates at once. The
@@ -74,9 +71,10 @@ agent session files ──► discover ──► detect change ──► read �
   themselves when a newer signed release exists. Development builds do not self-update.
 
 The design rules are in [CONSTITUTION.md](../CONSTITUTION.md). The code layout is in
-[ARCHITECTURE.md](../ARCHITECTURE.md). The wire contract is the public
-[shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) module. This repository imports
-its schemas and fixtures. Protocol changes are reviewed and released there.
+[ARCHITECTURE.md](../ARCHITECTURE.md). The wire contract is the
+[shipper-protocol](../shipper-protocol/) module beside this one. The shipper imports its schemas
+and fixtures in its contract tests, and a protocol change lands in the same pull request as the
+shipper and control-plane changes that need it.
 
 ## What is collected
 
@@ -89,7 +87,7 @@ The shipper collects more than chat transcripts. Per agent, from the agent's own
 | Cursor | Agent transcripts, enriched with conversation text, tool calls, and model names read from Cursor's database | Spilled tool output, terminal captures, agent scratchpad notes |
 | GitHub Copilot | Copilot CLI session event logs; Copilot Chat transcripts and VS Code's chat session store, which holds tool results and token counts, including chats opened with no folder and sessions moved between workspaces | CLI session plans, checkpoints, research reports, session files and rewind snapshots; personal `copilot-instructions.md` and `instructions/*.instructions.md`; VS Code chat editing checkpoints and file baselines |
 | Pi (experimental) | Native JSONL session trees, messages, usage, branches and tool results | None |
-| OpenCode (experimental) | Per-session JSONL snapshots of session, message and part records from `opencode.db` | None |
+| OpenCode (experimental) | Per-session JSONL snapshots from `opencode.db` and channel databases such as `opencode-stable.db`: session, message and part records (1.x), or session and `session_message` records (2.x) | None |
 | Hermes (experimental) | Per-session JSONL snapshots of messages and model usage from `state.db`, including named profiles | None |
 
 Pi uses `$PI_CODING_AGENT_SESSION_DIR`, `$PI_CODING_AGENT_DIR/sessions`, or
@@ -105,6 +103,11 @@ sources:
     roots: ["/srv/agents/opencode"]
 ```
 
+A configured `include` replaces the default list, so to also collect a database
+named with `OPENCODE_DB`, add its path relative to the root:
+`include: ["opencode.db", "opencode-*.db", "work.db"]`. An in-memory database
+(`:memory:`) has nothing to collect.
+
 OpenCode and Hermes export selected session records as scrubbed JSONL, including
 committed WAL changes. Database files and credentials are not uploaded. Each
 snapshot is capped at 64 MiB by default; unchanged snapshots are not uploaded again.
@@ -117,6 +120,10 @@ One more record is produced by the shipper itself:
   account metadata and provider usage JSON in UTC buckets matching the collection interval (default
   15 minutes), only when it changed since the last upload, and at least once per UTC day. Unknown
   fields are preserved; these records skip scrubbing and ship encrypted.
+- **Cursor usage.** A separate `cursor-usage` source uploads the signed-in user's own requests
+  (model, token counts, cost, conversation id) as one object per account and UTC day,
+  `cursor.usage.<account>.YYYYMMDD.jsonl`, for the past 90 days and as they happen. `<account>` is
+  a short hash of the account id, never the email. It skips scrubbing too.
 
 All other files above pass through the scrub stage before encryption. The control plane receives no
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.
@@ -174,10 +181,17 @@ the user file, the document served by the control plane. `quesma-shipper config 
 prints each effective value and the layer that set it.
 
 The served document has limited authority. A rulebook in the
-[shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) module states, field by field,
+[shipper-protocol](../shipper-protocol/) module states, field by field,
 what the control plane can change. For example, it can add scrub rule packs. It cannot remove them.
 It cannot turn off scrub or encryption. Contract tests here and in the control plane enforce the
 rulebook.
+
+Each config fetch reports this build's compiled catalog: every source with its root templates,
+globs and size cap, the rule packs the build has, and the served-document features it reads (none
+yet). Root templates are sent as compiled, such as `~/.claude`, never expanded. The report is the
+same on every machine running the build and says nothing about the machine, its files or its local
+configuration. The control plane uses it to offer sources by name, to catch a source or rule pack
+no install has, and to leave out of a served document the sources this build does not have.
 
 File locations. `XDG_CONFIG_HOME` and `XDG_STATE_HOME` are honoured.
 

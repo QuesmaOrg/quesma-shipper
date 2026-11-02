@@ -73,6 +73,7 @@ func testMultiTenantAdminServer(t *testing.T) (*Server, *memoryStore) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	server.analyticsKMSKey = testAnalyticsKeyARN
 	return server, store
 }
 
@@ -137,12 +138,13 @@ func TestEveryAdminRouteRequiresAuthentication(t *testing.T) {
 	server, _ := testAdminServer(t)
 	routes := []struct{ method, path string }{
 		{"GET", "/v1/admin/orgs"}, {"POST", "/v1/admin/orgs"},
-		{"GET", "/v1/admin/orgs/acme/config"}, {"PUT", "/v1/admin/orgs/acme/config"},
+		{"GET", "/v1/admin/orgs/acme/config"}, {"PUT", "/v1/admin/orgs/acme/config"}, {"GET", "/v1/admin/orgs/acme/sources"},
 		{"GET", "/v1/admin/orgs/acme/grants"}, {"POST", "/v1/admin/orgs/acme/grants"}, {"POST", "/v1/admin/orgs/acme/grants/id/revoke"},
 		{"GET", "/v1/admin/orgs/acme/invites"}, {"POST", "/v1/admin/orgs/acme/invites"}, {"POST", "/v1/admin/orgs/acme/invites/id/revoke"},
 		{"POST", "/v1/admin/orgs/acme/invites/id/release"}, {"GET", "/v1/admin/orgs/acme/installs"}, {"POST", "/v1/admin/orgs/acme/installs/id/revoke"},
 		{"GET", "/v1/admin/orgs/acme/installs/seen"}, {"GET", "/v1/admin/orgs/acme/installs/tags"}, {"PUT", "/v1/admin/orgs/acme/installs/id/tags"},
 		{"PATCH", "/v1/admin/orgs/acme/installs/id/metadata"}, {"POST", "/v1/admin/orgs/acme/installs/metadata/import"},
+		{"PUT", "/v1/admin/orgs/acme/collection"}, {"GET", "/v1/admin/orgs/acme/partner"}, {"POST", "/v1/admin/orgs/acme/partner"}, {"POST", "/v1/admin/orgs/acme/partner/revoke"},
 		{"GET", "/v1/admin/not-a-route"},
 	}
 	for _, route := range routes {

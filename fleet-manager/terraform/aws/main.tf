@@ -7,7 +7,14 @@ terraform {
   }
 }
 
-provider "aws" { region = var.region }
+# `account_id`, when given, makes the provider refuse any other account: this module takes its
+# credentials from the environment, and a shell whose AWS_PROFILE points somewhere else would
+# otherwise put the fleet manager there without a word. Left empty, any account the credentials
+# reach is accepted, as before.
+provider "aws" {
+  region              = var.region
+  allowed_account_ids = var.account_id == "" ? null : [var.account_id]
+}
 
 locals {
   control_prefix         = "v1/organization=*/control/"
@@ -257,6 +264,10 @@ resource "aws_ecs_express_gateway_service" "fleet_manager" {
     environment {
       name  = "FLEET_MANAGER_DEFAULT_TELEMETRY_COLLECTOR_URL"
       value = var.default_telemetry_collector_url
+    }
+    environment {
+      name  = "FLEET_MANAGER_ANALYTICS_KMS_KEY"
+      value = var.analytics_key ? aws_kms_key.analytics[0].arn : ""
     }
   }
 

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/QuesmaOrg/shipper-protocol/schemas/enroll-response.schema.json",
+  "title": "POST /v1/enroll response",
+  "description": "What the server returns once. No destination travels here: the destination arrives later in the served config, and the write scope is enforced per authorization. The client decodes this strictly: an unknown field fails the enrollment.",
+  "type": "object",
+  "required": ["organization"],
+  "additionalProperties": false,
+  "properties": {
+    "organization": {
+      "description": "The organization slug. The server assigns it from the presented claim; the client does not choose it, so an install cannot place itself in another organization's subtree. It becomes the organization= segment of every object key.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    }
+  }
+}

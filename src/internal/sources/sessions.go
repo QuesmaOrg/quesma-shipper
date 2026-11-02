@@ -1,8 +1,10 @@
 package sources
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -86,13 +88,19 @@ func discoverSessions(req Request, reader sessionReader) (Discovery, error) {
 				d.Ignored = true
 				continue
 			}
-			id := session.ID
+			id, cwd := session.ID, session.CWD
 			cand.Load = func(ctx context.Context) (Payload, error) {
 				path, err := db.checkedPath(req.Deny)
 				if err != nil {
 					return Payload{}, err
 				}
 				raw, err := reader.Read(ctx, path, db.RelPath, id, src.MaxFileBytes)
+				// Listing and loading are separate snapshots; the repository markers were checked for the listed directory only.
+				var header struct{ CWD string }
+				line, _, _ := bytes.Cut(raw, []byte("\n"))
+				if err == nil && (json.Unmarshal(line, &header) != nil || header.CWD != cwd) {
+					return Payload{}, errors.New("session directory changed since discovery")
+				}
 				return Payload{Bytes: raw, MTime: now}, err
 			}
 			d.Candidates = append(d.Candidates, cand)

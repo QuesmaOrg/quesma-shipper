@@ -25,8 +25,8 @@ and for operators to deploy it before you publish details.
 
 In scope:
 
-- **Credential handling.** A path that accepts a wrong administrator, reporter or invite
-  credential. An invite that can be used twice. A revoked install that is still served
+- **Credential handling.** A path that accepts a wrong administrator, reporter, partner or invite
+  credential, or a revoked partner credential. An invite that can be used twice. A revoked install that is still served
   configuration or still granted upload tickets.
 - **Organization isolation.** A credential or an install scoped to one organization that reaches
   another organization's control records, configuration or objects.
@@ -34,17 +34,24 @@ In scope:
   prefix — one install overwriting another's objects is the invariant here. A signed header outside
   the ticket contract in `src/aws.go`. A ticket whose lifetime exceeds what was asked for.
 - **Configuration authority.** A served document that changes a field the
-  [shipper-protocol](https://github.com/QuesmaOrg/shipper-protocol) rulebook does not permit. A
+  [shipper-protocol](../shipper-protocol/) rulebook does not permit. A
   served recipient list the organization did not set — including the built-in ETL recipient
   appearing while `allow_quesma_etl` is off, or was never set on a deployment whose
   `FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL` is `false`.
 - **The administration surface.** Anything under `/v1/admin` or `/admin/` reachable without the
-  deployment credential. A reporter credential that reaches an administrator operation. The
+  deployment credential. A reporter credential that reaches an administrator operation. A partner
+  credential that changes `age_recipients`, `include_install_recipient`, `allow_quesma_etl` or
+  `telemetry_collector_url`, mints a partner credential, or reaches another organization or a
+  deployment-level route. The
   credential escaping tab-scoped `sessionStorage`, or being sent anywhere but the `Authorization`
   header.
 - **Telemetry forwarding.** Forwarding to a collector the organization did not configure. Relaying
   a collector's response body. Any path that exposes the signing seed at
   `private/fleet-manager/telemetry-identity.json`.
+- **The analytics key.** A principal that can decrypt an analytics identity while
+  `analytics_decrypt_role_arns` does not name it. Ciphertext for one organization that decrypts
+  under another's encryption context. A path that writes, prints or logs the identity's plaintext.
+  An organization's analytics identity replaced or removed after creation.
 - **The deployment templates.** A grant in `terraform/aws` or `terraform/gcp` wider than the
   service needs — in particular anything that lets the runtime identity read a trajectory payload.
 

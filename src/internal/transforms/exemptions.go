@@ -96,6 +96,7 @@ func CompiledExemptions() map[string][]string {
 		},
 		"opencode": {
 			"id", "parent_id", "session_id", "message_id", "data.parentID", "data.callID",
+			"fork_session_id", "data.content[].id",
 		},
 		"hermes": {
 			"tool_call_id", "tool_calls#json[].id", "tool_calls#json[].call_id", "tool_calls#json[].response_item_id",

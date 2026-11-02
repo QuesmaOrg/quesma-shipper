@@ -12,6 +12,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/app"
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/crashjournal"
 )
 
@@ -31,7 +32,7 @@ func TestRecycleIsNotACrash(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("recycle: %v, %s", err, out)
 	}
-	if s := crashjournal.LastRun(dir); s != nil {
+	if s, _ := crashjournal.LastRun(dir, platform.BootID()); s != nil {
 		t.Fatalf("a recycle reads as a crash: %+v", s)
 	}
 }
@@ -130,5 +131,19 @@ func TestACleanTickIsUntouched(t *testing.T) {
 	}
 	if errOut.String() != "" {
 		t.Errorf("a clean tick wrote to stderr: %q", errOut.String())
+	}
+}
+
+// The journal names the source while one is in flight, the stage otherwise, and says so once the
+// run has returned, so a death in the idle sleep blames no source.
+func TestJournalPhaseBlamesNoSourceBetweenTicks(t *testing.T) {
+	for _, tc := range []struct{ stage, source, want string }{
+		{"read and seal + upload", "cursor-transcripts", "tick 7: cursor-transcripts"},
+		{"heartbeat", "", "tick 7: heartbeat"},
+		{"", "", "tick 7: between ticks"},
+	} {
+		if got := journalPhase(7, tc.stage, tc.source); got != tc.want {
+			t.Errorf("journalPhase(7, %q, %q) = %q, want %q", tc.stage, tc.source, got, tc.want)
+		}
 	}
 }

@@ -231,7 +231,7 @@ func (m *Manager) EnrollGrant(ctx context.Context, token string, in InstallRecor
 }
 
 // EnrollInvite is a four-write transaction whose durable intermediate states are recoverable.
-// A reservation never times out: only an administrator can prove it safe to release.
+// A reservation never times out: only an administrator or partner can prove it safe to release.
 func (m *Manager) EnrollInvite(ctx context.Context, token string, in InstallRecord) error {
 	org, id, err := organizationToken(token)
 	prefix := "fmi2." + m.org + "."

@@ -3,14 +3,14 @@ family: opencode
 display_name: OpenCode
 sources:
   - id: opencode-sessions
-    description: Read-only per-session JSONL snapshots of OpenCode's SQLite messages and parts.
+    description: Read-only per-session JSONL snapshots of OpenCode's SQLite sessions and messages.
     gather: sidecar
     emit: opencode_sessions
     artifact_class: trajectory
     roots:
       - $XDG_DATA_HOME/opencode
       - ~/.local/share/opencode
-    include: ["opencode.db"]
+    include: ["opencode.db", "opencode-*.db"]
     max_file_bytes: 67108864
     sniff:
       kind: jsonl

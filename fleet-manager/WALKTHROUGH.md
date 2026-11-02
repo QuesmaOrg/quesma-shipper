@@ -49,6 +49,13 @@ age-keygen -o custodian-1.agekey
 age-keygen -o custodian-2.agekey
 ```
 
+A real organization also decides here whether an analytics service may process its data later,
+history included. If so, it deploys with `--analytics-key`, runs
+`sh deploy.sh aws analytics-key acme`, and passes the printed line as `analytics_identity` when it
+creates the organization. The [AWS template's README](terraform/aws/README.md#an-analytics-identity-under-your-own-key)
+has the steps. The trial answers no, so a processor granted later would open uploads from then on,
+not the history.
+
 ## 3. The organization and an invite
 
 The admin UI does this with a form; the same two calls against the admin API do it from a

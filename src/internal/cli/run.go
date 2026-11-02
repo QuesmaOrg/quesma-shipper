@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -78,6 +79,18 @@ func managedEnrollmentDelay(err error, conflicts *int) time.Duration {
 	*conflicts = min(*conflicts+1, 4)
 	cap := min(time.Minute<<*conflicts, 15*time.Minute)
 	return cap/2 + time.Duration(rand.Int64N(int64(cap/2)))
+}
+
+// journalPhase is the crash journal's view of a step: the source when there is one, the stage
+// otherwise, and "between ticks" once the run has returned, so an idle death blames no source.
+func journalPhase(tick int64, stage, source string) string {
+	switch {
+	case source != "":
+		return fmt.Sprintf("tick %d: %s", tick, source)
+	case stage != "":
+		return fmt.Sprintf("tick %d: %s", tick, stage)
+	}
+	return fmt.Sprintf("tick %d: between ticks", tick)
 }
 
 func recycleDue(started, now time.Time, serviceLoaded func() bool) bool {
@@ -276,7 +289,15 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 	}
 	started := time.Now()
 
+	// The source the engine is on, under the tick: a crash's "last step" then names it. Stages
+	// within a source stay in memory for the stall watchdog; journaling each would be noise.
+	var tickNo atomic.Int64
+	env.OnStep = func(stage, source string) {
+		fl.Phase(journalPhase(tickNo.Load(), stage, source))
+	}
+
 	for n := 1; ; n++ {
+		tickNo.Store(int64(n))
 		fl.Phase(fmt.Sprintf("tick %d", n))
 		// Roots are picked once, during app.New above. An agent installed -- or first run, which
 		// is when Claude Code creates projects/ -- after this process started would otherwise read

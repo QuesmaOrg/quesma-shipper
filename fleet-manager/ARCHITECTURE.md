@@ -14,12 +14,13 @@ test that holds it.
 src/
   main.go           flags, environment, the one --serve command
   server.go         the shipper-facing routes and the device auth in front of them
-  admin_http.go     /v1/admin, and the two credential scopes
+  admin_http.go     /v1/admin, and the three credential scopes
   ui.go             /admin/, serving the embedded assets in admin-ui/
   manager.go        organizations, enrollment, revocation
   model.go          the records, and what a valid one is
   upload.go         turning an upload request into a batch of tickets
   seen.go tags.go   check-ins and install names, both off the critical path
+  catalog.go        the source catalogs builds report, and serving and checking writes against them
   telemetry*.go     the forwarding proxy and the deployment signing identity
   health.go         collection-health reports from a reporter credential
   store.go          ObjectStore -- the only durable-state primitive
@@ -40,7 +41,8 @@ testable against an in-memory store and what makes a fourth provider a new file 
 change to the service.
 
 **The service never reads a trajectory.** It has no decrypt path, and it holds no identity that
-could decrypt one. Below `install=` it reads `tags.json`, the install's name and administrator-managed
+could decrypt one. An organization's analytics identity is stored as KMS ciphertext, and the runtime
+has no KMS permission. Below `install=` it reads `tags.json`, the install's name and administrator-managed
 inventory metadata, and the metadata of mirror objects, which the upload deduplication probe HEADs
 for their `source-hash` and `shipped-hash`: an object is already present only when both match, so
 one scrubbed under older rules is uploaded again as a new version. S3 and GCS authorize that HEAD
@@ -78,11 +80,15 @@ fails the suite rather than passing review unnoticed.
 
 ## Where a change goes
 
-A new shipper-facing behaviour starts in `shipper-protocol`, is released as a module version, and
-arrives here as a dependency bump plus a handler. A new storage backend is a new provider file and
+A new shipper-facing behaviour starts in `shipper-protocol/`, which this module builds against in
+place, and lands in the same pull request as its handler here and the shipper's contract tests; the
+protocol is tagged as a module version when it is released. A new storage backend is a new provider file and
 nothing else. A new administrative operation is a route in `admin_http.go`, a method on `Manager`,
 and a decision about which credential scope may call it — the reporter credential exists so that
-whatever reports collection health cannot also create organizations or revoke installs.
+whatever reports collection health cannot also create organizations or revoke installs, and the
+partner credential so that whoever manages one organization's machines cannot change its recipients
+or reach another organization. A new route refuses both until `reporterRoute` or `partnerRoutes`
+names it.
 
 A change that needs a payload, a database, a lock, or a delete is not a fleet-manager change. It is
 a constitutional one.

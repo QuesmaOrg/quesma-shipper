@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/QuesmaOrg/shipper-protocol/schemas/config-document.schema.json",
+  "title": "Served configuration document",
+  "description": "Validates new control-plane writes, not legacy reads or build-specific client capabilities.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "issued_at": { "type": "string", "format": "date-time" },
+    "org": { "type": "string", "minLength": 1 },
+    "config_version": { "const": 1 },
+    "mode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schedule": { "type": "string", "format": "go-schedule-duration" }
+      }
+    },
+    "max_files_per_run": { "$ref": "#/$defs/count" },
+    "drain_deadline": { "type": "string", "format": "go-positive-duration" },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "enabled": { "type": "boolean" },
+          "roots": { "$ref": "#/$defs/strings" },
+          "include": { "$ref": "#/$defs/strings" },
+          "exclude": { "$ref": "#/$defs/strings" },
+          "max_file_bytes": { "$ref": "#/$defs/count" },
+          "enrichers": { "type": "object", "additionalProperties": { "const": false } }
+        }
+      }
+    },
+    "scrub": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rule_packs": { "$ref": "#/$defs/strings" },
+        "secret_key_names": { "$ref": "#/$defs/strings" }
+      }
+    },
+    "structural_exempt": { "type": "object", "additionalProperties": { "$ref": "#/$defs/strings" } },
+    "encryption": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "additional_recipients": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^age1[023456789acdefghjklmnpqrstuvwxyz]{58}$" }
+        },
+        "include_install_recipient": { "type": "boolean" }
+      },
+      "if": {
+        "required": ["include_install_recipient"],
+        "properties": { "include_install_recipient": { "const": false } }
+      },
+      "then": {
+        "required": ["additional_recipients"],
+        "properties": { "additional_recipients": { "minItems": 1 } }
+      }
+    },
+    "autoupdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "enabled": { "const": false } }
+    },
+    "telemetry_endpoint": { "type": "string", "pattern": "^(?:|/(?:[^/].*)?)$" }
+  },
+  "$defs": {
+    "strings": { "type": "array", "items": { "type": "string" } },
+    "count": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 }
+  }
+}

@@ -25,14 +25,18 @@ func sessionFileURI(slashPath string) string {
 }
 
 // listSessions bounds routing metadata independently of transcript loading.
-func listSessions(ctx context.Context, path, query string) ([]Session, error) {
+func listSessions(ctx context.Context, path string, query func(*sessionConnection) (string, error)) ([]Session, error) {
 	db, err := openSessions(ctx, path)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
+	q, err := query(db)
+	if err != nil {
+		return nil, err
+	}
 	var out []Session
-	err = db.query(ctx, query, nil, func(row map[string]any) error {
+	err = db.query(ctx, q, nil, func(row map[string]any) error {
 		id, okID := row["id"].(string)
 		cwd, okCWD := row["cwd"].(string)
 		if !okID || !okCWD {

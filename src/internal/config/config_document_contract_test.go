@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
-	protocol "github.com/QuesmaOrg/shipper-protocol"
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 )
 
 // The schema is an authoring profile, not a tightening of tolerant served reads.

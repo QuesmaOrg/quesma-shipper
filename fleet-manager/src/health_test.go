@@ -248,6 +248,8 @@ func TestAReporterCredentialIsRefusedEverywhereElse(t *testing.T) {
 		{http.MethodPost, "/v1/admin/orgs"},
 		{http.MethodGet, "/v1/admin/orgs/acme/config"},
 		{http.MethodPut, "/v1/admin/orgs/acme/config"},
+		{http.MethodPut, "/v1/admin/orgs/acme/collection"},
+		{http.MethodPost, "/v1/admin/orgs/acme/partner"},
 		{http.MethodGet, "/v1/admin/orgs/acme/installs"},
 		{http.MethodGet, "/v1/admin/orgs/acme/installs/seen"},
 		{http.MethodGet, "/v1/admin/orgs/acme/installs/health"},

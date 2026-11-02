@@ -1,0 +1,17 @@
+{
+  "agent_version": "0.0.0-test",
+  "config_versions": [1],
+  "catalog": {
+    "sources": [
+      {
+        "id": "claude-code-transcripts",
+        "family": "claude-code",
+        "enabled": true,
+        "roots": ["~/.claude"],
+        "resolved_root": "/Users/ada/.claude"
+      }
+    ],
+    "rule_packs": [],
+    "features": []
+  }
+}

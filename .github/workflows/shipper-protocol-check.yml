@@ -1,0 +1,31 @@
+name: shipper-protocol-check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "shipper-protocol/**"
+      - ".github/workflows/shipper-protocol-check.yml"
+  # Required checks must be reported for every PR. Filtering the entire workflow
+  # leaves unmatched PRs permanently waiting for statuses that can never arrive.
+  pull_request: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Named after the component, like fleet-manager-check: required statuses match by job name alone.
+  shipper-protocol-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: shipper-protocol/go.mod
+          cache-dependency-path: shipper-protocol/go.sum
+      - run: make -C shipper-protocol check

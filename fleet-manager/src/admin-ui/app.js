@@ -131,7 +131,27 @@ function configBody(form) {
   const collector = form.elements.telemetry_collector_url;
   const value = form.elements['telemetry-enabled'].checked ? collector.value.trim() : '';
   if (value !== collector.dataset.initialValue) body.telemetry_collector_url = value;
+  if (form.elements.analytics?.checked) body.analytics_identity = analyticsIdentity(form);
+  // Only a configuration write checks source IDs; creating an organization takes none of this.
+  const unverified = unverifiedSources(form);
+  if (form.id === 'config-form' && unverified.length) body.unverified_sources = unverified;
   return body;
+}
+
+function analyticsIdentity(form) {
+  try {
+    const value = JSON.parse(form.elements.analytics_identity.value);
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  } catch (_) { /* Reported below. */ }
+  throw new Error('Paste the line that deploy.sh aws analytics-key printed');
+}
+
+function syncAnalytics(form) {
+  const on = form.elements.analytics.checked;
+  form.querySelector('[data-analytics-identity]').classList.toggle('hidden', !on);
+  form.querySelector('[data-analytics-none]').classList.toggle('hidden', on);
+  form.elements.analytics_identity.required = on;
+  form.querySelector('[data-analytics-command]').textContent = `sh deploy.sh aws analytics-key ${form.elements.slug.value.trim() || 'acme'}`;
 }
 
 function syncTelemetry(form) {
@@ -155,6 +175,7 @@ function resetOrganizationForm() {
   form.elements['telemetry-enabled'].checked = collector.value !== '';
   syncTelemetry(form);
   syncQuesmaRecipient(form);
+  syncAnalytics(form);
 }
 
 function fillConfig(config) {
@@ -167,6 +188,10 @@ function fillConfig(config) {
   setRecipients(form, config.age_recipients);
   form.elements['quesma-etl'].checked = config.allow_quesma_etl !== false;
   syncQuesmaRecipient(form);
+  const analytics = config.analytics_identity;
+  form.querySelector('[data-analytics-status]').textContent = analytics
+    ? `Uploads are also sealed to ${analytics.recipient}, whose private key is held under ${analytics.kms_key}. Set when the organization was created.`
+    : 'None. A processor granted later opens uploads from then on, not the history.';
   const collector = form.elements.telemetry_collector_url;
   collector.value = config.telemetry_collector_url || '';
   collector.dataset.initialValue = collector.value;
@@ -187,7 +212,7 @@ function lockConfig(locked) {
   form.elements['telemetry-enabled'].disabled = locked;
   all('.add-recipient,.remove-recipient', form).forEach((button) => { button.disabled = locked; });
   // readOnly does not stop a number input, a select or a button, and Rebuild would arm an empty collection.
-  all('input[type="number"],select,[data-add-source],[data-remove-source],[data-rebuild-collection]', form).forEach((control) => { control.disabled = locked; });
+  all('input[type="number"],select,[data-add-source],[data-remove-source],[data-source-unreported],[data-rebuild-collection]', form).forEach((control) => { control.disabled = locked; });
   // An existing override's source stays fixed, as addCollectionSource made it.
   all('[data-collection-source]', form).forEach((row) => { if (row._source.id) row.querySelector('[data-source-id]').readOnly = true; });
   if (!locked) updateRecipientButtons(form.querySelector('[data-recipient-list]'));
@@ -253,6 +278,9 @@ async function loadConfig() {
   const response = await api(orgPath('/config'));
   configETag = response.headers.get('ETag') || '';
   const config = await response.json();
+  // What installs report they can collect feeds the source picker. Without it the form still works,
+  // and a typed source ID is sent as unverified.
+  $('#config-form')._catalog = await api(orgPath('/sources')).then((sources) => sources.json()).catch(() => null);
   fillConfig(config);
   return config;
 }
@@ -422,6 +450,19 @@ async function loadTags(generation) {
   });
 }
 
+async function loadPartner(generation) {
+  let record = null;
+  try { record = await (await api(orgPath('/partner'))).json(); } catch (error) { if (error.status !== 404) throw error; }
+  if (generation !== tableGeneration) return;
+  const active = record && !record.revoked_at;
+  $('#partner-status').textContent = !record ? 'No partner credential.'
+    : active ? `Active since ${new Date(record.created_at).toLocaleString()}.`
+      : `Revoked ${new Date(record.revoked_at).toLocaleString()}.`;
+  $('#revoke-partner').classList.toggle('hidden', !active);
+  $('#mint-partner').dataset.replaces = active ? 'true' : '';
+  $('#mint-partner').textContent = active ? 'Replace credential' : 'Create credential';
+}
+
 async function loadTables() {
   const generation = ++tableGeneration;
   const [grants, invites, installs] = await Promise.all(['/grants', '/invites', '/installs'].map(async (path) => (await api(orgPath(path))).json()));
@@ -433,9 +474,18 @@ async function loadTables() {
   loadTags(generation).catch((error) => {
     if (generation === tableGeneration) toast(`Install tags unavailable: ${error.message}`);
   });
+  loadPartner(generation).catch((error) => {
+    if (generation === tableGeneration) toast(`Partner credential unavailable: ${error.message}`);
+  });
 }
 
-$('#login-form').addEventListener('submit', (event) => { event.preventDefault(); credential = $('#credential').value.trim(); connect(); });
+$('#login-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const value = $('#credential').value.trim();
+  // A partner credential reaches one organization's API and none of the deployment routes this UI starts from.
+  if (value.startsWith('fmp1.')) { toast('Partner credentials are for the API only. The admin UI needs the administrator credential.'); return; }
+  credential = value; connect();
+});
 $('#home').addEventListener('click', (event) => {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   event.preventDefault();
@@ -453,8 +503,8 @@ $('#cancel-org').addEventListener('click', () => show('dashboard'));
 $('#organization-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget; const data = new FormData(form);
-  const body = {...configBody(form), slug: String(data.get('slug')).trim(), display_name: String(data.get('display_name')).trim()};
   try {
+    const body = {...configBody(form), slug: String(data.get('slug')).trim(), display_name: String(data.get('display_name')).trim()};
     const response = await api('/orgs', {method: 'POST', body: JSON.stringify(body)});
     const org = await response.json(); organizations.push(org); organizations.sort((a, b) => a.slug.localeCompare(b.slug));
     selectOrganization(org.slug); resetOrganizationForm(); await loadConfig(); await loadTables(); show('dashboard'); toast('Organization created');
@@ -475,6 +525,9 @@ all('[data-create]').forEach((button) => button.addEventListener('click', () => 
 }));
 all('[data-close-create]').forEach((button) => button.addEventListener('click', () => $('#create-dialog').close()));
 $('#create-dialog').addEventListener('close', () => expiryPicker.close());
+
+$('#organization-form').elements.analytics.addEventListener('change', (event) => syncAnalytics(event.target.form));
+$('#organization-form').elements.slug.addEventListener('input', (event) => syncAnalytics(event.target.form));
 
 all('[data-add-recipient]').forEach((button) => button.addEventListener('click', () => {
   const list = button.parentElement.querySelector('[data-recipient-list]');
@@ -519,11 +572,36 @@ $('#create-dialog form').addEventListener('submit', async (event) => {
     const response = await api(orgPath('/' + createKind), {method: 'POST', body: JSON.stringify({expires_at: expiresAt.toISOString()})});
     const result = await response.json();
     $('#create-dialog').close();
-    $('#secret').textContent = result.secret;
-    $('#enroll-command').textContent = `quesma-shipper login --server ${location.origin} ${result.secret}`;
-    $('#secret-dialog').showModal();
+    showSecret(result.secret, true);
     await loadTables();
   } catch (error) { toast(error.message); } finally { button.disabled = false; }
+});
+function showSecret(secret, enrollment) {
+  $('#secret-title').textContent = enrollment ? 'Enroll with this credential' : 'Partner credential';
+  $('#secret-note').textContent = enrollment ? 'Copy the command or secret now. They cannot be recovered after this dialog is closed.'
+    : 'Copy the secret now. It cannot be recovered after this dialog is closed.';
+  $('#secret').textContent = secret;
+  $('#enroll-command').textContent = enrollment ? `quesma-shipper login --server ${location.origin} ${secret}` : '';
+  $('#enroll-command-row').classList.toggle('hidden', !enrollment);
+  $('#copy-command').classList.toggle('hidden', !enrollment);
+  $('#secret-dialog').showModal();
+}
+$('#mint-partner').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  if (button.dataset.replaces && !window.confirm('Replace the partner credential? The current one stops working immediately.')) return;
+  button.disabled = true;
+  try {
+    // Minting is refused while one is active, so a replacement revokes first.
+    if (button.dataset.replaces) await api(orgPath('/partner/revoke'), {method: 'POST'});
+    const result = await (await api(orgPath('/partner'), {method: 'POST'})).json();
+    showSecret(result.secret, false);
+    await loadTables();
+  } catch (error) { toast(error.message); loadTables().catch(() => {}); } finally { button.disabled = false; }
+});
+$('#revoke-partner').addEventListener('click', async (event) => {
+  if (!window.confirm('Revoke the partner credential? It stops working immediately.')) return;
+  const button = event.currentTarget; button.disabled = true;
+  try { await mutate('/partner/revoke', 'Partner credential revoked'); } catch (error) { toast(error.message); } finally { button.disabled = false; }
 });
 let renameInstall = null;
 function openRename(installID, current) {

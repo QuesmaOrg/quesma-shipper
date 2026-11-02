@@ -1,8 +1,8 @@
-# Publishes the fleet-manager image to Docker Hub on every push to main that touches the module,
-# through the same target a person runs: `make -C fleet-manager deploy`. That target builds
-# linux/amd64 -- the only architecture all three deployment targets accept -- and pushes :<sha>
-# and :latest, or does nothing when the commit is already there. The templates under
-# fleet-manager/terraform deploy `:latest` unless told otherwise.
+# Publishes the fleet-manager image to Docker Hub on every push to main that touches the module or
+# the protocol module it embeds, through the same target a person runs: `make -C fleet-manager
+# deploy`. That target builds linux/amd64 -- the only architecture all three deployment targets
+# accept -- and pushes :<sha> and :latest, or does nothing when the commit is already there. The
+# templates under fleet-manager/terraform deploy `:latest` unless told otherwise.
 name: fleet-manager-image
 
 on:
@@ -10,6 +10,7 @@ on:
     branches: [main]
     paths:
       - "fleet-manager/**"
+      - "shipper-protocol/**"
       - ".github/workflows/fleet-manager-image.yml"
 
 # Queue, never cancel: two jobs racing would decide `latest` by finish order, not commit order.
@@ -31,14 +32,14 @@ jobs:
     # Its reviewers approve each push of `latest`; the Docker Hub secrets live there, not in the repo.
     environment: fleet-manager-publishing
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           package-manager-cache: false
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: fleet-manager/go.mod
           cache-dependency-path: fleet-manager/go.sum
@@ -48,9 +49,9 @@ jobs:
       - name: Gate on the module's own checks
         run: make check
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}

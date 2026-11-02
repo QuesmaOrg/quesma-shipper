@@ -37,9 +37,14 @@ type Server struct {
 	telemetry *telemetryProxy
 	// defaults fills the settings an organization never stated, wherever one is used.
 	defaults OrganizationDefaults
+	// analyticsKMSKey is this deployment's analytics key, the only one an analytics identity may name.
+	analyticsKMSKey string
 	// collectionErrors holds the last unservable-collection error logged per organization, so
 	// every install's poll does not log it again.
 	collectionErrors sync.Map
+	// servedNotes holds, per install, what rendering its document last left out, so a change is
+	// logged once rather than on every fetch.
+	servedNotes sync.Map
 }
 
 func NewServer(manager *Manager, signer UploadSigner, logger *log.Logger) (*Server, error) {
@@ -91,6 +96,8 @@ type enrollResponse struct {
 type configRequest struct {
 	AgentVersion   string `json:"agent_version"`
 	ConfigVersions []int  `json:"config_versions"`
+	// Catalog is decoded on its own, so a fault in it cannot fail the request; see decodeCatalog.
+	Catalog json.RawMessage `json:"catalog,omitempty"`
 }
 type configResponse struct {
 	Config    []byte    `json:"config"`
@@ -159,7 +166,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case err == nil:
-		s.touch(r, InstallRecord{Organization: org, InstallID: req.InstallID}, seenEnrollment)
+		s.touch(r, InstallRecord{Organization: org, InstallID: req.InstallID}, seenEnrollment, nil)
 		writeJSON(w, enrollResponse{Organization: org})
 	case errors.Is(err, ErrForbidden):
 		http.Error(w, err.Error(), http.StatusForbidden)
@@ -251,6 +258,18 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request, rec Instal
 		http.Error(w, "this service serves config_version 1 only", http.StatusConflict)
 		return
 	}
+	// A catalog this service cannot act on is treated as absent: the build still resolves whatever
+	// it is served, so a fault in its report must not cost it the document.
+	var notes []string
+	var reported *reportedCatalog
+	catalog, err := decodeCatalog(req.Catalog)
+	if err == nil && catalog != nil {
+		reported, err = catalog.reported()
+	}
+	if err != nil {
+		notes = append(notes, "ignored its catalog: "+err.Error())
+		catalog = nil
+	}
 	scoped, _ := s.manager.ForOrganization(rec.Organization)
 	cfg, _, err := scoped.LoadConfig(r.Context())
 	if err != nil {
@@ -259,7 +278,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request, rec Instal
 		return
 	}
 	// The install did check in; only the configuration is unservable until an admin repairs it.
-	s.touch(r, rec, seenConfig)
+	s.touch(r, rec, seenConfig, reported)
 	if cfg.CollectionError != "" {
 		s.logCollectionError(rec.Organization, cfg.CollectionError)
 		http.Error(w, "config unavailable", http.StatusInternalServerError)
@@ -267,6 +286,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request, rec Instal
 	}
 	s.collectionErrors.Delete(rec.Organization)
 	cfg = s.defaults.resolve(cfg)
+	collection, rendered := collectionForBuild(cfg.Collection, catalog)
+	s.logServedNotes(rec, append(notes, rendered...))
+	cfg.Collection = collection
 	doc := renderConfig(cfg)
 	writeJSON(w, configResponse{Config: []byte(doc), ExpiresAt: s.manager.time().Add(s.configTTL)})
 }
@@ -277,10 +299,25 @@ func (s *Server) logCollectionError(org, message string) {
 	}
 }
 
+func (s *Server) logServedNotes(rec InstallRecord, notes []string) {
+	key := rec.Organization + "/" + rec.InstallID
+	if len(notes) == 0 {
+		s.servedNotes.Delete(key)
+		return
+	}
+	message := strings.Join(notes, "; ")
+	if previous, loaded := s.servedNotes.Swap(key, message); !loaded || previous != message {
+		s.logger.Printf("config for install %s of organization %s: %s", rec.InstallID, rec.Organization, message)
+	}
+}
+
 func renderConfig(cfg FleetConfig) string {
 	recipients := append([]string{}, cfg.AgeRecipients...)
 	if cfg.quesmaETLEnabled() {
 		recipients = append(recipients, quesmaETLAgeRecipient)
+	}
+	if cfg.AnalyticsIdentity != nil {
+		recipients = append(recipients, cfg.AnalyticsIdentity.Recipient)
 	}
 	endpoint := ""
 	if cfg.telemetryCollectorURL() != "" {
@@ -347,7 +384,7 @@ func (s *Server) handleUploadAuthorize(w http.ResponseWriter, r *http.Request, r
 			return
 		}
 	}
-	s.touch(r, rec, seenVend)
+	s.touch(r, rec, seenVend, nil)
 	writeJSON(w, uploadAuthorizeResponse{Tickets: append(tickets.Tickets, settled...)})
 }
 

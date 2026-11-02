@@ -37,7 +37,8 @@ export AWS_PROFILE='acme-prod'              # only if your credentials are a nam
 aws sts get-caller-identity                 # the account you are about to change
 
 terraform init
-terraform apply -var="region=eu-central-1" -var="bucket=globally-unique-acme-trajectories"
+terraform apply -var="region=eu-central-1" -var="bucket=globally-unique-acme-trajectories" \
+  -var="account_id=111122223333"                 # the account from the line above; refused anywhere else
 
 export FLEET_MANAGER_URL="$(terraform output -raw service_url)"
 curl --fail --silent --show-error "${FLEET_MANAGER_URL%/}/healthz"     # ok
@@ -53,12 +54,15 @@ providers as OpenTofu resolves them; Terraform rewrites it with its own registry
 | Variable | Default | |
 | --- | --- | --- |
 | `region` | required | |
+| `account_id` | empty | the account this belongs in; given, an apply from any other account's credentials is refused before anything is created |
 | `bucket` | required | S3 bucket names are global |
 | `name` | `fleet-manager` | the service and the prefix of its roles |
 | `image_uri` | `docker.io/quesma/fleet-manager:latest` | a moving tag Quesma publishes; see below |
 | `default_allow_quesma_etl` | `true` | seal uploads to Quesma's recipient for organizations that never chose |
 | `default_telemetry_collector_url` | empty | forward shipper telemetry there for organizations that name nowhere |
 | `etl_reader_role_arns` | `[]` | who outside the service may read the sealed objects; see below |
+| `analytics_key` | `false` | create the KMS key analytics identities are encrypted under; see below |
+| `analytics_decrypt_role_arns` | `[]` | who may decrypt an analytics identity with that key; see below |
 
 ## Your own image
 
@@ -75,7 +79,8 @@ rev=$(git rev-parse --short=12 HEAD)
 aws ecr get-login-password --region eu-central-1 \
   | docker login --username AWS --password-stdin "$REGISTRY"
 docker buildx build --platform linux/amd64 --target cloud-run \
-  --build-arg VERSION="$(cat VERSION)+$rev" -t "$REGISTRY/fleet-manager:$rev" --push .
+  --build-arg VERSION="$(cat VERSION)+$rev" -t "$REGISTRY/fleet-manager:$rev" --push \
+  -f Dockerfile ..                          # the context is the repository root
 docker buildx imagetools inspect "$REGISTRY/fleet-manager:$rev" \
   --format '{{json .Manifest.Digest}}' | tr -d '"'
 
@@ -104,7 +109,8 @@ role allows more still reads only these.
 
 Reading is not decrypting. Every object is sealed to your organization's `age` recipients, and
 Quesma can open one only while the organization keeps its built-in recipient, the
-`allow_quesma_etl` setting. The two are separately revocable, and revoking either is enough:
+`allow_quesma_etl` setting, or through an analytics identity it was granted (below). The two are
+separately revocable, and only removing the bucket grant takes effect on everything at once:
 
 | to stop | do |
 | --- | --- |
@@ -115,6 +121,46 @@ Turning off the setting does not re-seal what was already written, which is why 
 bucket grant is the one that takes effect immediately. Uploads are sealed to Quesma's recipient
 whether or not the grant exists, so granting the list later opens your history to Quesma's
 analytics, not only what comes after.
+
+## An analytics identity under your own key
+
+An organization can be sealed from its first upload to an analytics recipient whose private key
+exists only as ciphertext under a KMS key in this account. Nobody can open anything with it, a
+processor included, until you grant that processor `kms:Decrypt` on the key.
+
+1. Apply with `analytics_key = true` (`sh deploy.sh aws --analytics-key`). The key's policy lets the
+   account administer it and encrypt with it. It grants no principal `kms:Decrypt`,
+   `kms:ReEncrypt*` or `kms:CreateGrant`, so even the account's administrators must first change
+   the policy, which CloudTrail records.
+2. Before creating the organization, run `sh deploy.sh aws analytics-key <org>`. It generates an
+   `age` identity, sends it to `kms:Encrypt` with the encryption context
+   `{purpose: analytics-identity, organization: <org>}`, and prints the organization, the recipient,
+   the ciphertext and the key ARN on one line. The private key is never written to a file or printed. KMS receives it
+   for the encryption and does not keep it. The command refuses while the AWS CLI's `cli_history`
+   is enabled, because the history would record the identity.
+3. Paste that line into the organization form, under "Let an analytics service process this
+   organization's data later". It is stored in the organization's `control/config.json`, and only
+   at creation: an organization created without it cannot add one later. A line made for another
+   organization is refused, because it would never decrypt under this one's context, and so is a
+   line made under another deployment's key. Upgrade every replica first: an older one cannot read
+   a configuration that has the line, and then lists no organizations at all.
+
+To grant a processor, apply with its role in both lists. The bucket read and the decrypt are
+separate grants:
+
+```sh
+terraform apply … -var="etl_reader_role_arns=[\"$ROLE\"]" -var="analytics_decrypt_role_arns=[\"$ROLE\"]"
+```
+
+The processor reads the ciphertext from `control/config.json`, decrypts it under the encryption
+context of that organization, and opens the history and everything after it. Ciphertext from one
+organization does not decrypt under another's context. Removing the role from
+`analytics_decrypt_role_arns` and applying takes effect at the processor's next decrypt. Disabling
+the key by hand does too, but the next apply enables it again. Either stops new unwraps only: a
+processor that already unwrapped the identity can keep it, so only removing its bucket read stops
+it.
+
+Google Cloud has no equivalent yet.
 
 ## Operations
 
@@ -129,5 +175,8 @@ terraform output -raw admin_credential
 Protect that credential, the Terraform state, and the private `age` identities according to your
 organization's backup and access-control requirements. Do not run `terraform destroy` after
 enrollment without a reviewed data-retention plan: the bucket contains fleet state and encrypted
-trajectory data, and a non-empty bucket prevents normal destruction. The rest is in
+trajectory data, and a non-empty bucket prevents normal destruction. With the analytics key,
+`terraform destroy` still schedules the key's deletion when it refuses the bucket, and a new key
+opens nothing sealed under the old one: `deploy.sh aws destroy` refuses first while the bucket holds
+any object version. The rest is in
 [OPERATIONS.md](../../OPERATIONS.md).

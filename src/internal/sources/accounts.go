@@ -27,23 +27,10 @@ type accountObservation struct {
 }
 
 func (p *Accounts) Discover(req Request) (Discovery, error) {
-	d := Discovery{Health: RootPresentNoMatch, Sniff: SniffOK}
-	if req.Source.Root == "" {
-		d.Health = AgentAbsent
-		return d, nil
+	d, bucket, ready, err := generatedDiscovery(req, "account")
+	if !ready {
+		return d, err
 	}
-	if !req.Capture {
-		d.Deferred = true
-		d.Reason = "configured; checked during collection"
-		return d, nil
-	}
-	if req.Now == nil || req.Context == nil || req.Env.Home == "" {
-		return d, fmt.Errorf("account collection requires clock, context and home")
-	}
-	if req.Interval <= 0 {
-		return d, fmt.Errorf("account collection requires a positive interval")
-	}
-	bucket := req.Now().UTC().Truncate(req.Interval)
 	name := strings.TrimSuffix(req.Source.ID, "-account") + ".account." + bucket.Format("20060102T150405Z") + ".jsonl"
 	// The size bound stays stable within a bucket and reserves memory before loading.
 	d.Candidates = []Candidate{{Path: name, RelPath: name, Series: req.Source.ID, Size: req.Source.MaxFileBytes, MTime: bucket,
@@ -51,6 +38,28 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 	}}
 	d.Health = Collected
 	return d, nil
+}
+
+// generatedDiscovery is the preamble of a source that writes its own files: its checks, and the
+// collection bucket. When ready is false, d and err are already the answer.
+func generatedDiscovery(req Request, what string) (d Discovery, bucket time.Time, ready bool, err error) {
+	d = Discovery{Health: RootPresentNoMatch, Sniff: SniffOK}
+	if req.Source.Root == "" {
+		d.Health = AgentAbsent
+		return d, bucket, false, nil
+	}
+	if !req.Capture {
+		d.Deferred = true
+		d.Reason = "configured; checked during collection"
+		return d, bucket, false, nil
+	}
+	if req.Now == nil || req.Context == nil || req.Env.Home == "" {
+		return d, bucket, false, fmt.Errorf("%s collection requires clock, context and home", what)
+	}
+	if req.Interval <= 0 {
+		return d, bucket, false, fmt.Errorf("%s collection requires a positive interval", what)
+	}
+	return d, req.Now().UTC().Truncate(req.Interval), true, nil
 }
 
 func (p *Accounts) load(ctx context.Context, req Request, bucket time.Time) (Payload, error) {

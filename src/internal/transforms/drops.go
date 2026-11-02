@@ -69,6 +69,9 @@ func CompiledDrops() map[string][]string {
 			"message.content[].thinkingSignature",
 			"message.content[].data",
 		},
+		"opencode": {
+			"data.content[].state.reasoningEncryptedContent",
+		},
 	}
 }
 

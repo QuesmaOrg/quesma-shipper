@@ -1,0 +1,25 @@
+{
+  "config_version": 1,
+  "mode": {
+    "schedule": "15m"
+  },
+  "max_files_per_run": 512,
+  "drain_deadline": "1h",
+  "sources": [
+    {
+      "id": "claude-code-transcripts",
+      "enabled": true,
+      "exclude": [
+        "**/private/**"
+      ]
+    }
+  ],
+  "scrub": {
+    "rule_packs": [
+      "gitleaks-core"
+    ],
+    "secret_key_names": [
+      "CUSTOM_TOKEN"
+    ]
+  }
+}

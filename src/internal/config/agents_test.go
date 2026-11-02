@@ -82,3 +82,27 @@ sources:
 		})
 	}
 }
+
+// OPENCODE_DB can name any file; the operator selects it with include rather than a compiled filename.
+func TestCentrallyConfiguredOpenCodeDatabase(t *testing.T) {
+	home := fakeHome(t)
+	mustMkdir(t, filepath.Join(home, "org", "opencode"))
+	remote := config.LayeredDocument{Layer: config.LayerRemote, Doc: servedDoc(t, `
+issued_at: 2026-09-30T10:00:00Z
+org: acme
+sources:
+  - id: opencode-sessions
+    roots: ["~/org/opencode"]
+    include: ["work.db"]
+`)}
+	eff, err := config.Resolve(baseInput(t, home, remote))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, src := range eff.Sources {
+		if src.ID == "opencode-sessions" && strings.Join(src.Include, ",") == "work.db" && eff.Provenance["sources.opencode-sessions.include"].Layer == config.LayerRemote {
+			return
+		}
+	}
+	t.Fatal("served include was not applied")
+}
