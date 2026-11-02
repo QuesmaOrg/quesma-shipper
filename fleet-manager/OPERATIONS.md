@@ -33,7 +33,8 @@ recipients registered at the time of upload. Changing the recipients later does 
 existing files, even after a shipper's `state reset`: upload deduplication writes a new version of a
 stored file only when its scrubbed bytes changed, for example after a scrub-rule change.
 
-A custodian can reseal the history to a recipient added later. Add it to the organization first, so
+A custodian can reseal the history to a recipient added later. Resealing is the organization's
+decision; the fleet manager keeps no record of it. Add the recipient to the organization first, so
 a file shipped meanwhile is sealed to it, then, with `$W/enc` copied as in the README's step 6 (`W`
 outside the clone):
 
