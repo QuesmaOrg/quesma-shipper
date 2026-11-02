@@ -34,14 +34,15 @@ existing files, even after a shipper's `state reset`: upload deduplication write
 stored file only when its scrubbed bytes changed, for example after a scrub-rule change.
 
 A custodian can reseal the history to a recipient added later. Add it to the organization first, so
-a file shipped meanwhile is sealed to it, then, with `enc/` copied as in the README's step 6:
+a file shipped meanwhile is sealed to it, then, with `$W/enc` copied as in the README's step 6 (`W`
+outside the clone):
 
 ```sh
-(cd src && go run ./cmd/quesma-unseal -i ../name.agekey -reseal-to age1… ../enc ../resealed)
-rclone copy --update resealed/ "aws:$B/v1/organization=acme" --include 'install=*/**'
+(cd src && go run ./cmd/quesma-unseal -i "$W/name.agekey" -reseal-to age1… "$W/enc" "$W/resealed")
+rclone copy --update "$W/resealed/" "aws:$B/v1/organization=acme" --include 'install=*/**'
 ```
 
-Each object whose manifest does not list that recipient lands in `resealed/` under its own key, with
+Each object whose manifest does not list that recipient lands in `$W/resealed` under its own key, with
 the same payload, sealed to the recipients it lists plus the new one. `--update` skips a key a
 shipper rewrote after the copy. The upload adds a version and keeps the earlier one. rclone does not
 carry the metadata the fleet manager stored with the object, so after a shipper's `state reset`

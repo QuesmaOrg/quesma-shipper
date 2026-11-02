@@ -102,16 +102,19 @@ on each machine.
    enrolled, not that it has shipped anything. Copy the organisation's objects with
    [rclone](https://rclone.org/) (here an `s3` remote named `aws`: `rclone config create aws s3
    provider AWS env_auth true`), then decrypt them with Go, both from the root of an up-to-date
-   clone of this repository, since an older one refuses objects from newer shippers:
+   clone of this repository, since an older one refuses objects from newer shippers. Keep the key
+   and both copies in a directory outside the clone (`W` below): the decrypted files are your
+   developers' transcripts, and this repository is public.
 
    ```sh
    B=$(sh fleet-manager/deploy.sh aws output bucket)
-   rclone copy "aws:$B/v1/organization=acme" enc/ --include 'install=*/**'
-   (cd src && go run ./cmd/quesma-unseal -i ../name.agekey ../enc ../plain)
+   W=~/quesma-acme   # outside the clone; holds name.agekey, enc/ and plain/
+   rclone copy "aws:$B/v1/organization=acme" "$W/enc" --include 'install=*/**'
+   (cd src && go run ./cmd/quesma-unseal -i "$W/name.agekey" "$W/enc" "$W/plain")
    ```
 
    On Google Cloud, `deploy.sh gcp output bucket` and a `gcs` remote; on Azure, the container name
-   and an `azureblob` remote. `plain/` holds `<install name> (<id prefix>)/<source>/<native path>`,
+   and an `azureblob` remote. `$W/plain` holds `<install name> (<id prefix>)/<source>/<native path>`,
    or the install id when unnamed, each file beside a `.manifest.json` sidecar. Re-running both
    commands fetches and decrypts only changed objects. An object whose output moved, because its
    install was renamed or its session archived, leaves no copy at the old path; nothing else is

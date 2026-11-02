@@ -29,7 +29,12 @@ dist/
 # Collected trajectories, credentials, and raw objects must never be committed.
 # See SECURITY.md and CONTRIBUTING.md. Only the synthetic fixtures below may override these rules.
 *.age
+*.agekey
 *.jsonl
+# quesma-unseal's working directories, should README step 6 be run inside the clone.
+/enc/
+/plain/
+/resealed/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
