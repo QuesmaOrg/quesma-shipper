@@ -109,6 +109,9 @@ run_analytics_key() {
 		|| die "analytics-key takes the organization slug: $0 aws analytics-key acme"
 	[ -f "$DIR/terraform.tfstate" ] || die "nothing deployed in $DIR yet"
 	need aws age-keygen
+	# The CLI's history records every call's parameters, the identity on stdin included.
+	[ "$(aws configure get cli_history 2>/dev/null || true)" != enabled ] \
+		|| die "AWS CLI history is on and would record the identity: set cli_history = disabled first"
 	key=$(tf output -raw analytics_key_arn 2>/dev/null || true)
 	[ -n "$key" ] || die "this deployment has no analytics key: run \`$0 aws --analytics-key\` first"
 	identity=$(age-keygen 2>/dev/null | grep '^AGE-SECRET-KEY-') || die "age-keygen failed"
@@ -124,8 +127,16 @@ run_destroy() {
 	[ -f "$DIR/terraform.tfstate" ] || die "nothing deployed in $DIR yet"
 	say "this removes the service, its roles and the bucket $(tf output -raw bucket)"
 	say "a bucket holding objects is refused: empty it first if that is what you want"
-	[ -z "$(tf output -raw analytics_key_arn 2>/dev/null || true)" ] \
-		|| say "the analytics key is scheduled for deletion in 30 days, even if the bucket stays; aws kms cancel-key-deletion undoes that"
+	key=$(tf output -raw analytics_key_arn 2>/dev/null || true)
+	if [ -n "$key" ]; then
+		# Terraform schedules the key's deletion even when it refuses the bucket, and a new key opens
+		# nothing sealed under the old one. A versioned bucket is empty only with no versions left.
+		left=$(aws s3api list-object-versions --region "$(echo "$key" | cut -d: -f4)" --bucket "$(tf output -raw bucket)" \
+			--max-items 1 --query '[length(Versions || `[]`), length(DeleteMarkers || `[]`)]' --output text) \
+			|| die "could not check whether the bucket still holds objects"
+		[ "$(echo $left)" = "0 0" ] \
+			|| die "the bucket still holds objects, and destroying would delete the analytics key every organization's identity is held under: empty the bucket first if that is what you want"
+	fi
 	tf destroy -input=false ${YES:+-auto-approve}
 }
 

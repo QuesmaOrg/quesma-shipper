@@ -73,6 +73,7 @@ func testMultiTenantAdminServer(t *testing.T) (*Server, *memoryStore) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	server.analyticsKMSKey = testAnalyticsKeyARN
 	return server, store
 }
 

@@ -104,6 +104,9 @@ func TestAnAnalyticsIdentityIsCheckedBeforeItIsStored(t *testing.T) {
 		"an alias, not a key ARN": func(a *AnalyticsIdentity) {
 			a.KMSKey = "arn:aws:kms:eu-central-1:123456789012:alias/fleet-manager-analytics"
 		},
+		"another deployment's key": func(a *AnalyticsIdentity) {
+			a.KMSKey = "arn:aws:kms:eu-central-1:210987654321:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+		},
 		"no ciphertext":            func(a *AnalyticsIdentity) { a.Ciphertext = "" },
 		"ciphertext not in base64": func(a *AnalyticsIdentity) { a.Ciphertext = "not base64!" },
 		"the identity in base64": func(a *AnalyticsIdentity) {
@@ -125,6 +128,18 @@ func TestAnAnalyticsIdentityIsCheckedBeforeItIsStored(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("a deployment with no analytics key", func(t *testing.T) {
+		server, store := testMultiTenantAdminServer(t)
+		server.analyticsKMSKey = ""
+		analytics := valid
+		if code := createWithAnalytics(t, server, "acme", &analytics); code != http.StatusBadRequest {
+			t.Fatalf("create = %d, want 400", code)
+		}
+		if _, _, err := store.Get(t.Context(), configKey("acme")); err == nil {
+			t.Error("the organization was created anyway")
+		}
+	})
 
 	t.Run("a custodian's recipient", func(t *testing.T) {
 		server, _ := testMultiTenantAdminServer(t)
