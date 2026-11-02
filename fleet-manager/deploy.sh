@@ -131,9 +131,14 @@ run_destroy() {
 	if [ -n "$key" ]; then
 		# Terraform schedules the key's deletion even when it refuses the bucket, and a new key opens
 		# nothing sealed under the old one. A versioned bucket is empty only with no versions left.
-		left=$(aws s3api list-object-versions --region "$(echo "$key" | cut -d: -f4)" --bucket "$(tf output -raw bucket)" \
-			--max-items 1 --query '[length(Versions || `[]`), length(DeleteMarkers || `[]`)]' --output text) \
-			|| die "could not check whether the bucket still holds objects"
+		# A bucket an earlier, partial destroy already removed holds nothing.
+		if ! left=$(aws s3api list-object-versions --region "$(echo "$key" | cut -d: -f4)" --bucket "$(tf output -raw bucket)" \
+			--max-items 1 --query '[length(Versions || `[]`), length(DeleteMarkers || `[]`)]' --output text 2>&1); then
+			case $left in
+			*NoSuchBucket*) left="0 0" ;;
+			*) die "could not check whether the bucket still holds objects: $left" ;;
+			esac
+		fi
 		[ "$(echo $left)" = "0 0" ] \
 			|| die "the bucket still holds objects, and destroying would delete the analytics key every organization's identity is held under: empty the bucket first if that is what you want"
 	fi

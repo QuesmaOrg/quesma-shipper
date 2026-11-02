@@ -154,6 +154,8 @@ func TestDeployDestroyKeepsTheAnalyticsKeyWhileTheBucketHoldsObjects(t *testing.
 		"delete markers left": {testAnalyticsKeyARN, "0\t1", false},
 		"empty bucket":        {testAnalyticsKeyARN, "0\t0", true},
 		"no analytics key":    {"", "1\t0", true},
+		"bucket already gone": {testAnalyticsKeyARN, "NoSuchBucket", true},
+		"listing refused":     {testAnalyticsKeyARN, "AccessDenied", false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -176,7 +178,8 @@ func TestDeployDestroyKeepsTheAnalyticsKeyWhileTheBucketHoldsObjects(t *testing.
 [ "$4" = bucket ] && printf fleet
 exit 0
 `)
-			stub("aws", `printf '`+tc.left+`\n'`+"\n")
+			stub("aws", `case '`+tc.left+`' in NoSuchBucket | AccessDenied) echo "An error occurred (`+tc.left+`) when calling the ListObjectVersions operation" >&2; exit 254 ;; esac
+printf '`+tc.left+`\n'`+"\n")
 			cmd := exec.Command("sh", "../deploy.sh", "aws", "destroy", "-y", "--dir", filepath.Join(dir, "state"))
 			cmd.Env = []string{"PATH=" + filepath.Join(dir, "bin") + ":/usr/bin:/bin", "HOME=" + filepath.Join(dir, "home"),
 				"TF=" + filepath.Join(dir, "bin", "terraform")}
@@ -187,8 +190,8 @@ exit 0
 			if destroyed := statErr == nil; destroyed != tc.destroys {
 				t.Errorf("destroyed = %v, want %v (err %v, stderr %q)", destroyed, tc.destroys, err, errOut.String())
 			}
-			if !tc.destroys && (err == nil || !strings.Contains(errOut.String(), "analytics key")) {
-				t.Errorf("err = %v, stderr %q; want a refusal naming the analytics key", err, errOut.String())
+			if !tc.destroys && (err == nil || !strings.Contains(errOut.String(), "the bucket still holds objects")) {
+				t.Errorf("err = %v, stderr %q; want a refusal about the bucket's objects", err, errOut.String())
 			}
 		})
 	}
