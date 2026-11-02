@@ -377,7 +377,7 @@ func TestManifestKeyMismatchRejected(t *testing.T) {
 }
 
 func TestUnsafeInstallNameWarnsOnce(t *testing.T) {
-	for _, name := range []string{"../evil", `a\b`, "..", " . ", "   ", "nul\x00byte", strings.Repeat("名", 82)} {
+	for _, name := range []string{"../evil", `a\b`, "..", " . ", "   ", "nul\x00byte", strings.Repeat("名", 82), "Jacek: MBP", "tab\tname"} {
 		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
 			a := newArchive(t)
 			a.tags(installA, name)
@@ -501,6 +501,9 @@ func TestUsageErrors(t *testing.T) {
 }
 
 func TestNativeRelPath(t *testing.T) {
+	orig := windowsNames
+	t.Cleanup(func() { windowsNames = orig })
+	windowsNames = false
 	for native, want := range map[string]string{
 		"/Users/__USER__/./x//y.jsonl": "Users/__USER__/x/y.jsonl",
 		`C:\Users\__USER__\x.jsonl`:    "C/Users/__USER__/x.jsonl",
@@ -514,6 +517,23 @@ func TestNativeRelPath(t *testing.T) {
 	for _, native := range []string{"", "/", "a/../b", `a\..\b`, "a/nul\x00/b"} {
 		if got, err := nativeRelPath(native); err == nil {
 			t.Errorf("nativeRelPath(%q) = %q, want an error", native, got)
+		}
+	}
+}
+
+// On Windows a segment Windows cannot hold fails; elsewhere the same path is written as it is.
+func TestNativeRelPathOnWindows(t *testing.T) {
+	orig := windowsNames
+	t.Cleanup(func() { windowsNames = orig })
+	windowsNames = true
+	for _, native := range []string{`C:\Users\__USER__\x.jsonl`, "/Users/__USER__/COMPANY/con-notes.txt", "/a/COM10"} {
+		if _, err := nativeRelPath(native); err != nil {
+			t.Errorf("nativeRelPath(%q): %v", native, err)
+		}
+	}
+	for _, native := range []string{"/a/what?.jsonl", "/a/b:c", "/a/trailing.", "/a/trailing /x", "/a/con", "/a/Nul.txt", "/a/lpt1", "/a/tab\tname"} {
+		if got, err := nativeRelPath(native); err == nil {
+			t.Errorf("nativeRelPath(%q) = %q on Windows, want an error", native, got)
 		}
 	}
 }

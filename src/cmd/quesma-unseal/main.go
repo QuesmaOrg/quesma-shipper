@@ -18,6 +18,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -531,6 +532,11 @@ func nativeRelPath(native string) (string, error) {
 		case len(out) == 0 && len(seg) == 2 && seg[1] == ':' && isASCIILetter(seg[0]):
 			seg = seg[:1]
 		}
+		if windowsNames {
+			if err := windowsName(seg); err != nil {
+				return "", fmt.Errorf("native_path %q: %w", native, err)
+			}
+		}
 		out = append(out, seg)
 	}
 	if len(out) == 0 {
@@ -540,6 +546,29 @@ func nativeRelPath(native string) (string, error) {
 }
 
 func isASCIILetter(c byte) bool { return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' }
+
+// windowsNames is a variable so a test can check Windows' rules on any OS. A macOS or Linux path
+// that Windows cannot hold fails its object there, named, rather than being renamed.
+var windowsNames = runtime.GOOS == "windows"
+
+// windowsReserved are the characters no Windows file name may hold, beside the path separators.
+const windowsReserved = `<>:"|?*`
+
+func windowsName(seg string) error {
+	base, _, _ := strings.Cut(seg, ".")
+	base = strings.ToUpper(strings.TrimRight(base, " "))
+	device := base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" ||
+		len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && '0' <= base[3] && base[3] <= '9'
+	switch {
+	case strings.ContainsAny(seg, windowsReserved) || strings.IndexFunc(seg, unicode.IsControl) >= 0:
+		return fmt.Errorf("%q has a character Windows does not allow in a file name", seg)
+	case strings.HasSuffix(seg, ".") || strings.HasSuffix(seg, " "):
+		return fmt.Errorf("%q ends in a dot or space, which Windows drops", seg)
+	case device:
+		return fmt.Errorf("%q is a Windows device name", seg)
+	}
+	return nil
+}
 
 // installDir names an install's output directory once per run, warning once about a bad name.
 // An unreadable tags.json fails the object instead, so no output lands under the wrong directory.
@@ -603,8 +632,10 @@ func installName(raw []byte) (string, error) {
 		return "", nil
 	}
 	name := strings.TrimSpace(*tags.Name)
-	// The directory is "<name> (<8-char id>)", 11 bytes longer than the name.
-	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") || len(name)+11 > maxNameBytes {
+	// The directory is "<name> (<8-char id>)", 11 bytes longer than the name; the suffix also keeps a
+	// trailing dot or a device name from reaching Windows, which leaves its reserved characters.
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00"+windowsReserved) ||
+		strings.IndexFunc(name, unicode.IsControl) >= 0 || len(name)+11 > maxNameBytes {
 		return "", fmt.Errorf("name %q is not a safe directory name", *tags.Name)
 	}
 	return name, nil
