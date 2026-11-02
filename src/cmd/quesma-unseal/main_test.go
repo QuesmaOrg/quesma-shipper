@@ -413,31 +413,63 @@ func TestSymlinksNotFollowed(t *testing.T) {
 	a.wantPlain(out(installA, claude, "a/1.jsonl"))
 }
 
-// Case and NFC/NFD spellings collide too, since macOS and Windows merge them into one file.
-func TestDuplicateOutputPath(t *testing.T) {
+// Where PLAIN_DIR merges names by case or normalization, as macOS and Windows do, a second object
+// that would land on a first's output is written beside it; every run warns the same way.
+func TestFoldedOutputPathWrittenBeside(t *testing.T) {
+	orig := probeFolding
+	t.Cleanup(func() { probeFolding = orig })
+	probeFolding = func(*os.Root) (bool, bool, error) { return true, true, nil }
+
 	a := newArchive(t)
-	nfc, nfd := "a/café.jsonl", "a/café.jsonl"
+	nfc, nfd := "a/caf\u00e9.jsonl", "a/cafe\u0301.jsonl"
 	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "first\n", t0)
 	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, `\a\1.jsonl`), "second\n", t0)
-	a.put(objectKey(installA, claude, "33cc"), manifest(installA, claude, "/A/1.JSONL"), "third\n", t0)
+	a.put(objectKey(installA, claude, "33cc"), manifest(installA, claude, "/a/1.JSONL"), "third\n", t0)
 	a.put(objectKey(installA, claude, "44dd"), manifest(installA, claude, "/"+nfc), "nfc\n", t0)
 	a.put(objectKey(installA, claude, "55ee"), manifest(installA, claude, "/"+nfd), "nfd\n", t0)
-	collides := func(leaf, output, first string) string {
-		return "unseal " + objectKey(installA, claude, leaf) + ": output " + out(installA, claude, output) +
-			" already written by " + objectKey(installA, claude, first)
+	beside := func(leaf, output, first, alt string) string {
+		return "warning " + objectKey(installA, claude, leaf) + ": " + out(installA, claude, output) + " is " +
+			objectKey(installA, claude, first) + "'s on this filesystem; writing " + out(installA, claude, alt)
 	}
 	want := []string{
-		collides("22bb", "a/1.jsonl", "11aa"),
-		collides("33cc", "A/1.JSONL", "11aa"),
-		collides("55ee", nfd, "44dd"),
+		beside("22bb", "a/1.jsonl", "11aa", "a/1~22bb.jsonl"),
+		beside("33cc", "a/1.JSONL", "11aa", "a/1~33cc.JSONL"),
+		beside("55ee", nfd, "44dd", "a/cafe\u0301~55ee.jsonl"),
 	}
-	a.wantSummary(a.run(), 1, 2, 0, 3)
+	a.wantSummary(a.run(), 0, 5, 0, 0)
 	a.wantStderr(want...)
 	a.wantFile(out(installA, claude, "a/1.jsonl"), "first\n", t0)
+	a.wantFile(out(installA, claude, "a/1~22bb.jsonl"), "second\n", t0)
+	a.wantFile(out(installA, claude, "a/1~33cc.JSONL"), "third\n", t0)
 	a.wantFile(out(installA, claude, nfc), "nfc\n", t0)
+	a.wantFile(out(installA, claude, "a/cafe\u0301~55ee.jsonl"), "nfd\n", t0)
 
-	a.wantSummary(a.run(), 1, 0, 2, 3)
+	a.wantSummary(a.run(), 0, 0, 5, 0)
 	a.wantStderr(want...)
+}
+
+// On a filesystem that keeps them apart, only an identical path is written beside.
+func TestCaseSensitiveOutputKeepsBothNames(t *testing.T) {
+	root, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := root.Mkdir(stagingDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if foldCase, _, err := probeFolding(root); err != nil || foldCase {
+		t.Skipf("this filesystem folds case (%v)", err)
+	}
+
+	a := newArchive(t)
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "first\n", t0)
+	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, `\a\1.jsonl`), "second\n", t0)
+	a.put(objectKey(installA, claude, "33cc"), manifest(installA, claude, "/a/1.JSONL"), "third\n", t0)
+	a.wantSummary(a.run(), 0, 3, 0, 0)
+	a.wantStderr("warning " + objectKey(installA, claude, "22bb") + ": " + out(installA, claude, "a/1.jsonl") + " is " +
+		objectKey(installA, claude, "11aa") + "'s on this filesystem; writing " + out(installA, claude, "a/1~22bb.jsonl"))
+	a.wantFile(out(installA, claude, "a/1.JSONL"), "third\n", t0)
 }
 
 func TestUsageErrors(t *testing.T) {

@@ -111,6 +111,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		enc: enc, plain: plain, ids: ids, resealTo: resealTo, stderr: stderr,
 		installDirs: map[string]string{}, claimed: map[string]string{},
 	}
+	if u.foldCase, u.foldNFC, err = probeFolding(plain); err != nil {
+		fmt.Fprintf(stderr, "quesma-unseal: %s: %v\n", outName, err)
+		return 2
+	}
 	objects := u.collect()
 	if len(objects) == 0 {
 		fmt.Fprintf(stderr, "warning: no objects under %s; it should be a copy of v1/organization=<org>\n", flags.Arg(0))
@@ -172,7 +176,9 @@ type unsealer struct {
 	stderr     io.Writer
 
 	installDirs map[string]string // install dir rel path -> output directory name
-	claimed     map[string]string // case- and NFC-folded output path -> .age rel path that claimed it
+	claimed     map[string]string // output path, folded as PLAIN_DIR folds names -> .age rel path that claimed it
+	foldCase    bool              // PLAIN_DIR's filesystem treats names differing only in case as one
+	foldNFC     bool              // and names differing only in Unicode normalization
 
 	decrypted, unchanged, failed int // under -reseal-to: resealed, already sealed, failed
 }
@@ -249,19 +255,81 @@ func (u *unsealer) object(o object) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	for _, p := range []string{out, out + sidecarSuffix} {
-		// Case- and NFC-folded, since macOS and Windows would silently merge the two files.
-		key := strings.ToLower(norm.NFC.String(p))
-		if prev, ok := u.claimed[key]; ok {
-			return false, fmt.Errorf("output %s already written by %s", p, prev)
-		}
-		u.claimed[key] = o.rel
+	if out, err = u.claim(o, out); err != nil {
+		return false, err
 	}
 
 	if ok, err := u.upToDate(out, m); err != nil || ok {
 		return false, err
 	}
 	return true, u.write(obj, out, info.ModTime())
+}
+
+// claim reserves out and its sidecar for o. Where PLAIN_DIR would merge them with another object's
+// output, o is written beside it, named after its own blinded key, so both are kept.
+func (u *unsealer) claim(o object, out string) (string, error) {
+	prev, taken := u.claimedBy(out)
+	if taken {
+		alt := besideName(out, o.rel)
+		if other, ok := u.claimedBy(alt); ok {
+			return "", fmt.Errorf("output %s already written by %s, and %s by %s", out, prev, alt, other)
+		}
+		fmt.Fprintf(u.stderr, "warning %s: %s is %s's on this filesystem; writing %s\n",
+			oneLine(o.rel), oneLine(out), oneLine(prev), oneLine(alt))
+		out = alt
+	}
+	u.claimed[u.fold(out)] = o.rel
+	u.claimed[u.fold(out+sidecarSuffix)] = o.rel
+	return out, nil
+}
+
+func (u *unsealer) claimedBy(out string) (string, bool) {
+	for _, p := range []string{out, out + sidecarSuffix} {
+		if prev, ok := u.claimed[u.fold(p)]; ok {
+			return prev, true
+		}
+	}
+	return "", false
+}
+
+func (u *unsealer) fold(p string) string {
+	if u.foldNFC {
+		p = norm.NFC.String(p)
+	}
+	if u.foldCase {
+		p = strings.ToLower(p)
+	}
+	return p
+}
+
+// besideName inserts up to 8 characters of the object's blinded name before out's extension.
+func besideName(out, rel string) string {
+	tag := strings.TrimSuffix(path.Base(rel), ".age")
+	tag = tag[:min(8, len(tag))]
+	ext := path.Ext(out)
+	return strings.TrimSuffix(out, ext) + "~" + tag + ext
+}
+
+// probeFolding asks PLAIN_DIR's filesystem, in stagingDir, whether it merges names that differ only
+// in case or in Unicode normalization. It is a variable so a test can play either filesystem.
+var probeFolding = func(root *os.Root) (foldCase, foldNFC bool, err error) {
+	id := tempName()
+	for _, p := range []struct {
+		create, look string
+		fold         *bool
+	}{
+		{"x" + id, "X" + strings.ToUpper(id), &foldCase},
+		{"e\u0301" + id, "\u00e9" + id, &foldNFC},
+	} {
+		f, err := root.Create(path.Join(stagingDir, p.create))
+		if err != nil {
+			return false, false, fmt.Errorf("name probe: %w", err)
+		}
+		f.Close()
+		_, err = root.Stat(path.Join(stagingDir, p.look))
+		*p.fold = err == nil
+	}
+	return foldCase, foldNFC, nil
 }
 
 func (u *unsealer) openObject(o object) (*os.File, fs.FileInfo, error) {
