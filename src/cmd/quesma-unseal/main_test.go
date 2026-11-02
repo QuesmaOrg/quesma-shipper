@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	mathrand "math/rand"
 	"os"
@@ -408,11 +407,9 @@ func TestSymlinksNotFollowed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a.wantSummary(a.run(), 1, 1, 0, 2)
-	a.wantStderr(
-		"unseal "+objectKey(installA, claude, "33cc")+": symlink, not followed",
-		"unseal "+installRoot(installB)+"/mirror/source="+claude+": symlink, not followed",
-	)
+	// The linked directory is not walked; the linked object fails.
+	a.wantSummary(a.run(), 1, 1, 0, 1)
+	a.wantStderr("unseal " + objectKey(installA, claude, "33cc") + ": not a regular file")
 	a.wantPlain(out(installA, claude, "a/1.jsonl"))
 }
 
@@ -508,54 +505,7 @@ func TestLargeManifestUnchanged(t *testing.T) {
 	a.wantFile(out(installA, claude, "a/1.jsonl"), "x\n", t0)
 }
 
-// PLAIN_DIR on FAT, HFS+ or a bind mount rounds the mtime it stores; that is still unchanged.
-func TestCoarseMtimeFilesystem(t *testing.T) {
-	orig := setMtime
-	t.Cleanup(func() { setMtime = orig })
-	setMtime = func(root *os.Root, name string, mtime time.Time) error {
-		mtime = mtime.Truncate(time.Second)
-		return root.Chtimes(name, mtime, mtime)
-	}
-
-	a := newArchive(t)
-	key := objectKey(installA, claude, "11aa")
-	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v1\n", t0.Add(500*time.Millisecond))
-	a.wantSummary(a.run(), 0, 1, 0, 0)
-	a.wantFile(out(installA, claude, "a/1.jsonl"), "v1\n", t0)
-	a.wantSummary(a.run(), 0, 0, 1, 0)
-
-	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v2\n", t0.Add(1500*time.Millisecond))
-	a.wantSummary(a.run(), 0, 1, 0, 0)
-	a.wantFile(out(installA, claude, "a/1.jsonl"), "v2\n", t0.Add(time.Second))
-	a.wantPlain(out(installA, claude, "a/1.jsonl"))
-
-	// Rounds to the same stored second as v2.
-	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v3\n", t0.Add(1700*time.Millisecond))
-	a.wantSummary(a.run(), 0, 1, 0, 0)
-	a.wantFile(out(installA, claude, "a/1.jsonl"), "v3\n", t0.Add(time.Second))
-}
-
-// A probe that cannot show the stored mtime fails the object rather than guessing.
-func TestMtimeProbeFailureFails(t *testing.T) {
-	orig := setMtime
-	t.Cleanup(func() { setMtime = orig })
-	setMtime = func(root *os.Root, name string, mtime time.Time) error {
-		if strings.HasSuffix(name, ".probe") {
-			return errors.New("probe refused")
-		}
-		mtime = mtime.Truncate(time.Second)
-		return root.Chtimes(name, mtime, mtime)
-	}
-
-	a := newArchive(t)
-	key := objectKey(installA, claude, "11aa")
-	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v1\n", t0.Add(500*time.Millisecond))
-	a.wantSummary(a.run(), 0, 1, 0, 0)
-	a.wantSummary(a.run(), 1, 0, 0, 1)
-	a.wantStderr("unseal " + key + ": mtime probe: probe refused")
-}
-
-// Symlinks that cannot hide an object, a tags.json or a directory of them are not failures.
+// Symlinks anywhere but an object's place are neither followed nor reported.
 func TestSymlinkOutsideArchiveIgnored(t *testing.T) {
 	a := newArchive(t)
 	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
@@ -569,7 +519,7 @@ func TestSymlinkOutsideArchiveIgnored(t *testing.T) {
 	}
 
 	a.wantSummary(a.run(), 0, 1, 0, 0)
-	a.wantStderr("warning latest: symlink, not followed")
+	a.wantStderr()
 }
 
 // A payload is streamed to disk, never held whole in memory.

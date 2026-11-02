@@ -98,7 +98,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		enc: enc, plain: plain, ids: ids, resealTo: resealTo, stderr: stderr,
 		installDirs: map[string]string{}, claimed: map[string]string{},
 	}
-	defer u.removeProbe()
 	objects := u.collect()
 	if len(objects) == 0 {
 		fmt.Fprintf(stderr, "warning: no objects under %s; it should be a copy of v1/organization=<org>\n", flags.Arg(0))
@@ -161,7 +160,6 @@ type unsealer struct {
 
 	installDirs map[string]string // install dir rel path -> output directory name
 	claimed     map[string]string // case- and NFC-folded output path -> .age rel path that claimed it
-	probe       string            // PLAIN_DIR file that shows how its filesystem stores an mtime
 
 	decrypted, unchanged, failed int // under -reseal-to: resealed, already sealed, failed
 }
@@ -176,7 +174,8 @@ func (u *unsealer) fail(rel string, err error) {
 	fmt.Fprintf(u.stderr, "unseal %s: %s\n", oneLine(rel), oneLine(err.Error()))
 }
 
-// collect walks ENC_DIR lexically, finding install=<id> at any depth, never following symlinks.
+// collect walks ENC_DIR lexically, finding install=<id> at any depth. Object storage has no
+// symlinks or FIFOs, so one in an object's place was put there locally: it fails, never followed.
 func (u *unsealer) collect() []object {
 	var objects []object
 	_ = fs.WalkDir(u.enc.FS(), ".", func(p string, d fs.DirEntry, err error) error {
@@ -185,15 +184,6 @@ func (u *unsealer) collect() []object {
 			return nil
 		}
 		segs := strings.Split(p, "/")
-		if d.Type()&fs.ModeSymlink != 0 {
-			switch {
-			case archiveSlot(segs):
-				u.fail(p, errors.New("symlink, not followed"))
-			case !slices.ContainsFunc(segs, isInstall):
-				fmt.Fprintf(u.stderr, "warning %s: symlink, not followed\n", oneLine(p))
-			}
-			return nil
-		}
 		if !d.IsDir() && tailMatches(segs, objectLayout) {
 			// Opening a FIFO blocks until a writer appears, so it must never reach object.
 			if !d.Type().IsRegular() {
@@ -213,13 +203,8 @@ func (u *unsealer) collect() []object {
 	return objects
 }
 
-func isInstall(seg string) bool { return strings.HasPrefix(seg, "install=") }
-
-// The archive layout under an install, as one path.Match pattern per segment.
-var (
-	objectLayout = []string{"install=*", "mirror", "source=*", "*.age"}
-	tagsLayout   = []string{"install=*", "tags.json"}
-)
+// objectLayout is the archive layout under an install, as one path.Match pattern per segment.
+var objectLayout = []string{"install=*", "mirror", "source=*", "*.age"}
 
 func tailMatches(segs, pattern []string) bool {
 	if len(segs) < len(pattern) {
@@ -232,18 +217,6 @@ func tailMatches(segs, pattern []string) bool {
 		}
 	}
 	return true
-}
-
-// archiveSlot reports whether a symlink sits where an object, a tags.json or a directory of them would.
-func archiveSlot(segs []string) bool {
-	for _, layout := range [][]string{objectLayout, tagsLayout} {
-		for k := 1; k <= len(layout); k++ {
-			if tailMatches(segs, layout[:k]) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // object brings one output up to date and reports whether it decrypted the payload.
@@ -272,7 +245,7 @@ func (u *unsealer) object(o object) (bool, error) {
 		u.claimed[key] = o.rel
 	}
 
-	if ok, err := u.upToDate(out, info.ModTime(), m); err != nil || ok {
+	if ok, err := u.upToDate(out, m); err != nil || ok {
 		return false, err
 	}
 	return true, u.write(obj, out, info.ModTime())
@@ -438,8 +411,8 @@ func (u *unsealer) installDir(installRel, installID string) (string, error) {
 	return dir, nil
 }
 
-// readTags is nil with no error when tags.json is absent or not a regular file (collect reports a
-// symlink there), and reads at most one byte past maxTagsBytes.
+// readTags is nil with no error when tags.json is absent or not a regular file, and reads at most one
+// byte past maxTagsBytes.
 func (u *unsealer) readTags(tagsPath string) ([]byte, error) {
 	info, err := u.enc.Lstat(tagsPath)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -484,21 +457,12 @@ func installName(raw []byte) (string, error) {
 	return name, nil
 }
 
-// upToDate also compares the sidecar with the manifest, since a key resealed within the mtime's
-// precision (one second on S3, coarser on FAT) keeps its mtime but not its shipped_hash.
-func (u *unsealer) upToDate(out string, mtime time.Time, m transforms.Manifest) (bool, error) {
+// upToDate compares the sidecar, which carries shipped_hash and payload_size, so equal bytes there
+// and an output of payload_size mean the same payload, whatever the mtime.
+func (u *unsealer) upToDate(out string, m transforms.Manifest) (bool, error) {
 	p, err := u.plain.Stat(out)
 	if err != nil || !p.Mode().IsRegular() || p.Size() != m.PayloadSize {
 		return false, nil
-	}
-	if !p.ModTime().Equal(mtime) {
-		stored, err := u.stored(mtime)
-		if err != nil {
-			return false, err
-		}
-		if !p.ModTime().Equal(stored) {
-			return false, nil
-		}
 	}
 	want, err := sidecarJSON(m)
 	if err != nil {
@@ -506,38 +470,6 @@ func (u *unsealer) upToDate(out string, mtime time.Time, m transforms.Manifest) 
 	}
 	got, err := u.plain.ReadFile(out + sidecarSuffix)
 	return err == nil && bytes.Equal(got, want), nil
-}
-
-// stored is mtime as PLAIN_DIR keeps it, since FAT, HFS+ and some mounts round what Chtimes sets.
-func (u *unsealer) stored(mtime time.Time) (time.Time, error) {
-	if u.probe == "" {
-		name := tempName("probe")
-		f, err := u.plain.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-		if err != nil {
-			return time.Time{}, fmt.Errorf("mtime probe: %w", err)
-		}
-		f.Close()
-		u.probe = name
-	}
-	if err := setMtime(u.plain, u.probe, mtime); err != nil {
-		return time.Time{}, fmt.Errorf("mtime probe: %w", err)
-	}
-	info, err := u.plain.Stat(u.probe)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("mtime probe: %w", err)
-	}
-	return info.ModTime(), nil
-}
-
-func (u *unsealer) removeProbe() {
-	if u.probe != "" {
-		_ = u.plain.Remove(u.probe)
-	}
-}
-
-// setMtime is a variable so a test can play a filesystem with coarse timestamps.
-var setMtime = func(root *os.Root, name string, mtime time.Time) error {
-	return root.Chtimes(name, mtime, mtime)
 }
 
 // write stages payload and sidecar before renaming either, so a failed object leaves no new file.
@@ -611,7 +543,7 @@ func (u *unsealer) stage(dir string, mtime time.Time, fill func(io.Writer) error
 		err = cerr
 	}
 	if err == nil {
-		err = setMtime(u.plain, tmp, mtime)
+		err = u.plain.Chtimes(tmp, mtime, mtime)
 	}
 	if err != nil {
 		_ = u.plain.Remove(tmp)
