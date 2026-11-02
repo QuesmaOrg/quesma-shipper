@@ -73,12 +73,12 @@ no organization deletion: retention, credential revocation and key destruction n
 **Change what organizations get by default.** `default_allow_quesma_etl` and
 `default_telemetry_collector_url` in the Terraform (`FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL` and
 `FLEET_MANAGER_DEFAULT_TELEMETRY_COLLECTOR_URL` for the service) apply to every organization that
-never set the value itself, including organizations created before the change. On AWS, an unset
-`default_allow_quesma_etl` is on without the analytics key and off with it, so deploying with
-`--analytics-key` is such a change. An organization's
+never set the value itself, including organizations created before the change. An organization's
 own setting always wins, and the administration UI always sets `allow_quesma_etl`: its checkbox
 starts from the default, so a later change of the default reaches only organizations created
-through the admin API without the field.
+through the admin API without the field. An organization with an analytics identity that never set
+`allow_quesma_etl` is not sealed to Quesma's recipient, whatever the default: the identity keeps its
+history open instead.
 
 **Upgrade.** Push a new image and apply. The service is stateless and its records are
 conditional-write guarded, so a rolling replacement and a mixed fleet of replicas are both safe.

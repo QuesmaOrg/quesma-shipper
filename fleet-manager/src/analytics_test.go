@@ -167,3 +167,33 @@ func TestHistorySealedBeforeAGrantOpensWithTheAnalyticsIdentity(t *testing.T) {
 		t.Fatalf("opened %q", plain)
 	}
 }
+
+// An organization that never chose is sealed to Quesma's recipient only when it has no analytics
+// identity: the identity keeps its history open instead. A stated choice wins either way.
+func TestAnAnalyticsIdentityTurnsQuesmasRecipientOffUnlessStated(t *testing.T) {
+	server, _ := testMultiTenantAdminServer(t)
+	for slug, tc := range map[string]struct {
+		analytics bool
+		allow     *bool
+		quesma    bool
+	}{
+		"silent":           {false, nil, true},
+		"silent-analytics": {true, nil, false},
+		"stated-analytics": {true, ptr(true), true},
+	} {
+		var analytics *AnalyticsIdentity
+		if tc.analytics {
+			_, a := testAnalyticsIdentity(t, slug)
+			analytics = &a
+		}
+		body, _ := json.Marshal(adminCreateOrganizationRequest{Slug: slug, DisplayName: slug, AgeRecipients: twoRecipients(t),
+			AllowQuesmaETL: tc.allow, AnalyticsIdentity: analytics})
+		if w := serveAdmin(t, server, adminRequest("POST", "/v1/admin/orgs", string(body), testAdminCredential)); w.Code != http.StatusCreated {
+			t.Fatalf("create %s = %d: %s", slug, w.Code, w.Body)
+		}
+		served := strings.Join(servedRecipients(t, server, slug), "\n")
+		if got := strings.Contains(served, quesmaETLAgeRecipient); got != tc.quesma {
+			t.Errorf("%s is sealed to Quesma's recipient: %v, want %v", slug, got, tc.quesma)
+		}
+	}
+}

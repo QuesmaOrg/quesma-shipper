@@ -526,7 +526,13 @@ all('[data-create]').forEach((button) => button.addEventListener('click', () => 
 all('[data-close-create]').forEach((button) => button.addEventListener('click', () => $('#create-dialog').close()));
 $('#create-dialog').addEventListener('close', () => expiryPicker.close());
 
-$('#organization-form').elements.analytics.addEventListener('change', (event) => syncAnalytics(event.target.form));
+$('#organization-form').elements.analytics.addEventListener('change', (event) => {
+  const form = event.target.form;
+  // With an analytics identity, Quesma's recipient starts off, as the service resolves it.
+  form.elements['quesma-etl'].checked = !event.target.checked && deploymentDefaults.allow_quesma_etl !== false;
+  syncQuesmaRecipient(form);
+  syncAnalytics(form);
+});
 $('#organization-form').elements.slug.addEventListener('input', (event) => syncAnalytics(event.target.form));
 
 all('[data-add-recipient]').forEach((button) => button.addEventListener('click', () => {

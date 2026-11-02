@@ -58,7 +58,7 @@ providers as OpenTofu resolves them; Terraform rewrites it with its own registry
 | `bucket` | required | S3 bucket names are global |
 | `name` | `fleet-manager` | the service and the prefix of its roles |
 | `image_uri` | `docker.io/quesma/fleet-manager:latest` | a moving tag Quesma publishes; see below |
-| `default_allow_quesma_etl` | unset | seal uploads to Quesma's recipient for organizations that never chose; unset means on without `analytics_key` and off with it |
+| `default_allow_quesma_etl` | `true` | seal uploads to Quesma's recipient for organizations that never chose |
 | `default_telemetry_collector_url` | empty | forward shipper telemetry there for organizations that name nowhere |
 | `etl_reader_role_arns` | `[]` | who outside the service may read the sealed objects; see below |
 | `analytics_key` | `false` | create the KMS key analytics identities are encrypted under; see below |
@@ -131,9 +131,7 @@ processor included, until you grant that processor `kms:Decrypt` on the key.
 1. Apply with `analytics_key = true` (`sh deploy.sh aws --analytics-key`). The key's policy lets the
    account administer it and encrypt with it. It grants no principal `kms:Decrypt`,
    `kms:ReEncrypt*` or `kms:CreateGrant`, so even the account's administrators must first change
-   the policy, which CloudTrail records. With the key, organizations that never chose are no longer
-   sealed to Quesma's recipient, organizations created before included. Set
-   `default_allow_quesma_etl = true` (`--quesma-etl`) to keep it.
+   the policy, which CloudTrail records.
 2. Before creating the organization, run `sh deploy.sh aws analytics-key <org>`. It generates an
    `age` identity, sends it to `kms:Encrypt` with the encryption context
    `{purpose: analytics-identity, organization: <org>}`, and prints the organization, the recipient,
@@ -142,7 +140,10 @@ processor included, until you grant that processor `kms:Decrypt` on the key.
 3. Paste that line into the organization form, under "Let an analytics service process this
    organization's data later". It is stored in the organization's `control/config.json`, and only
    at creation: an organization created without it cannot add one later. A line made for another
-   organization is refused, because it would never decrypt under this one's context.
+   organization is refused, because it would never decrypt under this one's context. Such an
+   organization is not sealed to Quesma's recipient unless it turns `allow_quesma_etl` on: the
+   analytics identity keeps its history open instead. The form unticks Quesma's box when you tick
+   this one.
 
 To grant a processor, apply with its role in both lists. The bucket read and the decrypt are
 separate, and removing either revokes:

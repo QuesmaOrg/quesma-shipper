@@ -53,11 +53,15 @@ type AnalyticsIdentity struct {
 
 var kmsKeyARNPattern = regexp.MustCompile(`^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$`)
 
-// quesmaETLEnabled reports whether to seal to Quesma's recipient as well. Unset is on here, as in
-// defaultOrganizationDefaults; a deployment that wants it off for organizations that never said
-// says so in OrganizationDefaults, which the server applies before asking.
+// quesmaETLEnabled reports whether to seal to Quesma's recipient as well. Unset is on here unless the
+// organization has an analytics identity, as resolve gives under defaultOrganizationDefaults; a
+// deployment that wants it off for organizations that never said says so in OrganizationDefaults,
+// which the server applies before asking.
 func (c FleetConfig) quesmaETLEnabled() bool {
-	return c.AllowQuesmaETL == nil || *c.AllowQuesmaETL
+	if c.AllowQuesmaETL == nil {
+		return c.AnalyticsIdentity == nil
+	}
+	return *c.AllowQuesmaETL
 }
 
 // OrganizationDefaults is what an organization gets for a setting it never stated. A deployment
@@ -74,7 +78,8 @@ type OrganizationDefaults struct {
 // explicit false or "".
 func (d OrganizationDefaults) resolve(cfg FleetConfig) FleetConfig {
 	if cfg.AllowQuesmaETL == nil {
-		allow := d.AllowQuesmaETL
+		// An analytics identity keeps the history open; without one, only Quesma's recipient does.
+		allow := d.AllowQuesmaETL && cfg.AnalyticsIdentity == nil
 		cfg.AllowQuesmaETL = &allow
 	}
 	if cfg.TelemetryCollectorURL == nil {

@@ -82,9 +82,10 @@ and report only what the PR introduced or made worse.
     organization and nothing else; disabling affects future uploads only, and the docs say so.
     [H, codified]
 15. **Defaults are argued.** Quesma recipient on by default with opt-out, because sealing cannot be
-    added after the fact, and off by default on AWS with `analytics_key`; telemetry forwarding off
-    unless a collector is named. `defaults_test.go` and `TestTerraformOrganizationDefaults` pin
-    them; Quesma's own deployments set values explicitly. [H]
+    added after the fact, and off for an organization with an analytics identity that never chose;
+    telemetry forwarding off unless a collector is named. `defaults_test.go`,
+    `TestAnAnalyticsIdentityTurnsQuesmasRecipientOffUnlessStated` and
+    `TestTerraformOrganizationDefaults` pin them; Quesma's own deployments set values explicitly. [H]
 16. **Configuration edits are conditional.** A PUT carries the ETag it read; a lost race is a
     conflict, never a silent overwrite. [M, codified]
 

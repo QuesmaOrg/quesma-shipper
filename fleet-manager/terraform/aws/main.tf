@@ -259,7 +259,7 @@ resource "aws_ecs_express_gateway_service" "fleet_manager" {
     }
     environment {
       name  = "FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL"
-      value = tostring(coalesce(var.default_allow_quesma_etl, !var.analytics_key))
+      value = tostring(var.default_allow_quesma_etl)
     }
     environment {
       name  = "FLEET_MANAGER_DEFAULT_TELEMETRY_COLLECTOR_URL"
