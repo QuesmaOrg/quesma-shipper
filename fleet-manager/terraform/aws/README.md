@@ -58,7 +58,7 @@ providers as OpenTofu resolves them; Terraform rewrites it with its own registry
 | `bucket` | required | S3 bucket names are global |
 | `name` | `fleet-manager` | the service and the prefix of its roles |
 | `image_uri` | `docker.io/quesma/fleet-manager:latest` | a moving tag Quesma publishes; see below |
-| `default_allow_quesma_etl` | `true` | seal uploads to Quesma's recipient for organizations that never chose |
+| `default_allow_quesma_etl` | `false` | seal uploads to Quesma's recipient for organizations that never chose; it was `true` before, so a root that wants that kept sets it |
 | `default_telemetry_collector_url` | empty | forward shipper telemetry there for organizations that name nowhere |
 | `etl_reader_role_arns` | `[]` | who outside the service may read the sealed objects; see below |
 | `analytics_key` | `false` | create the KMS key analytics identities are encrypted under; see below |
@@ -119,8 +119,8 @@ separately revocable, and only removing the bucket grant takes effect on everyth
 
 Turning off the setting does not re-seal what was already written, which is why removing the
 bucket grant is the one that takes effect immediately. Uploads are sealed to Quesma's recipient
-whether or not the grant exists, so granting the list later opens your history to Quesma's
-analytics, not only what comes after.
+while the setting is on, whether or not the grant exists, so granting the list later opens that
+history to Quesma's analytics, not only what comes after.
 
 ## An analytics identity under your own key
 

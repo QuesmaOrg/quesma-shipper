@@ -21,12 +21,12 @@ func TestOrganizationDefaultsFromEnv(t *testing.T) {
 		return func(name string) string { return values[name] }
 	}
 	got, err := organizationDefaultsFromEnv(env(nil))
-	if want := (OrganizationDefaults{AllowQuesmaETL: true}); err != nil || got != want || got != defaultOrganizationDefaults() {
+	if want := (OrganizationDefaults{}); err != nil || got != want || got != defaultOrganizationDefaults() {
 		t.Fatalf("unset = %+v, %v; want %+v", got, err, want)
 	}
 	got, err = organizationDefaultsFromEnv(env(map[string]string{"FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL": "false"}))
 	if err != nil || got != (OrganizationDefaults{}) {
-		t.Fatalf("opted out = %+v, %v; want nothing on", got, err)
+		t.Fatalf("stated off = %+v, %v; want nothing on", got, err)
 	}
 	got, err = organizationDefaultsFromEnv(env(map[string]string{
 		"FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL":        "true",
@@ -126,8 +126,8 @@ func TestServedConfigurationFollowsDeploymentDefaults(t *testing.T) {
 		recipient bool
 		endpoint  string
 	}{
-		{"a deployment that states nothing", defaultOrganizationDefaults(), true, ""},
-		{"a deployment that opted out", OrganizationDefaults{}, false, ""},
+		{"a deployment that states nothing", defaultOrganizationDefaults(), false, ""},
+		{"a deployment that opted in", OrganizationDefaults{AllowQuesmaETL: true}, true, ""},
 		{"Quesma's deployments", quesmaDefaults, true, telemetryPath},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

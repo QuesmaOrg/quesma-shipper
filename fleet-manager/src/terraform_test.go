@@ -415,7 +415,7 @@ func TestTerraformOrganizationDefaults(t *testing.T) {
 		}
 		vars, main := read("variables.tf"), read("main.tf")
 		for _, pinned := range []string{
-			"variable \"default_allow_quesma_etl\" {\n  type        = bool\n  default     = true\n",
+			"variable \"default_allow_quesma_etl\" {\n  type        = bool\n  default     = false\n",
 			"variable \"default_telemetry_collector_url\" {\n  type        = string\n  default     = \"\"\n",
 		} {
 			if !strings.Contains(vars, pinned) {

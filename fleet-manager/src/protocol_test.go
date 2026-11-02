@@ -318,23 +318,22 @@ func TestConfigAndRevocationAreImmediatelyVisible(t *testing.T) {
 	}
 }
 
-// A configuration that says nothing about Quesma is sealed to Quesma's recipient as well, exactly
-// once, and only an explicit false leaves it out. The absent and explicit-true cases must render
-// identically.
-func TestRenderedConfigDefaultsQuesmaETLOnAndCanDisableIt(t *testing.T) {
+// A configuration that says nothing about Quesma is not sealed to Quesma's recipient, and only an
+// explicit true adds it, exactly once. The absent and explicit-false cases must render identically.
+func TestRenderedConfigDefaultsQuesmaETLOffAndCanEnableIt(t *testing.T) {
 	if _, err := age.ParseX25519Recipient(quesmaETLAgeRecipient); err != nil {
 		t.Fatalf("compiled Quesma ETL recipient: %v", err)
 	}
 	recipients := testAgeRecipients(t, 2)
-	for _, allow := range []*bool{nil, ptr(true)} {
-		on := renderConfig(FleetConfig{Organization: "acme", AgeRecipients: recipients, AllowQuesmaETL: allow})
-		if strings.Count(on, quesmaETLAgeRecipient) != 1 {
-			t.Fatalf("allow_quesma_etl %v must contain the Quesma ETL recipient once:\n%s", allow, on)
+	for _, allow := range []*bool{nil, ptr(false)} {
+		off := renderConfig(FleetConfig{Organization: "acme", AgeRecipients: recipients, AllowQuesmaETL: allow})
+		if strings.Contains(off, quesmaETLAgeRecipient) {
+			t.Fatalf("allow_quesma_etl %v must not contain the Quesma ETL recipient:\n%s", allow, off)
 		}
 	}
-	disabled := renderConfig(FleetConfig{Organization: "acme", AgeRecipients: recipients, AllowQuesmaETL: ptr(false)})
-	if strings.Contains(disabled, quesmaETLAgeRecipient) {
-		t.Fatalf("disabled config contains the Quesma ETL recipient:\n%s", disabled)
+	enabled := renderConfig(FleetConfig{Organization: "acme", AgeRecipients: recipients, AllowQuesmaETL: ptr(true)})
+	if strings.Count(enabled, quesmaETLAgeRecipient) != 1 {
+		t.Fatalf("enabled config must contain the Quesma ETL recipient once:\n%s", enabled)
 	}
 }
 

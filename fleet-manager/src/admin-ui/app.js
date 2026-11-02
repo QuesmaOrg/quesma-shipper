@@ -7,7 +7,7 @@ let createKind = '';
 let organizations = [];
 let currentOrg = '';
 // What an organization created without a setting gets, as this deployment decided; read on connect.
-let deploymentDefaults = {allow_quesma_etl: true};
+let deploymentDefaults = {allow_quesma_etl: false};
 // Detail cells wait on a second request, so a reload must be able to tell a late answer from a
 // current one and drop it.
 let tableGeneration = 0;
@@ -168,7 +168,7 @@ function resetOrganizationForm() {
   form.reset();
   fillCollection(form, {});
   setRecipients(form, []);
-  form.elements['quesma-etl'].checked = deploymentDefaults.allow_quesma_etl !== false;
+  form.elements['quesma-etl'].checked = deploymentDefaults.allow_quesma_etl === true;
   const collector = form.elements.telemetry_collector_url;
   collector.value = deploymentDefaults.telemetry_collector_url || '';
   collector.dataset.initialValue = collector.value;
@@ -186,7 +186,7 @@ function fillConfig(config) {
   const option = [...$('#org-select').options].find((item) => item.value === currentOrg);
   if (option) option.textContent = form.elements.display_name.value;
   setRecipients(form, config.age_recipients);
-  form.elements['quesma-etl'].checked = config.allow_quesma_etl !== false;
+  form.elements['quesma-etl'].checked = config.allow_quesma_etl === true;
   syncQuesmaRecipient(form);
   const analytics = config.analytics_identity;
   form.querySelector('[data-analytics-status]').textContent = analytics

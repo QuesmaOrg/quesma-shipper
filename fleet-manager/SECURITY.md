@@ -37,7 +37,7 @@ In scope:
   [shipper-protocol](../shipper-protocol/) rulebook does not permit. A
   served recipient list the organization did not set — including the built-in ETL recipient
   appearing while `allow_quesma_etl` is off, or was never set on a deployment whose
-  `FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL` is `false`.
+  `FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL` is not `true`.
 - **The administration surface.** Anything under `/v1/admin` or `/admin/` reachable without the
   deployment credential. A reporter credential that reaches an administrator operation. A partner
   credential that changes `age_recipients`, `include_install_recipient`, `allow_quesma_etl` or

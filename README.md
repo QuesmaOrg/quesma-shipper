@@ -22,7 +22,7 @@ flowchart LR
 ```
 
 Each upload is sealed to the organisation's [age](https://age-encryption.org/) recipients, and any
-one of their private keys can decrypt it: your custodians' and, unless you turn Quesma ETL off,
+one of their private keys can decrypt it: your custodians' and, if you turn Quesma ETL on,
 Quesma's. Account and usage records are encrypted but not scrubbed.
 
 Supported agents: Claude Code, Codex, Cursor, GitHub Copilot (the Copilot CLI and Copilot Chat in
@@ -63,7 +63,8 @@ on each machine.
    name.agekey` and send you only their `age1…` public recipient (`age-keygen -y name.agekey`
    prints it); their private identities are your only way to read what is uploaded, so they
    must be kept and backed up. Decide whether Quesma may decrypt uploads, for its dashboards; it is
-   on unless you say `--no-quesma-etl` below, and cannot be added to files already uploaded.
+   off unless you say `--quesma-etl` below. Files uploaded before it was on can be opened for Quesma
+   later only by a custodian resealing them.
 
 3. **Deploy:**
 

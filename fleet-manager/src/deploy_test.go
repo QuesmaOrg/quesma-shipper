@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -193,6 +194,75 @@ printf '`+tc.left+`\n'`+"\n")
 			}
 			if !tc.destroys && (err == nil || !strings.Contains(errOut.String(), "the bucket still holds objects")) {
 				t.Errorf("err = %v, stderr %q; want a refusal about the bucket's objects", err, errOut.String())
+			}
+		})
+	}
+}
+
+// A new deployment leaves Quesma's recipient to the template's default, off. One deployed before
+// that default changed keeps it on for organizations that never chose, until told otherwise.
+func TestDeployKeepsQuesmasRecipientOnWhereItWasDeployedOn(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("deploy.sh is a POSIX shell script")
+	}
+	for name, tc := range map[string]struct {
+		deployed bool
+		stored   string
+		args     []string
+		want     string
+		says     bool
+	}{
+		"new":                      {false, "", nil, "", false},
+		"existing":                 {true, "", nil, "true", true},
+		"existing, told off":       {true, "", []string{"--no-quesma-etl"}, "false", false},
+		"existing, stored off":     {true, "false", nil, "false", false},
+		"existing, already pinned": {true, "true", nil, "true", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, sub := range []string{"bin", "home", "state/aws", "template/fleet-manager/terraform/aws"} {
+				if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write := func(name, body string, mode os.FileMode) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(body), mode); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write("template/fleet-manager/terraform/aws/main.tf", "", 0o644)
+			if tc.deployed {
+				write("state/aws/terraform.tfstate", "{}", 0o600)
+			}
+			if tc.stored != "" {
+				write("state/aws/terraform.tfvars.json", "{\n  \"bucket\": \"fleet\",\n  \"region\": \"eu-central-1\",\n  \"default_allow_quesma_etl\": "+tc.stored+"\n}\n", 0o600)
+			}
+			write("bin/terraform", "#!/bin/sh\nexit 0\n", 0o755)
+			write("bin/aws", "#!/bin/sh\ncase $1 in sts) echo '111122223333 arn:aws:iam::111122223333:user/admin' ;; ec2) echo vpc-1 ;; esac\n", 0o755)
+			write("bin/curl", "#!/bin/sh\nexec tar -czf - -C '"+filepath.Join(dir, "template")+"' .\n", 0o755)
+
+			args := append([]string{"../deploy.sh", "aws", "plan", "--bucket", "fleet", "--region", "eu-central-1", "--dir", filepath.Join(dir, "state")}, tc.args...)
+			cmd := exec.Command("sh", args...)
+			cmd.Env = []string{"PATH=" + filepath.Join(dir, "bin") + ":/usr/bin:/bin", "HOME=" + filepath.Join(dir, "home"),
+				"TF=" + filepath.Join(dir, "bin", "terraform")}
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("deploy.sh: %v\n%s", err, out)
+			}
+			vars, err := os.ReadFile(filepath.Join(dir, "state/aws/terraform.tfvars.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := ""
+			if m := regexp.MustCompile(`"default_allow_quesma_etl": (\w+)`).FindSubmatch(vars); m != nil {
+				got = string(m[1])
+			}
+			if got != tc.want {
+				t.Errorf("default_allow_quesma_etl = %q, want %q:\n%s", got, tc.want, vars)
+			}
+			if says := strings.Contains(string(out), "keeping Quesma's recipient on"); says != tc.says {
+				t.Errorf("said it kept the recipient: %v, want %v:\n%s", says, tc.says, out)
 			}
 		})
 	}
