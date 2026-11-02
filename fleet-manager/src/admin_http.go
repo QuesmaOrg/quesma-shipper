@@ -38,14 +38,15 @@ type adminCollectionRequest struct {
 }
 
 type adminCreateOrganizationRequest struct {
-	Slug                    string            `json:"slug"`
-	DisplayName             string            `json:"display_name"`
-	AgeRecipients           []string          `json:"age_recipients"`
-	IncludeInstallRecipient bool              `json:"include_install_recipient"`
-	AllowQuesmaETL          *bool             `json:"allow_quesma_etl,omitempty"`
-	AuthoredYAML            string            `json:"authored_yaml,omitempty"`
-	Collection              *CollectionConfig `json:"collection,omitempty"`
-	TelemetryCollectorURL   *string           `json:"telemetry_collector_url,omitempty"`
+	Slug                    string             `json:"slug"`
+	DisplayName             string             `json:"display_name"`
+	AgeRecipients           []string           `json:"age_recipients"`
+	IncludeInstallRecipient bool               `json:"include_install_recipient"`
+	AllowQuesmaETL          *bool              `json:"allow_quesma_etl,omitempty"`
+	AnalyticsIdentity       *AnalyticsIdentity `json:"analytics_identity,omitempty"`
+	AuthoredYAML            string             `json:"authored_yaml,omitempty"`
+	Collection              *CollectionConfig  `json:"collection,omitempty"`
+	TelemetryCollectorURL   *string            `json:"telemetry_collector_url,omitempty"`
 }
 
 type adminExpiryRequest struct {
@@ -522,10 +523,19 @@ func (s *Server) handleAdminCreateOrganization(w http.ResponseWriter, r *http.Re
 		writeAdminError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// The only place the field is set: another deployment's key would seal to what this one can't grant.
+	if a := req.AnalyticsIdentity; a != nil && (s.analyticsKMSKey == "" || a.KMSKey != s.analyticsKMSKey) {
+		message := "analytics identity: kms_key is not this deployment's analytics key"
+		if s.analyticsKMSKey == "" {
+			message = "analytics identity: this deployment has no analytics key"
+		}
+		writeAdminError(w, http.StatusBadRequest, message)
+		return
+	}
 	manager, _ := s.manager.ForOrganization(req.Slug)
 	cfg := FleetConfig{DisplayName: req.DisplayName, AgeRecipients: req.AgeRecipients,
 		IncludeInstallRecipient: req.IncludeInstallRecipient, AllowQuesmaETL: req.AllowQuesmaETL,
-		AuthoredYAML: req.AuthoredYAML, Collection: req.Collection, TelemetryCollectorURL: req.TelemetryCollectorURL}
+		AnalyticsIdentity: req.AnalyticsIdentity, AuthoredYAML: req.AuthoredYAML, Collection: req.Collection, TelemetryCollectorURL: req.TelemetryCollectorURL}
 	if !s.validateAdminConfig(w, manager, cfg) {
 		return
 	}
@@ -626,6 +636,8 @@ func (s *Server) handleAdminPutConfig(w http.ResponseWriter, r *http.Request) {
 	if req.AllowQuesmaETL == nil {
 		cfg.AllowQuesmaETL = current.AllowQuesmaETL
 	}
+	// Set only at creation: replacing it would leave the history sealed to a ciphertext nobody keeps.
+	cfg.AnalyticsIdentity = current.AnalyticsIdentity
 	// Like the fields above: a client that does not mention collection must not erase it.
 	if req.Collection == nil && req.AuthoredYAML == "" {
 		cfg.Collection, cfg.AuthoredYAML = current.Collection, current.AuthoredYAML
@@ -684,7 +696,8 @@ func (s *Server) handleAdminPutCollection(w http.ResponseWriter, r *http.Request
 	}
 	cfg := FleetConfig{DisplayName: current.DisplayName, AgeRecipients: current.AgeRecipients,
 		IncludeInstallRecipient: current.IncludeInstallRecipient, AllowQuesmaETL: current.AllowQuesmaETL,
-		TelemetryCollectorURL: current.TelemetryCollectorURL, Collection: req.Collection, AuthoredYAML: req.AuthoredYAML}
+		TelemetryCollectorURL: current.TelemetryCollectorURL, AnalyticsIdentity: current.AnalyticsIdentity,
+		Collection: req.Collection, AuthoredYAML: req.AuthoredYAML}
 	if !s.validateAdminConfig(w, manager, cfg) || !s.validateCollectionForFleet(w, r, manager, cfg, current.Collection, req.UnverifiedSources) {
 		return
 	}

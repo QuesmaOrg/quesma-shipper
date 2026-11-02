@@ -37,6 +37,8 @@ type Server struct {
 	telemetry *telemetryProxy
 	// defaults fills the settings an organization never stated, wherever one is used.
 	defaults OrganizationDefaults
+	// analyticsKMSKey is this deployment's analytics key, the only one an analytics identity may name.
+	analyticsKMSKey string
 	// collectionErrors holds the last unservable-collection error logged per organization, so
 	// every install's poll does not log it again.
 	collectionErrors sync.Map
@@ -313,6 +315,9 @@ func renderConfig(cfg FleetConfig) string {
 	recipients := append([]string{}, cfg.AgeRecipients...)
 	if cfg.quesmaETLEnabled() {
 		recipients = append(recipients, quesmaETLAgeRecipient)
+	}
+	if cfg.AnalyticsIdentity != nil {
+		recipients = append(recipients, cfg.AnalyticsIdentity.Recipient)
 	}
 	endpoint := ""
 	if cfg.telemetryCollectorURL() != "" {

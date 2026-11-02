@@ -209,6 +209,15 @@ start. Turning it off removes the recipient from future configurations and makes
 dashboards, and dependent features unavailable for those uploads; objects already sealed to it stay
 openable by it.
 
+An organization can also be sealed, from its first upload, to an analytics recipient whose private
+key is held only as ciphertext under a KMS key in your own AWS account. Set-up asks for it beside the
+custodians' keys: deploy with `sh deploy.sh aws --analytics-key`, run
+`sh deploy.sh aws analytics-key <org>`, and paste the line it prints into the organization form.
+Nobody can open anything with that recipient until the organization grants a processor `kms:Decrypt`
+on the key. Without it, a processor granted later opens uploads from then on, not the history, and
+the recipient cannot be added after the organization is created. The steps and the grant are in
+the [AWS template's README](terraform/aws/README.md#an-analytics-identity-under-your-own-key).
+
 The templates, for running them by hand: [AWS](terraform/aws/README.md) and
 [Google Cloud](terraform/gcp/README.md).
 
