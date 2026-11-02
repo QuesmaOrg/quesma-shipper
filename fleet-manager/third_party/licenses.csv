@@ -40,6 +40,7 @@ github.com/aws/aws-sdk-go-v2/service/ssooidc,Apache-2.0
 github.com/aws/aws-sdk-go-v2/service/sts,Apache-2.0
 github.com/aws/smithy-go,Apache-2.0
 github.com/aws/smithy-go/internal/sync/singleflight,BSD-3-Clause
+github.com/aws/smithy-go/transport/http/protocol/internal/json/internal/stdlib,BSD-3-Clause
 github.com/cespare/xxhash/v2,MIT
 github.com/cncf/xds/go,Apache-2.0
 github.com/envoyproxy/go-control-plane/envoy,Apache-2.0
@@ -77,6 +78,8 @@ go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp,Apache-2.0
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp,BSD-3-Clause
 go.opentelemetry.io/otel,Apache-2.0
 go.opentelemetry.io/otel,BSD-3-Clause
+go.opentelemetry.io/otel/log,Apache-2.0
+go.opentelemetry.io/otel/log,BSD-3-Clause
 go.opentelemetry.io/otel/metric,Apache-2.0
 go.opentelemetry.io/otel/metric,BSD-3-Clause
 go.opentelemetry.io/otel/sdk,Apache-2.0
