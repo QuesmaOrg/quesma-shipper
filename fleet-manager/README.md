@@ -205,7 +205,7 @@ holds the private identity and still has no permission to read trajectory object
 access those ciphertexts only when the customer separately provides bucket access or sends selected
 objects. It is on by default because sealing cannot be added later: turning the recipient on
 covers only uploads from then on, so analytics over an organization's history needs it from the
-start. Turning it off removes the recipient from future configurations and makes Quesma ETL,
+start, or a custodian's reseal of that history ([OPERATIONS](OPERATIONS.md)). Turning it off removes the recipient from future configurations and makes Quesma ETL,
 dashboards, and dependent features unavailable for those uploads; objects already sealed to it stay
 openable by it.
 
@@ -214,8 +214,9 @@ key is held only as ciphertext under a KMS key in your own AWS account. Set-up a
 custodians' keys: deploy with `sh deploy.sh aws --analytics-key`, run
 `sh deploy.sh aws analytics-key <org>`, and paste the line it prints into the organization form.
 Nobody can open anything with that recipient until the organization grants a processor `kms:Decrypt`
-on the key. Without it, a processor granted later opens uploads from then on, not the history, and
-the recipient cannot be added after the organization is created. The steps and the grant are in
+on the key. Without it, a processor granted later opens uploads from then on, not the history,
+unless a custodian reseals it ([OPERATIONS](OPERATIONS.md)), and the recipient cannot be added after
+the organization is created. The steps and the grant are in
 the [AWS template's README](terraform/aws/README.md#an-analytics-identity-under-your-own-key).
 
 The templates, for running them by hand: [AWS](terraform/aws/README.md) and

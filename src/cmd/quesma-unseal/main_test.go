@@ -1,0 +1,752 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	mathrand "math/rand"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"slices"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
+	"filippo.io/age"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+)
+
+const (
+	org      = "v1/organization=acme"
+	installA = "3f2a1b2c-0000-4000-8000-000000000001"
+	installB = "9b8c7d6e-0000-4000-8000-000000000002"
+	claude   = "claude-code-transcripts"
+	cursor   = "cursor-transcripts"
+	codex    = "codex-transcripts"
+)
+
+var t0 = time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+
+type archive struct {
+	t                 *testing.T
+	enc, plain, key   string
+	id                *age.X25519Identity
+	stdout, stderrStr string
+}
+
+func newArchive(t *testing.T) *archive {
+	t.Helper()
+	dir := t.TempDir()
+	a := &archive{t: t, enc: filepath.Join(dir, "enc"), plain: filepath.Join(dir, "plain")}
+	a.id, a.key = newKey(t, dir, "custodian.agekey")
+	return a
+}
+
+func newKey(t *testing.T, dir, name string) (*age.X25519Identity, string) {
+	t.Helper()
+	id, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte("# test custodian\n"+id.String()+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return id, p
+}
+
+func manifest(install, source, native string) transforms.Manifest {
+	return transforms.Manifest{
+		ManifestVersion: transforms.ManifestVersion,
+		OrganizationID:  "acme",
+		InstallID:       install,
+		SourceID:        source,
+		NativePath:      native,
+		Gather:          "file_glob",
+		ArtifactClass:   "trajectory",
+		SourceHash:      strings.Repeat("a", 64),
+		SealedAt:        "2026-07-30T10:00:00Z",
+		Client:          transforms.Client{Version: "0.1.0"},
+	}
+}
+
+// installRoot is the producer's own key prefix, so the tests follow any layout change.
+func installRoot(install string) string {
+	root, err := formats.InstallRoot("acme", install)
+	if err != nil {
+		panic(err)
+	}
+	return root
+}
+
+func objectKey(install, source, leaf string) string {
+	return fmt.Sprintf("%s/mirror/source=%s/%s.age", installRoot(install), source, leaf)
+}
+
+// out is an output path under PLAIN_DIR.
+func out(installDir, source, rel string) string { return installDir + "/" + source + "/" + rel }
+
+// put seals payload into ENC_DIR/key with the given mtime, to the custodian unless told otherwise.
+func (a *archive) put(key string, m transforms.Manifest, payload string, mtime time.Time, to ...age.Recipient) {
+	a.t.Helper()
+	if len(to) == 0 {
+		to = []age.Recipient{a.id.Recipient()}
+	}
+	obj, _, err := transforms.Seal(m, transforms.Unscrubbed([]byte(payload), "test fixture"), to)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	a.write(key, obj, mtime)
+}
+
+func (a *archive) write(key string, body []byte, mtime time.Time) {
+	a.t.Helper()
+	p := filepath.Join(a.enc, filepath.FromSlash(key))
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		a.t.Fatal(err)
+	}
+	if err := os.WriteFile(p, body, 0o600); err != nil {
+		a.t.Fatal(err)
+	}
+	if err := os.Chtimes(p, mtime, mtime); err != nil {
+		a.t.Fatal(err)
+	}
+}
+
+func (a *archive) tags(install, name string) {
+	a.t.Helper()
+	body, err := json.Marshal(map[string]any{
+		"schema": 1, "install_id": install, "name": name,
+		"metadata": map[string]string{"team": "x"}, "updated_at": "2026-07-01T00:00:00Z",
+	})
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	a.write(installRoot(install)+"/tags.json", body, t0)
+}
+
+// run invokes the command in process with the custodian key plus args before the two dirs.
+func (a *archive) run(args ...string) int {
+	a.t.Helper()
+	return a.runIn(a.enc, args...)
+}
+
+func (a *archive) runIn(enc string, args ...string) int {
+	a.t.Helper()
+	var stdout, stderr bytes.Buffer
+	code := run(append(append([]string{"-i", a.key}, args...), enc, a.plain), &stdout, &stderr)
+	a.stdout, a.stderrStr = stdout.String(), stderr.String()
+	return code
+}
+
+func (a *archive) wantSummary(code, wantCode, decrypted, unchanged, failed int) {
+	a.t.Helper()
+	re := regexp.MustCompile(fmt.Sprintf(`^decrypted %d, unchanged %d, failed %d in \d+\.\ds\n$`, decrypted, unchanged, failed))
+	if code != wantCode || !re.MatchString(a.stdout) {
+		a.t.Fatalf("exit %d (want %d), stdout %q, stderr:\n%s", code, wantCode, a.stdout, a.stderrStr)
+	}
+}
+
+func (a *archive) wantStderr(lines ...string) {
+	a.t.Helper()
+	want := ""
+	if len(lines) > 0 {
+		want = strings.Join(lines, "\n") + "\n"
+	}
+	if a.stderrStr != want {
+		a.t.Fatalf("stderr:\n%s\nwant:\n%s", a.stderrStr, want)
+	}
+}
+
+// readPlain returns a PLAIN_DIR file's bytes after checking its mtime.
+func (a *archive) readPlain(rel string, mtime time.Time) []byte {
+	a.t.Helper()
+	p := filepath.Join(a.plain, filepath.FromSlash(rel))
+	got, err := os.ReadFile(p)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	info, err := os.Stat(p)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	if !info.ModTime().Equal(mtime) {
+		a.t.Fatalf("%s mtime %v, want %v", rel, info.ModTime(), mtime)
+	}
+	return got
+}
+
+func (a *archive) wantFile(rel, body string, mtime time.Time) {
+	a.t.Helper()
+	if got := a.readPlain(rel, mtime); string(got) != body {
+		a.t.Fatalf("%s = %q, want %q", rel, got, body)
+	}
+}
+
+func (a *archive) wantSidecar(rel, native string, mtime time.Time) {
+	a.t.Helper()
+	raw := a.readPlain(rel+sidecarSuffix, mtime)
+	var m transforms.Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		a.t.Fatal(err)
+	}
+	if m.NativePath != native || m.ShippedHash == "" {
+		a.t.Fatalf("sidecar %s: native_path %q shipped_hash %q", rel, m.NativePath, m.ShippedHash)
+	}
+	// Readable as written: "&" stays literal rather than \u0026.
+	if want := `"native_path": "` + strings.ReplaceAll(native, `\`, `\\`) + `"`; !strings.Contains(string(raw), want) {
+		a.t.Fatalf("sidecar %s lacks %s:\n%s", rel, want, raw)
+	}
+}
+
+// listPlain returns every file under PLAIN_DIR but the index, slash-separated, for exact-layout assertions.
+func (a *archive) listPlain() []string {
+	a.t.Helper()
+	var files []string
+	err := filepath.WalkDir(a.plain, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, _ := filepath.Rel(a.plain, p)
+		if rel != indexName {
+			files = append(files, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	return files
+}
+
+// wantPlain checks PLAIN_DIR holds exactly these payloads, each with its sidecar.
+func (a *archive) wantPlain(payloads ...string) {
+	a.t.Helper()
+	var files []string
+	for _, p := range payloads {
+		files = append(files, p, p+sidecarSuffix)
+	}
+	sort.Strings(files)
+	if got := a.listPlain(); strings.Join(got, "\n") != strings.Join(files, "\n") {
+		a.t.Fatalf("plain tree:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(files, "\n"))
+	}
+}
+
+func TestLayout(t *testing.T) {
+	a := newArchive(t)
+	a.tags(installA, "  Jacek MBP ")
+	claudeNative := "/Users/__USER__/.claude/projects/-Users-__USER__-R&D/1111.jsonl"
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, claudeNative), "claude\n", t0)
+	a.put(objectKey(installA, cursor, "22bb"), manifest(installA, cursor,
+		`C:\Users\__USER__\.cursor\chats\2222.jsonl`), "cursor\n", t0.Add(time.Hour))
+	a.put(objectKey(installB, claude, "33cc"), manifest(installB, claude,
+		"/Users/__USER__/.claude/projects/proj/a.jsonl"), "unnamed\n", t0)
+	a.write(installRoot(installB)+"/state/heartbeat.json.age", []byte("{}"), t0)
+
+	claudeOut := out("Jacek MBP (3f2a1b2c)", claude, "Users/__USER__/.claude/projects/-Users-__USER__-R&D/1111.jsonl")
+	cursorOut := out("Jacek MBP (3f2a1b2c)", cursor, "C/Users/__USER__/.cursor/chats/2222.jsonl")
+	unnamedOut := out(installB, claude, "Users/__USER__/.claude/projects/proj/a.jsonl")
+	a.wantSummary(a.run(), 0, 3, 0, 0)
+	a.wantStderr()
+	a.wantPlain(claudeOut, cursorOut, unnamedOut)
+	a.wantFile(claudeOut, "claude\n", t0)
+	a.wantSidecar(claudeOut, claudeNative, t0)
+	a.wantFile(cursorOut, "cursor\n", t0.Add(time.Hour))
+	a.wantFile(unnamedOut, "unnamed\n", t0)
+	a.wantSidecar(cursorOut, `C:\Users\__USER__\.cursor\chats\2222.jsonl`, t0.Add(time.Hour))
+}
+
+func TestSecondRunUnchanged(t *testing.T) {
+	a := newArchive(t)
+	a.tags(installA, "laptop")
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "one\n", t0)
+	a.put(objectKey(installB, claude, "22bb"), manifest(installB, claude, "/a/2.jsonl"), "two\n", t0)
+
+	// The organization root is as good an ENC_DIR as the bucket root.
+	orgRoot := filepath.Join(a.enc, filepath.FromSlash(org))
+	a.wantSummary(a.runIn(orgRoot), 0, 2, 0, 0)
+	a.wantSummary(a.runIn(orgRoot), 0, 0, 2, 0)
+	a.wantSummary(a.run(), 0, 0, 2, 0)
+	a.wantStderr()
+}
+
+func TestResealedObjectRewrites(t *testing.T) {
+	a := newArchive(t)
+	key := objectKey(installA, claude, "11aa")
+	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v1\n", t0)
+	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, "/a/2.jsonl"), "other\n", t0)
+	a.wantSummary(a.run(), 0, 2, 0, 0)
+
+	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v1\nv2\n", t0.Add(time.Minute))
+	a.wantSummary(a.run(), 0, 1, 1, 0)
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "v1\nv2\n", t0.Add(time.Minute))
+
+	// A sidecar missing alone also forces a rewrite.
+	if err := os.Remove(filepath.Join(a.plain, installA, claude, "a", "2.jsonl"+sidecarSuffix)); err != nil {
+		t.Fatal(err)
+	}
+	a.wantSummary(a.run(), 0, 1, 1, 0)
+	a.wantSidecar(out(installA, claude, "a/2.jsonl"), "/a/2.jsonl", t0)
+}
+
+// S3 LastModified has one-second precision, so a key resealed within that second keeps its mtime.
+func TestResealedSameMtimeRewrites(t *testing.T) {
+	a := newArchive(t)
+	key := objectKey(installA, claude, "11aa")
+	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v1\n", t0)
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+
+	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v2 longer\n", t0)
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "v2 longer\n", t0)
+
+	// Same size too: only the sidecar's shipped_hash tells them apart.
+	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "v3 longer\n", t0)
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "v3 longer\n", t0)
+	a.wantSummary(a.run(), 0, 0, 1, 0)
+}
+
+// A renamed install's outputs move to the new directory rather than staying twice.
+func TestInstallRenameMovesOutputs(t *testing.T) {
+	a := newArchive(t)
+	a.tags(installA, "old name")
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+
+	a.tags(installA, "new name")
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+	a.wantPlain(out("new name (3f2a1b2c)", claude, "a/1.jsonl"))
+}
+
+func TestWrongIdentityFailsOnlyThatObject(t *testing.T) {
+	a := newArchive(t)
+	other, otherKey := newKey(t, t.TempDir(), "other.agekey")
+	bad := objectKey(installA, cursor, "77ac")
+	a.put(bad, manifest(installA, cursor, "/a/bad.jsonl"), "secret\n", t0, other.Recipient())
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/good.jsonl"), "good\n", t0)
+
+	a.wantSummary(a.run(), 1, 1, 0, 1)
+	a.wantStderr("unseal " + bad + ": age decrypt: identity did not match any of the recipients: incorrect identity for recipient block")
+	a.wantPlain(out(installA, claude, "a/good.jsonl"))
+
+	a.wantSummary(a.run(), 1, 0, 1, 1)
+
+	// -i repeats, like age -d -i; with the right key the failed object is retried and lands.
+	a.wantSummary(a.run("-i", otherKey), 0, 1, 1, 0)
+	a.wantFile(out(installA, cursor, "a/bad.jsonl"), "secret\n", t0)
+}
+
+func TestTraversalRejected(t *testing.T) {
+	a := newArchive(t)
+	cases := map[string]string{
+		"01": "../../escape.jsonl",
+		"02": `/Users/__USER__/..\..\..\escape.jsonl`,
+		"03": "///",
+	}
+	for leaf, native := range cases {
+		a.put(objectKey(installA, claude, leaf), manifest(installA, claude, native), "x\n", t0)
+	}
+	a.wantSummary(a.run(), 1, 0, 0, 3)
+	a.wantStderr(
+		"unseal "+objectKey(installA, claude, "01")+`: native_path "../../escape.jsonl" has a '..' segment`,
+		"unseal "+objectKey(installA, claude, "02")+`: native_path "/Users/__USER__/..\\..\\..\\escape.jsonl" has a '..' segment`,
+		"unseal "+objectKey(installA, claude, "03")+`: native_path "///" has no path segment`,
+	)
+	a.wantPlain()
+	if entries, _ := os.ReadDir(filepath.Dir(a.plain)); len(entries) != 3 { // enc, plain, custodian.agekey
+		t.Fatalf("something escaped PLAIN_DIR: %v", entries)
+	}
+}
+
+func TestManifestKeyMismatchRejected(t *testing.T) {
+	a := newArchive(t)
+	a.put(objectKey(installA, claude, "11aa"), manifest(installB, claude, "/a/1.jsonl"), "x\n", t0)
+	a.put(objectKey(installA, claude, "22bb"), manifest(installA, cursor, "/a/2.jsonl"), "x\n", t0)
+	a.wantSummary(a.run(), 1, 0, 0, 2)
+	a.wantStderr(
+		"unseal "+objectKey(installA, claude, "11aa")+`: manifest install_id "`+installB+`" does not match key install=`+installA,
+		"unseal "+objectKey(installA, claude, "22bb")+`: manifest source_id "cursor-transcripts" does not match key source=claude-code-transcripts`,
+	)
+	a.wantPlain()
+}
+
+func TestUnsafeInstallNameWarnsOnce(t *testing.T) {
+	for _, name := range []string{"../evil", `a\b`, "..", " . ", "   ", "nul\x00byte", strings.Repeat("名", 82), "Jacek: MBP", "tab\tname"} {
+		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
+			a := newArchive(t)
+			a.tags(installA, name)
+			a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
+			a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, "/a/2.jsonl"), "y\n", t0)
+			a.wantSummary(a.run(), 0, 2, 0, 0)
+			a.wantStderr(fmt.Sprintf("warning %s/install=%s/tags.json: name %q is not a safe directory name; using the install id",
+				org, installA, name))
+			a.wantFile(out(installA, claude, "a/2.jsonl"), "y\n", t0)
+		})
+	}
+}
+
+func TestSymlinksNotFollowed(t *testing.T) {
+	a := newArchive(t)
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
+
+	// A real object outside ENC_DIR, reachable only through symlinks.
+	outside := &archive{t: t, enc: filepath.Join(t.TempDir(), "enc"), id: a.id}
+	outside.put(objectKey(installB, claude, "22bb"), manifest(installB, claude, "/a/2.jsonl"), "outside\n", t0)
+	srcDir := filepath.Join(outside.enc, filepath.FromSlash(org), "install="+installB, "mirror", "source="+claude)
+	linkDir := filepath.Join(a.enc, filepath.FromSlash(org), "install="+installB, "mirror", "source="+claude)
+	if err := os.MkdirAll(filepath.Dir(linkDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(srcDir, linkDir); err != nil {
+		t.Fatal(err)
+	}
+	linkFile := filepath.Join(a.enc, filepath.FromSlash(objectKey(installA, claude, "33cc")))
+	if err := os.Symlink(filepath.Join(srcDir, "22bb.age"), linkFile); err != nil {
+		t.Fatal(err)
+	}
+
+	// The linked directory is not walked; the linked object fails.
+	a.wantSummary(a.run(), 1, 1, 0, 1)
+	a.wantStderr("unseal " + objectKey(installA, claude, "33cc") + ": not a regular file")
+	a.wantPlain(out(installA, claude, "a/1.jsonl"))
+}
+
+// Where PLAIN_DIR merges names by case or normalization, as macOS and Windows do, a second object
+// that would land on a first's output is written beside it; every run warns the same way.
+func TestFoldedOutputPathWrittenBeside(t *testing.T) {
+	orig := probeFolding
+	t.Cleanup(func() { probeFolding = orig })
+	probeFolding = func(*os.Root) (bool, bool, error) { return true, true, nil }
+
+	a := newArchive(t)
+	nfc, nfd := "a/caf\u00e9.jsonl", "a/cafe\u0301.jsonl"
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "first\n", t0)
+	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, `\a\1.jsonl`), "second\n", t0)
+	a.put(objectKey(installA, claude, "33cc"), manifest(installA, claude, "/a/1.JSONL"), "third\n", t0)
+	a.put(objectKey(installA, claude, "44dd"), manifest(installA, claude, "/"+nfc), "nfc\n", t0)
+	a.put(objectKey(installA, claude, "55ee"), manifest(installA, claude, "/"+nfd), "nfd\n", t0)
+	beside := func(leaf, output, first, alt string) string {
+		return "warning " + objectKey(installA, claude, leaf) + ": " + out(installA, claude, output) + " is " +
+			objectKey(installA, claude, first) + "'s on this filesystem; writing " + out(installA, claude, alt)
+	}
+	want := []string{
+		beside("22bb", "a/1.jsonl", "11aa", "a/1~22bb.jsonl"),
+		beside("33cc", "a/1.JSONL", "11aa", "a/1~33cc.JSONL"),
+		beside("55ee", nfd, "44dd", "a/cafe\u0301~55ee.jsonl"),
+	}
+	a.wantSummary(a.run(), 0, 5, 0, 0)
+	a.wantStderr(want...)
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "first\n", t0)
+	a.wantFile(out(installA, claude, "a/1~22bb.jsonl"), "second\n", t0)
+	a.wantFile(out(installA, claude, "a/1~33cc.JSONL"), "third\n", t0)
+	a.wantFile(out(installA, claude, nfc), "nfc\n", t0)
+	a.wantFile(out(installA, claude, "a/cafe\u0301~55ee.jsonl"), "nfd\n", t0)
+
+	a.wantSummary(a.run(), 0, 0, 5, 0)
+	a.wantStderr(want...)
+}
+
+// On a filesystem that keeps them apart, only an identical path is written beside.
+func TestCaseSensitiveOutputKeepsBothNames(t *testing.T) {
+	root, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := root.Mkdir(stagingDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if foldCase, _, err := probeFolding(root); err != nil || foldCase {
+		t.Skipf("this filesystem folds case (%v)", err)
+	}
+
+	a := newArchive(t)
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "first\n", t0)
+	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, `\a\1.jsonl`), "second\n", t0)
+	a.put(objectKey(installA, claude, "33cc"), manifest(installA, claude, "/a/1.JSONL"), "third\n", t0)
+	a.wantSummary(a.run(), 0, 3, 0, 0)
+	a.wantStderr("warning " + objectKey(installA, claude, "22bb") + ": " + out(installA, claude, "a/1.jsonl") + " is " +
+		objectKey(installA, claude, "11aa") + "'s on this filesystem; writing " + out(installA, claude, "a/1~22bb.jsonl"))
+	a.wantFile(out(installA, claude, "a/1.JSONL"), "third\n", t0)
+}
+
+func TestUsageErrors(t *testing.T) {
+	dir := t.TempDir()
+	_, key := newKey(t, dir, "k.agekey")
+	notKey := filepath.Join(dir, "not.agekey")
+	if err := os.WriteFile(notKey, []byte("hello\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, args := range map[string][]string{
+		"no args":         nil,
+		"no identity":     {dir, filepath.Join(dir, "plain")},
+		"one dir":         {"-i", key, dir},
+		"unknown flag":    {"-x", "-i", key, dir, filepath.Join(dir, "plain")},
+		"missing key":     {"-i", filepath.Join(dir, "nope"), dir, filepath.Join(dir, "plain")},
+		"not a key":       {"-i", notKey, dir, filepath.Join(dir, "plain")},
+		"missing ENC_DIR": {"-i", key, filepath.Join(dir, "nope"), filepath.Join(dir, "plain")},
+		"bad recipient":   {"-i", key, "-reseal-to", "age1nope", dir, filepath.Join(dir, "out")},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := run(args, &stdout, &stderr); code != 2 || stdout.Len() != 0 || stderr.Len() == 0 {
+			t.Errorf("%s: exit %d, stdout %q, stderr %q", name, code, stdout.String(), stderr.String())
+		}
+	}
+}
+
+func TestNativeRelPath(t *testing.T) {
+	orig := windowsNames
+	t.Cleanup(func() { windowsNames = orig })
+	windowsNames = false
+	for native, want := range map[string]string{
+		"/Users/__USER__/./x//y.jsonl": "Users/__USER__/x/y.jsonl",
+		`C:\Users\__USER__\x.jsonl`:    "C/Users/__USER__/x.jsonl",
+		`\\server\share\x.jsonl`:       "server/share/x.jsonl",
+		"rel/C:/x":                     "rel/C:/x",
+	} {
+		if got, err := nativeRelPath(native); err != nil || got != want {
+			t.Errorf("nativeRelPath(%q) = %q, %v; want %q", native, got, err, want)
+		}
+	}
+	for _, native := range []string{"", "/", "a/../b", `a\..\b`, "a/nul\x00/b"} {
+		if got, err := nativeRelPath(native); err == nil {
+			t.Errorf("nativeRelPath(%q) = %q, want an error", native, got)
+		}
+	}
+}
+
+// On Windows a segment Windows cannot hold fails; elsewhere the same path is written as it is.
+func TestNativeRelPathOnWindows(t *testing.T) {
+	orig := windowsNames
+	t.Cleanup(func() { windowsNames = orig })
+	windowsNames = true
+	for _, native := range []string{`C:\Users\__USER__\x.jsonl`, "/Users/__USER__/COMPANY/con-notes.txt", "/a/COM10"} {
+		if _, err := nativeRelPath(native); err != nil {
+			t.Errorf("nativeRelPath(%q): %v", native, err)
+		}
+	}
+	for _, native := range []string{"/a/what?.jsonl", "/a/b:c", "/a/trailing.", "/a/trailing /x", "/a/con", "/a/Nul.txt", "/a/lpt1", "/a/tab\tname"} {
+		if got, err := nativeRelPath(native); err == nil {
+			t.Errorf("nativeRelPath(%q) = %q on Windows, want an error", native, got)
+		}
+	}
+}
+
+// A manifest past the first SuggestedPrefixBytes still leaves an unchanged object unchanged.
+func TestLargeManifestUnchanged(t *testing.T) {
+	a := newArchive(t)
+	m := manifest(installA, claude, "/a/1.jsonl")
+	rng := mathrand.New(mathrand.NewSource(1))
+	for range 12000 {
+		m.DerivedFrom = append(m.DerivedFrom, fmt.Sprintf("%016x%016x%016x%016x", rng.Uint64(), rng.Uint64(), rng.Uint64(), rng.Uint64()))
+	}
+	key := objectKey(installA, claude, "11aa")
+	a.put(key, m, "x\n", t0)
+	obj, err := os.ReadFile(filepath.Join(a.enc, filepath.FromSlash(key)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transforms.ReadManifestPrefix(obj[:transforms.SuggestedPrefixBytes], a.id); err == nil {
+		t.Fatal("fixture manifest fits the suggested prefix")
+	}
+
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+	a.wantSummary(a.run(), 0, 0, 1, 0)
+	a.wantFile(out(installA, claude, "a/1.jsonl"), "x\n", t0)
+}
+
+// Symlinks anywhere but an object's place are neither followed nor reported.
+func TestSymlinkOutsideArchiveIgnored(t *testing.T) {
+	a := newArchive(t)
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
+	a.write(installRoot(installA)+"/state/heartbeat.json.age", []byte("{}"), t0)
+	stateLink := filepath.Join(a.enc, filepath.FromSlash(org), "install="+installA, "state", "link.json")
+	if err := os.Symlink(filepath.Join(filepath.Dir(stateLink), "cursor.json"), stateLink); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(a.enc, filepath.FromSlash(org)), filepath.Join(a.enc, "latest")); err != nil {
+		t.Fatal(err)
+	}
+
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+	a.wantStderr()
+}
+
+// A Codex session archived and compressed keeps its key under a new native path; its earlier copy
+// goes, and the output is named for what the payload is, decompressed JSONL.
+func TestMovedObjectReplacesItsOutput(t *testing.T) {
+	a := newArchive(t)
+	key := objectKey(installA, codex, "11aa")
+	a.put(key, manifest(installA, codex, "/h/.codex/sessions/2026/07/01/rollout-1.jsonl"), "v1\n", t0)
+	a.put(objectKey(installA, codex, "22bb"), manifest(installA, codex, "/h/.codex/sessions/2026/07/01/rollout-2.jsonl"), "x\n", t0)
+	a.wantSummary(a.run(), 0, 2, 0, 0)
+
+	a.put(key, manifest(installA, codex, "/h/.codex/archived_sessions/rollout-1.jsonl.zst"), "v1\nv2\n", t0.Add(time.Hour))
+	a.wantSummary(a.run(), 0, 1, 1, 0)
+	a.wantStderr()
+	a.wantPlain(out(installA, codex, "h/.codex/archived_sessions/rollout-1.jsonl"),
+		out(installA, codex, "h/.codex/sessions/2026/07/01/rollout-2.jsonl"))
+	a.wantFile(out(installA, codex, "h/.codex/archived_sessions/rollout-1.jsonl"), "v1\nv2\n", t0.Add(time.Hour))
+	a.wantSummary(a.run(), 0, 0, 2, 0)
+}
+
+// The index only names what to remove: a file that is not an output stays, and a lost index costs
+// one run its removals.
+func TestIndexRemovesOnlyOutputs(t *testing.T) {
+	a := newArchive(t)
+	key := objectKey(installA, claude, "11aa")
+	a.put(key, manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+
+	notes := filepath.Join(a.plain, "notes.txt")
+	if err := os.WriteFile(notes, []byte("mine\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	index := `{"install=` + installA + `/mirror/source=` + claude + `/11aa.age": "notes.txt"}`
+	if err := os.WriteFile(filepath.Join(a.plain, indexName), []byte(index), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.wantSummary(a.run(), 0, 0, 1, 0)
+	if _, err := os.Stat(notes); err != nil {
+		t.Fatalf("a file without a sidecar was removed: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(a.plain, indexName), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.wantSummary(a.run(), 0, 0, 1, 0)
+	if !strings.HasPrefix(a.stderrStr, "warning "+indexName+": ") {
+		t.Fatalf("stderr:\n%s", a.stderrStr)
+	}
+	a.wantSummary(a.run(), 0, 0, 1, 0)
+	a.wantStderr()
+}
+
+// What an interrupted run staged is gone after the next one, and a run leaves no staging behind.
+func TestInterruptedRunLeavesNothing(t *testing.T) {
+	a := newArchive(t)
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
+	if err := os.MkdirAll(filepath.Join(a.plain, stagingDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(a.plain, stagingDir, "partial"), []byte("half a sess"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+	if _, err := os.Stat(filepath.Join(a.plain, stagingDir)); !os.IsNotExist(err) {
+		t.Fatalf("%s after a run: %v", stagingDir, err)
+	}
+	a.wantPlain(out(installA, claude, "a/1.jsonl"))
+}
+
+// A payload is streamed to disk, never held whole in memory.
+func TestPayloadStreamed(t *testing.T) {
+	a := newArchive(t)
+	const size = 128 << 20
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/zeros"), string(make([]byte, size)), t0)
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	a.wantSummary(a.run(), 0, 1, 0, 0)
+	runtime.ReadMemStats(&after)
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > size/4 {
+		t.Fatalf("unsealing a %d-byte payload allocated %d bytes", size, alloc)
+	}
+	if info, err := os.Stat(filepath.Join(a.plain, installA, claude, "a", "zeros")); err != nil || info.Size() != size {
+		t.Fatalf("payload: %v, %v", info, err)
+	}
+}
+
+// A leaf as long as its sidecar name allows still unseals; a longer one fails and leaves nothing.
+func TestLongLeaf(t *testing.T) {
+	a := newArchive(t)
+	fits := strings.Repeat("f", maxNameBytes-len(sidecarSuffix)-len(".jsonl")) + ".jsonl"
+	tooLong := strings.Repeat("t", maxNameBytes-len(sidecarSuffix)-len(".jsonl")+1) + ".jsonl"
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/"+fits), "x\n", t0)
+	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, "/a/"+tooLong), "y\n", t0)
+
+	a.wantSummary(a.run(), 1, 1, 0, 1)
+	if !strings.HasPrefix(a.stderrStr, "unseal "+objectKey(installA, claude, "22bb")+": ") || strings.Count(a.stderrStr, "\n") != 1 {
+		t.Fatalf("stderr:\n%s", a.stderrStr)
+	}
+	a.wantPlain(out(installA, claude, "a/"+fits))
+}
+
+// An output path that is already a directory fails before the sidecar is written.
+func TestPayloadTargetIsDirectory(t *testing.T) {
+	a := newArchive(t)
+	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/x/b/c"), "c\n", t0)
+	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, "/x/b"), "b\n", t0)
+
+	a.wantSummary(a.run(), 1, 1, 0, 1)
+	a.wantStderr("unseal " + objectKey(installA, claude, "22bb") + ": output " + installA +
+		"/claude-code-transcripts/x/b exists and is not a regular file")
+	a.wantPlain(out(installA, claude, "x/b/c"))
+}
+
+func (a *archive) wantResealSummary(code, wantCode, resealed, already, failed int) {
+	a.t.Helper()
+	re := regexp.MustCompile(fmt.Sprintf(`^resealed %d, already sealed %d, failed %d in \d+\.\ds\n$`, resealed, already, failed))
+	if code != wantCode || !re.MatchString(a.stdout) {
+		a.t.Fatalf("exit %d (want %d), stdout %q, stderr:\n%s", code, wantCode, a.stdout, a.stderrStr)
+	}
+}
+
+func TestResealAddsRecipientAndKeepsTheOthers(t *testing.T) {
+	a := newArchive(t)
+	install, _ := age.GenerateX25519Identity()
+	added, _ := age.GenerateX25519Identity()
+	key := objectKey(installA, claude, "11aa")
+	m := manifest(installA, claude, "/a/1.jsonl")
+	a.put(key, m, "claude\n", t0, a.id.Recipient(), install.Recipient())
+	sealedTo := objectKey(installA, claude, "22bb")
+	a.put(sealedTo, manifest(installA, claude, "/a/2.jsonl"), "done\n", t0, a.id.Recipient(), added.Recipient())
+	a.tags(installA, "Jacek MBP")
+
+	a.wantResealSummary(a.run("-reseal-to", added.Recipient().String()), 0, 1, 1, 0)
+	a.wantStderr()
+	if got := a.listPlain(); !slices.Equal(got, []string{key}) {
+		t.Fatalf("out tree %v, want only %s", got, key)
+	}
+	body := a.readPlain(key, t0)
+	for _, id := range []*age.X25519Identity{a.id, install, added} {
+		got, payload, err := transforms.Open(body, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(payload) != "claude\n" || got.SealedAt != m.SealedAt || got.SourceHash != m.SourceHash {
+			t.Fatalf("resealed object: %+v %q", got, payload)
+		}
+		want := []string{a.id.Recipient().String(), install.Recipient().String(), added.Recipient().String()}
+		if !slices.Equal(got.Encryption.RecipientKeyIDs, want) {
+			t.Fatalf("recipient_key_ids %v, want %v", got.Encryption.RecipientKeyIDs, want)
+		}
+	}
+
+	// The resealed copy, uploaded and fetched again, needs nothing more.
+	a.write(key, body, t0)
+	a.wantResealSummary(a.run("-reseal-to", added.Recipient().String()), 0, 0, 2, 0)
+}
+
+func TestResealRefusesWhatItCannotCheck(t *testing.T) {
+	a := newArchive(t)
+	other, _ := age.GenerateX25519Identity()
+	added, _ := age.GenerateX25519Identity()
+	a.put(objectKey(installA, claude, "11aa"), manifest(installB, claude, "/a/1.jsonl"), "x\n", t0)
+	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, "/a/2.jsonl"), "x\n", t0, other.Recipient())
+	a.wantResealSummary(a.run("-reseal-to", added.Recipient().String()), 1, 0, 0, 2)
+	if !strings.Contains(a.stderrStr, `manifest install_id "`+installB+`" does not match`) ||
+		!strings.Contains(a.stderrStr, "unseal "+objectKey(installA, claude, "22bb")+": ") {
+		t.Fatalf("stderr:\n%s", a.stderrStr)
+	}
+	if got := a.listPlain(); len(got) != 0 {
+		t.Fatalf("out tree %v, want empty", got)
+	}
+}

@@ -55,8 +55,9 @@ can then follow [the shipper installation steps](#developer-install-the-shipper-
 on each machine.
 
 1. **Have ready:** an AWS account or Google Cloud project you can create resources in, and on your
-   laptop Terraform or OpenTofu, `curl`, `age`, `age-keygen`, `zstd`, and the `aws` CLI signed in,
-   or `gcloud` with `gcloud auth application-default login`. On AWS the Region needs a default VPC.
+   laptop Terraform or OpenTofu, `curl`, `age`, `age-keygen`, `rclone`, Go, and the `aws` CLI signed
+   in, or `gcloud` with `gcloud auth application-default login`. On AWS the Region needs a default
+   VPC.
 
 2. **Decide two things** before anything enrolls. Ask two custodians to each run `age-keygen -o
    name.agekey` and send you only their `age1…` public recipient (`age-keygen -y name.agekey`
@@ -97,18 +98,28 @@ on each machine.
    any number of installs until it expires or is revoked, which suits shared machines and MDM
    rollouts.
 
-6. **Later, check a session arrived** and decrypt it with a custodian key. `active` on the
-   Installs page means a machine enrolled, not that it has shipped anything.
+6. **Later, read what arrived** with a custodian key. `active` on the Installs page means a machine
+   enrolled, not that it has shipped anything. Copy the organisation's objects with
+   [rclone](https://rclone.org/) (here an `s3` remote named `aws`: `rclone config create aws s3
+   provider AWS env_auth true`), then decrypt them with Go, both from the root of an up-to-date
+   clone of this repository, since an older one refuses objects from newer shippers. Keep the key
+   and both copies in a directory outside the clone (`W` below): the decrypted files are your
+   developers' transcripts, and this repository is public.
 
    ```sh
-   B=$(sh deploy.sh aws output bucket)
-   KEY=$(aws s3api list-objects-v2 --bucket "$B" --prefix 'v1/organization=acme/install=' \
-     --query "Contents[?contains(Key, 'claude-code-transcripts')].Key | [0]" --output text)
-   aws s3 cp "s3://$B/$KEY" object.age
-   age -d -i name.agekey object.age | zstd -d | tar -t     # manifest.json, payload
+   B=$(sh fleet-manager/deploy.sh aws output bucket)
+   W=~/quesma-acme   # outside the clone; holds name.agekey, enc/ and plain/
+   rclone copy "aws:$B/v1/organization=acme" "$W/enc" --include 'install=*/**'
+   (cd src && go run ./cmd/quesma-unseal -i "$W/name.agekey" "$W/enc" "$W/plain")
    ```
 
-   On Google Cloud, `gcloud storage ls --recursive` on the bucket lists the same keys.
+   On Google Cloud, `deploy.sh gcp output bucket` and a `gcs` remote; on Azure, the container name
+   and an `azureblob` remote. `$W/plain` holds `<install name> (<id prefix>)/<source>/<native path>`,
+   or the install id when unnamed, each file beside a `.manifest.json` sidecar. Re-running both
+   commands fetches and decrypts only changed objects. An object whose output moved, because its
+   install was renamed or its session archived, leaves no copy at the old path; nothing else is
+   deleted, so an erased install's files stay. An object that fails is named on stderr, retried on
+   the next run, and makes the exit status 1.
 
 What the script creates, and running the template by hand with your own image or your own
 state: [fleet-manager/terraform/aws](fleet-manager/terraform/aws/README.md),
