@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -243,8 +244,7 @@ func TestLayout(t *testing.T) {
 		`C:\Users\__USER__\.cursor\chats\2222.jsonl`), "cursor\n", t0.Add(time.Hour))
 	a.put(objectKey(installB, claude, "33cc"), manifest(installB, claude,
 		"/Users/__USER__/.claude/projects/proj/a.jsonl"), "unnamed\n", t0)
-	a.write(installRoot(installB)+"/state/cursor.json", []byte("{}"), t0)
-	a.write(installRoot(installB)+"/heartbeat.json", []byte("{}"), t0)
+	a.write(installRoot(installB)+"/state/heartbeat.json.age", []byte("{}"), t0)
 
 	claudeOut := out("Jacek MBP (3f2a1b2c)", claude, "Users/__USER__/.claude/projects/-Users-__USER__-R&D/1111.jsonl")
 	cursorOut := out("Jacek MBP (3f2a1b2c)", cursor, "C/Users/__USER__/.cursor/chats/2222.jsonl")
@@ -458,6 +458,7 @@ func TestUsageErrors(t *testing.T) {
 		"missing key":     {"-i", filepath.Join(dir, "nope"), dir, filepath.Join(dir, "plain")},
 		"not a key":       {"-i", notKey, dir, filepath.Join(dir, "plain")},
 		"missing ENC_DIR": {"-i", key, filepath.Join(dir, "nope"), filepath.Join(dir, "plain")},
+		"bad recipient":   {"-i", key, "-reseal-to", "age1nope", dir, filepath.Join(dir, "out")},
 	} {
 		var stdout, stderr bytes.Buffer
 		if code := run(args, &stdout, &stderr); code != 2 || stdout.Len() != 0 || stderr.Len() == 0 {
@@ -558,7 +559,7 @@ func TestMtimeProbeFailureFails(t *testing.T) {
 func TestSymlinkOutsideArchiveIgnored(t *testing.T) {
 	a := newArchive(t)
 	a.put(objectKey(installA, claude, "11aa"), manifest(installA, claude, "/a/1.jsonl"), "x\n", t0)
-	a.write(installRoot(installA)+"/state/cursor.json", []byte("{}"), t0)
+	a.write(installRoot(installA)+"/state/heartbeat.json.age", []byte("{}"), t0)
 	stateLink := filepath.Join(a.enc, filepath.FromSlash(org), "install="+installA, "state", "link.json")
 	if err := os.Symlink(filepath.Join(filepath.Dir(stateLink), "cursor.json"), stateLink); err != nil {
 		t.Fatal(err)
@@ -571,7 +572,7 @@ func TestSymlinkOutsideArchiveIgnored(t *testing.T) {
 	a.wantStderr("warning latest: symlink, not followed")
 }
 
-// A payload is streamed to disk, never held whole in memory, so a zstd bomb cannot exhaust it.
+// A payload is streamed to disk, never held whole in memory.
 func TestPayloadStreamed(t *testing.T) {
 	a := newArchive(t)
 	const size = 128 << 20
@@ -615,4 +616,64 @@ func TestPayloadTargetIsDirectory(t *testing.T) {
 	a.wantStderr("unseal " + objectKey(installA, claude, "22bb") + ": output " + installA +
 		"/claude-code-transcripts/x/b exists and is not a regular file")
 	a.wantPlain(out(installA, claude, "x/b/c"))
+}
+
+func (a *archive) wantResealSummary(code, wantCode, resealed, already, failed int) {
+	a.t.Helper()
+	re := regexp.MustCompile(fmt.Sprintf(`^resealed %d, already sealed %d, failed %d in \d+\.\ds\n$`, resealed, already, failed))
+	if code != wantCode || !re.MatchString(a.stdout) {
+		a.t.Fatalf("exit %d (want %d), stdout %q, stderr:\n%s", code, wantCode, a.stdout, a.stderrStr)
+	}
+}
+
+func TestResealAddsRecipientAndKeepsTheOthers(t *testing.T) {
+	a := newArchive(t)
+	install, _ := age.GenerateX25519Identity()
+	added, _ := age.GenerateX25519Identity()
+	key := objectKey(installA, claude, "11aa")
+	m := manifest(installA, claude, "/a/1.jsonl")
+	a.put(key, m, "claude\n", t0, a.id.Recipient(), install.Recipient())
+	sealedTo := objectKey(installA, claude, "22bb")
+	a.put(sealedTo, manifest(installA, claude, "/a/2.jsonl"), "done\n", t0, a.id.Recipient(), added.Recipient())
+	a.tags(installA, "Jacek MBP")
+
+	a.wantResealSummary(a.run("-reseal-to", added.Recipient().String()), 0, 1, 1, 0)
+	a.wantStderr()
+	if got := a.listPlain(); !slices.Equal(got, []string{key}) {
+		t.Fatalf("out tree %v, want only %s", got, key)
+	}
+	body := a.readPlain(key, t0)
+	for _, id := range []*age.X25519Identity{a.id, install, added} {
+		got, payload, err := transforms.Open(body, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(payload) != "claude\n" || got.SealedAt != m.SealedAt || got.SourceHash != m.SourceHash {
+			t.Fatalf("resealed object: %+v %q", got, payload)
+		}
+		want := []string{a.id.Recipient().String(), install.Recipient().String(), added.Recipient().String()}
+		if !slices.Equal(got.Encryption.RecipientKeyIDs, want) {
+			t.Fatalf("recipient_key_ids %v, want %v", got.Encryption.RecipientKeyIDs, want)
+		}
+	}
+
+	// The resealed copy, uploaded and fetched again, needs nothing more.
+	a.write(key, body, t0)
+	a.wantResealSummary(a.run("-reseal-to", added.Recipient().String()), 0, 0, 2, 0)
+}
+
+func TestResealRefusesWhatItCannotCheck(t *testing.T) {
+	a := newArchive(t)
+	other, _ := age.GenerateX25519Identity()
+	added, _ := age.GenerateX25519Identity()
+	a.put(objectKey(installA, claude, "11aa"), manifest(installB, claude, "/a/1.jsonl"), "x\n", t0)
+	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, "/a/2.jsonl"), "x\n", t0, other.Recipient())
+	a.wantResealSummary(a.run("-reseal-to", added.Recipient().String()), 1, 0, 0, 2)
+	if !strings.Contains(a.stderrStr, `manifest install_id "`+installB+`" does not match`) ||
+		!strings.Contains(a.stderrStr, "unseal "+objectKey(installA, claude, "22bb")+": ") {
+		t.Fatalf("stderr:\n%s", a.stderrStr)
+	}
+	if got := a.listPlain(); len(got) != 0 {
+		t.Fatalf("out tree %v, want empty", got)
+	}
 }

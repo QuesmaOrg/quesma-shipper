@@ -43,6 +43,10 @@ const maxManifestBytes = 4 << 20
 // maxDecompressedBytes bounds zstd expansion so a crafted object cannot exhaust memory.
 const maxDecompressedBytes = 8 << 30
 
+// maxZstdWindow bounds the window a frame may declare, which the decoder allocates up front. Seal
+// writes zstd's default 8 MiB window.
+const maxZstdWindow = 64 << 20
+
 // ErrPrefixTooShort means the fetched prefix did not contain the whole manifest; the
 // caller should double its range rather than treat the object as corrupt.
 var ErrPrefixTooShort = errors.New("seal: object prefix too short to contain the manifest")
@@ -294,7 +298,7 @@ func tarReader(r io.Reader, identities ...age.Identity) (*tar.Reader, func(), er
 	if err != nil {
 		return nil, nil, fmt.Errorf("age decrypt: %w", err)
 	}
-	zr, err := zstd.NewReader(dec, zstd.WithDecoderMaxMemory(maxDecompressedBytes))
+	zr, err := zstd.NewReader(dec, zstd.WithDecoderMaxMemory(maxDecompressedBytes), zstd.WithDecoderMaxWindow(maxZstdWindow))
 	if err != nil {
 		return nil, nil, fmt.Errorf("zstd reader: %w", err)
 	}

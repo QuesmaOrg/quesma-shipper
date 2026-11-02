@@ -1,6 +1,8 @@
 // Command quesma-unseal decrypts a bucket archive copied locally by rclone into a readable tree,
-// PLAIN_DIR/<install>/<source_id>/<native_path> plus a .manifest.json sidecar per object. The
-// archive is written by developer machines and untrusted, so every write is confined by os.Root.
+// PLAIN_DIR/<install>/<source_id>/<native_path> plus a .manifest.json sidecar per object, or with
+// -reseal-to writes each object resealed to one more recipient under its own key, for rclone to
+// upload. The archive is written by developer machines and untrusted, so every write is confined by
+// os.Root.
 package main
 
 import (
@@ -28,7 +30,8 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
-const usage = "usage: quesma-unseal -i IDENTITY_FILE [-i IDENTITY_FILE]... ENC_DIR PLAIN_DIR"
+const usage = `usage: quesma-unseal -i IDENTITY_FILE [-i IDENTITY_FILE]... ENC_DIR PLAIN_DIR
+       quesma-unseal -i IDENTITY_FILE [-i IDENTITY_FILE]... -reseal-to RECIPIENT [-reseal-to RECIPIENT]... ENC_DIR OUT_DIR`
 
 const sidecarSuffix = ".manifest.json"
 
@@ -45,9 +48,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("quesma-unseal", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	var idFiles []string
-	flags.Func("i", "age identity file, as for age -d -i (repeatable)", func(v string) error {
+	flags.Func("i", "age identity file of AGE-SECRET-KEY-1 lines, as age-keygen writes (repeatable)", func(v string) error {
 		idFiles = append(idFiles, v)
 		return nil
+	})
+	var resealTo []string
+	flags.Func("reseal-to", "age recipient to add to every object not sealed to it (repeatable)", func(v string) error {
+		r, err := age.ParseX25519Recipient(v)
+		if err == nil {
+			resealTo = append(resealTo, r.String())
+		}
+		return err
 	})
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -72,20 +83,28 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	defer enc.Close()
+	outName, work, done, kept := "PLAIN_DIR", (*unsealer).object, "decrypted", "unchanged"
+	if len(resealTo) > 0 {
+		outName, work, done, kept = "OUT_DIR", (*unsealer).reseal, "resealed", "already sealed"
+	}
 	plain, err := openPlainDir(flags.Arg(1))
 	if err != nil {
-		fmt.Fprintf(stderr, "quesma-unseal: PLAIN_DIR: %v\n", err)
+		fmt.Fprintf(stderr, "quesma-unseal: %s: %v\n", outName, err)
 		return 2
 	}
 	defer plain.Close()
 
 	u := &unsealer{
-		enc: enc, plain: plain, ids: ids, stderr: stderr,
+		enc: enc, plain: plain, ids: ids, resealTo: resealTo, stderr: stderr,
 		installDirs: map[string]string{}, claimed: map[string]string{},
 	}
 	defer u.removeProbe()
-	for _, o := range u.collect() {
-		decrypted, err := u.object(o)
+	objects := u.collect()
+	if len(objects) == 0 {
+		fmt.Fprintf(stderr, "warning: no objects under %s; it should be a copy of v1/organization=<org>\n", flags.Arg(0))
+	}
+	for _, o := range objects {
+		decrypted, err := work(u, o)
 		switch {
 		case err != nil:
 			u.fail(o.rel, err)
@@ -95,8 +114,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 			u.unchanged++
 		}
 	}
-	fmt.Fprintf(stdout, "decrypted %d, unchanged %d, failed %d in %.1fs\n",
-		u.decrypted, u.unchanged, u.failed, time.Since(start).Seconds())
+	fmt.Fprintf(stdout, "%s %d, %s %d, failed %d in %.1fs\n",
+		done, u.decrypted, kept, u.unchanged, u.failed, time.Since(start).Seconds())
 	if u.failed > 0 {
 		return 1
 	}
@@ -137,13 +156,14 @@ func loadIdentities(files []string) ([]age.Identity, error) {
 type unsealer struct {
 	enc, plain *os.Root
 	ids        []age.Identity
+	resealTo   []string
 	stderr     io.Writer
 
 	installDirs map[string]string // install dir rel path -> output directory name
 	claimed     map[string]string // case- and NFC-folded output path -> .age rel path that claimed it
 	probe       string            // PLAIN_DIR file that shows how its filesystem stores an mtime
 
-	decrypted, unchanged, failed int
+	decrypted, unchanged, failed int // under -reseal-to: resealed, already sealed, failed
 }
 
 // object is one mirror .age file, with the ids its key claims for it.
@@ -228,18 +248,11 @@ func archiveSlot(segs []string) bool {
 
 // object brings one output up to date and reports whether it decrypted the payload.
 func (u *unsealer) object(o object) (bool, error) {
-	f, err := u.enc.Open(o.rel)
+	f, info, err := u.openObject(o)
 	if err != nil {
 		return false, err
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return false, err
-	}
-	if !info.Mode().IsRegular() {
-		return false, errors.New("not a regular file")
-	}
 	obj := io.NewSectionReader(f, 0, info.Size())
 	m, err := transforms.ReadManifest(io.NewSectionReader(obj, 0, obj.Size()), u.ids...)
 	if err != nil {
@@ -265,12 +278,106 @@ func (u *unsealer) object(o object) (bool, error) {
 	return true, u.write(obj, out, info.ModTime())
 }
 
-func (u *unsealer) outputPath(o object, m transforms.Manifest) (string, error) {
+func (u *unsealer) openObject(o object) (*os.File, fs.FileInfo, error) {
+	f, err := u.enc.Open(o.rel)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := f.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = errors.New("not a regular file")
+	}
+	if err != nil {
+		f.Close()
+		return nil, nil, err
+	}
+	return f, info, nil
+}
+
+// reseal writes o to its own path under OUT_DIR, sealed to the recipients its manifest lists plus
+// any of resealTo it lacks, with the same payload and the same mtime, so rclone copy --update skips
+// a key a shipper has rewritten since. The payload was scrubbed when it was first shipped.
+func (u *unsealer) reseal(o object) (bool, error) {
+	f, info, err := u.openObject(o)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	obj := io.NewSectionReader(f, 0, info.Size())
+	m, err := transforms.ReadManifest(io.NewSectionReader(obj, 0, obj.Size()), u.ids...)
+	if err != nil {
+		return false, err
+	}
+	if err := keyMatches(o, m); err != nil {
+		return false, err
+	}
+	if m.Encryption == nil || len(m.Encryption.RecipientKeyIDs) == 0 {
+		return false, errors.New("manifest lists no recipients")
+	}
+	ids := slices.Clone(m.Encryption.RecipientKeyIDs)
+	for _, r := range u.resealTo {
+		if !slices.Contains(ids, r) {
+			ids = append(ids, r)
+		}
+	}
+	if len(ids) == len(m.Encryption.RecipientKeyIDs) {
+		return false, nil
+	}
+	recipients := make([]age.Recipient, len(ids))
+	for i, id := range ids {
+		if recipients[i], err = age.ParseX25519Recipient(id); err != nil {
+			return false, fmt.Errorf("manifest recipient %q: %w", id, err)
+		}
+	}
+	var payload bytes.Buffer
+	if m, err = transforms.OpenTo(io.NewSectionReader(obj, 0, obj.Size()), &payload, u.ids...); err != nil {
+		return false, err
+	}
+	m.Encryption.RecipientKeyIDs = ids
+	sealed, _, err := transforms.Seal(m, transforms.Unscrubbed(payload.Bytes(), "reseal of a shipped payload"), recipients)
+	if err != nil {
+		return false, err
+	}
+	return true, u.place(o.rel, sealed, info.ModTime())
+}
+
+// place writes body at rel under the output root through a staged rename.
+func (u *unsealer) place(rel string, body []byte, mtime time.Time) error {
+	dir := path.Dir(rel)
+	if err := u.plain.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if info, err := u.plain.Lstat(rel); err == nil && !info.Mode().IsRegular() {
+		return fmt.Errorf("output %s exists and is not a regular file", rel)
+	}
+	tmp, err := u.stage(dir, mtime, func(w io.Writer) error {
+		_, err := w.Write(body)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if err := u.plain.Rename(tmp, rel); err != nil {
+		_ = u.plain.Remove(tmp)
+		return err
+	}
+	u.syncDir(dir)
+	return nil
+}
+
+func keyMatches(o object, m transforms.Manifest) error {
 	if m.InstallID != o.installID {
-		return "", fmt.Errorf("manifest install_id %q does not match key install=%s", m.InstallID, o.installID)
+		return fmt.Errorf("manifest install_id %q does not match key install=%s", m.InstallID, o.installID)
 	}
 	if m.SourceID != o.sourceID {
-		return "", fmt.Errorf("manifest source_id %q does not match key source=%s", m.SourceID, o.sourceID)
+		return fmt.Errorf("manifest source_id %q does not match key source=%s", m.SourceID, o.sourceID)
+	}
+	return nil
+}
+
+func (u *unsealer) outputPath(o object, m transforms.Manifest) (string, error) {
+	if err := keyMatches(o, m); err != nil {
+		return "", err
 	}
 	native, err := nativeRelPath(m.NativePath)
 	if err != nil {

@@ -284,8 +284,24 @@ func TestOpenRejectsPayloadSizeMismatch(t *testing.T) {
 	}
 }
 
+// A frame may declare a window the decoder would allocate before reading a byte of it; one far past
+// what Seal writes is refused.
+func TestOpenRejectsAnOversizedZstdWindow(t *testing.T) {
+	id := identity(t)
+	payload := bytes.Repeat([]byte("window "), 1<<18)
+	m := manifest()
+	m.ShippedHash = transforms.Hash(payload)
+	m.PayloadSize = int64(len(payload))
+	if _, _, err := transforms.Open(handSealed(t, id, m, payload, zstd.WithWindowSize(64<<20)), id); err != nil {
+		t.Fatalf("a 64 MiB window is within the limit: %v", err)
+	}
+	if _, _, err := transforms.Open(handSealed(t, id, m, payload, zstd.WithWindowSize(128<<20)), id); err == nil {
+		t.Fatal("a 128 MiB window must be refused")
+	}
+}
+
 // handSealed builds a container by hand, so its manifest can lie about its payload.
-func handSealed(t *testing.T, id *age.X25519Identity, m transforms.Manifest, payload []byte) []byte {
+func handSealed(t *testing.T, id *age.X25519Identity, m transforms.Manifest, payload []byte, opts ...zstd.EOption) []byte {
 	t.Helper()
 	raw, err := m.Encode()
 	if err != nil {
@@ -317,7 +333,7 @@ func handSealed(t *testing.T, id *age.X25519Identity, m transforms.Manifest, pay
 	if err != nil {
 		t.Fatal(err)
 	}
-	zw, err := zstd.NewWriter(encW, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(transforms.ZstdLevel)))
+	zw, err := zstd.NewWriter(encW, append([]zstd.EOption{zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(transforms.ZstdLevel))}, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}

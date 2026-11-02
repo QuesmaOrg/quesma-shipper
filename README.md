@@ -100,8 +100,9 @@ on each machine.
 
 6. **Later, read what arrived** with a custodian key. `active` on the Installs page means a machine
    enrolled, not that it has shipped anything. Copy the organisation's objects with
-   [rclone](https://rclone.org/) (here an `s3` remote named `aws`), then decrypt them with Go, both
-   from the root of a clone of this repository:
+   [rclone](https://rclone.org/) (here an `s3` remote named `aws`: `rclone config create aws s3
+   provider AWS env_auth true`), then decrypt them with Go, both from the root of an up-to-date
+   clone of this repository, since an older one refuses objects from newer shippers:
 
    ```sh
    B=$(sh fleet-manager/deploy.sh aws output bucket)
