@@ -233,7 +233,7 @@ func TestExistingSingleRecipientConfigCanBeReadButNotReapplied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load existing config: %v", err)
 	}
-	if err := manager.ApplyConfig(context.Background(), loaded, version); err == nil {
+	if err := manager.ApplyConfig(context.Background(), configAuthorAdministrator, loaded, version); err == nil {
 		t.Fatal("reapplied config with fewer than two organization recipients")
 	}
 }

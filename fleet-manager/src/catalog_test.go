@@ -59,7 +59,7 @@ func setCollection(t *testing.T, manager *Manager, collection *CollectionConfig)
 		t.Fatal(err)
 	}
 	cfg.Collection = collection
-	if err := manager.ApplyConfig(context.Background(), cfg, version); err != nil {
+	if err := manager.ApplyConfig(context.Background(), configAuthorAdministrator, cfg, version); err != nil {
 		t.Fatal(err)
 	}
 }

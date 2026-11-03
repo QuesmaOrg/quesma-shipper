@@ -86,26 +86,34 @@ func replaceRecord(ctx context.Context, store ObjectStore, key, version string, 
 }
 
 func (m *Manager) LoadConfig(ctx context.Context) (FleetConfig, string, error) {
-	cfg, version, err := getRecord[FleetConfig](ctx, m.store, configKey(m.org))
+	cfg, version, _, err := m.loadConfig(ctx)
+	return cfg, version, err
+}
+
+func (m *Manager) loadConfig(ctx context.Context) (FleetConfig, string, []byte, error) {
+	raw, version, err := m.store.Get(ctx, configKey(m.org))
 	if err != nil {
-		return FleetConfig{}, "", err
+		return FleetConfig{}, "", nil, err
+	}
+	var cfg FleetConfig
+	if err := strictDecode(raw, &cfg); err != nil {
+		return FleetConfig{}, "", nil, fmt.Errorf("decode config: %w", err)
 	}
 	collectionErr := normalizeCollectionMode(&cfg, false)
 	if err := validateConfig(cfg); err != nil {
-		return FleetConfig{}, "", fmt.Errorf("stored config is invalid: %w", err)
+		return FleetConfig{}, "", nil, fmt.Errorf("stored config is invalid: %w", err)
 	}
 	if collectionErr != nil {
 		cfg.Collection = nil
 		cfg.CollectionError = "Stored collection requires correction: " + collectionErr.Error()
 	}
-
 	if cfg.Organization != m.org {
-		return FleetConfig{}, "", errors.New("stored config names another organization")
+		return FleetConfig{}, "", nil, errors.New("stored config names another organization")
 	}
 	if cfg.DisplayName == "" {
 		cfg.DisplayName = cfg.Organization
 	}
-	return cfg, version, nil
+	return cfg, version, raw, nil
 }
 
 func (m *Manager) Init(ctx context.Context, cfg FleetConfig) error {
@@ -126,10 +134,15 @@ func (m *Manager) Init(ctx context.Context, cfg FleetConfig) error {
 	if !enabled {
 		return errors.New("object versioning is required")
 	}
-	return createRecord(ctx, m.store, configKey(m.org), cfg)
+	// Only an administrator creates an organization.
+	raw, err := m.prepareConfigWrite(ctx, configAuthorAdministrator, cfg)
+	if err != nil {
+		return err
+	}
+	return m.store.Create(ctx, configKey(m.org), raw)
 }
 
-func (m *Manager) ApplyConfig(ctx context.Context, cfg FleetConfig, expectedVersion string) error {
+func (m *Manager) ApplyConfig(ctx context.Context, author configAuthor, cfg FleetConfig, expectedVersion string) error {
 	cfg.Schema, cfg.Organization, cfg.UpdatedAt = schemaVersion, m.org, m.time()
 	if err := normalizeCollection(&cfg); err != nil {
 		return err
@@ -137,7 +150,11 @@ func (m *Manager) ApplyConfig(ctx context.Context, cfg FleetConfig, expectedVers
 	if err := validateConfigForWrite(cfg); err != nil {
 		return err
 	}
-	return replaceRecord(ctx, m.store, configKey(m.org), expectedVersion, cfg)
+	raw, err := m.prepareConfigWrite(ctx, author, cfg)
+	if err != nil {
+		return err
+	}
+	return m.store.Replace(ctx, configKey(m.org), expectedVersion, raw)
 }
 
 func (m *Manager) CreateGrant(ctx context.Context, expires time.Time) (string, error) {

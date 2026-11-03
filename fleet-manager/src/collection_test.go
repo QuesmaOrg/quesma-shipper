@@ -68,7 +68,7 @@ func TestLegacyCollectionMigrationPreservesSettingsAndStoredBytes(t *testing.T) 
 	if served["drain_deadline"] != "90s" {
 		t.Fatalf("served settings lost: %v", served)
 	}
-	if err := manager.ApplyConfig(context.Background(), loaded, version); err != nil {
+	if err := manager.ApplyConfig(context.Background(), configAuthorAdministrator, loaded, version); err != nil {
 		t.Fatal(err)
 	}
 	after, _, _ = store.Get(context.Background(), configKey("acme"))
@@ -137,7 +137,7 @@ func TestLegacyCollectionKeepsTolerantReadSemantics(t *testing.T) {
 	if err != nil || loaded.CollectionError != "" || *loaded.Collection.Mode.Schedule != "5s" {
 		t.Fatalf("legacy read changed: %+v %v", loaded, err)
 	}
-	if err := manager.ApplyConfig(context.Background(), loaded, version); err == nil {
+	if err := manager.ApplyConfig(context.Background(), configAuthorAdministrator, loaded, version); err == nil {
 		t.Fatal("new writes must use the canonical schema")
 	}
 	w := serveAdmin(t, server, adminRequest("GET", "/v1/admin/orgs", "", testAdminCredential))
@@ -167,7 +167,7 @@ func TestStoredCollectionOutsideTheWriteSchemaStaysServable(t *testing.T) {
 	if w := serveAdmin(t, server, adminRequest("GET", "/v1/admin/orgs/acme/config", "", testAdminCredential)); w.Code != http.StatusOK {
 		t.Fatalf("admin cannot load the config to repair it: %d %s", w.Code, w.Body)
 	}
-	err = manager.ApplyConfig(context.Background(), loaded, version)
+	err = manager.ApplyConfig(context.Background(), configAuthorAdministrator, loaded, version)
 	if err == nil || !strings.Contains(err.Error(), "mode.schedule") || strings.Contains(err.Error(), "file://") {
 		t.Fatalf("write must name the field to correct: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestLegacyCollectionServesWithoutKeysTheShipperIgnores(t *testing.T) {
 	if err != nil || loaded.CollectionError != "" || strings.Contains(renderConfig(loaded), "future_key") {
 		t.Fatalf("unknown legacy key blocked serving: %+v %v", loaded, err)
 	}
-	if err := manager.ApplyConfig(context.Background(), loaded, version); err != nil {
+	if err := manager.ApplyConfig(context.Background(), configAuthorAdministrator, loaded, version); err != nil {
 		t.Fatalf("a write of the served settings must succeed: %v", err)
 	}
 }

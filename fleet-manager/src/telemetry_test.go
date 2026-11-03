@@ -32,7 +32,7 @@ func setTelemetryCollectorURL(t *testing.T, manager *Manager, endpoint string) {
 		t.Fatal(err)
 	}
 	cfg.TelemetryCollectorURL = &endpoint
-	if err := manager.ApplyConfig(context.Background(), cfg, version); err != nil {
+	if err := manager.ApplyConfig(context.Background(), configAuthorAdministrator, cfg, version); err != nil {
 		t.Fatal(err)
 	}
 }

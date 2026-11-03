@@ -18,6 +18,7 @@ src/
   ui.go             /admin/, serving the embedded assets in admin-ui/
   manager.go        organizations, enrollment, revocation
   model.go          the records, and what a valid one is
+  config_authorship.go immutable authorship bound to exact configuration bytes
   upload.go         turning an upload request into a batch of tickets
   seen.go tags.go   check-ins and install names, both off the critical path
   catalog.go        the source catalogs builds report, and serving and checking writes against them
@@ -61,6 +62,11 @@ delete-plus-create; bucket versioning preserves what is displaced.
 updated with `Replace` (`If-Match`). Replicas coordinate through the store and in no other way,
 which is why the deployment has no leader, no lock and no coordination service — and why an
 organization cannot be created in a bucket without object versioning.
+
+Configuration attribution is a separate immutable record keyed by the SHA-256 of the stored
+configuration bytes. It is prepared before the conditional configuration write; a failed write can
+leave an unused record, but cannot replace the active configuration's author. Only administrative
+configuration reads load attribution, so shipper requests do not add a storage read.
 
 **Disposable records are unconditional, and never fail a request.** `seen/` uses `Put`, is tagged
 `lifecycle=ephemeral` so its superseded versions can be expired, and collapses repeated check-ins

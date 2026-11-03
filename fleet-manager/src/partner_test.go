@@ -63,7 +63,7 @@ func TestAPartnerCannotChangeCustody(t *testing.T) {
 	off, collector := false, "https://collector.example.com"
 	_, analytics := testAnalyticsIdentity(t, "acme")
 	cfg.AllowQuesmaETL, cfg.TelemetryCollectorURL, cfg.DisplayName, cfg.AnalyticsIdentity = &off, &collector, "Acme", &analytics
-	if err := acme.ApplyConfig(context.Background(), cfg, version); err != nil {
+	if err := acme.ApplyConfig(context.Background(), configAuthorAdministrator, cfg, version); err != nil {
 		t.Fatal(err)
 	}
 	w := serveAdmin(t, server, adminRequest(http.MethodGet, "/v1/admin/orgs/acme/config", "", partner))
