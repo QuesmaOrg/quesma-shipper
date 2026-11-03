@@ -95,6 +95,13 @@ func loginWithRunCheck(ctx context.Context, server, token string, managed bool, 
 	}
 	defer unlock()
 	if existing, err := controlplane.LoadEnrollment(paths.StateDir); err == nil {
+		revoked, err := controlplane.LoadRevocation(paths.StateDir, existing)
+		if err != nil {
+			return LoginResult{}, err
+		}
+		if revoked != nil && !managed {
+			return reenroll(ctx, paths.StateDir, server, token, existing)
+		}
 		_ = controlplane.ClearManagedEnrollmentAttempt(paths.StateDir)
 		return LoginResult{Organization: existing.Organization}, ErrAlreadyLoggedIn
 	} else if !errors.Is(err, os.ErrNotExist) {

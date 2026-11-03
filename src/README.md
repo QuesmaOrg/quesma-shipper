@@ -174,6 +174,16 @@ quesma-shipper local-dev                    Set up without a control plane
 To look at the pipeline without any control plane, run `quesma-shipper local-dev`, then
 `quesma-shipper preview`: collection and scrubbing work, and upload is disabled.
 
+If an operator revokes this install, collection and server retries stop. `status` and `doctor`
+show the organization and when this machine detected the revocation. macOS and Windows attempt
+one desktop notification when an interactive session allows it.
+
+To return, run `quesma-shipper login <new-token>` (the previous server URL is reused unless you
+pass `--server`). This creates a fresh install identity and keeps the previous keys and local
+progress under `revoked-installs/<old-install-id>` in the state directory. Existing source files
+are eligible to ship again under the new identity. Failed enrollment keeps collection stopped;
+the same command safely retries it. Local state is kept until `uninstall --purge` removes it.
+
 ## Configuration
 
 Configuration is resolved from four layers, in this order: compiled defaults, the source catalog,

@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
@@ -61,6 +62,8 @@ var (
 // Client talks to the control plane.
 type Client struct {
 	endpoint string
+	stateDir string
+	revoked  atomic.Pointer[Revocation]
 	http     *http.Client
 
 	installID    string
@@ -70,6 +73,7 @@ type Client struct {
 
 // Options configures the client.
 type Options struct {
+	StateDir     string
 	Endpoint     string
 	InstallID    string
 	Organization string
@@ -86,6 +90,7 @@ func New(o Options) (*Client, error) {
 	}
 	return &Client{
 		endpoint: strings.TrimSuffix(o.Endpoint, "/"),
+		stateDir: o.StateDir,
 		http: &http.Client{
 			Timeout: defaultTimeout,
 
@@ -256,6 +261,13 @@ func (c *Client) exchange(ctx context.Context, path, preamble string, payload []
 	if signed && (c.installID == "" || c.organization == "" || len(c.deviceKey) == 0) {
 		return 0, nil, ErrNotEnrolled
 	}
+	if signed {
+		if revoked, err := c.revocation(); err != nil {
+			return 0, nil, err
+		} else if revoked != nil {
+			return 0, nil, revoked
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+path, bytes.NewReader(payload))
 	if err != nil {
 		return 0, nil, fmt.Errorf("backend: build request: %w", err)
@@ -288,6 +300,9 @@ func (c *Client) exchange(ctx context.Context, path, preamble string, payload []
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return resp.StatusCode, nil, fmt.Errorf("backend: read %s response: %w", path, err)
+	}
+	if signed && resp.StatusCode == http.StatusForbidden && strings.TrimSpace(string(raw)) == "this install is revoked" {
+		return resp.StatusCode, nil, c.recordRevocation()
 	}
 	return resp.StatusCode, raw, nil
 }

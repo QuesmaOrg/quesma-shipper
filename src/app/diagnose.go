@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -30,6 +31,18 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 	enr, enrErr := controlplane.LoadEnrollment(paths.StateDir)
 	if enrErr == nil {
 		rep.Organization, rep.Endpoint = enr.Organization, enr.Endpoint
+	}
+	revocationErr := EnrollmentRevocation(paths.StateDir)
+	var revoked *controlplane.Revocation
+	if errors.As(remote.Err, &revoked) || errors.As(revocationErr, &revoked) {
+		notifyRevocation(paths.StateDir)
+		rep.Sections = []Section{{Title: "Collecting", Rows: []Row{{Sev: SevFail, Label: "install", Brief: "install revoked", Detail: revoked.Error()}}}}
+		rep.Update = UpdateStatus{State: "skipped", Detail: "not checked - install revoked"}
+		return rep
+	}
+	if revocationErr != nil {
+		rep.Sections = []Section{{Title: "Collecting", Rows: []Row{{Sev: SevFail, Label: "install", Detail: revocationErr.Error(), Fix: "repair the revocation record; collection is stopped"}}}}
+		return rep
 	}
 	updCh := make(chan UpdateStatus, 1)
 	go func() {

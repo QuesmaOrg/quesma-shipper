@@ -502,6 +502,10 @@ func controlPlaneRows(enr *controlplane.Enrollment, enrErr error,
 		return nil
 	}
 	var rows []Row
+	var revoked *controlplane.Revocation
+	if errors.As(remote.Err, &revoked) {
+		return []Row{{Sev: SevFail, Label: "server", Brief: "install revoked", Detail: revoked.Error()}}
+	}
 	if errors.Is(remote.Err, controlplane.ErrConfigRejected) {
 		rows = append(rows, Row{Sev: SevWarn, Label: "server", Brief: "remote configuration rejected",
 			Detail: fmt.Sprintf("remote configuration refused: %v", remote.Err),

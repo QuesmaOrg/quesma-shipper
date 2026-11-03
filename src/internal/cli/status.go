@@ -38,6 +38,11 @@ func showStatus(cmd *cobra.Command, b app.Build, asJSON bool) error {
 	p := paletteFor(out)
 	now := time.Now()
 
+	if st.Revocation != nil {
+		banner(out, p, p.red, "revoked", "nothing is being collected")
+		fmt.Fprintln(out, st.Revocation.Error())
+		return errSilent{code: 3}
+	}
 	if !st.LoggedIn {
 		banner(out, p, p.yellow, "not logged in", "your admin has the token")
 		fmt.Fprintf(out, "\n  %s <token>  %s\n", styled(p.cyan, app.Name+" login", p.reset), styled(p.dim, "to join your organisation", p.reset))

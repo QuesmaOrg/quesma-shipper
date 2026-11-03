@@ -10,6 +10,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/QuesmaOrg/quesma-shipper/app"
+	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 )
 
 func loginCmd() *cobra.Command {
@@ -44,6 +45,13 @@ func loginCmd() *cobra.Command {
 			}
 			if token == "" {
 				return usage(fmt.Errorf("login needs the token from your admin, for example `%s login <token>`", app.Name))
+			}
+			if server == "" {
+				if _, paths, err := app.ResolveEffective(); err == nil {
+					if enrolled, err := controlplane.LoadEnrollment(paths.StateDir); err == nil {
+						server = enrolled.Endpoint
+					}
+				}
 			}
 			if server == "" {
 				return usage(errors.New("no server for this build, pass --server"))
