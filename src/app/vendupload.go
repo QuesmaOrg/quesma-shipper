@@ -355,11 +355,16 @@ func ProbeSink(ctx context.Context) (Sink, error) {
 	if err != nil {
 		return Sink{}, err
 	}
+	// Enrollment owns the scope even when the remote config cache is missing or unusable.
+	enrollment, err := controlplane.LoadEnrollment(paths.StateDir)
+	if err != nil {
+		return Sink{}, err
+	}
 	port, err := newUploadPort(client, eff)
 	if err != nil {
 		return Sink{}, err
 	}
-	return port.probeSink(ctx, eff.OrganizationID, unit.InstallID.String())
+	return port.probeSink(ctx, enrollment.Organization, unit.InstallID.String())
 }
 
 func (p *vendPort) probeSink(ctx context.Context, org, installID string) (Sink, error) {

@@ -5,6 +5,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
+	"github.com/QuesmaOrg/quesma-shipper/internal/identity"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
@@ -19,6 +22,68 @@ const probeKey = "v1/organization=acme/install=3f2504e0-4f89-41d3-9a0c-0305e82c3
 
 // escapedKey is the key as a presigner spells it in a ticket path.
 var escapedKey = strings.ReplaceAll(probeKey, "=", "%3D")
+
+func TestProbeSinkUsesEnrollmentWithoutUsableConfigCache(t *testing.T) {
+	for _, cached := range []string{"", "drain_deadline: forever\n"} {
+		t.Run(fmt.Sprintf("cache=%q", cached), func(t *testing.T) {
+			var wantKey string
+			paths := enrolledConfigServer(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/v2/uploads/authorize" {
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					http.Error(w, "unexpected request", http.StatusBadRequest)
+					return
+				}
+				var req controlplane.AuthorizeRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Error(err)
+					http.Error(w, "invalid request", http.StatusBadRequest)
+					return
+				}
+				if len(req.Objects) != 1 || req.Objects[0].Key != wantKey {
+					http.Error(w, "key is outside this install's root", http.StatusBadRequest)
+					return
+				}
+				obj := req.Objects[0]
+				const ticketID = "b1bd1a73-f16d-4a51-aac6-29f1f48b0658"
+				_ = json.NewEncoder(w).Encode(controlplane.AuthorizeResponse{Tickets: []controlplane.Ticket{{
+					TicketID: ticketID, ObjectID: obj.ObjectID, Method: http.MethodPut,
+					URL:           "https://archive.s3.eu-central-1.amazonaws.com/" + strings.ReplaceAll(obj.Key, "=", "%3D"),
+					ContentLength: obj.Size, ContentLengthSigned: true,
+					RequiredHeaders: map[string]string{
+						"x-amz-meta-source-hash": obj.SourceHash,
+						"x-amz-meta-ticket-id":   ticketID,
+						"x-amz-meta-kind":        "heartbeat",
+					},
+				}}})
+			})
+			unit, err := identity.Mint(paths.StateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			enrollment, err := controlplane.LoadEnrollment(paths.StateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			enrollment.InstallID = unit.InstallID.String()
+			if err := enrollment.Save(paths.StateDir); err != nil {
+				t.Fatal(err)
+			}
+			wantKey = "v1/organization=acme/install=" + enrollment.InstallID + "/state/heartbeat.json.age"
+			if cached != "" {
+				if err := controlplane.SaveCache(paths.StateDir, controlplane.Cached{Config: []byte(cached)}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := ProbeSink(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Bucket != "archive" || got.Prefix != "v1/organization=acme/" {
+				t.Errorf("got %+v", got)
+			}
+		})
+	}
+}
 
 // probePlane answers the authorization with one heartbeat ticket at path, or already_present.
 func probePlane(t *testing.T, bodies *[]string, path string, present bool) http.HandlerFunc {
