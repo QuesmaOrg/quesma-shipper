@@ -325,7 +325,6 @@ func applySourceOverrides(eff *Effective, overrides map[string][]layeredOverride
 		src := &eff.Sources[i]
 		locallyDisabledBy := Layer(0)
 		var additions []string
-		var additionSet map[string]bool
 		// The enricher map is detached from the compiled catalog on first touch, once per source.
 		clonedEnrichers := false
 
@@ -335,13 +334,9 @@ func applySourceOverrides(eff *Effective, overrides map[string][]layeredOverride
 				if err := protocol.ValidateExcludeAdd(pattern); err != nil {
 					return &RejectionError{lo.layer, "sources." + src.ID + ".exclude_add", err.Error()}
 				}
-				if additionSet == nil {
-					additionSet = map[string]bool{}
-				}
-				if !additionSet[pattern] {
-					additions = append(additions, pattern)
-					additionSet[pattern] = true
-				}
+			}
+			if len(o.ExcludeAdd) > 0 {
+				additions = append(additions, o.ExcludeAdd...)
 				eff.setOrigin("sources."+src.ID+".exclude_add", lo.layer)
 			}
 			if o.Enabled != nil {
@@ -400,6 +395,7 @@ func applySourceOverrides(eff *Effective, overrides map[string][]layeredOverride
 			for _, pattern := range additions {
 				if !existing[pattern] {
 					src.Exclude = append(src.Exclude, pattern)
+					existing[pattern] = true
 				}
 			}
 		}

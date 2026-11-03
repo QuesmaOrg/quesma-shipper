@@ -58,7 +58,7 @@ func SaveCache(stateDir string, c Cached) error {
 			return fmt.Errorf("backend: reduced cache exceeds %d bytes", maxResponseBytes)
 		}
 	}
-	return platform.WriteJSON(filepath.Join(stateDir, CacheFile), c, 0o600)
+	return platform.WriteAtomic(filepath.Join(stateDir, CacheFile), append(encoded, '\n'), 0o600)
 }
 
 // LoadCache reads the cached config. A missing file is an error the caller treats as "no remote
