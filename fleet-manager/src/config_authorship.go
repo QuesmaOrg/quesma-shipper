@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 )
@@ -16,7 +17,11 @@ const (
 	configAuthorAdministrator configAuthor = "administrator"
 	configAuthorPartner       configAuthor = "partner"
 	configAuthorUnknown       configAuthor = "unknown"
+	configAuthorUnavailable   configAuthor = "unavailable"
 )
+
+// The record versions itself, so a FleetConfig schema change leaves existing records readable.
+const configAuthorshipSchema = 1
 
 type configAuthorship struct {
 	Schema    int          `json:"schema"`
@@ -49,7 +54,7 @@ func (m *Manager) prepareConfigWrite(ctx context.Context, author configAuthor, c
 		return nil, err
 	}
 	key := configAuthorshipKey(m.org, raw)
-	record := configAuthorship{Schema: schemaVersion, Author: author, UpdatedAt: cfg.UpdatedAt}
+	record := configAuthorship{Schema: configAuthorshipSchema, Author: author, UpdatedAt: cfg.UpdatedAt}
 	// Prepare attribution before committing; unused records never describe the active configuration.
 	if err := createRecord(ctx, m.store, key, record); errors.Is(err, ErrConflict) {
 		existing, _, err := getRecord[configAuthorship](ctx, m.store, key)
@@ -65,7 +70,8 @@ func (m *Manager) prepareConfigWrite(ctx context.Context, author configAuthor, c
 	return raw, nil
 }
 
-func (m *Manager) LoadConfigWithAuthor(ctx context.Context) (FleetConfig, string, configAuthor, error) {
+// A bad authorship record never fails the read, since GET /config issues the ETag every edit needs.
+func (m *Manager) LoadConfigWithAuthor(ctx context.Context, logger *log.Logger) (FleetConfig, string, configAuthor, error) {
 	cfg, version, raw, err := m.loadConfig(ctx)
 	if err != nil {
 		return FleetConfig{}, "", "", err
@@ -74,11 +80,12 @@ func (m *Manager) LoadConfigWithAuthor(ctx context.Context) (FleetConfig, string
 	if errors.Is(err, ErrNotFound) {
 		return cfg, version, configAuthorUnknown, nil
 	}
-	if err != nil {
-		return FleetConfig{}, "", "", fmt.Errorf("read configuration authorship: %w", err)
+	if err == nil && (record.Schema != configAuthorshipSchema || (record.Author != configAuthorAdministrator && record.Author != configAuthorPartner) || !record.UpdatedAt.Equal(cfg.UpdatedAt)) {
+		err = errors.New("stored configuration authorship is invalid")
 	}
-	if record.Schema != schemaVersion || (record.Author != configAuthorAdministrator && record.Author != configAuthorPartner) || !record.UpdatedAt.Equal(cfg.UpdatedAt) {
-		return FleetConfig{}, "", "", errors.New("stored configuration authorship is invalid")
+	if err != nil {
+		logger.Printf("organization %s: configuration authorship is unavailable: %v", m.org, err)
+		return cfg, version, configAuthorUnavailable, nil
 	}
 	return cfg, version, record.Author, nil
 }

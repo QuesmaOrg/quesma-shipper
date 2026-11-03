@@ -27,7 +27,7 @@ test('configuration view displays the response author and clears attribution on 
   const source = fs.readFileSync(path.join(__dirname, '../src/admin-ui/app.js'), 'utf8');
   vm.runInContext(source.slice(source.indexOf('function fillConfig('), source.indexOf('function lockConfig(')), sandbox);
   vm.runInContext(source.slice(source.indexOf('async function loadConfig('), source.indexOf('async function connect(')), sandbox);
-  for (const [value, expected] of [['partner', 'by partner'], ['administrator', 'by administrator'], ['unknown', '(author unknown)'], [null, '(author unknown)']]) {
+  for (const [value, expected] of [['partner', 'by partner'], ['administrator', 'by administrator'], ['unknown', '(author unknown)'], ['unavailable', '(author unavailable)'], [null, '(author unknown)']]) {
     author = value;
     await sandbox.loadConfig();
     assert.ok(label.textContent.startsWith('Updated '));

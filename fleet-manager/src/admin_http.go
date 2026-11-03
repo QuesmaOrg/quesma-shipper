@@ -567,7 +567,7 @@ func (s *Server) handleAdminGetConfig(w http.ResponseWriter, r *http.Request) {
 		writeAdminError(w, http.StatusNotFound, "not found")
 		return
 	}
-	cfg, version, author, err := manager.LoadConfigWithAuthor(r.Context())
+	cfg, version, author, err := manager.LoadConfigWithAuthor(r.Context(), s.logger)
 	if errors.Is(err, ErrNotFound) {
 		writeAdminError(w, http.StatusNotFound, "organization not found")
 		return

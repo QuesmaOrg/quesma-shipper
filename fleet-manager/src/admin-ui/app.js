@@ -198,7 +198,8 @@ function fillConfig(config, author) {
   form.elements['telemetry-enabled'].checked = collector.value !== '';
   syncTelemetry(form);
   fillCollection(form, config.collection, config.collection_error || '', config.authored_yaml || '');
-  const by = author === 'administrator' || author === 'partner' ? `by ${author}` : '(author unknown)';
+  const by = author === 'administrator' || author === 'partner' ? `by ${author}`
+    : author === 'unavailable' ? '(author unavailable)' : '(author unknown)';
   $('#config-time').textContent = config.updated_at ? `Updated ${new Date(config.updated_at).toLocaleString()} ${by}` : '';
   lockConfig(true);
 }

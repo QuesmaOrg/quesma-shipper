@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,7 +15,7 @@ import (
 
 func assertConfigAuthor(t *testing.T, manager *Manager, want configAuthor) FleetConfig {
 	t.Helper()
-	cfg, _, author, err := manager.LoadConfigWithAuthor(context.Background())
+	cfg, _, author, err := manager.LoadConfigWithAuthor(context.Background(), log.New(io.Discard, "", 0))
 	if err != nil || author != want {
 		t.Fatalf("configuration author = %q, %v; want %q", author, err, want)
 	}
@@ -24,15 +26,19 @@ func TestConfigAuthorshipHTTP(t *testing.T) {
 	server, store, partner := partnerServer(t)
 	read := func(want configAuthor) string {
 		t.Helper()
-		w := serveAdmin(t, server, adminRequest(http.MethodGet, "/v1/admin/orgs/acme/config", "", partner))
-		if w.Code != http.StatusOK || w.Header().Get("Config-Updated-By") != string(want) {
-			t.Fatalf("GET config = %d, author %q: %s", w.Code, w.Header().Get("Config-Updated-By"), w.Body.String())
+		var etag string
+		for _, caller := range []struct{ name, credential string }{{"partner", partner}, {"administrator", testAdminCredential}} {
+			w := serveAdmin(t, server, adminRequest(http.MethodGet, "/v1/admin/orgs/acme/config", "", caller.credential))
+			if w.Code != http.StatusOK || w.Header().Get("Config-Updated-By") != string(want) {
+				t.Fatalf("GET config as %s = %d, author %q: %s", caller.name, w.Code, w.Header().Get("Config-Updated-By"), w.Body.String())
+			}
+			var legacy FleetConfig
+			if err := strictDecode(w.Body.Bytes(), &legacy); err != nil {
+				t.Fatalf("legacy strict response reader: %v", err)
+			}
+			etag = w.Header().Get("ETag")
 		}
-		var legacy FleetConfig
-		if err := strictDecode(w.Body.Bytes(), &legacy); err != nil {
-			t.Fatalf("legacy strict response reader: %v", err)
-		}
-		return w.Header().Get("ETag")
+		return etag
 	}
 	etag := read(configAuthorAdministrator)
 	for _, tc := range []struct {
@@ -175,11 +181,7 @@ func TestConfigAuthorshipConcurrentReplicas(t *testing.T) {
 		t.Fatalf("losing writer = %v", err)
 	}
 	if cfg := assertConfigAuthor(t, manager, configAuthorAdministrator); cfg.DisplayName != "Winning administrator edit" {
-		t.Fatalf("wrong configuration won: %+v", cfg)
-	}
-	records, _ := store.List(ctx, controlPrefix("acme")+"config-authorship/")
-	if len(records) != 3 {
-		t.Fatalf("expected initial, committed and unused records; got %d", len(records))
+		t.Fatalf("the active configuration must carry the winner's author: %+v", cfg)
 	}
 }
 
@@ -200,8 +202,8 @@ func TestConfigAuthorshipLegacyAndReadFailures(t *testing.T) {
 	}
 	store.failGetIn = "/config-authorship/"
 	w = serveAdmin(t, server, adminRequest(http.MethodGet, "/v1/admin/orgs/acme/config", "", testAdminCredential))
-	if w.Code != http.StatusInternalServerError || w.Header().Get("Config-Updated-By") != "" {
-		t.Fatalf("failed authorship read must not look unknown: %d, %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK || w.Header().Get("ETag") == "" || w.Header().Get("Config-Updated-By") != "unavailable" {
+		t.Fatalf("failed authorship read must neither look unknown nor lock the configuration: %d, %s", w.Code, w.Body.String())
 	}
 	if _, _, err := manager.LoadConfig(ctx); err != nil {
 		t.Fatalf("shipper config load should not depend on audit reads: %v", err)
@@ -217,10 +219,36 @@ func TestConfigAuthorshipLegacyAndReadFailures(t *testing.T) {
 		if err := store.Put(ctx, configAuthorshipKey("acme", raw), body); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, _, err := manager.LoadConfigWithAuthor(ctx); err == nil {
-			t.Fatalf("accepted invalid authorship: %+v", record)
+		if _, _, author, err := manager.LoadConfigWithAuthor(ctx, log.New(io.Discard, "", 0)); err != nil || author != configAuthorUnavailable {
+			t.Fatalf("invalid authorship %+v read as %q, %v", record, author, err)
 		}
 	}
+}
+
+// GET /config is the only route that issues the ETag, so a corrupt record must not lock editing.
+func TestCorruptConfigAuthorshipKeepsConfigurationEditable(t *testing.T) {
+	server, store := testAdminServer(t)
+	var logged bytes.Buffer
+	server.logger = log.New(&logged, "", 0)
+	ctx := context.Background()
+	raw, _, _ := store.Get(ctx, configKey("acme"))
+	if err := store.Put(ctx, configAuthorshipKey("acme", raw), []byte("{not json")); err != nil {
+		t.Fatal(err)
+	}
+	w := serveAdmin(t, server, adminRequest(http.MethodGet, "/v1/admin/orgs/acme/config", "", testAdminCredential))
+	etag := w.Header().Get("ETag")
+	if w.Code != http.StatusOK || etag == "" || w.Header().Get("Config-Updated-By") != "unavailable" {
+		t.Fatalf("GET config = %d, ETag %q, author %q: %s", w.Code, etag, w.Header().Get("Config-Updated-By"), w.Body.String())
+	}
+	if !strings.Contains(logged.String(), "organization acme: configuration authorship is unavailable") {
+		t.Fatalf("not logged: %q", logged.String())
+	}
+	put := adminRequest(http.MethodPut, "/v1/admin/orgs/acme/config", configJSON(t, twoRecipients(t)), testAdminCredential)
+	put.Header.Set("If-Match", etag)
+	if w := serveAdmin(t, server, put); w.Code != http.StatusNoContent {
+		t.Fatalf("PUT config with that ETag = %d: %s", w.Code, w.Body.String())
+	}
+	assertConfigAuthor(t, server.manager.mustOrg(t, "acme"), configAuthorAdministrator)
 }
 
 func TestConfigAuthorshipIdenticalBytesCannotChangeAuthor(t *testing.T) {

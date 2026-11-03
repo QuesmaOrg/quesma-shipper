@@ -90,20 +90,27 @@ was written by an **administrator** or **partner**, beside its update time. Thes
 classes, not individual people sharing a credential. Organization creation, `PUT /config` and
 `PUT /collection` are covered. Other partner mutations remain in the service log.
 
-`GET /v1/admin/orgs/{org}/config` returns the same JSON as before, plus a `Config-Updated-By`
-header (`administrator`, `partner` or `unknown`). Attribution is stored separately under
+`GET /v1/admin/orgs/{org}/config` returns the same JSON as before, plus a `Config-Updated-By` header
+(`administrator`, `partner`, `unknown` or `unavailable`). Attribution is stored separately under
 `control/config-authorship/<sha256>.json`; the digest covers the exact stored configuration bytes.
-Each immutable record contains `schema`, `author` and `updated_at`, without credentials or a copy
-of the configuration. It is created before the conditional configuration write, so a crash cannot
-commit an unattributed change. An attribution write failure prevents the change. Interrupted or
-conflicting writes may leave unused records; only the record matching the current configuration
-is displayed. These records alone are not a history of successful changes.
+Each immutable record contains `schema`, `author` and `updated_at`, without credentials or a copy of
+the configuration. The records are immutable to API callers, the partner included, but someone with
+direct bucket access can overwrite them, or write a `config.json` with a matching record. Each
+record is created before the conditional configuration write, so a crash cannot commit an
+unattributed change. An attribution write failure prevents the change. Interrupted or conflicting
+writes may leave unused records; only the record matching the current configuration is displayed.
+
+The view names only the last writer, so an administrator's later save, even of an unchanged form, is
+shown as the author of a partner's earlier change. To find who made an earlier change, list the
+`config.json` object versions, take the sha256 of each version's bytes, and read
+`control/config-authorship/<digest>.json`.
 
 The stored `config.json` format and permissions are unchanged. Older replicas and rollbacks can
-still read it, and ignore the new records. Configurations written before this feature or subsequently
-by older replicas show **author unknown**; an attribution read failure reports an error instead.
-Upgrade every replica before relying on attribution, especially before giving a partner that holds
-a recipient its credential. Attribution does not identify writers that edit bucket objects directly.
+still read it, and ignore the new records. Configurations written before this feature or
+subsequently by older replicas show **author unknown**. A record that cannot be read or does not
+match shows **author unavailable** and is logged; the configuration still loads and can be edited.
+Upgrade every replica before relying on attribution, especially before giving a partner that holds a
+recipient its credential. Attribution does not identify writers that edit bucket objects directly.
 
 **Revoke.** Installs, invites and grants are revoked from the administration UI. A revoked install
 can still be given a name, because the objects it already uploaded remain in the bucket. There is
