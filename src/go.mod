@@ -8,7 +8,7 @@ require (
 	github.com/QuesmaOrg/quesma-shipper/shipper-protocol v0.0.0
 	github.com/Shopify/toxiproxy/v2 v2.13.0
 	github.com/aws/aws-sdk-go-v2 v1.47.5
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.12
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.6
 	github.com/bmatcuk/doublestar/v4 v4.10.4
 	github.com/creativeprojects/go-selfupdate v1.6.0
@@ -24,7 +24,7 @@ require (
 	github.com/theupdateframework/go-tuf/v2 v2.4.2
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
-	golang.org/x/text v0.41.0
+	golang.org/x/text v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/libc v1.79.0
 	modernc.org/sqlite v1.61.0
