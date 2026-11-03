@@ -22,6 +22,7 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
 ### Added
 
 - `sources[].exclude_add` unions relative exclusion globs after all replacement layers.
+  Globs use forward-slash separators on every platform; backslashes are rejected.
   `sources.exclude_add` capability negotiation and the shared reduction disable affected sources
   for older readers; the two-copy cache preserves that behavior through offline downgrades.
 

@@ -73,3 +73,15 @@ func TestAdditionsSurviveRemoteEnableOverLocalDisable(t *testing.T) {
 		t.Fatalf("lost local refusal or additions: %+v", source)
 	}
 }
+
+func TestAdditiveExclusionsRejectBackslashesLocallyAndRemotely(t *testing.T) {
+	for _, layer := range []config.Layer{config.LayerUser, config.LayerRemote} {
+		for _, pattern := range []string{`projects\private\**`, `projects/private\**`, `projects\private/**`} {
+			_, err := resolveLayers(t, config.LayeredDocument{
+				Layer: layer,
+				Doc:   doc(t, "sources: [{id: claude-code-transcripts, exclude_add: ['"+pattern+"']}]"),
+			})
+			mustReject(t, err, "backslash in additive exclusion")
+		}
+	}
+}

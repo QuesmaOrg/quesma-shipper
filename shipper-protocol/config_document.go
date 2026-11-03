@@ -24,6 +24,7 @@ func ValidateConfigDocument(rawJSON []byte) error {
 	return schema.Validate(doc)
 }
 
+// Keep authoring assets out of binaries that only use runtime exclusion helpers.
 var configSchemaOnce sync.Once
 var configSchema *jsonschema.Schema
 var configSchemaErr error

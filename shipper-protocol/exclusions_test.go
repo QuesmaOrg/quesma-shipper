@@ -48,9 +48,16 @@ func TestValidateExcludeAdd(t *testing.T) {
 			t.Errorf("%q: %v", glob, err)
 		}
 	}
-	for _, glob := range []string{"", "/absolute", `\\server\share`, `C:\private`, "../private", "a/../b", `a\..\b`, "[", "a\\", "a\x00b"} {
+	for _, glob := range []string{"", "/absolute", `\\server\share`, `C:\private`, "../private", "a/../b", `a\..\b`, "[", "a\\", "a\x00b", `projects\private\**`, `projects/private\**`, `projects\private/**`} {
 		if err := protocol.ValidateExcludeAdd(glob); err == nil {
 			t.Errorf("accepted %q", glob)
+		}
+		raw, err := json.Marshal(map[string]any{"config_version": 1, "sources": []map[string]any{{"id": "claude-code-transcripts", "exclude_add": []string{glob}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := protocol.ValidateConfigDocument(raw); err == nil {
+			t.Errorf("schema accepted %q", glob)
 		}
 	}
 }

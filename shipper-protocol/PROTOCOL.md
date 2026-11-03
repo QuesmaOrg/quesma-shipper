@@ -279,7 +279,8 @@ are disabled as specified below.
 ## Additive source exclusions
 
 `sources[].exclude_add` is a list of non-empty, relative doublestar globs. Absolute paths,
-parent-directory (`..`) segments, and invalid glob syntax are refused. Globs are matched against
+parent-directory (`..`) segments, backslashes, and invalid glob syntax are refused. Use `/` as the
+path separator on every platform. Globs are matched against
 the path relative to the source's resolved root, like `exclude`. Any layer may add them:
 
 ```

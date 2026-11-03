@@ -12,11 +12,14 @@ const ExcludeAddFeature = "sources.exclude_add"
 
 // ValidateExcludeAdd requires portable globs relative to a source's resolved root.
 func ValidateExcludeAdd(pattern string) error {
-	if pattern == "" || strings.HasPrefix(pattern, "/") || strings.HasPrefix(pattern, `\`) ||
+	if strings.ContainsRune(pattern, '\\') {
+		return fmt.Errorf("exclude_add must use forward slashes (/), not backslashes")
+	}
+	if pattern == "" || strings.HasPrefix(pattern, "/") ||
 		(len(pattern) >= 2 && pattern[1] == ':') || strings.ContainsRune(pattern, 0) {
 		return fmt.Errorf("exclude_add must be a non-empty relative glob")
 	}
-	for _, part := range strings.Split(strings.ReplaceAll(pattern, `\`, "/"), "/") {
+	for _, part := range strings.Split(pattern, "/") {
 		if part == ".." {
 			return fmt.Errorf("exclude_add must not contain ..")
 		}

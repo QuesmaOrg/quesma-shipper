@@ -59,9 +59,18 @@ function addCollectionSource(form, source = {}) {
   const row = document.createElement('fieldset');
   row._source = structuredClone(source);
   row.dataset.collectionSource = '';
-  row.innerHTML = '<legend>Source override</legend><div data-source-field></div><label>Collection<select data-source-enabled><option value="">Use default</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label><label>Additional exclusions (one per line)<textarea data-source-exclude-add></textarea></label><p class="source-note">Added to the effective exclusions after catalog, local, and replacement settings are applied.</p><p class="source-note source-warning" data-exclusion-support></p>' +
-    (source.exclude?.length ? '<details><summary>Existing replacement exclusions</summary><label>Replacement exclusions (one per line)<textarea data-source-exclude></textarea></label><p class="source-note source-warning">This replaces catalog and machine-owner exclusions, including binary-attachment protections. Clear it to restore those defaults; additional exclusions still apply.</p></details>' : '') +
+  row.innerHTML = '<legend>Source override</legend><div data-source-field></div><label>Collection<select data-source-enabled><option value="">Use default</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label><label>Additional exclusions (one per line)<textarea data-source-exclude-add></textarea></label><div data-exclusion-notes></div>' +
+    (source.exclude?.length ? '<details><summary>Existing replacement exclusions</summary><label>Replacement exclusions (one per line)<textarea data-source-exclude></textarea></label></details>' : '') +
     '<button type="button" data-remove-source class="quiet">Remove override</button>';
+  const exclusionSupport = sourceNote('', true);
+  exclusionSupport.dataset.exclusionSupport = '';
+  row.querySelector('[data-exclusion-notes]').append(
+    sourceNote('Added to the effective exclusions after catalog, local, and replacement settings are applied.'),
+    exclusionSupport,
+  );
+  if (source.exclude?.length) {
+    row.querySelector('details').append(sourceNote('This replaces catalog and machine-owner exclusions, including binary-attachment protections. Clear it to restore those defaults; additional exclusions still apply.', true));
+  }
   const catalog = form._catalog;
   const field = row.querySelector('[data-source-field]');
   if (source.id) {
@@ -100,7 +109,7 @@ function addCollectionSource(form, source = {}) {
   const additions = row.querySelector('[data-source-exclude-add]');
   additions.value = (source.exclude_add || []).join('\n');
   additions.oninput = () => {
-    row.querySelector('[data-exclusion-support]').textContent = additions.value.trim() ? exclusionSupportText(catalog) : '';
+    exclusionSupport.textContent = additions.value.trim() ? exclusionSupportText(catalog) : '';
   };
   additions.oninput();
   row.querySelector('[data-remove-source]').onclick = () => row.remove();
