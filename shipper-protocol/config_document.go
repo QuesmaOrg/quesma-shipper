@@ -24,7 +24,16 @@ func ValidateConfigDocument(rawJSON []byte) error {
 	return schema.Validate(doc)
 }
 
-var configDocumentSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
+var configSchemaOnce sync.Once
+var configSchema *jsonschema.Schema
+var configSchemaErr error
+
+func configDocumentSchema() (*jsonschema.Schema, error) {
+	configSchemaOnce.Do(func() { configSchema, configSchemaErr = compileConfigDocumentSchema() })
+	return configSchema, configSchemaErr
+}
+
+func compileConfigDocumentSchema() (*jsonschema.Schema, error) {
 	const name = "schemas/config-document.schema.json"
 	const schemaID = "https://github.com/QuesmaOrg/shipper-protocol/schemas/config-document.schema.json"
 	raw, err := FS.ReadFile(name)
@@ -59,7 +68,7 @@ var configDocumentSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
 		return nil, err
 	}
 	return compiler.Compile(schemaID)
-})
+}
 
 func durationAtLeast(minimum time.Duration) func(any) error {
 	return func(value any) error {
