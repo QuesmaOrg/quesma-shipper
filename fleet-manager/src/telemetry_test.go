@@ -403,7 +403,7 @@ func TestTelemetryOrganizationIsolationAndDestinationRouting(t *testing.T) {
 	setTelemetryCollectorURL(t, manager, collector.URL+"/acme")
 	other, _ := manager.ForOrganization("other")
 	otherURL := collector.URL + "/other"
-	if err := other.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true, TelemetryCollectorURL: &otherURL}); err != nil {
+	if err := other.Init(context.Background(), FleetConfig{AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true, TelemetryCollectorURL: &otherURL}); err != nil {
 		t.Fatal(err)
 	}
 	body := telemetryBody(t, manager)

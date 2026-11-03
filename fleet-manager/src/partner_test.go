@@ -22,7 +22,7 @@ func partnerServer(t *testing.T) (*Server, *memoryStore, string) {
 	t.Helper()
 	server, store := testAdminServer(t)
 	globex, _ := server.manager.ForOrganization("globex")
-	if err := globex.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true}); err != nil {
+	if err := globex.Init(context.Background(), FleetConfig{AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true}); err != nil {
 		t.Fatal(err)
 	}
 	return server, store, mintPartner(t, server, "acme")

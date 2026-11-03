@@ -36,7 +36,7 @@ func storeReporterCredential(t *testing.T, store *memoryStore) {
 func initialisedManager(t *testing.T) *Manager {
 	t.Helper()
 	manager, _ := testManager(t)
-	if err := manager.Init(context.Background(), configAuthorAdministrator, FleetConfig{
+	if err := manager.Init(context.Background(), FleetConfig{
 		AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true,
 	}); err != nil {
 		t.Fatal(err)

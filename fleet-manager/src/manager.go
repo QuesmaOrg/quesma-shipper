@@ -116,7 +116,7 @@ func (m *Manager) loadConfig(ctx context.Context) (FleetConfig, string, []byte, 
 	return cfg, version, raw, nil
 }
 
-func (m *Manager) Init(ctx context.Context, author configAuthor, cfg FleetConfig) error {
+func (m *Manager) Init(ctx context.Context, cfg FleetConfig) error {
 	cfg.Schema, cfg.Organization, cfg.UpdatedAt = schemaVersion, m.org, m.time()
 	if cfg.DisplayName == "" {
 		cfg.DisplayName = m.org
@@ -134,7 +134,8 @@ func (m *Manager) Init(ctx context.Context, author configAuthor, cfg FleetConfig
 	if !enabled {
 		return errors.New("object versioning is required")
 	}
-	raw, err := m.prepareConfigWrite(ctx, author, cfg)
+	// Only an administrator creates an organization.
+	raw, err := m.prepareConfigWrite(ctx, configAuthorAdministrator, cfg)
 	if err != nil {
 		return err
 	}

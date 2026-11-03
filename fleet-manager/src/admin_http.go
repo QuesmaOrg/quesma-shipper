@@ -539,7 +539,7 @@ func (s *Server) handleAdminCreateOrganization(w http.ResponseWriter, r *http.Re
 	if !s.validateAdminConfig(w, manager, cfg) {
 		return
 	}
-	if err := manager.Init(r.Context(), configAuthorAdministrator, cfg); errors.Is(err, ErrConflict) {
+	if err := manager.Init(r.Context(), cfg); errors.Is(err, ErrConflict) {
 		writeAdminError(w, http.StatusConflict, "organization already exists")
 		return
 	} else if err != nil {

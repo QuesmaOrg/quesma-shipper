@@ -208,7 +208,7 @@ func enrolledServer(t *testing.T) (*Server, *Manager, ed25519.PrivateKey, string
 	t.Helper()
 	manager, _ := testManager(t)
 	identity, _ := age.GenerateX25519Identity()
-	if err := manager.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true}); err != nil {
+	if err := manager.Init(context.Background(), FleetConfig{AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true}); err != nil {
 		t.Fatal(err)
 	}
 	public, private, _ := ed25519.GenerateKey(rand.Reader)
@@ -259,7 +259,7 @@ func signedRequest(method, path string, body []byte, installID string, key ed255
 func TestMultiTenantDeviceAuthenticationUsesOrganizationLocator(t *testing.T) {
 	manager, _ := testMultiTenantManager(t)
 	acme, _ := manager.ForOrganization("acme")
-	if err := acme.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true}); err != nil {
+	if err := acme.Init(context.Background(), FleetConfig{AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true}); err != nil {
 		t.Fatal(err)
 	}
 	public, private, _ := ed25519.GenerateKey(rand.Reader)
@@ -409,7 +409,7 @@ func TestServerConsumesAuthorizationHeaderGoldens(t *testing.T) {
 				manager.now = func() time.Time { return fx.ServerTime }
 			}
 			scoped, _ := manager.ForOrganization(fx.Organization)
-			if err := scoped.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true}); err != nil {
+			if err := scoped.Init(context.Background(), FleetConfig{AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true}); err != nil {
 				t.Fatal(err)
 			}
 			now := manager.time()

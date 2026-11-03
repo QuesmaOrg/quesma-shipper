@@ -37,7 +37,7 @@ func loadSeen(t *testing.T, manager *Manager, installID string) SeenRecord {
 
 func TestEnrollmentRecordsClientFacts(t *testing.T) {
 	manager, _ := testManager(t)
-	if err := manager.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true}); err != nil {
+	if err := manager.Init(context.Background(), FleetConfig{AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true}); err != nil {
 		t.Fatal(err)
 	}
 	installID, body := enrollBody(t, manager)
@@ -58,7 +58,7 @@ func TestEnrollmentRecordsClientFacts(t *testing.T) {
 
 func TestTelemetryTimeoutLeavesEnrollmentRetryable(t *testing.T) {
 	manager, store := testManager(t)
-	if err := manager.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true}); err != nil {
+	if err := manager.Init(context.Background(), FleetConfig{AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true}); err != nil {
 		t.Fatal(err)
 	}
 	installID, body := enrollBody(t, manager)

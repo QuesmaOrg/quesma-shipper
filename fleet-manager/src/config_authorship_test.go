@@ -104,7 +104,7 @@ func TestConfigAuthorshipFailureAndRetry(t *testing.T) {
 				cfg := FleetConfig{AgeRecipients: twoRecipients(t), DisplayName: "Before"}
 				version := ""
 				if operation == "replace" {
-					if err := manager.Init(ctx, configAuthorAdministrator, cfg); err != nil {
+					if err := manager.Init(ctx, cfg); err != nil {
 						t.Fatal(err)
 					}
 					version = configVersion(t, store, "acme")
@@ -114,7 +114,7 @@ func TestConfigAuthorshipFailureAndRetry(t *testing.T) {
 				cfg.DisplayName = "After"
 				write := func() error {
 					if operation == "create" {
-						return manager.Init(ctx, configAuthorAdministrator, cfg)
+						return manager.Init(ctx, cfg)
 					}
 					return manager.ApplyConfig(ctx, configAuthorPartner, cfg, version)
 				}
@@ -147,7 +147,7 @@ func TestConfigAuthorshipFailureAndRetry(t *testing.T) {
 func TestConfigAuthorshipConcurrentReplicas(t *testing.T) {
 	manager, store := testManager(t)
 	ctx := context.Background()
-	if err := manager.Init(ctx, configAuthorAdministrator, FleetConfig{AgeRecipients: twoRecipients(t)}); err != nil {
+	if err := manager.Init(ctx, FleetConfig{AgeRecipients: twoRecipients(t)}); err != nil {
 		t.Fatal(err)
 	}
 	cfg, version, _ := manager.LoadConfig(ctx)
@@ -226,7 +226,7 @@ func TestConfigAuthorshipLegacyAndReadFailures(t *testing.T) {
 func TestConfigAuthorshipIdenticalBytesCannotChangeAuthor(t *testing.T) {
 	manager, store := testManager(t)
 	ctx := context.Background()
-	if err := manager.Init(ctx, configAuthorAdministrator, FleetConfig{AgeRecipients: twoRecipients(t)}); err != nil {
+	if err := manager.Init(ctx, FleetConfig{AgeRecipients: twoRecipients(t)}); err != nil {
 		t.Fatal(err)
 	}
 	cfg, version, _ := manager.LoadConfig(ctx)
