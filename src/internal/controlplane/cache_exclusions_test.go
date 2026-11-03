@@ -3,6 +3,7 @@ package controlplane_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -136,6 +137,9 @@ func TestCacheReductionMatchesProtocolFixtures(t *testing.T) {
 	if string(cache.Document()) != string(full) {
 		t.Fatal("full served bytes changed")
 	}
+	if !slices.Equal(cache.ConfigFullFeatures, []string{protocol.ExcludeAddFeature}) {
+		t.Fatalf("full copy lists %v", cache.ConfigFullFeatures)
+	}
 	var got, want any
 	if err := yaml.Unmarshal(cache.Config, &got); err != nil {
 		t.Fatal(err)
@@ -163,7 +167,7 @@ func TestTwoCopyCacheNeverExceedsOldReaderLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cache.ConfigFull) != 0 {
+	if len(cache.ConfigFull) != 0 || cache.ConfigFullFeatures != nil {
 		t.Fatal("oversized duplicate still persisted")
 	}
 	options.Offline = true
@@ -201,5 +205,47 @@ func TestUnpersistableReductionCannotActivateNewConfig(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatal("failed persistence changed accepted cache")
+	}
+}
+
+func TestCachedFullCopyIsUsedOnlyWhenThisBuildCanEnforceIt(t *testing.T) {
+	const reduced = "config_version: 1\nmax_files_per_run: 7\nsources: [{id: claude-code-transcripts, enabled: false}]\n"
+	const full = "config_version: 1\nmax_files_per_run: 7\nsources: [{id: claude-code-transcripts, exclude_add: ['projects/private/**']}]\n"
+	for _, tc := range []struct {
+		name     string
+		full     string
+		features []string
+		enforced bool
+	}{
+		{"supported", full, []string{protocol.ExcludeAddFeature}, true},
+		{"written without the list", full, nil, true},
+		{"needs an unknown feature", full, []string{protocol.ExcludeAddFeature, "sources.future"}, false},
+		// A stricter validator in a later build refuses a full copy an earlier build accepted.
+		{"rejected by validation", strings.Replace(full, "projects/private", "projects//private", 1), []string{protocol.ExcludeAddFeature}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			raw, err := json.Marshal(controlplane.Cached{CacheSchema: 3, Config: []byte(reduced), ConfigFull: []byte(tc.full), ConfigFullFeatures: tc.features, FetchedAt: time.Now()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, controlplane.CacheFile), raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			got := controlplane.Refresh(context.Background(), controlplane.RefreshOptions{
+				Enrollment: &controlplane.Enrollment{Endpoint: "https://fleet.invalid"}, StateDir: dir, Now: time.Now(), Offline: true,
+				Validate: func(doc *config.Document) (*config.Effective, error) { return resolveExclusionCache(t, doc) },
+			})
+			if got.Origin != controlplane.OriginCached || got.Doc.MaxFilesPerRun == nil || *got.Doc.MaxFilesPerRun != 7 {
+				t.Fatalf("remote layer lost: %+v", got)
+			}
+			source := exclusionCacheSource(t, got.Effective)
+			if source.Enabled != tc.enforced || tc.enforced && !slices.Contains(source.Exclude, "projects/private/**") {
+				t.Fatalf("source %+v, want full copy enforced: %v", source, tc.enforced)
+			}
+			if rejected := errors.Is(got.Err, controlplane.ErrConfigRejected); rejected != (tc.name == "rejected by validation") {
+				t.Fatalf("rejection reported %v: %v", rejected, got.Err)
+			}
+		})
 	}
 }

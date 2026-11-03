@@ -303,13 +303,20 @@ installs have not reported the feature; the service logs each changed pause deci
 install per replica.
 
 A supporting shipper keeps cache schema 3 and `remote-config.json`. `config` contains the reduced
-document; `config_full`, when needed, contains the original document. Supporting readers prefer
-`config_full`, then fall back to `config`. Older readers ignore `config_full` and keep the source
-off, even offline after a downgrade. An older writer drops `config_full`; a re-upgraded reader
-therefore keeps the source off until its next successful fetch. If both copies exceed the older
-reader's 4 MiB cache limit, only the reduced copy is saved. The current successful fetch still
-uses the full document; an offline run safely pauses the affected source. A candidate whose reduced
-copy also exceeds the cache limit is rejected before activation, preserving the last accepted cache.
+document; `config_full`, when needed, contains the original document, and `config_full_features`
+lists the features a reader must support to use it, `["sources.exclude_add"]` today. `config` is
+reduced for every listed feature. A reader uses `config_full` only when it supports every listed
+feature, and otherwise `config`; a `config_full` without the list needs `sources.exclude_add`. A
+later feature that reduces the document lists itself there too, so a build without it reads
+`config` even offline. A reader that rejects `config_full`, for example under a stricter validator,
+resolves `config` before it falls back to local configuration only, and reports the rejection.
+
+Older readers ignore `config_full` and keep the source off, even offline after a downgrade. An
+older writer drops `config_full`; a re-upgraded reader therefore keeps the source off until its
+next successful fetch. If both copies exceed the older reader's 4 MiB cache limit, only the reduced
+copy is saved. The current successful fetch still uses the full document; an offline run safely
+pauses the affected source. A candidate whose reduced copy also exceeds the cache limit is rejected
+before activation, preserving the last accepted cache.
 
 Paused sources keep their local files and upload progress. Files still present when the source
 is enabled again are discovered normally; files deleted by their producer during the pause

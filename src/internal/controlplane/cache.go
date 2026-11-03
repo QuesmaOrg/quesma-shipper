@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"time"
 
+	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 	"gopkg.in/yaml.v3"
@@ -27,6 +29,9 @@ type Cached struct {
 	Config     []byte `json:"config"`
 	ConfigFull []byte `json:"config_full,omitempty"`
 
+	// ConfigFullFeatures is what a reader must support before it may use ConfigFull.
+	ConfigFullFeatures []string `json:"config_full_features,omitempty"`
+
 	FetchedAt time.Time `json:"fetched_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
@@ -39,9 +44,9 @@ func SaveCache(stateDir string, c Cached) error {
 	if err != nil {
 		return err
 	}
-	c.Config, c.ConfigFull = reduced, nil
+	c.Config, c.ConfigFull, c.ConfigFullFeatures = reduced, nil, nil
 	if changed {
-		c.ConfigFull = full
+		c.ConfigFull, c.ConfigFullFeatures = full, []string{protocol.ExcludeAddFeature}
 	}
 	encoded, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -49,7 +54,7 @@ func SaveCache(stateDir string, c Cached) error {
 	}
 	// An older reader's size limit must still admit the cache after a downgrade.
 	if len(encoded)+1 > maxResponseBytes {
-		c.ConfigFull = nil
+		c.ConfigFull, c.ConfigFullFeatures = nil, nil
 		encoded, err = json.MarshalIndent(c, "", "  ")
 		if err != nil {
 			return err
@@ -85,9 +90,15 @@ func (c Cached) Expired(now time.Time) bool {
 	return !c.ExpiresAt.IsZero() && now.After(c.ExpiresAt)
 }
 
-// Document selects the full layer when this client knows how to enforce it.
+// Document selects the full layer when this client supports every feature it needs.
 func (c Cached) Document() []byte {
-	if len(c.ConfigFull) > 0 {
+	needs := c.ConfigFullFeatures
+	if needs == nil {
+		// A full copy without the list predates it, from builds whose only reduced feature was exclude_add.
+		needs = []string{protocol.ExcludeAddFeature}
+	}
+	unsupported := func(feature string) bool { return !slices.Contains(config.Features, feature) }
+	if len(c.ConfigFull) > 0 && !slices.ContainsFunc(needs, unsupported) {
 		return c.ConfigFull
 	}
 	return c.Config
