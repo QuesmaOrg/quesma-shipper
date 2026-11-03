@@ -19,7 +19,7 @@
       "items": { "type": "integer", "minimum": 1 }
     },
     "catalog": {
-      "description": "The build's compiled source catalog: what this install can collect, and which served-document features it reads. Optional: a client that omits it is served as before. Root templates are reported as compiled ($CLAUDE_CONFIG_DIR, ~/.claude), never expanded, so the catalog says nothing about the machine, its user, or its files. Sent on every config fetch.",
+      "description": "The build's compiled source catalog: what this install can collect, and which served-document features it reads. Optional: a client that omits it is served as before, except that a source carrying exclude_add is served disabled, without it. Root templates are reported as compiled ($CLAUDE_CONFIG_DIR, ~/.claude), never expanded, so the catalog says nothing about the machine, its user, or its files. Sent on every config fetch.",
       "$ref": "#/$defs/catalog"
     }
   },
@@ -40,7 +40,7 @@
           "$ref": "#/$defs/names"
         },
         "features": {
-          "description": "Served-document features this build reads beyond the config_version it accepts, by name. None is defined yet; a later field can then be served only to builds that list it.",
+          "description": "Served-document features this build reads beyond the config_version it accepts, by name, so a field can be served only to builds that list it. sources.exclude_add: the build applies sources[].exclude_add; a build that does not list it is served each source carrying additions disabled, without them.",
           "$ref": "#/$defs/names"
         }
       }

@@ -318,9 +318,11 @@ copy is saved. The current successful fetch still uses the full document; an off
 pauses the affected source. A candidate whose reduced copy also exceeds the cache limit is rejected
 before activation, preserving the last accepted cache.
 
-Paused sources keep their local files and upload progress. Files still present when the source
-is enabled again are discovered normally; files deleted by their producer during the pause
-cannot be recovered.
+A paused source's local files are kept. On resume the source's local record resets, as for any
+exclusion change: files still present are read again, and the archive's `already_present` answer
+keeps those it already holds from being uploaded twice. The same happens on every supporting
+install the first time an organization adds or edits an addition. Files deleted by their producer
+during the pause cannot be recovered.
 
 Fleet Manager replicas must all upgrade before the first write containing additions. Its stored
 collection decoder is strict, so rolling back requires removing additions with the new version
