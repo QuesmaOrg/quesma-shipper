@@ -1,8 +1,6 @@
 package main
 
 import (
-	"io/fs"
-	"path"
 	"bytes"
 	"context"
 	"crypto/ed25519"
@@ -10,16 +8,18 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
-	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 	"filippo.io/age"
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
