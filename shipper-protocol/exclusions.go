@@ -10,18 +10,19 @@ import (
 
 const ExcludeAddFeature = "sources.exclude_add"
 
-// ValidateExcludeAdd requires portable globs relative to a source's resolved root.
+// ValidateExcludeAdd requires portable globs relative to a source's resolved root; a shape that
+// can never match a relative path, such as ~/... or a//b, is refused rather than saved.
 func ValidateExcludeAdd(pattern string) error {
 	if strings.ContainsRune(pattern, '\\') {
 		return fmt.Errorf("exclude_add must use forward slashes (/), not backslashes")
 	}
-	if pattern == "" || strings.HasPrefix(pattern, "/") ||
+	if pattern == "" || strings.ContainsAny(pattern[:1], "/~$") ||
 		(len(pattern) >= 2 && pattern[1] == ':') || strings.ContainsRune(pattern, 0) {
-		return fmt.Errorf("exclude_add must be a non-empty relative glob")
+		return fmt.Errorf("exclude_add must be a non-empty glob relative to the source root")
 	}
 	for _, part := range strings.Split(pattern, "/") {
-		if part == ".." {
-			return fmt.Errorf("exclude_add must not contain ..")
+		if part == "" || part == "." || part == ".." {
+			return fmt.Errorf("exclude_add must not contain empty, . or .. path segments")
 		}
 	}
 	if !doublestar.ValidatePattern(pattern) {

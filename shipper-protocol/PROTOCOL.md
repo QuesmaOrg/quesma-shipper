@@ -278,10 +278,11 @@ are disabled as specified below.
 
 ## Additive source exclusions
 
-`sources[].exclude_add` is a list of non-empty, relative doublestar globs. Absolute paths,
-parent-directory (`..`) segments, backslashes, and invalid glob syntax are refused. Use `/` as the
-path separator on every platform. Globs are matched against
-the path relative to the source's resolved root, like `exclude`. Any layer may add them:
+`sources[].exclude_add` is a list of non-empty, relative doublestar globs. Absolute paths, a
+leading `~` or `$`, empty, `.` or `..` segments (`a//b`, `./a`, a trailing `/`), backslashes, and
+invalid glob syntax are refused. Use `/` as the path separator on every platform. Globs are matched
+against the path relative to the source's resolved root, like `exclude`: `projects/<folder>/**`,
+not `~/.claude/projects/<folder>/**`. Any layer may add them:
 
 ```
 effective exclusions = (remote exclude ?? local exclude ?? catalog exclude)

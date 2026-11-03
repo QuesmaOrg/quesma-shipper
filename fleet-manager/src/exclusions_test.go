@@ -86,7 +86,8 @@ func TestFleetReductionMatchesProtocolFixtures(t *testing.T) {
 func TestInvalidAdditiveExclusionsCannotChangeStoredCollection(t *testing.T) {
 	server, store := testAdminServer(t)
 	before, version, _ := store.Get(context.Background(), configKey("acme"))
-	for _, pattern := range []string{"", "/private/**", "projects/../private/**", "projects/[", `C:\private\**`, `projects\private\**`, `projects/private\**`, `projects\private/**`} {
+	for _, pattern := range []string{"", "/private/**", "projects/../private/**", "projects/[", `C:\private\**`, `projects\private\**`, `projects/private\**`, `projects\private/**`,
+		"projects//private/**", "projects/private/", "./projects/private/**", "~/.claude/projects/private/**", "$CLAUDE_CONFIG_DIR/projects/**"} {
 		body, _ := json.Marshal(map[string]any{"sources": []map[string]any{{"id": "claude-code-transcripts", "exclude_add": []string{pattern}}}})
 		w := putCollectionAcknowledging(t, server, twoRecipients(t), string(body), "claude-code-transcripts")
 		if w.Code != http.StatusBadRequest {

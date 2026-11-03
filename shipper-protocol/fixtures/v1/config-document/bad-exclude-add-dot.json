@@ -1,0 +1,10 @@
+{
+  "sources": [
+    {
+      "id": "claude-code-transcripts",
+      "exclude_add": [
+        "./projects/private/**"
+      ]
+    }
+  ]
+}

@@ -59,7 +59,7 @@ function addCollectionSource(form, source = {}) {
   const row = document.createElement('fieldset');
   row._source = structuredClone(source);
   row.dataset.collectionSource = '';
-  row.innerHTML = '<legend>Source override</legend><div data-source-field></div><label>Collection<select data-source-enabled><option value="">Use default</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label><label>Additional exclusions (one per line)<textarea data-source-exclude-add></textarea></label><div data-exclusion-notes></div>' +
+  row.innerHTML = '<legend>Source override</legend><div data-source-field></div><label>Collection<select data-source-enabled><option value="">Use default</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label><label>Additional exclusions (one per line)<textarea data-source-exclude-add placeholder="relative to the source root, e.g. projects/&lt;folder&gt;/**"></textarea></label><div data-exclusion-notes></div>' +
     (source.exclude?.length ? '<details><summary>Existing replacement exclusions</summary><label>Replacement exclusions (one per line)<textarea data-source-exclude></textarea></label></details>' : '') +
     '<button type="button" data-remove-source class="quiet">Remove override</button>';
   const exclusionSupport = sourceNote('', true);

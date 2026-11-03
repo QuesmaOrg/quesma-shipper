@@ -43,12 +43,14 @@ func TestAdditiveExclusionReductionFixtures(t *testing.T) {
 }
 
 func TestValidateExcludeAdd(t *testing.T) {
-	for _, glob := range []string{"projects/**", "**/*.{png,pdf}", "a/[bc]?.jsonl", "private folder/**"} {
+	for _, glob := range []string{"projects/**", "**/*.{png,pdf}", "a/[bc]?.jsonl", "private folder/**", "**/~$*.docx", ".hidden/**"} {
 		if err := protocol.ValidateExcludeAdd(glob); err != nil {
 			t.Errorf("%q: %v", glob, err)
 		}
 	}
-	for _, glob := range []string{"", "/absolute", `\\server\share`, `C:\private`, "../private", "a/../b", `a\..\b`, "[", "a\\", "a\x00b", `projects\private\**`, `projects/private\**`, `projects\private/**`} {
+	for _, glob := range []string{"", "/absolute", `\\server\share`, `C:\private`, "../private", "a/../b", `a\..\b`, "[", "a\\", "a\x00b", `projects\private\**`, `projects/private\**`, `projects\private/**`,
+		"projects//private/**", "projects/private/", "./projects/private/**", "projects/./private/**", ".", "..",
+		"~/.claude/projects/private/**", "~", "$CLAUDE_CONFIG_DIR/projects/**", "$HOME"} {
 		if err := protocol.ValidateExcludeAdd(glob); err == nil {
 			t.Errorf("accepted %q", glob)
 		}

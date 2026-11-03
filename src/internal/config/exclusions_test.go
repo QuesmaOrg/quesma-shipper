@@ -74,14 +74,15 @@ func TestAdditionsSurviveRemoteEnableOverLocalDisable(t *testing.T) {
 	}
 }
 
-func TestAdditiveExclusionsRejectBackslashesLocallyAndRemotely(t *testing.T) {
+func TestAdditiveExclusionsRejectUnmatchableGlobsLocallyAndRemotely(t *testing.T) {
 	for _, layer := range []config.Layer{config.LayerUser, config.LayerRemote} {
-		for _, pattern := range []string{`projects\private\**`, `projects/private\**`, `projects\private/**`} {
+		for _, pattern := range []string{`projects\private\**`, `projects/private\**`, `projects\private/**`,
+			"projects//private/**", "projects/private/", "./projects/private/**", "~/.claude/projects/private/**", "$CLAUDE_CONFIG_DIR/projects/**"} {
 			_, err := resolveLayers(t, config.LayeredDocument{
 				Layer: layer,
 				Doc:   doc(t, "sources: [{id: claude-code-transcripts, exclude_add: ['"+pattern+"']}]"),
 			})
-			mustReject(t, err, "backslash in additive exclusion")
+			mustReject(t, err, "unmatchable additive exclusion "+pattern)
 		}
 	}
 }
