@@ -29,8 +29,8 @@ variable "image_uri" {
 #
 # It grants read, and read is not the same as decrypt. Every object is sealed to the
 # organization's age recipients, and the reader can open them only because the organization keeps
-# Quesma's built-in recipient -- the `allow_quesma_etl` setting, which is off unless the organization
-# or `default_allow_quesma_etl` below turns it on, and separately revocable -- or because
+# Quesma's built-in recipient -- the `allow_quesma_etl` setting, which follows
+# `default_allow_quesma_etl` below unless the organization states it, and separately revocable -- or because
 # analytics_decrypt_role_arns below grants it the organization's analytics identity. Removing the
 # recipient or the decrypt grant stops the decryption; emptying this list stops the reading.
 #
@@ -48,7 +48,7 @@ variable "etl_reader_role_arns" {
 # Quesma's recipient stays on by default here, so a deployment upgraded with the new template keeps
 # what it had; deploy.sh states false for a deployment it creates. False turns it off for every
 # organization that did not choose; history uploaded while it was off can be opened for Quesma later
-# by a custodian resealing it (quesma-unseal reseal). Telemetry is off unless a collector is named.
+# by a custodian resealing it with quesma-unseal. Telemetry is off unless a collector is named.
 variable "default_allow_quesma_etl" {
   type        = bool
   default     = true
