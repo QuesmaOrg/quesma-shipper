@@ -119,7 +119,9 @@ on each machine.
    For another platform, swap `darwin-arm64` for `darwin-amd64`, `linux-amd64`, `linux-arm64`,
    `windows-amd64.exe` or `windows-arm64.exe`, in both places. The binary becomes executable only
    once its hash matches the one on the GitHub release, a source apart from the download server; while
-   a release is being published the two may differ, so download both again. The macOS and Windows
+   a release is being published the two may differ, so download both again. On Linux without
+   `shasum`, `sha256sum -c` takes the same input. On Windows, compare `(Get-FileHash <file>).Hash`
+   with the file's line in `quesma-unseal-SHA256SUMS`. The macOS and Windows
    builds are signed, and the macOS ones notarized: on macOS,
    `codesign --verify --strict -R='anchor apple generic and certificate leaf[subject.OU] = "66ZNG89HN6"' "$W/quesma-unseal"`
    also checks it is Quesma's. Each shipper release carries its own `quesma-unseal`
