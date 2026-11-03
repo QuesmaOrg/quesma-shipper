@@ -25,6 +25,7 @@ func ValidateConfigDocument(rawJSON []byte) error {
 }
 
 // Keep authoring assets out of binaries that only use runtime exclusion helpers.
+// Not sync.OnceValues: set at package level it links this compiler and FS into the shipper (~100 KB).
 var configSchemaOnce sync.Once
 var configSchema *jsonschema.Schema
 var configSchemaErr error

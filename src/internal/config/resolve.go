@@ -388,14 +388,9 @@ func applySourceOverrides(eff *Effective, overrides map[string][]layeredOverride
 
 		if len(additions) > 0 {
 			src.Exclude = slices.Clone(src.Exclude)
-			existing := make(map[string]bool, len(src.Exclude))
-			for _, pattern := range src.Exclude {
-				existing[pattern] = true
-			}
 			for _, pattern := range additions {
-				if !existing[pattern] {
+				if !slices.Contains(src.Exclude, pattern) {
 					src.Exclude = append(src.Exclude, pattern)
-					existing[pattern] = true
 				}
 			}
 		}

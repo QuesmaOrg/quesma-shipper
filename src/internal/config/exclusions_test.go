@@ -12,13 +12,18 @@ import (
 func TestSourceAdditionsFollowAllReplacementLayers(t *testing.T) {
 	const id = "claude-code-transcripts"
 	compiled, _ := loadCatalog(t).Source(id)
+	files := []string{"projects/public/session.jsonl", "projects/private/session.jsonl", "projects/local/session.jsonl", "projects/local-added/session.jsonl", "projects/remote/session.jsonl", "projects/demo/tool-results/image.png"}
 	for _, tc := range []struct {
 		name, local, remote string
 		want                []string
+		excluded            []string
 	}{
-		{"catalog", "", "exclude_add: ['projects/private/**']", append(slices.Clone(compiled.Exclude), "projects/private/**")},
-		{"local replacement", "exclude: ['projects/local/**']", "exclude_add: ['projects/private/**']", []string{"projects/local/**", "projects/private/**"}},
-		{"every layer adds", "exclude: ['projects/local/**'], exclude_add: ['projects/local-added/**']", "exclude: ['projects/remote/**'], exclude_add: ['projects/private/**', 'projects/local-added/**']", []string{"projects/remote/**", "projects/local-added/**", "projects/private/**"}},
+		{"catalog", "", "exclude_add: ['projects/private/**']", append(slices.Clone(compiled.Exclude), "projects/private/**"),
+			[]string{"projects/private/session.jsonl", "projects/demo/tool-results/image.png"}},
+		{"local replacement", "exclude: ['projects/local/**']", "exclude_add: ['projects/private/**']", []string{"projects/local/**", "projects/private/**"},
+			[]string{"projects/private/session.jsonl", "projects/local/session.jsonl"}},
+		{"every layer adds", "exclude: ['projects/local/**'], exclude_add: ['projects/local-added/**']", "exclude: ['projects/remote/**'], exclude_add: ['projects/private/**', 'projects/local-added/**']", []string{"projects/remote/**", "projects/local-added/**", "projects/private/**"},
+			[]string{"projects/private/session.jsonl", "projects/local-added/session.jsonl", "projects/remote/session.jsonl"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var layers []config.LayeredDocument
@@ -34,18 +39,16 @@ func TestSourceAdditionsFollowAllReplacementLayers(t *testing.T) {
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("exclusions %v, want %v", got, tc.want)
 			}
-			for _, file := range []string{"projects/public/session.jsonl", "projects/private/session.jsonl", "projects/local/session.jsonl", "projects/local-added/session.jsonl", "projects/remote/session.jsonl", "projects/demo/tool-results/image.png"} {
-				matches := func(patterns []string) bool {
-					return slices.ContainsFunc(patterns, func(pattern string) bool {
-						ok, err := doublestar.Match(pattern, file)
-						if err != nil {
-							t.Fatal(err)
-						}
-						return ok
-					})
-				}
-				if matches(got) != matches(tc.want) {
-					t.Errorf("exclusion differs for %q", file)
+			for _, file := range files {
+				matched := slices.ContainsFunc(got, func(pattern string) bool {
+					ok, err := doublestar.Match(pattern, file)
+					if err != nil {
+						t.Fatal(err)
+					}
+					return ok
+				})
+				if matched != slices.Contains(tc.excluded, file) {
+					t.Errorf("%q excluded: %v", file, matched)
 				}
 			}
 		})
