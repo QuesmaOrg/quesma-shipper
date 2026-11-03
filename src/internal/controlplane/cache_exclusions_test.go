@@ -152,6 +152,41 @@ func TestCacheReductionMatchesProtocolFixtures(t *testing.T) {
 	}
 }
 
+func TestCacheListsTheFeaturesTheReducerRemoved(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		config   string
+		features []string
+	}{
+		{"additions", "config_version: 1\nsources: [{id: claude-code-transcripts, exclude_add: ['projects/private/**']}]\n", []string{"sources.exclude_add"}},
+		{"nothing to reduce", "config_version: 1\nsources: [{id: claude-code-transcripts, exclude: ['projects/private/**']}]\n", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := controlplane.SaveCache(dir, controlplane.Cached{Config: []byte(tc.config)}); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(filepath.Join(dir, controlplane.CacheFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var cache controlplane.Cached
+			if err := json.Unmarshal(raw, &cache); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(cache.ConfigFullFeatures, tc.features) {
+				t.Fatalf("config_full_features %v, want %v", cache.ConfigFullFeatures, tc.features)
+			}
+			if hasFull := strings.Contains(string(raw), `"config_full"`); hasFull != (tc.features != nil) {
+				t.Fatalf("config_full written: %v\n%s", hasFull, raw)
+			}
+			if tc.features != nil && string(cache.ConfigFull) != tc.config {
+				t.Fatalf("full copy %q", cache.ConfigFull)
+			}
+		})
+	}
+}
+
 func TestTwoCopyCacheNeverExceedsOldReaderLimit(t *testing.T) {
 	p := newPlane(t)
 	p.config = "config_version: 1\nsources: [{id: claude-code-transcripts, exclude_add: ['projects/private/**']}]\nfuture: " + strings.Repeat("x", 2<<20) + "\n"

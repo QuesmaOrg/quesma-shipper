@@ -40,13 +40,13 @@ type Cached struct {
 func SaveCache(stateDir string, c Cached) error {
 	c.CacheSchema = cacheSchema
 	full := c.Document()
-	reduced, changed, err := reduceCachedConfig(full)
+	reduced, features, err := reduceCachedConfig(full)
 	if err != nil {
 		return err
 	}
 	c.Config, c.ConfigFull, c.ConfigFullFeatures = reduced, nil, nil
-	if changed {
-		c.ConfigFull, c.ConfigFullFeatures = full, []string{protocol.ExcludeAddFeature}
+	if len(features) > 0 {
+		c.ConfigFull, c.ConfigFullFeatures = full, features
 	}
 	encoded, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -104,12 +104,12 @@ func (c Cached) Document() []byte {
 	return c.Config
 }
 
-func reduceCachedConfig(raw []byte) ([]byte, bool, error) {
+// reduceCachedConfig rewrites what an older reader cannot enforce and names each feature it rewrote.
+func reduceCachedConfig(raw []byte) (reduced []byte, features []string, err error) {
 	var doc map[string]any
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return nil, false, err
+		return nil, nil, err
 	}
-	changed := false
 	sources, _ := doc["sources"].([]any)
 	var records []map[string]any
 	var scopes []protocol.SourceExclusions
@@ -119,21 +119,21 @@ func reduceCachedConfig(raw []byte) ([]byte, bool, error) {
 			continue
 		}
 		if _, exists := source["exclude_add"]; exists {
-			changed = true
+			features = []string{protocol.ExcludeAddFeature}
 		}
 		records = append(records, source)
 	}
-	if !changed {
-		return raw, false, nil
+	if len(features) == 0 {
+		return raw, nil, nil
 	}
 	for _, source := range records {
 		encoded, err := yaml.Marshal(source)
 		if err != nil {
-			return nil, false, err
+			return nil, nil, err
 		}
 		var scope protocol.SourceExclusions
 		if err := yaml.Unmarshal(encoded, &scope); err != nil {
-			return nil, false, err
+			return nil, nil, err
 		}
 		scopes = append(scopes, scope)
 	}
@@ -143,6 +143,6 @@ func reduceCachedConfig(raw []byte) ([]byte, bool, error) {
 			records[i]["enabled"] = *scope.Enabled
 		}
 	}
-	reduced, err := yaml.Marshal(doc)
-	return reduced, true, err
+	reduced, err = yaml.Marshal(doc)
+	return reduced, features, err
 }
