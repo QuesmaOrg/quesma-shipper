@@ -57,7 +57,9 @@ https://updates.quesma.dev/download/quesma-unseal-windows-arm64.exe
 ```
 
 The `quesma-unseal` entries are a custodian's tool, released beside the shipper; they need the
-Worker routes below, added once.
+Worker routes below, added once. A custodian gives it a private key, so the GitHub release also
+carries `quesma-unseal-SHA256SUMS`, the hashes of the six binaries, for a check that does not rest on
+this Worker (README step 6).
 
 Each endpoint resolves `timestamp.json`, the referenced snapshot and targets metadata, and
 `release.json`, then returns a temporary redirect to the current hash-addressed target. The Worker

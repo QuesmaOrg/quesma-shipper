@@ -517,6 +517,14 @@ func TestUsageErrors(t *testing.T) {
 	}
 }
 
+// The form before the commands, `quesma-unseal -i K ENC PLAIN`, says where its flags went.
+func TestOldFormNamesTheCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"-i", "k.agekey", "enc", "plain"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "quesma-unseal open -i ...") {
+		t.Errorf("exit %d, stderr %q; want a hint naming open", code, stderr.String())
+	}
+}
+
 func TestNativeRelPath(t *testing.T) {
 	orig := windowsNames
 	t.Cleanup(func() { windowsNames = orig })

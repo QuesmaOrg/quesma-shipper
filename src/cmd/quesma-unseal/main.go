@@ -82,6 +82,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "":
 		fmt.Fprintln(stderr, usage)
 	default:
+		// Before the commands, the flags came first; scripts copied from that form still exist.
+		if strings.HasPrefix(cmd, "-") {
+			fmt.Fprintf(stderr, "quesma-unseal: the flags follow a command now: quesma-unseal open %s ..., and -reseal-to R is reseal -to R\n%s\n", cmd, usage)
+			return 2
+		}
 		fmt.Fprintf(stderr, "quesma-unseal: unknown command %q\n%s\n", cmd, usage)
 	}
 	return 2

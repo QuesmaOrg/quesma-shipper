@@ -471,17 +471,25 @@ jobs:
           RELEASE_VERSION: ${{ needs.version.outputs.value }}
         run: python3 scripts/homebrew-cask.py "$RELEASE_VERSION" artifacts > quesma-shipper.rb
 
+      # A custodian hands quesma-unseal a private key, so its hashes are also published here, on
+      # GitHub: a second source beside the download Worker (README step 6).
+      - name: Hash the quesma-unseal binaries
+        run: |
+          (cd artifacts && sha256sum quesma-unseal-darwin-amd64 quesma-unseal-darwin-arm64 \
+            quesma-unseal-linux-amd64 quesma-unseal-linux-arm64 \
+            quesma-unseal-windows-amd64.exe quesma-unseal-windows-arm64.exe) > quesma-unseal-SHA256SUMS
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.version.outputs.value }}
         run: |
           if gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_VERSION" quesma-shipper.rb --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$RELEASE_VERSION" quesma-shipper.rb quesma-unseal-SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
             exit 0
           fi
 
-          gh release create "$RELEASE_VERSION" quesma-shipper.rb \
+          gh release create "$RELEASE_VERSION" quesma-shipper.rb quesma-unseal-SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" \
             --title "Quesma Shipper $RELEASE_VERSION" \
             --notes-file - <<EOF

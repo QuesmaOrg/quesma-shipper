@@ -109,14 +109,20 @@ on each machine.
    B=$(sh fleet-manager/deploy.sh aws output bucket)
    W=~/quesma-acme   # holds name.agekey, quesma-unseal, enc/ and plain/
    curl -fsSL -o "$W/quesma-unseal" https://updates.quesma.dev/download/quesma-unseal-darwin-arm64
-   chmod +x "$W/quesma-unseal"
+   curl -fsSL https://github.com/QuesmaOrg/quesma-shipper/releases/latest/download/quesma-unseal-SHA256SUMS |
+     awk '$2 == "quesma-unseal-darwin-arm64" { print $1 "  quesma-unseal" }' |
+     (cd "$W" && shasum -a 256 -c) && chmod +x "$W/quesma-unseal"
    rclone copy "aws:$B/v1/organization=acme" "$W/enc" --include 'install=*/**'
    "$W/quesma-unseal" open -i "$W/name.agekey" "$W/enc" "$W/plain"
    ```
 
    For another platform, swap `darwin-arm64` for `darwin-amd64`, `linux-amd64`, `linux-arm64`,
-   `windows-amd64.exe` or `windows-arm64.exe`. The macOS and Windows builds are signed, and the
-   macOS ones notarized. Each shipper release carries its own `quesma-unseal`
+   `windows-amd64.exe` or `windows-arm64.exe`, in both places. The binary becomes executable only
+   once its hash matches the one on the GitHub release, a source apart from the download server; while
+   a release is being published the two may differ, so download both again. The macOS and Windows
+   builds are signed, and the macOS ones notarized: on macOS,
+   `codesign --verify --strict -R='anchor apple generic and certificate leaf[subject.OU] = "66ZNG89HN6"' "$W/quesma-unseal"`
+   also checks it is Quesma's. Each shipper release carries its own `quesma-unseal`
    (`quesma-unseal version` names it), and an older one may refuse objects from newer shippers, so
    download it again after the shipper updates. From an up-to-date clone,
    `(cd src && go run ./cmd/quesma-unseal open …)` does the same without the download.
