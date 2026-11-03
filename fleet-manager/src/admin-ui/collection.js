@@ -59,7 +59,7 @@ function addCollectionSource(form, source = {}) {
   const row = document.createElement('fieldset');
   row._source = structuredClone(source);
   row.dataset.collectionSource = '';
-  row.innerHTML = '<legend>Source override</legend><div data-source-field></div><label>Collection<select data-source-enabled><option value="">Use default</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label><label>Additional exclusions (one per line)<textarea data-source-exclude></textarea></label><button type="button" data-remove-source class="quiet">Remove override</button>';
+  row.innerHTML = '<legend>Source override</legend><div data-source-field></div><label>Collection<select data-source-enabled><option value="">Use default</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label><label>Replacement exclusions (one per line)<textarea data-source-exclude></textarea></label><p class="source-note source-warning">A non-empty list replaces the catalog’s exclusions and each machine owner’s local exclusions, including any that keep binary attachments out. It does not add to them. Leave this blank to keep those exclusions.</p><button type="button" data-remove-source class="quiet">Remove override</button>';
   const catalog = form._catalog;
   const field = row.querySelector('[data-source-field]');
   if (source.id) {
