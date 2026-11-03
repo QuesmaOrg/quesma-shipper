@@ -32,6 +32,7 @@ main() {
 	build_binary "$MODULE" "$WORK" "$RELEASE_VERSION"
 	cp "$WORK/quesma-shipper-arm64" "$OUT/quesma-shipper-darwin-arm64"
 	cp "$WORK/quesma-shipper-amd64" "$OUT/quesma-shipper-darwin-amd64"
+	build_unseal "$MODULE" "$OUT" "$RELEASE_VERSION"
 	/usr/bin/lipo -create "$WORK/quesma-shipper-arm64" "$WORK/quesma-shipper-amd64" \
 		-output "$APP/Contents/MacOS/quesma-shipper"
 	/usr/bin/lipo "$APP/Contents/MacOS/quesma-shipper" -verify_arch arm64 x86_64
@@ -41,9 +42,11 @@ main() {
 	esac
 
 	fill_bundle "$APP"
-	/usr/bin/xattr -cr "$WORK/payload" "$OUT/quesma-shipper-darwin-arm64" "$OUT/quesma-shipper-darwin-amd64"
+	/usr/bin/xattr -cr "$WORK/payload" "$OUT/quesma-shipper-darwin-arm64" "$OUT/quesma-shipper-darwin-amd64" \
+		"$OUT/quesma-unseal-darwin-arm64" "$OUT/quesma-unseal-darwin-amd64"
 	if [ -n "$APPLICATION_IDENTITY" ]; then
 		sign_code "$APPLICATION_IDENTITY" "$APP" "$OUT/quesma-shipper-darwin-arm64" "$OUT/quesma-shipper-darwin-amd64"
+		sign_cli "$APPLICATION_IDENTITY" com.quesma.unseal "$OUT/quesma-unseal-darwin-arm64" "$OUT/quesma-unseal-darwin-amd64"
 	fi
 	mkdir "$WORK/scripts"
 	cp "$HERE/scripts/preinstall" "$HERE/scripts/postinstall" "$WORK/scripts"
@@ -95,6 +98,29 @@ sign_code() {
 	done
 	/usr/bin/codesign --force --options runtime --timestamp --sign "$identity" "$app"
 	/usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
+}
+
+# The custodian's tool ships beside the package, signed and notarized with it, not inside it.
+sign_cli() {
+	identity=$1 identifier=$2
+	shift 2
+	for binary in "$@"; do
+		/usr/bin/codesign --force --options runtime --timestamp --identifier "$identifier" --sign "$identity" "$binary"
+		/usr/bin/codesign --verify --strict --verbose=2 "$binary"
+	done
+}
+
+build_unseal() {
+	module=$1 out=$(CDPATH= cd -- "$2" && pwd) version=$3
+	for arch in arm64 amd64; do
+		printf 'building quesma-unseal darwin/%s\n' "$arch"
+		(cd "$module" && CGO_ENABLED=0 GOOS=darwin GOARCH=$arch \
+			go build -trimpath -ldflags "-X main.releaseVersion=$version -s -w" -o "$out/quesma-unseal-darwin-$arch" ./cmd/quesma-unseal)
+	done
+	case $("$out/quesma-unseal-darwin-$(uname -m | sed 's/x86_64/amd64/')" version) in
+	"quesma-unseal $version") ;;
+	*) die "quesma-unseal did not corroborate release version $version" ;;
+	esac
 }
 
 build_binary() {

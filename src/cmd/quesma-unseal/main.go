@@ -1,8 +1,8 @@
-// Command quesma-unseal decrypts a bucket archive copied locally by rclone into a readable tree,
-// PLAIN_DIR/<install>/<source_id>/<native_path> plus a .manifest.json sidecar per object, or with
-// -reseal-to writes each object resealed to one more recipient under its own key, for rclone to
-// upload. The archive is written by developer machines and untrusted, so every write is confined by
-// os.Root.
+// Command quesma-unseal is a custodian's tool for a bucket archive copied locally by rclone: open
+// decrypts it into a readable tree, PLAIN_DIR/<install>/<source_id>/<native_path> plus a
+// .manifest.json sidecar per object, and reseal writes each object sealed to one more recipient
+// under its own key, for rclone to upload. The archive is written by developer machines and
+// untrusted, so every write is confined by os.Root.
 package main
 
 import (
@@ -28,11 +28,18 @@ import (
 	"filippo.io/age"
 	"golang.org/x/text/unicode/norm"
 
+	"github.com/QuesmaOrg/quesma-shipper/internal/legal"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
-const usage = `usage: quesma-unseal -i IDENTITY_FILE [-i IDENTITY_FILE]... ENC_DIR PLAIN_DIR
-       quesma-unseal -i IDENTITY_FILE [-i IDENTITY_FILE]... -reseal-to RECIPIENT [-reseal-to RECIPIENT]... ENC_DIR OUT_DIR`
+const usage = `usage: quesma-unseal open -i IDENTITY_FILE [-i IDENTITY_FILE]... ENC_DIR PLAIN_DIR
+       quesma-unseal reseal -i IDENTITY_FILE [-i IDENTITY_FILE]... -to RECIPIENT [-to RECIPIENT]... ENC_DIR OUT_DIR
+       quesma-unseal version
+       quesma-unseal licenses`
+
+// releaseVersion is the release this binary was built for (-X main.releaseVersion): objects from a
+// newer shipper may carry a manifest version it refuses.
+var releaseVersion = "dev"
 
 const sidecarSuffix = ".manifest.json"
 
@@ -53,8 +60,42 @@ const maxNameBytes = 255
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	cmd := ""
+	if len(args) > 0 {
+		cmd, args = args[0], args[1:]
+	}
+	switch cmd {
+	case "open", "reseal":
+		return runCommand(cmd, args, stdout, stderr)
+	case "version":
+		fmt.Fprintf(stdout, "quesma-unseal %s\n", releaseVersion)
+		return 0
+	case "licenses":
+		if err := legal.Write(stdout); err != nil {
+			fmt.Fprintf(stderr, "quesma-unseal: %v\n", err)
+			return 1
+		}
+		return 0
+	case "help", "-h", "-help", "--help":
+		fmt.Fprintln(stdout, usage)
+		return 0
+	case "":
+		fmt.Fprintln(stderr, usage)
+	default:
+		// Before the commands, the flags came first; scripts copied from that form still exist.
+		if strings.HasPrefix(cmd, "-") {
+			fmt.Fprintf(stderr, "quesma-unseal: the flags follow a command now: quesma-unseal open %s ..., and -reseal-to R is reseal -to R\n%s\n", cmd, usage)
+			return 2
+		}
+		fmt.Fprintf(stderr, "quesma-unseal: unknown command %q\n%s\n", cmd, usage)
+	}
+	return 2
+}
+
+func runCommand(cmd string, args []string, stdout, stderr io.Writer) int {
 	start := time.Now()
-	flags := flag.NewFlagSet("quesma-unseal", flag.ContinueOnError)
+	reseal := cmd == "reseal"
+	flags := flag.NewFlagSet("quesma-unseal "+cmd, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	var idFiles []string
 	flags.Func("i", "age identity file of AGE-SECRET-KEY-1 lines, as age-keygen writes (repeatable)", func(v string) error {
@@ -62,13 +103,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return nil
 	})
 	var resealTo []string
-	flags.Func("reseal-to", "age recipient to add to every object not sealed to it (repeatable)", func(v string) error {
-		r, err := age.ParseX25519Recipient(v)
-		if err == nil {
-			resealTo = append(resealTo, r.String())
-		}
-		return err
-	})
+	if reseal {
+		flags.Func("to", "age recipient to add to every object not sealed to it (repeatable)", func(v string) error {
+			r, err := age.ParseX25519Recipient(v)
+			if err == nil {
+				resealTo = append(resealTo, r.String())
+			}
+			return err
+		})
+	}
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprintln(stdout, usage)
@@ -77,7 +120,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "quesma-unseal: %v\n%s\n", err, usage)
 		return 2
 	}
-	if flags.NArg() != 2 || len(idFiles) == 0 {
+	if flags.NArg() != 2 || len(idFiles) == 0 || reseal && len(resealTo) == 0 {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
@@ -93,7 +136,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	defer enc.Close()
 	outName, work, done, kept := "PLAIN_DIR", (*unsealer).object, "decrypted", "unchanged"
-	if len(resealTo) > 0 {
+	if reseal {
 		outName, work, done, kept = "OUT_DIR", (*unsealer).reseal, "resealed", "already sealed"
 	}
 	plain, err := openPlainDir(flags.Arg(1))
@@ -120,7 +163,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "quesma-unseal: %s: %v\n", outName, err)
 		return 2
 	}
-	if len(resealTo) == 0 {
+	if !reseal {
 		u.loadIndex()
 	}
 	objects := u.collect()

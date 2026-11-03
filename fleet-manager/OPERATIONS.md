@@ -35,11 +35,11 @@ stored file only when its scrubbed bytes changed, for example after a scrub-rule
 
 A custodian can reseal the history to a recipient added later. Resealing is the organization's
 decision; the fleet manager keeps no record of it. Add the recipient to the organization first, so
-a file shipped meanwhile is sealed to it, then, with `$W/enc` copied as in the README's step 6 (`W`
-outside the clone):
+a file shipped meanwhile is sealed to it, then, with `quesma-unseal` and `$W/enc` as in the README's
+step 6:
 
 ```sh
-(cd src && go run ./cmd/quesma-unseal -i "$W/name.agekey" -reseal-to age1… "$W/enc" "$W/resealed")
+"$W/quesma-unseal" reseal -i "$W/name.agekey" -to age1… "$W/enc" "$W/resealed"
 rclone copy --update "$W/resealed/" "aws:$B/v1/organization=acme" --include 'install=*/**'
 ```
 

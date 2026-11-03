@@ -139,7 +139,11 @@ func (a *archive) run(args ...string) int {
 func (a *archive) runIn(enc string, args ...string) int {
 	a.t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(append(append([]string{"-i", a.key}, args...), enc, a.plain), &stdout, &stderr)
+	cmd := "open"
+	if len(args) > 0 && args[0] == "reseal" {
+		cmd, args = args[0], args[1:]
+	}
+	code := run(append(append([]string{cmd, "-i", a.key}, args...), enc, a.plain), &stdout, &stderr)
 	a.stdout, a.stderrStr = stdout.String(), stderr.String()
 	return code
 }
@@ -476,6 +480,15 @@ func TestCaseSensitiveOutputKeepsBothNames(t *testing.T) {
 	a.wantFile(out(installA, claude, "a/1.JSONL"), "third\n", t0)
 }
 
+func TestVersionAndHelp(t *testing.T) {
+	for args, want := range map[string]string{"version": "quesma-unseal dev\n", "help": usage + "\n", "--help": usage + "\n"} {
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{args}, &stdout, &stderr); code != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Errorf("%s: exit %d, stdout %q, stderr %q", args, code, stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestUsageErrors(t *testing.T) {
 	dir := t.TempDir()
 	_, key := newKey(t, dir, "k.agekey")
@@ -484,19 +497,31 @@ func TestUsageErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, args := range map[string][]string{
-		"no args":         nil,
-		"no identity":     {dir, filepath.Join(dir, "plain")},
-		"one dir":         {"-i", key, dir},
-		"unknown flag":    {"-x", "-i", key, dir, filepath.Join(dir, "plain")},
-		"missing key":     {"-i", filepath.Join(dir, "nope"), dir, filepath.Join(dir, "plain")},
-		"not a key":       {"-i", notKey, dir, filepath.Join(dir, "plain")},
-		"missing ENC_DIR": {"-i", key, filepath.Join(dir, "nope"), filepath.Join(dir, "plain")},
-		"bad recipient":   {"-i", key, "-reseal-to", "age1nope", dir, filepath.Join(dir, "out")},
+		"no args":            nil,
+		"no command":         {"-i", key, dir, filepath.Join(dir, "plain")},
+		"unknown command":    {"unseal", "-i", key, dir, filepath.Join(dir, "plain")},
+		"no identity":        {"open", dir, filepath.Join(dir, "plain")},
+		"one dir":            {"open", "-i", key, dir},
+		"unknown flag":       {"open", "-x", "-i", key, dir, filepath.Join(dir, "plain")},
+		"missing key":        {"open", "-i", filepath.Join(dir, "nope"), dir, filepath.Join(dir, "plain")},
+		"not a key":          {"open", "-i", notKey, dir, filepath.Join(dir, "plain")},
+		"missing ENC_DIR":    {"open", "-i", key, filepath.Join(dir, "nope"), filepath.Join(dir, "plain")},
+		"open with -to":      {"open", "-i", key, "-to", "age1nope", dir, filepath.Join(dir, "plain")},
+		"reseal without -to": {"reseal", "-i", key, dir, filepath.Join(dir, "out")},
+		"bad recipient":      {"reseal", "-i", key, "-to", "age1nope", dir, filepath.Join(dir, "out")},
 	} {
 		var stdout, stderr bytes.Buffer
 		if code := run(args, &stdout, &stderr); code != 2 || stdout.Len() != 0 || stderr.Len() == 0 {
 			t.Errorf("%s: exit %d, stdout %q, stderr %q", name, code, stdout.String(), stderr.String())
 		}
+	}
+}
+
+// The form before the commands, `quesma-unseal -i K ENC PLAIN`, says where its flags went.
+func TestOldFormNamesTheCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"-i", "k.agekey", "enc", "plain"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "quesma-unseal open -i ...") {
+		t.Errorf("exit %d, stderr %q; want a hint naming open", code, stderr.String())
 	}
 }
 
@@ -710,7 +735,7 @@ func TestResealAddsRecipientAndKeepsTheOthers(t *testing.T) {
 	a.put(sealedTo, manifest(installA, claude, "/a/2.jsonl"), "done\n", t0, a.id.Recipient(), added.Recipient())
 	a.tags(installA, "Jacek MBP")
 
-	a.wantResealSummary(a.run("-reseal-to", added.Recipient().String()), 0, 1, 1, 0)
+	a.wantResealSummary(a.run("reseal", "-to", added.Recipient().String()), 0, 1, 1, 0)
 	a.wantStderr()
 	if got := a.listPlain(); !slices.Equal(got, []string{key}) {
 		t.Fatalf("out tree %v, want only %s", got, key)
@@ -732,7 +757,7 @@ func TestResealAddsRecipientAndKeepsTheOthers(t *testing.T) {
 
 	// The resealed copy, uploaded and fetched again, needs nothing more.
 	a.write(key, body, t0)
-	a.wantResealSummary(a.run("-reseal-to", added.Recipient().String()), 0, 0, 2, 0)
+	a.wantResealSummary(a.run("reseal", "-to", added.Recipient().String()), 0, 0, 2, 0)
 }
 
 func TestResealRefusesWhatItCannotCheck(t *testing.T) {
@@ -741,7 +766,7 @@ func TestResealRefusesWhatItCannotCheck(t *testing.T) {
 	added, _ := age.GenerateX25519Identity()
 	a.put(objectKey(installA, claude, "11aa"), manifest(installB, claude, "/a/1.jsonl"), "x\n", t0)
 	a.put(objectKey(installA, claude, "22bb"), manifest(installA, claude, "/a/2.jsonl"), "x\n", t0, other.Recipient())
-	a.wantResealSummary(a.run("-reseal-to", added.Recipient().String()), 1, 0, 0, 2)
+	a.wantResealSummary(a.run("reseal", "-to", added.Recipient().String()), 1, 0, 0, 2)
 	if !strings.Contains(a.stderrStr, `manifest install_id "`+installB+`" does not match`) ||
 		!strings.Contains(a.stderrStr, "unseal "+objectKey(installA, claude, "22bb")+": ") {
 		t.Fatalf("stderr:\n%s", a.stderrStr)

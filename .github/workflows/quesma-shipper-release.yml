@@ -100,17 +100,25 @@ jobs:
                 "windows/arm64": "quesma-shipper-windows-arm64.exe",
                 "windows/amd64/setup": "QuesmaShipperSetup-amd64.exe",
                 "windows/arm64/setup": "QuesmaShipperSetup-arm64.exe",
-                "darwin/pkg": "quesma-shipper-macos-universal.pkg"
+                "darwin/pkg": "quesma-shipper-macos-universal.pkg",
+                "unseal/linux/amd64": "quesma-unseal-linux-amd64",
+                "unseal/linux/arm64": "quesma-unseal-linux-arm64",
+                "unseal/darwin/amd64": "quesma-unseal-darwin-amd64",
+                "unseal/darwin/arm64": "quesma-unseal-darwin-arm64",
+                "unseal/windows/amd64": "quesma-unseal-windows-amd64.exe",
+                "unseal/windows/arm64": "quesma-unseal-windows-arm64.exe"
               }
             }' > bin/dist/release.json
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          # Windows signs its two payloads before promoting this intermediate build for release.
+          # Windows signs its payloads before promoting this intermediate build for release.
           name: shipper-build-binaries
           path: |
             bin/dist/quesma-shipper-linux-*
             bin/dist/quesma-shipper-windows-*
+            bin/dist/quesma-unseal-linux-*
+            bin/dist/quesma-unseal-windows-*
             bin/dist/release.json
           compression-level: 0
           retention-days: 7
@@ -164,6 +172,8 @@ jobs:
             ${{ github.workspace }}\bin\dist\quesma-shipper-windows-arm64.exe
             ${{ github.workspace }}\bin\dist\quesma-shipper-windows-amd64-supervisor.exe
             ${{ github.workspace }}\bin\dist\quesma-shipper-windows-arm64-supervisor.exe
+            ${{ github.workspace }}\bin\dist\quesma-unseal-windows-amd64.exe
+            ${{ github.workspace }}\bin\dist\quesma-unseal-windows-arm64.exe
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
@@ -205,6 +215,8 @@ jobs:
           path: |
             bin/dist/quesma-shipper-linux-*
             bin/dist/quesma-shipper-windows-*
+            bin/dist/quesma-unseal-linux-*
+            bin/dist/quesma-unseal-windows-*
             bin/dist/QuesmaShipperSetup-*.exe
             bin/dist/release.json
           compression-level: 0
@@ -260,6 +272,8 @@ jobs:
             bin/dist/quesma-shipper-macos-universal.pkg
             bin/dist/quesma-shipper-darwin-amd64
             bin/dist/quesma-shipper-darwin-arm64
+            bin/dist/quesma-unseal-darwin-amd64
+            bin/dist/quesma-unseal-darwin-arm64
           compression-level: 0
           retention-days: 7
 
@@ -457,17 +471,25 @@ jobs:
           RELEASE_VERSION: ${{ needs.version.outputs.value }}
         run: python3 scripts/homebrew-cask.py "$RELEASE_VERSION" artifacts > quesma-shipper.rb
 
+      # A custodian hands quesma-unseal a private key, so its hashes are also published here, on
+      # GitHub: a second source beside the download Worker (README step 6).
+      - name: Hash the quesma-unseal binaries
+        run: |
+          (cd artifacts && sha256sum quesma-unseal-darwin-amd64 quesma-unseal-darwin-arm64 \
+            quesma-unseal-linux-amd64 quesma-unseal-linux-arm64 \
+            quesma-unseal-windows-amd64.exe quesma-unseal-windows-arm64.exe) > quesma-unseal-SHA256SUMS
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.version.outputs.value }}
         run: |
           if gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_VERSION" quesma-shipper.rb --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$RELEASE_VERSION" quesma-shipper.rb quesma-unseal-SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
             exit 0
           fi
 
-          gh release create "$RELEASE_VERSION" quesma-shipper.rb \
+          gh release create "$RELEASE_VERSION" quesma-shipper.rb quesma-unseal-SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" \
             --title "Quesma Shipper $RELEASE_VERSION" \
             --notes-file - <<EOF
@@ -489,4 +511,6 @@ jobs:
           The attached \`quesma-shipper.rb\` is the cask for this exact release. The [Homebrew tap](https://github.com/QuesmaOrg/homebrew-tap) imports it automatically, so \`brew\` users never need to download it by hand.
 
           Portable binaries without service integration: Linux [x64](https://updates.quesma.dev/download/quesma-shipper-linux-amd64) · Linux [Arm64](https://updates.quesma.dev/download/quesma-shipper-linux-arm64) · Windows [x64](https://updates.quesma.dev/download/quesma-shipper-windows-amd64.exe) · Windows [Arm64](https://updates.quesma.dev/download/quesma-shipper-windows-arm64.exe)
+
+          For custodians, \`quesma-unseal\` opens or reseals a copy of the bucket with a custodian key: macOS [Apple Silicon](https://updates.quesma.dev/download/quesma-unseal-darwin-arm64) · macOS [Intel](https://updates.quesma.dev/download/quesma-unseal-darwin-amd64) · Linux [x64](https://updates.quesma.dev/download/quesma-unseal-linux-amd64) · Linux [Arm64](https://updates.quesma.dev/download/quesma-unseal-linux-arm64) · Windows [x64](https://updates.quesma.dev/download/quesma-unseal-windows-amd64.exe) · Windows [Arm64](https://updates.quesma.dev/download/quesma-unseal-windows-arm64.exe)
           EOF

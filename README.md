@@ -100,19 +100,35 @@ on each machine.
    rollouts.
 
 6. **Later, read what arrived** with a custodian key. `active` on the Installs page means a machine
-   enrolled, not that it has shipped anything. Copy the organisation's objects with
-   [rclone](https://rclone.org/) (here an `s3` remote named `aws`: `rclone config create aws s3
-   provider AWS env_auth true`), then decrypt them with Go, both from the root of an up-to-date
-   clone of this repository, since an older one refuses objects from newer shippers. Keep the key
-   and both copies in a directory outside the clone (`W` below): the decrypted files are your
-   developers' transcripts, and this repository is public.
+   enrolled, not that it has shipped anything. Download `quesma-unseal`, copy the organisation's
+   objects with [rclone](https://rclone.org/) (here an `s3` remote named `aws`: `rclone config
+   create aws s3 provider AWS env_auth true`), then decrypt them. Keep the key and both copies in a
+   directory of their own (`W` below), outside any clone of this public repository: the decrypted
+   files are your developers' transcripts.
 
    ```sh
    B=$(sh fleet-manager/deploy.sh aws output bucket)
-   W=~/quesma-acme   # outside the clone; holds name.agekey, enc/ and plain/
+   W=~/quesma-acme   # holds name.agekey, quesma-unseal, enc/ and plain/
+   curl -fsSL -o "$W/quesma-unseal" https://updates.quesma.dev/download/quesma-unseal-darwin-arm64
+   curl -fsSL https://github.com/QuesmaOrg/quesma-shipper/releases/latest/download/quesma-unseal-SHA256SUMS |
+     awk '$2 == "quesma-unseal-darwin-arm64" { print $1 "  quesma-unseal" }' |
+     (cd "$W" && shasum -a 256 -c) && chmod +x "$W/quesma-unseal"
    rclone copy "aws:$B/v1/organization=acme" "$W/enc" --include 'install=*/**'
-   (cd src && go run ./cmd/quesma-unseal -i "$W/name.agekey" "$W/enc" "$W/plain")
+   "$W/quesma-unseal" open -i "$W/name.agekey" "$W/enc" "$W/plain"
    ```
+
+   For another platform, swap `darwin-arm64` for `darwin-amd64`, `linux-amd64`, `linux-arm64`,
+   `windows-amd64.exe` or `windows-arm64.exe`, in both places. The binary becomes executable only
+   once its hash matches the one on the GitHub release, a source apart from the download server; while
+   a release is being published the two may differ, so download both again. On Linux without
+   `shasum`, `sha256sum -c` takes the same input. On Windows, compare `(Get-FileHash <file>).Hash`
+   with the file's line in `quesma-unseal-SHA256SUMS`. The macOS and Windows
+   builds are signed, and the macOS ones notarized: on macOS,
+   `codesign --verify --strict -R='anchor apple generic and certificate leaf[subject.OU] = "66ZNG89HN6"' "$W/quesma-unseal"`
+   also checks it is Quesma's. Each shipper release carries its own `quesma-unseal`
+   (`quesma-unseal version` names it), and an older one may refuse objects from newer shippers, so
+   download it again after the shipper updates. From an up-to-date clone,
+   `(cd src && go run ./cmd/quesma-unseal open …)` does the same without the download.
 
    On Google Cloud, `deploy.sh gcp output bucket` and a `gcs` remote; on Azure, the container name
    and an `azureblob` remote. `$W/plain` holds `<install name> (<id prefix>)/<source>/<native path>`,
