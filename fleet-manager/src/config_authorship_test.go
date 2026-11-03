@@ -34,7 +34,7 @@ func TestConfigAuthorshipHTTP(t *testing.T) {
 		}
 		return w.Header().Get("ETag")
 	}
-	read(configAuthorAdministrator)
+	etag := read(configAuthorAdministrator)
 	for _, tc := range []struct {
 		path, credential, body string
 		author                 configAuthor
@@ -43,13 +43,12 @@ func TestConfigAuthorshipHTTP(t *testing.T) {
 		{"collection", testAdminCredential, `{"collection":{"mode":{"schedule":"8m"}}}`, configAuthorAdministrator},
 		{"config", testAdminCredential, configJSON(t, twoRecipients(t)), configAuthorAdministrator},
 	} {
-		before := serveAdmin(t, server, adminRequest(http.MethodGet, "/v1/admin/orgs/acme/config", "", testAdminCredential))
 		put := adminRequest(http.MethodPut, "/v1/admin/orgs/acme/"+tc.path, tc.body, tc.credential)
-		put.Header.Set("If-Match", before.Header().Get("ETag"))
+		put.Header.Set("If-Match", etag)
 		if w := serveAdmin(t, server, put); w.Code != http.StatusNoContent {
 			t.Fatalf("PUT %s = %d: %s", tc.path, w.Code, w.Body.String())
 		}
-		read(tc.author)
+		etag = read(tc.author)
 	}
 	raw, _, _ := store.Get(context.Background(), configKey("acme"))
 	var legacy FleetConfig
