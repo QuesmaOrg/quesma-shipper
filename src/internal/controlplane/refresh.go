@@ -91,7 +91,7 @@ func Refresh(ctx context.Context, o RefreshOptions) Remote {
 	}
 
 	// Older clients may have cached a document that parses but cannot resolve.
-	doc, err := config.ParseServedDocument(cached.Config)
+	doc, err := config.ParseServedDocument(cached.Document())
 	var eff *config.Effective
 	if err == nil && o.Validate != nil {
 		eff, err = o.Validate(doc)

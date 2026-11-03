@@ -31,6 +31,7 @@ type CollectionSource struct {
 	Roots        []string        `json:"roots,omitempty" yaml:"roots,omitempty"`
 	Include      []string        `json:"include,omitempty" yaml:"include,omitempty"`
 	Exclude      []string        `json:"exclude,omitempty" yaml:"exclude,omitempty"`
+	ExcludeAdd   []string        `json:"exclude_add,omitempty" yaml:"exclude_add,omitempty"`
 	MaxFileBytes *int64          `json:"max_file_bytes,omitempty" yaml:"max_file_bytes,omitempty"`
 	Enrichers    map[string]bool `json:"enrichers,omitempty" yaml:"enrichers,omitempty"`
 }

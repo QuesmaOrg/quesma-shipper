@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
+	"gopkg.in/yaml.v3"
 )
 
 // CacheFile holds the last remote config this install fetched.
@@ -21,8 +23,9 @@ const cacheSchema = 3
 type Cached struct {
 	CacheSchema int `json:"cache_schema"`
 
-	// Config is the served document verbatim, reparsed on load.
-	Config []byte `json:"config"`
+	// Config is the safe fallback older clients read after a downgrade.
+	Config     []byte `json:"config"`
+	ConfigFull []byte `json:"config_full,omitempty"`
 
 	FetchedAt time.Time `json:"fetched_at"`
 	ExpiresAt time.Time `json:"expires_at"`
@@ -31,6 +34,30 @@ type Cached struct {
 // SaveCache persists a fetched config.
 func SaveCache(stateDir string, c Cached) error {
 	c.CacheSchema = cacheSchema
+	full := c.Document()
+	reduced, changed, err := reduceCachedConfig(full)
+	if err != nil {
+		return err
+	}
+	c.Config, c.ConfigFull = reduced, nil
+	if changed {
+		c.ConfigFull = full
+	}
+	encoded, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	// An older reader's size limit must still admit the cache after a downgrade.
+	if len(encoded)+1 > maxResponseBytes {
+		c.ConfigFull = nil
+		encoded, err = json.MarshalIndent(c, "", "  ")
+		if err != nil {
+			return err
+		}
+		if len(encoded)+1 > maxResponseBytes {
+			return fmt.Errorf("backend: reduced cache exceeds %d bytes", maxResponseBytes)
+		}
+	}
 	return platform.WriteJSON(filepath.Join(stateDir, CacheFile), c, 0o600)
 }
 
@@ -56,4 +83,55 @@ func LoadCache(stateDir string) (*Cached, error) {
 // the scope kept was already served and can never widen, while halting would lose data for good.
 func (c Cached) Expired(now time.Time) bool {
 	return !c.ExpiresAt.IsZero() && now.After(c.ExpiresAt)
+}
+
+// Document selects the full layer when this client knows how to enforce it.
+func (c Cached) Document() []byte {
+	if len(c.ConfigFull) > 0 {
+		return c.ConfigFull
+	}
+	return c.Config
+}
+
+func reduceCachedConfig(raw []byte) ([]byte, bool, error) {
+	var doc map[string]any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return nil, false, err
+	}
+	changed := false
+	sources, _ := doc["sources"].([]any)
+	var records []map[string]any
+	var scopes []protocol.SourceExclusions
+	for _, item := range sources {
+		source, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, exists := source["exclude_add"]; exists {
+			changed = true
+		}
+		records = append(records, source)
+	}
+	if !changed {
+		return raw, false, nil
+	}
+	for _, source := range records {
+		encoded, err := yaml.Marshal(source)
+		if err != nil {
+			return nil, false, err
+		}
+		var scope protocol.SourceExclusions
+		if err := yaml.Unmarshal(encoded, &scope); err != nil {
+			return nil, false, err
+		}
+		scopes = append(scopes, scope)
+	}
+	for i, scope := range protocol.ReduceSourceExclusions(scopes) {
+		delete(records[i], "exclude_add")
+		if scope.Enabled != nil {
+			records[i]["enabled"] = *scope.Enabled
+		}
+	}
+	reduced, err := yaml.Marshal(doc)
+	return reduced, true, err
 }

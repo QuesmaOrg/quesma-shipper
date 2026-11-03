@@ -3,9 +3,6 @@ package main
 import (
 	"io/fs"
 	"path"
-
-	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
-
 	"bytes"
 	"context"
 	"crypto/ed25519"
@@ -21,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 	"filippo.io/age"
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -162,19 +160,20 @@ func TestCatalogRejectionFixtures(t *testing.T) {
 	}
 }
 
-// exclude_add left this round of the protocol: the shared schema refuses it on writes, and the
-// collection model has no field to carry it, so it can be neither stored nor served.
-func TestExcludeAddIsNotPartOfTheDocument(t *testing.T) {
+func TestExcludeAddRoundTripsThroughCollection(t *testing.T) {
 	raw := []byte(`{"config_version":1,"sources":[{"id":"claude-code-transcripts","exclude_add":["a/**"]}]}`)
-	if protocol.ValidateConfigDocument(raw) == nil {
-		t.Fatal("the schema accepted exclude_add")
+	if err := protocol.ValidateConfigDocument(raw); err != nil {
+		t.Fatal(err)
 	}
 	var document struct {
 		ConfigVersion int `json:"config_version"`
 		CollectionConfig
 	}
-	if strictDecode(raw, &document) == nil {
-		t.Fatal("the collection model decoded exclude_add")
+	if err := strictDecode(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Sources) != 1 || len(document.Sources[0].ExcludeAdd) != 1 || document.Sources[0].ExcludeAdd[0] != "a/**" {
+		t.Fatalf("lost additions: %+v", document)
 	}
 }
 

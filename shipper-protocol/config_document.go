@@ -38,6 +38,16 @@ var configDocumentSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
 	compiler := jsonschema.NewCompiler()
 	compiler.AssertFormat()
 	compiler.RegisterFormat(&jsonschema.Format{
+		Name: "source-exclusion-glob",
+		Validate: func(value any) error {
+			pattern, ok := value.(string)
+			if !ok {
+				return nil
+			}
+			return ValidateExcludeAdd(pattern)
+		},
+	})
+	compiler.RegisterFormat(&jsonschema.Format{
 		Name:     "go-positive-duration",
 		Validate: durationAtLeast(time.Nanosecond),
 	})
