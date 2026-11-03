@@ -183,6 +183,11 @@ func TestConfigAuthorshipConcurrentReplicas(t *testing.T) {
 	if cfg := assertConfigAuthor(t, manager, configAuthorAdministrator); cfg.DisplayName != "Winning administrator edit" {
 		t.Fatalf("the active configuration must carry the winner's author: %+v", cfg)
 	}
+	// The history procedure in OPERATIONS.md relies on no record being removed, the loser's included.
+	records, _ := store.List(ctx, controlPrefix("acme")+"config-authorship/")
+	if len(records) != 3 {
+		t.Fatalf("expected initial, committed and unused records; got %d", len(records))
+	}
 }
 
 func TestConfigAuthorshipLegacyAndReadFailures(t *testing.T) {
