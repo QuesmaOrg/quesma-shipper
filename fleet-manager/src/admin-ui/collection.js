@@ -69,7 +69,10 @@ function addCollectionSource(form, source = {}) {
     exclusionSupport,
   );
   if (source.exclude?.length) {
-    row.querySelector('details').append(sourceNote('This replaces catalog and machine-owner exclusions, including binary-attachment protections. Clear it to restore those defaults; additional exclusions still apply.', true));
+    // An active replacement drops the catalog's binary-attachment exclusions, so it starts open.
+    const details = row.querySelector('details');
+    details.open = true;
+    details.append(sourceNote('This replaces catalog and machine-owner exclusions, including binary-attachment protections. Clear it to restore those defaults; additional exclusions still apply.', true));
   }
   const catalog = form._catalog;
   const field = row.querySelector('[data-source-field]');
@@ -118,6 +121,7 @@ function addCollectionSource(form, source = {}) {
 
 function exclusionSupportText(catalog) {
   if (!catalog) return 'Machines without support for additional exclusions keep this source off until their shipper updates.';
+  if (!catalog.installs.active) return 'No install is active yet: an older shipper that enrolls later will have this source off until it updates.';
   const supported = (catalog.features || []).find((feature) => feature.name === 'sources.exclude_add')?.installs || 0;
   const paused = Math.max(0, catalog.installs.active - supported);
   return paused ? `${plural(paused, 'machine lacks', 'machines lack')} support for additions; those collecting this source will pause until their shipper updates.` : '';

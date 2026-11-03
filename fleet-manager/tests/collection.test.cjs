@@ -160,3 +160,19 @@ test('additional exclusion editor counts machines without the feature, including
   additions.oninput();
   assert.equal(row.querySelector('[data-exclusion-support]').textContent, '');
 });
+
+test('an existing replacement list is shown open with its warning', () => {
+  const form = pickerForm(catalog);
+  sandbox.addCollectionSource(form, {id: 'claude-code-transcripts', exclude: ['legacy/**']});
+  const details = form.querySelectorAll('[data-collection-source]')[0].querySelector('details');
+  assert.equal(details.open, true);
+  assert.ok(texts(details).some((text) => text.startsWith('This replaces catalog and machine-owner exclusions')));
+});
+
+test('with no active install, additions warn that older shippers enrolling later keep the source off', () => {
+  const empty = {installs: {active: 0, reporting: 0}, sources: [], rule_packs: [], features: []};
+  const form = pickerForm(empty);
+  sandbox.addCollectionSource(form, {id: 'claude-code-transcripts', exclude_add: ['private/**']});
+  const note = form.querySelectorAll('[data-collection-source]')[0].querySelector('[data-exclusion-support]');
+  assert.equal(note.textContent, 'No install is active yet: an older shipper that enrolls later will have this source off until it updates.');
+});
