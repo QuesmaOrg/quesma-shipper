@@ -10,14 +10,16 @@ main() {
 	PKG=$OUT/quesma-shipper-macos-universal.pkg
 	RAW_ARM64=$OUT/quesma-shipper-darwin-arm64
 	RAW_AMD64=$OUT/quesma-shipper-darwin-amd64
-	for artifact in "$PKG" "$RAW_ARM64" "$RAW_AMD64"; do
+	UNSEAL_ARM64=$OUT/quesma-unseal-darwin-arm64
+	UNSEAL_AMD64=$OUT/quesma-unseal-darwin-amd64
+	for artifact in "$PKG" "$RAW_ARM64" "$RAW_AMD64" "$UNSEAL_ARM64" "$UNSEAL_AMD64"; do
 		[ -f "$artifact" ] || die "missing artifact: $artifact"
 	done
 
 	WORK=$(mktemp -d "${TMPDIR:-/tmp}/quesma-shipper-notary.XXXXXX")
 	trap 'rm -rf "$WORK"' EXIT HUP INT TERM
 	mkdir "$WORK/submission"
-	cp "$PKG" "$RAW_ARM64" "$RAW_AMD64" "$WORK/submission"
+	cp "$PKG" "$RAW_ARM64" "$RAW_AMD64" "$UNSEAL_ARM64" "$UNSEAL_AMD64" "$WORK/submission"
 	/usr/bin/ditto -c -k --keepParent "$WORK/submission" "$WORK/quesma-shipper-notarization.zip"
 	submit "$WORK/quesma-shipper-notarization.zip"
 

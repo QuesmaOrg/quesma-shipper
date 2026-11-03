@@ -14,6 +14,11 @@ ifneq ($(RELEASE_VERSION),)
 LDFLAGS += -X github.com/QuesmaOrg/quesma-shipper/internal/platform.releaseVersion=$(RELEASE_VERSION)
 endif
 
+UNSEAL_LDFLAGS :=
+ifneq ($(RELEASE_VERSION),)
+UNSEAL_LDFLAGS += -X main.releaseVersion=$(RELEASE_VERSION)
+endif
+
 GO := CGO_ENABLED=0 go
 
 .DEFAULT_GOAL := help
@@ -29,7 +34,7 @@ DIST      := bin/dist
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 .PHONY: dist
-dist: ## Cross-compile the shipper for every supported platform into bin/dist
+dist: ## Cross-compile the shipper and quesma-unseal for every supported platform into bin/dist
 	@for p in $(PLATFORMS); do \
 		os=$$(echo $$p | cut -d/ -f1); arch=$$(echo $$p | cut -d/ -f2); \
 		out=$(DIST)/quesma-shipper-$$os-$$arch; case $$os in windows) out=$$out.exe ;; esac; \
@@ -42,6 +47,13 @@ dist: ## Cross-compile the shipper for every supported platform into bin/dist
 		echo "building $$out"; \
 		(cd $(MODULE) && CGO_ENABLED=0 GOOS=windows GOARCH=$$arch \
 			go build -trimpath -ldflags "-s -w -H windowsgui" -o ../$$out ./cmd/quesma-shipper-supervisor) || exit 1; \
+	done
+	@for p in $(PLATFORMS); do \
+		os=$$(echo $$p | cut -d/ -f1); arch=$$(echo $$p | cut -d/ -f2); \
+		out=$(DIST)/quesma-unseal-$$os-$$arch; case $$os in windows) out=$$out.exe ;; esac; \
+		echo "building $$out"; \
+		(cd $(MODULE) && CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch \
+			go build -trimpath -ldflags "$(UNSEAL_LDFLAGS) -s -w" -o ../$$out ./cmd/quesma-unseal) || exit 1; \
 	done
 	@echo "built $(DIST)/ ($(VERSION))"
 
@@ -202,7 +214,7 @@ licenses-check: ## Fail on a non-permissive dependency, or when the embedded not
 	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
 	cd $(MODULE) && GOTOOLCHAIN=$$(go env GOVERSION) GOBIN=$$tmp/bin go install $(GOLICENSES) 2>/dev/null; \
 	for os in $(LICENSE_OSES); do \
-		GOOS=$$os GOARCH=amd64 $$tmp/bin/go-licenses check ./cmd/quesma-shipper \
+		GOOS=$$os GOARCH=amd64 $$tmp/bin/go-licenses check ./cmd/quesma-shipper ./cmd/quesma-unseal \
 			--allowed_licenses=Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC,Unlicense 2>/dev/null || exit 1; \
 	done; cd ..; \
 	$(MAKE) --no-print-directory licenses LEGAL_DIR=$$tmp/legal >/dev/null || exit 1; \
@@ -216,9 +228,9 @@ licenses: ## Regenerate the embedded notices: LICENSE and NOTICE copies, third-p
 	mkdir -p $(LEGAL_DIR); \
 	cd $(MODULE) && GOTOOLCHAIN=$$(go env GOVERSION) GOBIN=$$tmp/bin go install $(GOLICENSES) 2>/dev/null; \
 	for os in $(LICENSE_OSES); do \
-		GOOS=$$os GOARCH=amd64 $$tmp/bin/go-licenses save ./cmd/quesma-shipper --save_path $$tmp/save-$$os 2>/dev/null \
+		GOOS=$$os GOARCH=amd64 $$tmp/bin/go-licenses save ./cmd/quesma-shipper ./cmd/quesma-unseal --save_path $$tmp/save-$$os 2>/dev/null \
 			|| { echo "go-licenses save failed for $$os"; exit 1; }; \
-		GOOS=$$os GOARCH=amd64 $$tmp/bin/go-licenses report ./cmd/quesma-shipper 2>/dev/null > $$tmp/report-$$os.csv \
+		GOOS=$$os GOARCH=amd64 $$tmp/bin/go-licenses report ./cmd/quesma-shipper ./cmd/quesma-unseal 2>/dev/null > $$tmp/report-$$os.csv \
 			|| { echo "go-licenses report failed for $$os"; exit 1; }; \
 	done; \
 	cat $$tmp/report-*.csv | grep -v '^github.com/QuesmaOrg/' \

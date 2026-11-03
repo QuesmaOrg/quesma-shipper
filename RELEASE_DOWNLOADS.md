@@ -48,7 +48,16 @@ https://updates.quesma.dev/download/quesma-shipper-windows-amd64.exe
 https://updates.quesma.dev/download/quesma-shipper-windows-arm64.exe
 https://updates.quesma.dev/download/QuesmaShipperSetup-amd64.exe
 https://updates.quesma.dev/download/QuesmaShipperSetup-arm64.exe
+https://updates.quesma.dev/download/quesma-unseal-darwin-arm64
+https://updates.quesma.dev/download/quesma-unseal-darwin-amd64
+https://updates.quesma.dev/download/quesma-unseal-linux-amd64
+https://updates.quesma.dev/download/quesma-unseal-linux-arm64
+https://updates.quesma.dev/download/quesma-unseal-windows-amd64.exe
+https://updates.quesma.dev/download/quesma-unseal-windows-arm64.exe
 ```
+
+The `quesma-unseal` entries are a custodian's tool, released beside the shipper; they need the
+Worker routes below, added once.
 
 Each endpoint resolves `timestamp.json`, the referenced snapshot and targets metadata, and
 `release.json`, then returns a temporary redirect to the current hash-addressed target. The Worker
@@ -95,6 +104,12 @@ const downloads: Record<string, string> = {
   "/download/quesma-shipper-windows-arm64.exe": "windows/arm64",
   "/download/QuesmaShipperSetup-amd64.exe": "windows/amd64/setup",
   "/download/QuesmaShipperSetup-arm64.exe": "windows/arm64/setup",
+  "/download/quesma-unseal-darwin-arm64": "unseal/darwin/arm64",
+  "/download/quesma-unseal-darwin-amd64": "unseal/darwin/amd64",
+  "/download/quesma-unseal-linux-amd64": "unseal/linux/amd64",
+  "/download/quesma-unseal-linux-arm64": "unseal/linux/arm64",
+  "/download/quesma-unseal-windows-amd64.exe": "unseal/windows/amd64",
+  "/download/quesma-unseal-windows-arm64.exe": "unseal/windows/arm64",
 };
 
 type Metadata = {
