@@ -53,11 +53,11 @@ type AnalyticsIdentity struct {
 
 var kmsKeyARNPattern = regexp.MustCompile(`^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$`)
 
-// quesmaETLEnabled reports whether to seal to Quesma's recipient as well. Unset is on here, as in
-// defaultOrganizationDefaults; a deployment that wants it off for organizations that never said
-// says so in OrganizationDefaults, which the server applies before asking.
+// quesmaETLEnabled reports whether to seal to Quesma's recipient as well. Unset is off here, as in
+// defaultOrganizationDefaults; a deployment that wants it on for organizations that never said says
+// so in OrganizationDefaults, which the server applies before asking.
 func (c FleetConfig) quesmaETLEnabled() bool {
-	return c.AllowQuesmaETL == nil || *c.AllowQuesmaETL
+	return c.AllowQuesmaETL != nil && *c.AllowQuesmaETL
 }
 
 // OrganizationDefaults is what an organization gets for a setting it never stated. A deployment
@@ -86,15 +86,12 @@ func (d OrganizationDefaults) resolve(cfg FleetConfig) FleetConfig {
 
 // defaultOrganizationDefaults is what a deployment that states nothing gives its organizations.
 //
-// Quesma's recipient is on. Sealing cannot be added after the fact -- turning the recipient on later
-// covers only what is uploaded from then on -- so an organization that may one day want Quesma's
-// analytics over its history has to have been sealed to it from the start. It grants nothing by
-// itself: Quesma still reads no object without a bucket grant, which defaults to none, and an
-// organization or a deployment turns the recipient off by saying so.
+// Quesma's recipient is off: an organization or a deployment asks for it. History uploaded before
+// can still be opened for Quesma later, by a custodian resealing it with quesma-unseal -reseal-to.
 //
 // Telemetry is off: forwarding sends something out of the deployment, so it waits to be asked for.
 func defaultOrganizationDefaults() OrganizationDefaults {
-	return OrganizationDefaults{AllowQuesmaETL: true}
+	return OrganizationDefaults{}
 }
 
 // organizationDefaultsFromEnv reads the deployment's defaults. What is unset keeps

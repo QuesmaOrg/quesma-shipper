@@ -21,16 +21,14 @@ variable "image" {
 # wins, and these reach every organization that left it unset, including ones created before the
 # setting existed.
 #
-# Quesma's recipient is on by default, because sealing cannot be added after the fact: turning it on
-# later covers only uploads from then on, so analytics over an organization's history needs it from
-# the start. It grants nothing by itself -- Quesma reads no object unless it is explicitly granted
-# access to the bucket, which this module never does -- and false here turns it off for every
-# organization that did not choose. Telemetry is off unless a
-# collector is named.
+# Quesma's recipient stays on by default here, so a deployment upgraded with the new template keeps
+# what it had; deploy.sh states false for a deployment it creates. False turns it off for every
+# organization that did not choose; history uploaded while it was off can be opened for Quesma later
+# by a custodian resealing it with quesma-unseal. Telemetry is off unless a collector is named.
 variable "default_allow_quesma_etl" {
   type        = bool
   default     = true
-  description = "Seal an organization's future uploads to Quesma's built-in ETL recipient unless the organization turned it off. False opts every such organization out."
+  description = "Seal the future uploads of every organization that did not choose to Quesma's built-in ETL recipient. An organization's own allow_quesma_etl always wins; deploy.sh sets false for a new deployment."
 }
 variable "default_telemetry_collector_url" {
   type        = string

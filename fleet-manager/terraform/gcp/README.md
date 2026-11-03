@@ -62,7 +62,7 @@ providers as OpenTofu resolves them; Terraform rewrites it with its own registry
 | `name` | `fleet-manager` | the service, its service account and the prefix of its roles |
 | `bucket` | `<project>-trajectories` | |
 | `image` | `docker.io/quesma/fleet-manager:latest` | a moving tag Quesma publishes; see below |
-| `default_allow_quesma_etl` | `true` | seal uploads to Quesma's recipient for organizations that never chose |
+| `default_allow_quesma_etl` | `true` | seal uploads to Quesma's recipient for organizations that never chose; `deploy.sh` sets `false` for a deployment it creates |
 | `default_telemetry_collector_url` | empty | forward shipper telemetry there for organizations that name nowhere |
 
 There is no ETL reader grant here yet: nothing outside the project can read the bucket unless you

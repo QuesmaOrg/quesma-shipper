@@ -281,16 +281,16 @@ func TestAdminConfigLifecycleAndConcurrency(t *testing.T) {
 	}
 }
 
-// What an organization gets when it is created three ways: silent, off, and on. Silent and on must
-// be indistinguishable -- the recipient is there unless someone says otherwise, so history stays
-// open to analytics asked for later -- and the explicit false must remove it.
-func TestQuesmaETLIsOnUnlessAnOrganizationOptsOut(t *testing.T) {
+// What an organization gets when it is created three ways: silent, off, and on. Silent and off must
+// be indistinguishable -- the recipient is there only when someone asks for it -- and the explicit
+// true must add it.
+func TestQuesmaETLIsOffUnlessAnOrganizationOptsIn(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		allow *bool
 		want  bool
 	}{
-		{"absent", nil, true},
+		{"absent", nil, false},
 		{"false", ptr(false), false},
 		{"true", ptr(true), true},
 	} {

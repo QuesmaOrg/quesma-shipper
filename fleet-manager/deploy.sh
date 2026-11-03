@@ -158,6 +158,9 @@ collect_vars() {
 	[ -n "$PROJECT" ] || PROJECT=$(stored project)
 	[ -n "$TELEMETRY" ] || TELEMETRY=$(stored default_telemetry_collector_url)
 	[ -n "$QUESMA_ETL" ] || QUESMA_ETL=$(stored default_allow_quesma_etl)
+	# A new deployment states Quesma's recipient off. One made before leaves it to the template,
+	# whose default stays on, so an upgrade with this script or an older copy changes nothing.
+	[ -n "$QUESMA_ETL" ] || [ -f "$DIR/terraform.tfstate" ] || QUESMA_ETL=false
 	[ -n "$ANALYTICS_KEY" ] || ANALYTICS_KEY=$(stored analytics_key)
 	case $CLOUD in
 	aws)
@@ -295,7 +298,8 @@ Options, remembered between runs:
   --name NAME             what the service and its roles are called (default fleet-manager)
   --image IMAGE           the container image, by digest if you build your own
   --bucket NAME           on gcp, instead of <project>-trajectories
-  --no-quesma-etl         do not seal uploads to Quesma's recipient unless an organization asks
+  --quesma-etl            seal uploads to Quesma's recipient for organizations that do not choose
+  --no-quesma-etl         do not (the default for a new deployment)
   --analytics-key         on aws, create the KMS key analytics identities are encrypted under
   --telemetry URL         forward shipper telemetry there for organizations that name nowhere
   --ref REF               the template's git ref, main unless set once; --dir DIR where state is kept
