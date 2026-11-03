@@ -245,7 +245,7 @@ func (s *Server) adminAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// config.json records no author, so the log is where a partner's change can be told from an administrator's.
+		// Non-configuration partner mutations still have only this service log.
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(recorder, r)
 		s.logger.Printf("organization %s: the partner credential's %s %s answered %d", who.org, r.Method, r.URL.EscapedPath(), recorder.status)
@@ -539,7 +539,7 @@ func (s *Server) handleAdminCreateOrganization(w http.ResponseWriter, r *http.Re
 	if !s.validateAdminConfig(w, manager, cfg) {
 		return
 	}
-	if err := manager.Init(r.Context(), cfg); errors.Is(err, ErrConflict) {
+	if err := manager.Init(r.Context(), configAuthorAdministrator, cfg); errors.Is(err, ErrConflict) {
 		writeAdminError(w, http.StatusConflict, "organization already exists")
 		return
 	} else if err != nil {
@@ -567,7 +567,7 @@ func (s *Server) handleAdminGetConfig(w http.ResponseWriter, r *http.Request) {
 		writeAdminError(w, http.StatusNotFound, "not found")
 		return
 	}
-	cfg, version, err := manager.LoadConfig(r.Context())
+	cfg, version, author, err := manager.LoadConfigWithAuthor(r.Context())
 	if errors.Is(err, ErrNotFound) {
 		writeAdminError(w, http.StatusNotFound, "organization not found")
 		return
@@ -582,6 +582,7 @@ func (s *Server) handleAdminGetConfig(w http.ResponseWriter, r *http.Request) {
 		cfg.AuthoredYAML = string(raw)
 	}
 	w.Header().Set("ETag", encodeETag(version))
+	w.Header().Set("Config-Updated-By", string(author))
 	// The effective values, so the administration UI shows what installs are actually served
 	// rather than leaving an unset setting to be guessed.
 	writeJSON(w, s.defaults.resolve(cfg))
@@ -654,7 +655,7 @@ func (s *Server) handleAdminPutConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) applyConfig(w http.ResponseWriter, r *http.Request, manager *Manager, cfg FleetConfig, version string) {
-	err := manager.ApplyConfig(r.Context(), cfg, version)
+	err := manager.ApplyConfig(r.Context(), configAuthorOf(r), cfg, version)
 	if errors.Is(err, ErrConflict) {
 		writeAdminError(w, http.StatusPreconditionFailed, "configuration changed")
 		return

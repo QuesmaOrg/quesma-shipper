@@ -45,7 +45,7 @@ func testAdminServer(t *testing.T) (*Server, *memoryStore) {
 	}
 	manager.now = func() time.Time { return time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC) }
 	acme, _ := manager.ForOrganization("acme")
-	if err := acme.Init(context.Background(), FleetConfig{AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true}); err != nil {
+	if err := acme.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true}); err != nil {
 		t.Fatal(err)
 	}
 	server, err := NewServer(manager, fakeSigner{}, log.New(io.Discard, "", 0))

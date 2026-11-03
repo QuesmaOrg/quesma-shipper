@@ -178,7 +178,7 @@ function resetOrganizationForm() {
   syncAnalytics(form);
 }
 
-function fillConfig(config) {
+function fillConfig(config, author) {
   const form = $('#config-form');
   form.elements.display_name.value = config.display_name || config.organization;
   const current = organizations.find((org) => org.slug === currentOrg);
@@ -198,7 +198,8 @@ function fillConfig(config) {
   form.elements['telemetry-enabled'].checked = collector.value !== '';
   syncTelemetry(form);
   fillCollection(form, config.collection, config.collection_error || '', config.authored_yaml || '');
-  $('#config-time').textContent = config.updated_at ? `Updated ${new Date(config.updated_at).toLocaleString()}` : '';
+  const by = author === 'administrator' || author === 'partner' ? `by ${author}` : '(author unknown)';
+  $('#config-time').textContent = config.updated_at ? `Updated ${new Date(config.updated_at).toLocaleString()} ${by}` : '';
   lockConfig(true);
 }
 
@@ -281,7 +282,7 @@ async function loadConfig() {
   // What installs report they can collect feeds the source picker. Without it the form still works,
   // and a typed source ID is sent as unverified.
   $('#config-form')._catalog = await api(orgPath('/sources')).then((sources) => sources.json()).catch(() => null);
-  fillConfig(config);
+  fillConfig(config, response.headers.get('Config-Updated-By'));
   return config;
 }
 

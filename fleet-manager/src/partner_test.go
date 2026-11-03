@@ -22,7 +22,7 @@ func partnerServer(t *testing.T) (*Server, *memoryStore, string) {
 	t.Helper()
 	server, store := testAdminServer(t)
 	globex, _ := server.manager.ForOrganization("globex")
-	if err := globex.Init(context.Background(), FleetConfig{AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true}); err != nil {
+	if err := globex.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: twoRecipients(t), IncludeInstallRecipient: true}); err != nil {
 		t.Fatal(err)
 	}
 	return server, store, mintPartner(t, server, "acme")
@@ -63,7 +63,7 @@ func TestAPartnerCannotChangeCustody(t *testing.T) {
 	off, collector := false, "https://collector.example.com"
 	_, analytics := testAnalyticsIdentity(t, "acme")
 	cfg.AllowQuesmaETL, cfg.TelemetryCollectorURL, cfg.DisplayName, cfg.AnalyticsIdentity = &off, &collector, "Acme", &analytics
-	if err := acme.ApplyConfig(context.Background(), cfg, version); err != nil {
+	if err := acme.ApplyConfig(context.Background(), configAuthorAdministrator, cfg, version); err != nil {
 		t.Fatal(err)
 	}
 	w := serveAdmin(t, server, adminRequest(http.MethodGet, "/v1/admin/orgs/acme/config", "", partner))

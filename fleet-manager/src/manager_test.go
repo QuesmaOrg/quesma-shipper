@@ -208,17 +208,17 @@ func TestInviteReleaseRequiresAbsentOrRevokedInstall(t *testing.T) {
 func TestInitRequiresVersioningAndValidRecipients(t *testing.T) {
 	manager, store := testManager(t)
 	store.versioning = false
-	if err := manager.Init(context.Background(), FleetConfig{AgeRecipients: testAgeRecipients(t, 2)}); err == nil {
+	if err := manager.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: testAgeRecipients(t, 2)}); err == nil {
 		t.Fatal("initialized without versioning")
 	}
 	store.versioning = true
-	if err := manager.Init(context.Background(), FleetConfig{AgeRecipients: []string{"AGE-SECRET-KEY-PRIVATE"}, IncludeInstallRecipient: false}); err == nil {
+	if err := manager.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: []string{"AGE-SECRET-KEY-PRIVATE"}, IncludeInstallRecipient: false}); err == nil {
 		t.Fatal("accepted private recipient")
 	}
-	if err := manager.Init(context.Background(), FleetConfig{AgeRecipients: testAgeRecipients(t, 1)}); err == nil {
+	if err := manager.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: testAgeRecipients(t, 1)}); err == nil {
 		t.Fatal("initialized with fewer than two organization recipients")
 	}
-	if err := manager.Init(context.Background(), FleetConfig{AgeRecipients: []string{quesmaETLAgeRecipient, testAgeRecipients(t, 1)[0]}}); err == nil {
+	if err := manager.Init(context.Background(), configAuthorAdministrator, FleetConfig{AgeRecipients: []string{quesmaETLAgeRecipient, testAgeRecipients(t, 1)[0]}}); err == nil {
 		t.Fatal("accepted the managed Quesma ETL recipient as an organization recipient")
 	}
 }
@@ -233,7 +233,7 @@ func TestExistingSingleRecipientConfigCanBeReadButNotReapplied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load existing config: %v", err)
 	}
-	if err := manager.ApplyConfig(context.Background(), loaded, version); err == nil {
+	if err := manager.ApplyConfig(context.Background(), configAuthorAdministrator, loaded, version); err == nil {
 		t.Fatal("reapplied config with fewer than two organization recipients")
 	}
 }
@@ -244,7 +244,7 @@ func TestSelfRoutingTokensKeepOrganizationsIsolated(t *testing.T) {
 	acme, _ := manager.ForOrganization("acme.prod")
 	other, _ := manager.ForOrganization("other")
 	for _, scoped := range []*Manager{acme, other} {
-		if err := scoped.Init(ctx, FleetConfig{AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true}); err != nil {
+		if err := scoped.Init(ctx, configAuthorAdministrator, FleetConfig{AgeRecipients: testAgeRecipients(t, 2), IncludeInstallRecipient: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
