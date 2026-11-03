@@ -58,14 +58,18 @@ func LoadRevocation(stateDir string, enrollment *Enrollment) (*Revocation, error
 	return &r, nil
 }
 
-func (c *Client) revocation() (*Revocation, error) {
+func (c *Client) Revocation() error {
 	if r := c.revoked.Load(); r != nil {
-		return r, nil
+		return r
 	}
 	if c.stateDir == "" {
-		return nil, nil
+		return nil
 	}
-	return LoadRevocation(c.stateDir, &Enrollment{InstallID: c.installID, Organization: c.organization, Endpoint: c.endpoint})
+	r, err := LoadRevocation(c.stateDir, &Enrollment{InstallID: c.installID, Organization: c.organization, Endpoint: c.endpoint})
+	if err != nil || r == nil {
+		return err
+	}
+	return r
 }
 
 func (c *Client) recordRevocation() error {
@@ -89,15 +93,4 @@ func (c *Client) recordRevocation() error {
 		return errors.Join(r, fmt.Errorf("persist revocation: %w", err))
 	}
 	return r
-}
-
-func (c *Client) Revocation() error {
-	r, err := c.revocation()
-	if err != nil {
-		return err
-	}
-	if r != nil {
-		return r
-	}
-	return nil
 }

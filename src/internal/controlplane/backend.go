@@ -262,10 +262,8 @@ func (c *Client) exchange(ctx context.Context, path, preamble string, payload []
 		return 0, nil, ErrNotEnrolled
 	}
 	if signed {
-		if revoked, err := c.revocation(); err != nil {
+		if err := c.Revocation(); err != nil {
 			return 0, nil, err
-		} else if revoked != nil {
-			return 0, nil, revoked
 		}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+path, bytes.NewReader(payload))
