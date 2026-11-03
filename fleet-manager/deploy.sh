@@ -158,17 +158,9 @@ collect_vars() {
 	[ -n "$PROJECT" ] || PROJECT=$(stored project)
 	[ -n "$TELEMETRY" ] || TELEMETRY=$(stored default_telemetry_collector_url)
 	[ -n "$QUESMA_ETL" ] || QUESMA_ETL=$(stored default_allow_quesma_etl)
-	# A deployment made while Quesma's recipient was on by default keeps it for the organizations
-	# that never chose, rather than losing it at an upgrade nobody asked to change that. A new one
-	# stores the new default now, so its own later runs do not look like an old deployment.
-	if [ -z "$QUESMA_ETL" ]; then
-		if [ -f "$DIR/terraform.tfstate" ]; then
-			QUESMA_ETL=true
-			say "keeping Quesma's recipient on for organizations that did not choose, as this deployment was made; --no-quesma-etl turns it off"
-		else
-			QUESMA_ETL=false
-		fi
-	fi
+	# A new deployment states Quesma's recipient off. One made before leaves it to the template,
+	# whose default stays on, so an upgrade with this script or an older copy changes nothing.
+	[ -n "$QUESMA_ETL" ] || [ -f "$DIR/terraform.tfstate" ] || QUESMA_ETL=false
 	[ -n "$ANALYTICS_KEY" ] || ANALYTICS_KEY=$(stored analytics_key)
 	case $CLOUD in
 	aws)

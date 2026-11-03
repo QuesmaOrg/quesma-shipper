@@ -95,9 +95,9 @@ no organization deletion: retention, credential revocation and key destruction n
 never set the value itself, including organizations created before the change. An organization's
 own setting always wins, and the administration UI always sets `allow_quesma_etl`: its checkbox
 starts from the default, so a later change of the default reaches only organizations created
-through the admin API without the field. The default was on before this release: `deploy.sh` keeps
-it on for a deployment it made then, and says so; a Terraform root that applies the module itself
-and wants it kept sets `default_allow_quesma_etl = true`.
+through the admin API without the field. `deploy.sh` states `default_allow_quesma_etl = false` for a
+deployment it creates. The templates' own default stays `true`, so a deployment made before, upgraded
+with any copy of `deploy.sh` or by its own Terraform root, keeps what it had.
 
 **Upgrade.** Push a new image and apply. The service is stateless and its records are
 conditional-write guarded, so a rolling replacement and a mixed fleet of replicas are both safe.

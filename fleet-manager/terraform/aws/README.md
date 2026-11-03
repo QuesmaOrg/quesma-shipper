@@ -58,7 +58,7 @@ providers as OpenTofu resolves them; Terraform rewrites it with its own registry
 | `bucket` | required | S3 bucket names are global |
 | `name` | `fleet-manager` | the service and the prefix of its roles |
 | `image_uri` | `docker.io/quesma/fleet-manager:latest` | a moving tag Quesma publishes; see below |
-| `default_allow_quesma_etl` | `false` | seal uploads to Quesma's recipient for organizations that never chose; it was `true` before, so a root that wants that kept sets it |
+| `default_allow_quesma_etl` | `true` | seal uploads to Quesma's recipient for organizations that never chose; `deploy.sh` sets `false` for a deployment it creates |
 | `default_telemetry_collector_url` | empty | forward shipper telemetry there for organizations that name nowhere |
 | `etl_reader_role_arns` | `[]` | who outside the service may read the sealed objects; see below |
 | `analytics_key` | `false` | create the KMS key analytics identities are encrypted under; see below |

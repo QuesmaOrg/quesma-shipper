@@ -198,8 +198,9 @@ Paste only the printed `age1…` public recipient into the UI. Protect Terraform
 administrator credential, and private `age` identities according to the organization's backup and
 access-control requirements.
 
-Quesma ETL decryption is off unless an organization turns it on, or the deployment turns it on for
-every organization that never chose (`default_allow_quesma_etl = true` in the Terraform). While
+Quesma ETL decryption is on for an organization that turns it on, or that never chose on a deployment
+whose `default_allow_quesma_etl` is `true`: the Terraform templates' default, kept so an existing
+deployment does not change at an upgrade. `deploy.sh` creates a deployment with it `false`. While
 on, the manager adds Quesma's built-in public recipient to future shipper configurations; it never
 holds the private identity and still has no permission to read trajectory objects. Quesma can
 access those ciphertexts only when the customer separately provides bucket access or sends selected

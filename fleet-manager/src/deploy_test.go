@@ -199,9 +199,10 @@ printf '`+tc.left+`\n'`+"\n")
 	}
 }
 
-// A new deployment stores the template's default, off, so its own later runs keep it. One deployed
-// before that default changed keeps it on for organizations that never chose, until told otherwise.
-func TestDeployKeepsQuesmasRecipientOnWhereItWasDeployedOn(t *testing.T) {
+// A new deployment states Quesma's recipient off. One made before states nothing, as an older copy
+// of deploy.sh does, so the template's default (on, TestTerraformOrganizationDefaults) keeps what it
+// had: an upgrade never turns the recipient off.
+func TestDeployStatesQuesmasRecipientOffForANewDeployment(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("deploy.sh is a POSIX shell script")
 	}
@@ -210,15 +211,14 @@ func TestDeployKeepsQuesmasRecipientOnWhereItWasDeployedOn(t *testing.T) {
 		stored   string
 		args     []string
 		want     string
-		says     bool
 		again    bool // run once more after the first run deployed
 	}{
-		"new":                      {false, "", nil, "false", false, false},
-		"new, then run again":      {false, "", nil, "false", false, true},
-		"existing":                 {true, "", nil, "true", true, false},
-		"existing, told off":       {true, "", []string{"--no-quesma-etl"}, "false", false, false},
-		"existing, stored off":     {true, "false", nil, "false", false, false},
-		"existing, already pinned": {true, "true", nil, "true", false, false},
+		"new":                  {false, "", nil, "false", false},
+		"new, then run again":  {false, "", nil, "false", true},
+		"existing":             {true, "", nil, "", false},
+		"existing, told off":   {true, "", []string{"--no-quesma-etl"}, "false", false},
+		"existing, stored off": {true, "false", nil, "false", false},
+		"existing, stored on":  {true, "true", nil, "true", false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -270,9 +270,6 @@ func TestDeployKeepsQuesmasRecipientOnWhereItWasDeployedOn(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("default_allow_quesma_etl = %q, want %q:\n%s", got, tc.want, vars)
-			}
-			if says := strings.Contains(string(out), "keeping Quesma's recipient on"); says != tc.says {
-				t.Errorf("said it kept the recipient: %v, want %v:\n%s", says, tc.says, out)
 			}
 		})
 	}

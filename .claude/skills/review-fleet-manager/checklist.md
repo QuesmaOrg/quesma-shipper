@@ -81,10 +81,10 @@ and report only what the PR introduced or made worse.
     `allow_quesma_etl` is on; `FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL` decides the default for a new
     organization and nothing else; disabling affects future uploads only, and the docs say so.
     [H, codified]
-15. **Defaults are argued.** Quesma recipient off by default, on only when a deployment or an
-    organization asks, since a custodian can reseal history to it later; `deploy.sh` keeps it on
-    for a deployment made while it was the default. Telemetry forwarding off unless a collector is
-    named. `defaults_test.go` and `TestTerraformOrganizationDefaults` pin them; Quesma's own
+15. **Defaults are argued.** Quesma recipient off for a new `deploy.sh` deployment and in the
+    service, since a custodian can reseal history to it later; the templates' default stays on so
+    no upgrade, with any copy of `deploy.sh`, turns it off. Telemetry forwarding off unless a
+    collector is named. `defaults_test.go` and `TestTerraformOrganizationDefaults` pin them; Quesma's own
     deployments set values explicitly. [H]
 16. **Configuration edits are conditional.** A PUT carries the ETag it read; a lost race is a
     conflict, never a silent overwrite. [M, codified]

@@ -45,13 +45,14 @@ variable "etl_reader_role_arns" {
 # wins, and these reach every organization that left it unset, including ones created before the
 # setting existed.
 #
-# Quesma's recipient is off by default; true here turns it on for every organization that did not
-# choose. History uploaded while it was off can be opened for Quesma later by a custodian resealing
-# it (quesma-unseal -reseal-to). Telemetry is off unless a collector is named.
+# Quesma's recipient stays on by default here, so a deployment upgraded with the new template keeps
+# what it had; deploy.sh states false for a deployment it creates. False turns it off for every
+# organization that did not choose; history uploaded while it was off can be opened for Quesma later
+# by a custodian resealing it (quesma-unseal reseal). Telemetry is off unless a collector is named.
 variable "default_allow_quesma_etl" {
   type        = bool
-  default     = false
-  description = "Seal the future uploads of every organization that did not choose to Quesma's built-in ETL recipient. An organization's own allow_quesma_etl always wins."
+  default     = true
+  description = "Seal the future uploads of every organization that did not choose to Quesma's built-in ETL recipient. An organization's own allow_quesma_etl always wins; deploy.sh sets false for a new deployment."
 }
 variable "default_telemetry_collector_url" {
   type        = string
