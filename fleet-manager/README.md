@@ -11,6 +11,11 @@ The service exposes shipper endpoints, a bearer-authenticated administration API
 and a self-contained administration UI at `/admin/`. Static UI assets are embedded in the binary and
 make no third-party requests.
 
+Mirror and heartbeat upload tickets omit the optional `class=` object tags. Existing shippers accept
+these tickets; object metadata and previously stored tags are unchanged. Before upgrading, remove any
+customer-managed bucket policy, lifecycle or replication dependency on those class tags. The separate
+`lifecycle=ephemeral` tag on disposable control records remains in use.
+
 To deploy it in your own cloud, follow [Run Fleet Manager](../README.md#operator-set-up-fleet-manager-once) in the
 repository README, which is one script over the templates under [terraform/](terraform/); for
 everything on a laptop, [On one machine](#on-one-machine) below. Once it runs,
