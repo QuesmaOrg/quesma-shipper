@@ -6,6 +6,7 @@ package engine_test
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -203,6 +204,51 @@ func TestCodexCompressedRolloutIsScrubbed(t *testing.T) {
 			t.Errorf("%s shipped under %s; every Codex rollout belongs to codex-rollouts", filepath.Base(m.NativePath), m.SourceID)
 		}
 		assertNoCodexSecret(t, m, body)
+	}
+}
+
+func TestCodexTogetherLinkProfileIsCollectedIndependently(t *testing.T) {
+	for _, normalStore := range []bool{false, true} {
+		t.Run(fmt.Sprintf("normal_store=%t", normalStore), func(t *testing.T) {
+			f := &codexFixture{fixture: newFixture(t)}
+			if normalStore {
+				writeFile(t, filepath.Join(f.home, ".codex", "sessions", codexRolloutName(codexUUID1)), []byte(codexRollout(codexUUID1)))
+			}
+			root := filepath.Join(f.home, ".codex-togetherlink")
+			writeFile(t, filepath.Join(root, "sessions", codexRolloutName(codexUUID2)), []byte(codexRollout(codexUUID2)))
+			writeFile(t, filepath.Join(root, "archived_sessions", codexRolloutName(codexUUID3)+".zst"), zstdOf(t, []byte(codexRollout(codexUUID3))))
+			writeFile(t, filepath.Join(root, "auth.json"), []byte(`{"OPENAI_API_KEY":"must-not-ship"}`))
+			f.resolveCatalog(func(s sources.Resolved) bool { return s.Family == "codex" && s.Gather == "file_glob" })
+
+			want := 2
+			if normalStore {
+				want++
+			}
+			if rep := f.runUnbounded(); rep.Shipped != want {
+				t.Fatalf("want %d sessions, got %+v", want, rep)
+			}
+			counts := map[string]int{}
+			for _, key := range f.port.keys() {
+				m, body := f.plaintext(key)
+				counts[m.SourceID]++
+				if m.SourceFamily != "codex" || m.ShapeSniff != "ok" {
+					t.Errorf("unexpected manifest: %+v", m)
+				}
+				assertNoCodexSecret(t, m, body)
+				if strings.Contains(body, "must-not-ship") {
+					t.Fatal("profile credentials were collected")
+				}
+			}
+			if counts["codex-togetherlink-rollouts"] != 2 {
+				t.Errorf("desktop sessions shipped under wrong source: %v", counts)
+			}
+			if normalStore {
+				f.plaintext(f.keyFor("codex-session/" + codexUUID1))
+			}
+			if rep := f.runUnbounded(); rep.Shipped != 0 {
+				t.Errorf("unchanged profiles re-uploaded: %+v", rep)
+			}
+		})
 	}
 }
 

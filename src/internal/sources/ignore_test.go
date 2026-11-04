@@ -126,6 +126,30 @@ func TestMarkersDoNotLeakAcrossADateDirectory(t *testing.T) {
 	}
 }
 
+func TestTogetherLinkProfileRespectsRepositoryMarkers(t *testing.T) {
+	catalog, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	filter := catalog.RepoFilter()
+	home := t.TempDir()
+	root := filepath.Join(home, ".codex-togetherlink")
+	spec, ok := catalog.Source("codex-togetherlink-rollouts")
+	if !ok {
+		t.Fatal("Together Link source missing")
+	}
+	src := Resolved{Source: spec, Root: root}
+	for _, marked := range []bool{false, true} {
+		cwd := repoDir(t, home, fmt.Sprintf("work/repo-%t", marked), marked)
+		rel := fmt.Sprintf("sessions/rollout-%t.jsonl", marked)
+		writeFile(t, filepath.Join(root, rel), fmt.Sprintf("{\"type\":\"session_meta\",\"payload\":{\"cwd\":%q}}\n", cwd))
+		candidate := candidateFor(root, rel)
+		if filter.CWD(src, candidate) != cwd || filter.Match(src, candidate) != marked {
+			t.Errorf("repository attribution failed for marked=%t", marked)
+		}
+	}
+}
+
 // A catalog without a probe attributes nothing, and a source the probe does not name is
 // never read.
 func TestRepoFilterScope(t *testing.T) {

@@ -83,12 +83,16 @@ The shipper collects more than chat transcripts. Per agent, from the agent's own
 | Agent | Trajectories | Context artifacts |
 |---|---|---|
 | Claude Code | Session and subagent transcripts, spilled tool results | Per-project memory files, plans, todos, file-history checkpoint metadata, the user-level `CLAUDE.md`, `settings.json` |
-| Codex | Sessions, one object each whether live, archived or zstd-compressed (decompressed and scrubbed like the rest), the session index | None |
+| Codex | Sessions, one object each whether live, archived or zstd-compressed (decompressed and scrubbed like the rest), the session index; includes Together Link's desktop profile | None |
 | Cursor | Agent transcripts, enriched with conversation text, tool calls, and model names read from Cursor's database | Spilled tool output, terminal captures, agent scratchpad notes |
 | GitHub Copilot | Copilot CLI session event logs; Copilot Chat transcripts and VS Code's chat session store, which holds tool results and token counts, including chats opened with no folder and sessions moved between workspaces | CLI session plans, checkpoints, research reports, session files and rewind snapshots; personal `copilot-instructions.md` and `instructions/*.instructions.md`; VS Code chat editing checkpoints and file baselines |
 | Pi (experimental) | Native JSONL session trees, messages, usage, branches and tool results | None |
 | OpenCode (experimental) | Per-session JSONL snapshots from `opencode.db` and channel databases such as `opencode-stable.db`: session, message and part records (1.x), or session and `session_message` records (2.x) | None |
 | Hermes (experimental) | Per-session JSONL snapshots of messages and model usage from `state.db`, including named profiles | None |
+
+Codex collects its normal store (`$CODEX_HOME` or `~/.codex`) and, independently,
+Together Link's `~/.codex-togetherlink` desktop profile. The latter ships under the
+`codex-togetherlink-rollouts` source in the `codex` family and can be disabled separately.
 
 Pi uses `$PI_CODING_AGENT_SESSION_DIR`, `$PI_CODING_AGENT_DIR/sessions`, or
 `~/.pi/agent/sessions`. OpenCode uses `$XDG_DATA_HOME/opencode` or
