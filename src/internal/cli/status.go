@@ -38,6 +38,11 @@ func showStatus(cmd *cobra.Command, b app.Build, asJSON bool) error {
 	p := paletteFor(out)
 	now := time.Now()
 
+	if st.Revocation != nil {
+		banner(out, p, p.red, "revoked", "nothing is being collected")
+		fmt.Fprintln(out, st.Revocation.Error(), app.RevocationRecovery())
+		return errSilent{code: 3}
+	}
 	if !st.LoggedIn {
 		banner(out, p, p.yellow, "not logged in", "your admin has the token")
 		fmt.Fprintf(out, "\n  %s <token>  %s\n", styled(p.cyan, app.Name+" login", p.reset), styled(p.dim, "to join your organisation", p.reset))
@@ -68,6 +73,8 @@ func showStatus(cmd *cobra.Command, b app.Build, asJSON bool) error {
 func printHeader(out io.Writer, p palette, st app.Status, now time.Time) {
 	state, colour, why := "on", p.green, "last sent "+app.Ago(deref(st.LastSent), now)
 	switch {
+	case st.Revocation != nil:
+		state, colour, why = "revoked", p.red, "nothing is being collected"
 	case st.Paused:
 		state, colour, why = "paused", p.yellow, "until "+app.FormatUntil(deref(st.PausedUntil), now)
 	case st.Organization == "":
@@ -76,7 +83,7 @@ func printHeader(out io.Writer, p palette, st app.Status, now time.Time) {
 		state, colour, why = "off", p.red, "service "+st.Service
 	}
 	banner(out, p, colour, state, why)
-	if st.Organization != "" {
+	if st.Organization != "" && st.Revocation == nil {
 		fmt.Fprintf(out, "Sending to %s at %s\n", styled(p.cyan, st.Organization, p.reset), styled(p.cyan, app.DestinationHosts(st.Destination, st.Endpoint), p.reset))
 	}
 }

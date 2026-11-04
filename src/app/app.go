@@ -40,6 +40,8 @@ type Runtime struct {
 	upload    engine.UploadPort
 	uploadErr error
 
+	client *controlplane.Client
+
 	// telemetry outlives a failed upload port: an install that cannot upload is exactly the one
 	// whose failures someone should hear about.
 	telemetry telemetrySubmitter
@@ -129,6 +131,15 @@ func NewFrom(
 	paths config.Paths,
 	remote controlplane.Remote,
 ) (*Runtime, error) {
+	var revoked *controlplane.Revocation
+	if errors.As(remote.Err, &revoked) {
+		notifyRevocation(paths.StateDir)
+		return nil, remote.Err
+	}
+	if err := EnrollmentRevocation(paths.StateDir); err != nil {
+		notifyRevocation(paths.StateDir)
+		return nil, err
+	}
 	unit, err := identity.Load(paths.StateDir)
 	if err != nil {
 		return nil, fmt.Errorf("%w\n\nRun `quesma-shipper login <token>` first (or `quesma-shipper local-dev` without a control\n"+
@@ -164,7 +175,7 @@ func NewFrom(
 		return nil, err
 	}
 	hostname, _ := os.Hostname()
-	return &Runtime{eff: eff, unit: unit, upload: up, uploadErr: upErr, telemetry: telemetry,
+	return &Runtime{eff: eff, unit: unit, upload: up, uploadErr: upErr, telemetry: telemetry, client: client,
 		hostname: hostname, log: log, build: build,
 		remote: remote, env: env, recipients: recipients}, nil
 }
@@ -253,6 +264,10 @@ func (r *Runtime) Drain(ctx context.Context) (formats.Report, bool, error) {
 }
 
 func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (formats.Report, error) {
+	if err := r.revocation(); err != nil {
+		notifyRevocation(r.eff.StateDir)
+		return formats.Report{}, err
+	}
 	store, err := engine.Open(r.eff.StateDir, r.unit.InstallID.String())
 	if err != nil {
 		return formats.Report{}, err
@@ -273,6 +288,10 @@ func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (format
 	o.Unbounded = unbounded
 	o.Heartbeat = r.WriteHeartbeat
 	rep, err := engine.Run(ctx, store, o)
+	if revoked := r.revocation(); revoked != nil {
+		notifyRevocation(r.eff.StateDir)
+		return rep, revoked
+	}
 
 	// Stamped even when the run shipped nothing: the marker answers "is the agent running at all",
 	// which the fingerprint document cannot.
@@ -293,6 +312,9 @@ func (r *Runtime) WriteHeartbeat(ctx context.Context, rep formats.Report) error 
 }
 
 func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror bool) error {
+	if err := r.revocation(); err != nil {
+		return err
+	}
 	r.hbMu.Lock()
 	defer r.hbMu.Unlock()
 	hb := engine.Build(engine.Input{
@@ -449,4 +471,11 @@ func clientBlock() transforms.Client {
 		OS:        b.OS,
 		Arch:      b.Arch,
 	}
+}
+
+func (r *Runtime) revocation() error {
+	if r.client != nil {
+		return r.client.Revocation()
+	}
+	return EnrollmentRevocation(r.eff.StateDir)
 }

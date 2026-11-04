@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"time"
 
@@ -19,21 +20,22 @@ type AgentSummary struct {
 }
 
 type Status struct {
-	Version      string         `json:"version"`
-	Organization string         `json:"organization,omitempty"`
-	Machine      string         `json:"machine,omitempty"`
-	LoggedIn     bool           `json:"logged_in"`
-	Service      string         `json:"service"`
-	ServiceOK    bool           `json:"service_ok"`
-	Paused       bool           `json:"paused"`
-	PausedUntil  *time.Time     `json:"paused_until,omitempty"`
-	LastSent     *time.Time     `json:"last_sent,omitempty"`
-	Endpoint     string         `json:"endpoint,omitempty"`
-	Agents       []AgentSummary `json:"agents"`
-	PendingBytes int64          `json:"pending_bytes"`
-	Off          []string       `json:"off,omitempty"`
-	Destination  string         `json:"destination"`
-	StateDir     string         `json:"state_dir"`
+	Revocation   *controlplane.Revocation `json:"revocation,omitempty"`
+	Version      string                   `json:"version"`
+	Organization string                   `json:"organization,omitempty"`
+	Machine      string                   `json:"machine,omitempty"`
+	LoggedIn     bool                     `json:"logged_in"`
+	Service      string                   `json:"service"`
+	ServiceOK    bool                     `json:"service_ok"`
+	Paused       bool                     `json:"paused"`
+	PausedUntil  *time.Time               `json:"paused_until,omitempty"`
+	LastSent     *time.Time               `json:"last_sent,omitempty"`
+	Endpoint     string                   `json:"endpoint,omitempty"`
+	Agents       []AgentSummary           `json:"agents"`
+	PendingBytes int64                    `json:"pending_bytes"`
+	Off          []string                 `json:"off,omitempty"`
+	Destination  string                   `json:"destination"`
+	StateDir     string                   `json:"state_dir"`
 }
 
 func CurrentStatus(build Build) (Status, error) {
@@ -71,6 +73,12 @@ func CurrentStatus(build Build) (Status, error) {
 		}
 	}
 
+	if err := EnrollmentRevocation(paths.StateDir); err != nil {
+		if !errors.As(err, &st.Revocation) {
+			return st, err
+		}
+		return st, nil
+	}
 	rows := Survey(eff, paths, eff.Catalog.RepoFilter())
 	doc, docErr := engine.Peek(paths.StateDir)
 	registry := sources.NewRegistry()

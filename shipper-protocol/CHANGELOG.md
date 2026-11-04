@@ -8,6 +8,9 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
 
 ### Changed
 
+- Document the existing `403` body `this install is revoked` as the stable install-revocation
+  signal on device-authenticated calls. Other 403s do not revoke an install locally. No response,
+  schema or fixture bytes change.
 - Grant enrollment accepts a valid replacement claim for an active install with the same
   organization, install ID, device key and age recipient, without rewriting the original record.
   Invite replay remains exact. Request/response schemas and fixtures are unchanged. Deploy the

@@ -103,7 +103,7 @@ Golden headers, the seed key that produced them, and a set of must-reject cases 
 | 200 | success | proceed |
 | 400 | malformed request; the body names the field | show the reason |
 | 401 | not authenticated: missing or unparseable `Shipper-Device` header, unknown install, or a signature that does not verify | credentials refused; the run stops |
-| 403 | revoked: a revoked install, or a spent, expired, or revoked enrollment claim | same as 401; revocation is discovered as a 403 on the next call, there is no push |
+| 403 | revoked: a revoked install, or a spent, expired, or revoked enrollment claim | on a device-authenticated call, the exact body `this install is revoked` (with an optional trailing newline) permanently stops collection and retries for that enrollment; other 403s have the same handling as 401; there is no push |
 | 409 | `/v1/config`: no served config this client can execute; `/v1/enroll`: the install id belongs to different enrollment material | config: keep running on the cached config; enroll: show the reason |
 | 429 | upload authorization is rate limited | commit nothing; retry on a later run |
 | 5xx | server-side failure | show the reason; the cached config keeps working |

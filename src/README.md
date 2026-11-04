@@ -177,6 +177,39 @@ quesma-shipper local-dev                    Set up without a control plane
 To look at the pipeline without any control plane, run `quesma-shipper local-dev`, then
 `quesma-shipper preview`: collection and scrubbing work, and upload is disabled.
 
+If an operator revokes this install, collection and server retries stop. `status` and `doctor`
+show the organization and when this machine detected the revocation. macOS and Windows attempt
+a desktop notification when an interactive session allows it. A failed notification command or
+an SSH session leaves it pending for a later local check. A successful command records it as
+notified; the OS may still suppress the banner through notification settings.
+Windows setup registers the notification's `com.quesma.shipper` AppUserModelID on its Start menu
+shortcut. Notification delivery starts the absolute System32 `WindowsPowerShell/v1.0/powershell.exe`
+with `-NoProfile -NonInteractive`, runs a WinRT toast script, and has a 15-second deadline.
+No token or private key is passed to this process. Portable Windows binaries need the setup-created
+shortcut for desktop notifications; `status` and `doctor` work without it.
+
+To return, run `quesma-shipper login <new-token>` (the previous server URL is reused unless you
+pass `--server`). This creates a fresh install identity and keeps the previous keys and local
+progress under `revoked-installs/<old-install-id>` in the state directory. Existing source files
+are eligible to ship again under the new identity, including history from before revocation.
+Returning to the same organization can duplicate that history in its bucket; joining another
+organization makes those source files eligible to upload to that organization's bucket.
+Failed enrollment keeps collection stopped; the same command retries the saved request exactly.
+A corrected `--server` starts a new attempt at that server. A definitive enrollment conflict
+starts a fresh pending identity; other errors name the pending attempt file and retain it for retry.
+After enrollment succeeds, the pending directory and its extra copy of the new keys are removed.
+This includes temporary key files left by an interrupted atomic write.
+An invalid or incomplete `revocation.json` also stops collection. `doctor` names its path, and
+`quesma-shipper login <new-token>` archives the damaged record and recovers with a fresh identity.
+Read errors or unsafe file permissions must first be repaired at the path reported by `doctor`;
+login does not bypass those checks. Never delete a revocation record to resume collection.
+Local archived state is kept until `uninstall --purge` removes it.
+
+For an administrator-managed installation, ask the administrator to supply a new invite or grant
+and run `quesma-shipper login <new-token>` in the affected user's session. Rotating the managed
+Server/Grant policy alone does not replace a revoked enrollment. Administrators or MDM must
+remove a managed installation; the user's `uninstall` command cannot do that.
+
 ## Configuration
 
 Configuration is resolved from four layers, in this order: compiled defaults, the source catalog,

@@ -74,6 +74,9 @@ Source: "{#SupervisorPath}"; DestDir: "{app}"; DestName: "quesma-shipper-supervi
 Source: "{#SourcePath}\..\..\..\LICENSE"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "{#SourcePath}\..\..\..\NOTICE"; DestDir: "{app}\licenses"; Flags: ignoreversion
 
+[Icons]
+Name: "{autoprograms}\Quesma Shipper"; Filename: "{app}\quesma-shipper.exe"; Parameters: "status"; AppUserModelID: "com.quesma.shipper"
+
 [Registry]
 Root: HKLM64; Subkey: "Software\Quesma\Shipper"; ValueType: string; ValueName: "InstallDir"; ValueData: "{app}"; Flags: uninsdeletevalue uninsdeletekeyifempty; Check: IsAdminInstallMode
 Root: HKLM64; Subkey: "Software\Quesma\Shipper"; ValueType: string; ValueName: "Version"; ValueData: "{#ReleaseVersion}"; Flags: uninsdeletevalue uninsdeletekeyifempty; Check: IsAdminInstallMode

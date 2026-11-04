@@ -74,6 +74,9 @@ type telemetryFault struct {
 // telemetry must never become the problem it reports. Nothing retries -- the next tick carries its
 // own batch id and the same bounded window.
 func (r *Runtime) SubmitTelemetry(ctx context.Context) {
+	if r.revocation() != nil {
+		return
+	}
 	if r.eff.TelemetryEndpoint == "" || r.telemetry == nil || r.telemetryOff {
 		return
 	}

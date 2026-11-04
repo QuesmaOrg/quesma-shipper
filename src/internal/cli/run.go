@@ -248,13 +248,52 @@ func runCmd(build app.Build) *cobra.Command {
 
 func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, drain, quiet bool,
 	fl *crashjournal.Log, runID string, lastCrash *formats.LastCrash) error {
+	for {
+		err := runEnrolledLoop(cmd, ctx, build, once, drain, quiet, fl, runID, lastCrash)
+		var revoked *controlplane.Revocation
+		if once || !errors.As(err, &revoked) {
+			return err
+		}
+		fmt.Fprintln(cmd.ErrOrStderr(), revoked.Error(), app.RevocationRecovery())
+		fl.Phase("revoked: waiting for enrollment")
+		stateDir, err := app.StateDirWithoutConfig()
+		if err != nil {
+			return err
+		}
+		waitForReenrollment(ctx, stateDir, revoked, enrollmentPollInterval)
+		if ctx.Err() != nil {
+			return nil
+		}
+	}
+}
+
+func waitForReenrollment(ctx context.Context, stateDir string, revoked *controlplane.Revocation, interval time.Duration) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
+		// A failed read means not re-enrolled yet: on Windows it fails while login replaces the file.
+		enrollment, err := controlplane.LoadEnrollment(stateDir)
+		if err == nil && enrollment.InstallID != revoked.InstallID && app.EnrollmentRevocation(stateDir) == nil {
+			return
+		}
+	}
+}
+
+func runEnrolledLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, drain, quiet bool,
+	fl *crashjournal.Log, runID string, lastCrash *formats.LastCrash) error {
 	fl.Phase("init")
 
 	env, err := app.New(build)
 	if err != nil {
 		// No runtime, so JudgeTick cannot see this: a config that will not resolve used to
 		// reach stderr and nothing else, leaving an install broken and silent.
-		app.RecordStartupFailure("run", runID, err)
+		var revoked *controlplane.Revocation
+		if !errors.As(err, &revoked) {
+			app.RecordStartupFailure("run", runID, err)
+		}
 		return err
 	}
 	env.SetRunInfo(runID, lastCrash)
@@ -329,6 +368,10 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 			// Joined, not just signalled: the judge is about to write the report the watchdog reads.
 			stopWatch()
 			<-watchdogDone
+		}
+		var revoked *controlplane.Revocation
+		if errors.As(err, &revoked) {
+			return err
 		}
 		mem := platform.Delta{Before: before, After: platform.ReadMemStats()}
 		if stream != nil {

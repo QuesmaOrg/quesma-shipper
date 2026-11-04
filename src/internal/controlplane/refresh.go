@@ -71,11 +71,20 @@ func Refresh(ctx context.Context, o RefreshOptions) Remote {
 		return Remote{Origin: OriginNone}
 	}
 
+	if revoked, err := LoadRevocation(o.StateDir, o.Enrollment); err != nil {
+		return Remote{Origin: OriginNone, Err: err}
+	} else if revoked != nil {
+		return Remote{Origin: OriginNone, Err: revoked}
+	}
 	var fetchErr error
 	if !o.Offline {
 		fetched, err := fetch(ctx, o)
 		if err == nil {
 			return fetched
+		}
+		var revoked *Revocation
+		if errors.As(err, &revoked) {
+			return Remote{Origin: OriginNone, Err: err}
 		}
 		if localRejection(err) {
 			return Remote{Origin: OriginNone, Err: err}
@@ -149,6 +158,7 @@ func fetch(ctx context.Context, o RefreshOptions) (Remote, error) {
 
 	c, err := New(Options{
 		Endpoint:     o.Enrollment.Endpoint,
+		StateDir:     o.StateDir,
 		InstallID:    o.Enrollment.InstallID,
 		Organization: o.Enrollment.Organization,
 		DeviceKey:    deviceKey,

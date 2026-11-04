@@ -1,0 +1,126 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
+	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
+	"github.com/QuesmaOrg/quesma-shipper/internal/identity"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
+)
+
+// The enrollment record commits the replacement last; an interrupted recovery remains revoked.
+func reenroll(ctx context.Context, stateDir, server, token string, old *controlplane.Enrollment) (LoginResult, error) {
+	store, err := engine.Open(stateDir, old.InstallID)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	defer store.Close()
+	if err := archiveRevokedState(stateDir, old.InstallID); err != nil {
+		return LoginResult{}, err
+	}
+	if _, err := controlplane.LoadRevocation(stateDir, old); errors.Is(err, controlplane.ErrInvalidRevocation) {
+		// Keep a valid stop marker through every interrupted recovery; the corrupt original is archived.
+		revoked := &controlplane.Revocation{InstallID: old.InstallID, Organization: old.Organization, Endpoint: old.Endpoint, DetectedAt: time.Now().UTC(), Notified: true}
+		if err := revoked.Save(stateDir); err != nil {
+			return LoginResult{}, err
+		}
+	} else if err != nil {
+		return LoginResult{}, err
+	}
+	pending := filepath.Join(stateDir, "re-enrollment", old.InstallID)
+	unit, err := loadOrMintIdentity(pending)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	hostname, _ := os.Hostname()
+	enroll := func() (*controlplane.EnrollResponse, string, []byte, error) {
+		return controlplane.EnrollInteractive(ctx, pending, server, token, controlplane.EnrollRequest{
+			InstallID: unit.InstallID.String(), AgeRecipient: unit.Recipient().String(), Hostname: hostname, Platform: runtime.GOOS + "/" + runtime.GOARCH,
+		})
+	}
+	resp, endpoint, priv, err := enroll()
+	if errors.Is(err, controlplane.ErrEnrollmentConflict) {
+		// A definitive conflict cannot be recovered by replaying this identity again.
+		if err := clearPendingEnrollment(pending); err != nil {
+			return LoginResult{}, err
+		}
+		unit, err = loadOrMintIdentity(pending)
+		if err != nil {
+			return LoginResult{}, err
+		}
+		resp, endpoint, priv, err = enroll()
+	}
+	if err != nil {
+		return LoginResult{}, err
+	}
+	raw, err := platform.ReadPrivate(filepath.Join(pending, identity.FileName), 1<<20)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	if err := platform.WriteAtomic(filepath.Join(stateDir, identity.FileName), raw, 0o600); err != nil {
+		return LoginResult{}, err
+	}
+	if err := platform.RemoveFile(filepath.Join(stateDir, controlplane.CacheFile)); err != nil {
+		return LoginResult{}, err
+	}
+	rec := controlplane.Enrollment{InstallID: unit.InstallID.String(), Organization: resp.Organization, Endpoint: endpoint, DeviceKey: controlplane.EncodeKey(priv), EnrolledAt: controlplane.Now()}
+	if err := rec.Save(stateDir); err != nil {
+		return LoginResult{}, err
+	}
+	if err := clearPendingEnrollment(pending); err != nil {
+		return LoginResult{}, fmt.Errorf("enrollment succeeded, but could not remove pending keys in %s: %w", pending, err)
+	}
+	return LoginResult{Organization: resp.Organization, Machine: hostname}, nil
+}
+
+func clearPendingEnrollment(pending string) error {
+	return platform.RemoveTree(pending)
+}
+
+func archiveRevokedState(stateDir, installID string) error {
+	if filepath.Base(installID) != installID || installID == "." || installID == ".." {
+		return fmt.Errorf("invalid revoked install ID")
+	}
+	archive := filepath.Join(stateDir, "revoked-installs", installID)
+	if err := platform.EnsureDir(archive, 0o700); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(stateDir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasSuffix(entry.Name(), ".lock") {
+			continue
+		}
+		destination := filepath.Join(archive, entry.Name())
+		if _, err := os.Stat(destination); err == nil {
+			continue
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("cannot archive non-regular state artifact %s", entry.Name())
+		}
+		raw, err := os.ReadFile(filepath.Join(stateDir, entry.Name()))
+		if err != nil {
+			return err
+		}
+		if err := platform.WriteAtomic(destination, raw, 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
+}

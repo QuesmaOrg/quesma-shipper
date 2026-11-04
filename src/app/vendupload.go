@@ -61,6 +61,7 @@ func newControlPlaneClient(stateDir string) (*controlplane.Client, error) {
 	}
 	return controlplane.New(controlplane.Options{
 		Endpoint:     enrollment.Endpoint,
+		StateDir:     stateDir,
 		InstallID:    enrollment.InstallID,
 		Organization: enrollment.Organization,
 		DeviceKey:    deviceKey,
