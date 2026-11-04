@@ -159,6 +159,7 @@ func TestCacheListsTheFeaturesTheReducerRemoved(t *testing.T) {
 		features []string
 	}{
 		{"additions", "config_version: 1\nsources: [{id: claude-code-transcripts, exclude_add: ['projects/private/**']}]\n", []string{"sources.exclude_add"}},
+		{"multiple sources share a feature", "config_version: 1\nsources: [{id: claude-code-transcripts, exclude_add: ['projects/private/**']}, {id: codex-transcripts, exclude_add: ['private/**']}]\n", []string{"sources.exclude_add"}},
 		{"nothing to reduce", "config_version: 1\nsources: [{id: claude-code-transcripts, exclude: ['projects/private/**']}]\n", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

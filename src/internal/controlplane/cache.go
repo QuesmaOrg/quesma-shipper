@@ -3,6 +3,7 @@ package controlplane
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"time"
@@ -113,16 +114,18 @@ func reduceCachedConfig(raw []byte) (reduced []byte, features []string, err erro
 	sources, _ := doc["sources"].([]any)
 	var records []map[string]any
 	var scopes []protocol.SourceExclusions
+	reducedFeatures := map[string]bool{}
 	for _, item := range sources {
 		source, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
 		if _, exists := source["exclude_add"]; exists {
-			features = []string{protocol.ExcludeAddFeature}
+			reducedFeatures[protocol.ExcludeAddFeature] = true
 		}
 		records = append(records, source)
 	}
+	features = slices.Sorted(maps.Keys(reducedFeatures))
 	if len(features) == 0 {
 		return raw, nil, nil
 	}

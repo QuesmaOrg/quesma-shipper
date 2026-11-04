@@ -374,7 +374,7 @@ build needs; it could not collect that source either way. A source carrying `exc
 as stored only to a fetch whose catalog lists `sources.exclude_add`. Any other fetch, one without a
 catalog included, gets that source with `enabled: false` and no `exclude_add`, so a build that
 cannot apply the additions stops collecting the source rather than collecting more (see "Additive
-source exclusions" in `PROTOCOL.md`). Nothing else changes. A requested `scrub.rule_packs` name is
+source exclusions" in `PROTOCOL.md`). A requested `scrub.rule_packs` name is
 never left out: that would scrub less than the organization asked for, and a build lacking a pack
 refuses the document and keeps collecting on its last working one. What was left out or paused is
 logged once per change for each install, not on every fetch.
@@ -433,6 +433,11 @@ report they cannot, and how many have not reported. A stored ID nobody reports i
 not reported by any install. **Use an unreported source ID** takes a typed ID, with a warning that
 no install has confirmed it, and sends it in `unverified_sources`. If the endpoint cannot be read,
 the form falls back to a typed ID, sent the same way.
+
+**Additional exclusions** writes `sources[].exclude_add`, preserving catalog and machine-owner
+exclusions. The UI shows any existing `sources[].exclude` replacement list and lets you edit or
+clear it. Creating a new replacement list, including restoring one after clearing it, requires the
+configuration or collection API; the UI only creates additive exclusions.
 
 ## Telemetry proxy
 
