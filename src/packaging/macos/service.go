@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -297,12 +298,24 @@ func launchdAbsoluteField(out, field string) (string, error) {
 			found = true
 			var spaced bool
 			value, spaced = strings.CutPrefix(rest, " ")
+			// Submitted jobs report a provenance marker rather than a source plist.
+			if spaced && field == "path" && launchdSubmittedPath(value) {
+				value = ""
+				continue
+			}
 			if !spaced || !filepath.IsAbs(value) {
 				return "", fmt.Errorf("invalid launchd %s field", field)
 			}
 		}
 	}
 	return value, nil
+}
+
+func launchdSubmittedPath(value string) bool {
+	pid, prefix := strings.CutPrefix(value, "(submitted by launchctl[")
+	pid, suffix := strings.CutSuffix(pid, "])")
+	n, err := strconv.Atoi(pid)
+	return prefix && suffix && err == nil && n > 0 && strconv.Itoa(n) == pid
 }
 
 // An old cask must not stop a replacement installation during cleanup or rollback.

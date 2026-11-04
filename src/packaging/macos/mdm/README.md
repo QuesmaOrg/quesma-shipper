@@ -84,8 +84,9 @@ For system-to-personal migration, have an administrator remove the system packag
 If a machine already has both installations, the root removal script can remove the system
 half without access to the personal installation's home directory. It checks the loaded
 LaunchAgent's plist path for each discovered account and stops agents loaded from
-`/Library/LaunchAgents/com.quesma.shipper.plist`. If the service has no plist path, it stops it
-only when its program is the system app's executable. Malformed or duplicate fields abort
+`/Library/LaunchAgents/com.quesma.shipper.plist`. If the service has no plist path (including
+launchd's `(submitted by launchctl[PID])` marker), it stops it only when its program is the
+system app's executable. Malformed or duplicate fields abort
 removal. The script reports the UIDs of loaded non-system agents it leaves intact.
 Personal and Homebrew agents, app bundles, command links, plists, enrollment and upload history
 are kept. An unknown service owner or

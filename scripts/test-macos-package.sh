@@ -177,9 +177,7 @@ for ((attempt=0; attempt<30; attempt++)); do
   sleep 1
 done
 [[ -n "$submitted_pid" ]]
-if grep -q $'^\tpath = ' "$work/submitted-before.txt"; then
-  echo 'Submitted job unexpectedly has a source plist.' >&2; exit 1
-fi
+grep -qE $'^\tpath = \\(submitted by launchctl\\[[1-9][0-9]*\\]\\)$' "$work/submitted-before.txt"
 grep -q $'^\tprogram = /bin/sleep$' "$work/submitted-before.txt"
 sudo /bin/sh "$remover" | tee "$work/submitted-removal.txt"
 assert_system_removed
@@ -188,6 +186,18 @@ sudo launchctl print "$target" > "$work/submitted-after.txt"
 [[ $(sed -n $'s/^\tpid = //p' "$work/submitted-after.txt") == "$submitted_pid" ]]
 launchctl bootout "$target"
 assert_gone
+
+echo 'Removal stops a submitted job running the system executable'
+install_system
+launchctl bootout "$target"
+assert_gone
+launchctl submit -l "$label" -- "$system_app/Contents/MacOS/quesma-shipper" run
+sudo launchctl print "$target" > "$work/submitted-system.txt"
+grep -qE $'^\tpath = \\(submitted by launchctl\\[[1-9][0-9]*\\]\\)$' "$work/submitted-system.txt"
+[[ $(sed -n $'s/^\tprogram = //p' "$work/submitted-system.txt") == "$system_app/Contents/MacOS/quesma-shipper" ]]
+sudo /bin/sh "$remover"
+assert_gone
+assert_system_removed
 
 echo 'Reinstall after recovery, then personal purge'
 install_personal
