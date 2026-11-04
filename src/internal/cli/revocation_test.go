@@ -25,23 +25,27 @@ func TestRevokedSchedulerWaitsForReplacementEnrollment(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- waitForReenrollment(ctx, dir, revoked, time.Millisecond) }()
-	select {
-	case err := <-done:
-		t.Fatalf("resumed without replacement: %v", err)
-	case <-time.After(20 * time.Millisecond):
+	done := make(chan struct{})
+	go func() { waitForReenrollment(ctx, dir, revoked, time.Millisecond); close(done) }()
+	stillWaiting := func(stage string) {
+		t.Helper()
+		select {
+		case <-done:
+			t.Fatalf("resumed %s", stage)
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
+	stillWaiting("without replacement")
+	if err := os.WriteFile(filepath.Join(dir, controlplane.EnrollmentFile), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stillWaiting("on an unreadable enrollment")
 	enr.InstallID = "replacement"
 	if err := enr.Save(dir); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-ctx.Done():
+	<-done
+	if ctx.Err() != nil {
 		t.Fatal("replacement did not resume scheduler")
 	}
 }

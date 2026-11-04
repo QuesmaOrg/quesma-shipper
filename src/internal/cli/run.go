@@ -260,28 +260,24 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 		if err != nil {
 			return err
 		}
-		if err := waitForReenrollment(ctx, stateDir, revoked, enrollmentPollInterval); err != nil {
-			return err
-		}
+		waitForReenrollment(ctx, stateDir, revoked, enrollmentPollInterval)
 		if ctx.Err() != nil {
 			return nil
 		}
 	}
 }
 
-func waitForReenrollment(ctx context.Context, stateDir string, revoked *controlplane.Revocation, interval time.Duration) error {
+func waitForReenrollment(ctx context.Context, stateDir string, revoked *controlplane.Revocation, interval time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case <-time.After(interval):
 		}
+		// A failed read means not re-enrolled yet: on Windows it fails while login replaces the file.
 		enrollment, err := controlplane.LoadEnrollment(stateDir)
-		if err != nil {
-			return err
-		}
-		if enrollment.InstallID != revoked.InstallID && app.EnrollmentRevocation(stateDir) == nil {
-			return nil
+		if err == nil && enrollment.InstallID != revoked.InstallID && app.EnrollmentRevocation(stateDir) == nil {
+			return
 		}
 	}
 }
