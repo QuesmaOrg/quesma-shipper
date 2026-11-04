@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -204,7 +205,11 @@ func waitForLabelGone(within time.Duration) error {
 func waitForServiceGone(target string, within time.Duration) error {
 	start := time.Now()
 	for wait := 100 * time.Millisecond; ; wait = min(2*wait, 2*time.Second) {
-		if exec.Command(launchctl, "print", target).Run() != nil {
+		_, loaded, err := printLaunchdService(target)
+		if err != nil {
+			return err
+		}
+		if !loaded {
 			return nil
 		}
 		if time.Since(start) >= within {
@@ -213,6 +218,19 @@ func waitForServiceGone(target string, within time.Duration) error {
 		}
 		time.Sleep(wait)
 	}
+}
+
+func printLaunchdService(target string) ([]byte, bool, error) {
+	out, err := exec.Command(launchctl, "print", target).CombinedOutput()
+	if err == nil {
+		return out, true, nil
+	}
+	var exit *exec.ExitError
+	// launchctl distinguishes an absent GUI domain (112) or service (113) from inspection failures.
+	if errors.As(err, &exit) && (exit.ExitCode() == 112 || exit.ExitCode() == 113) {
+		return nil, false, nil
+	}
+	return nil, false, fmt.Errorf("supervise: launchctl print %s: %w: %s", target, err, strings.TrimSpace(string(out)))
 }
 
 func UninstallService() error {
@@ -263,12 +281,17 @@ func uninstallPersonalService(exe, home string) error {
 }
 
 func launchdServicePath(out string) string {
+	var path string
 	for _, line := range strings.Split(out, "\n") {
-		if path, ok := strings.CutPrefix(strings.TrimSpace(line), "path = "); ok {
-			return path
+		// Only the service's own field counts, never a nested environment or endpoint's path.
+		if value, ok := strings.CutPrefix(strings.TrimPrefix(line, "\t"), "path = "); ok {
+			if path != "" || !filepath.IsAbs(value) {
+				return ""
+			}
+			path = value
 		}
 	}
-	return ""
+	return path
 }
 
 // An old cask must not stop a replacement installation during cleanup or rollback.

@@ -98,11 +98,10 @@ func PreUninstallSystem() error {
 	if err != nil {
 		return err
 	}
-	for _, account := range users {
-		if err := checkNoUserInstallation(account.home); err != nil {
-			return err
-		}
-	}
+	return preUninstallSystem(users)
+}
+
+func preUninstallSystem(users []localUser) error {
 	started := make(map[string]bool)
 	for _, account := range users {
 		if started[account.uid] {
@@ -110,7 +109,19 @@ func PreUninstallSystem() error {
 		}
 		started[account.uid] = true
 		target := "gui/" + account.uid + "/" + bundleIdentifier
-		if exec.Command(launchctl, "print", target).Run() != nil {
+		out, loaded, err := printLaunchdService(target)
+		if err != nil {
+			return err
+		}
+		if !loaded {
+			continue
+		}
+		// A personal agent can share the label, even when its account's home is unavailable.
+		path := launchdServicePath(string(out))
+		if path == "" {
+			return fmt.Errorf("cannot determine which LaunchAgent owns %s; system installation left in place", target)
+		}
+		if path != systemAgentPath {
 			continue
 		}
 		if _, err := os.Stat(systemAgentPath); err != nil {

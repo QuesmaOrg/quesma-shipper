@@ -17,6 +17,9 @@ authorization and is updated and removed by an administrator. Before switching b
 uninstall the previous installation without purging local state. For Jamf, Kandji and other MDM
 deployment, use the same package and a `com.quesma.shipper` managed-preferences profile: see the
 [macOS MDM guide](packaging/macos/mdm/README.md).
+If personal and system installations already coexist, the administrator removal script removes
+only the system installation and leaves personal files, services and local state intact; see
+[mixed-install recovery](packaging/macos/mdm/README.md#ownership-migration-and-troubleshooting).
 
 **Linux.** The script downloads a hash-pinned bootstrap binary into `~/.local/bin` and installs a
 systemd user service. Run it again to upgrade; enrollment is kept. `--no-service` skips the
