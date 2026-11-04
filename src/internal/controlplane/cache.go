@@ -3,10 +3,15 @@ package controlplane
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"time"
 
+	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
+	"gopkg.in/yaml.v3"
 )
 
 // CacheFile holds the last remote config this install fetched.
@@ -21,8 +26,12 @@ const cacheSchema = 3
 type Cached struct {
 	CacheSchema int `json:"cache_schema"`
 
-	// Config is the served document verbatim, reparsed on load.
-	Config []byte `json:"config"`
+	// Config is the safe fallback older clients read after a downgrade.
+	Config     []byte `json:"config"`
+	ConfigFull []byte `json:"config_full,omitempty"`
+
+	// ConfigFullFeatures is what a reader must support before it may use ConfigFull.
+	ConfigFullFeatures []string `json:"config_full_features,omitempty"`
 
 	FetchedAt time.Time `json:"fetched_at"`
 	ExpiresAt time.Time `json:"expires_at"`
@@ -31,7 +40,31 @@ type Cached struct {
 // SaveCache persists a fetched config.
 func SaveCache(stateDir string, c Cached) error {
 	c.CacheSchema = cacheSchema
-	return platform.WriteJSON(filepath.Join(stateDir, CacheFile), c, 0o600)
+	full := c.Document()
+	reduced, features, err := reduceCachedConfig(full)
+	if err != nil {
+		return err
+	}
+	c.Config, c.ConfigFull, c.ConfigFullFeatures = reduced, nil, nil
+	if len(features) > 0 {
+		c.ConfigFull, c.ConfigFullFeatures = full, features
+	}
+	encoded, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	// An older reader's size limit must still admit the cache after a downgrade.
+	if len(encoded)+1 > maxResponseBytes {
+		c.ConfigFull, c.ConfigFullFeatures = nil, nil
+		encoded, err = json.MarshalIndent(c, "", "  ")
+		if err != nil {
+			return err
+		}
+		if len(encoded)+1 > maxResponseBytes {
+			return fmt.Errorf("backend: reduced cache exceeds %d bytes", maxResponseBytes)
+		}
+	}
+	return platform.WriteAtomic(filepath.Join(stateDir, CacheFile), append(encoded, '\n'), 0o600)
 }
 
 // LoadCache reads the cached config. A missing file is an error the caller treats as "no remote
@@ -56,4 +89,63 @@ func LoadCache(stateDir string) (*Cached, error) {
 // the scope kept was already served and can never widen, while halting would lose data for good.
 func (c Cached) Expired(now time.Time) bool {
 	return !c.ExpiresAt.IsZero() && now.After(c.ExpiresAt)
+}
+
+// Document selects the full layer when this client supports every feature it needs.
+func (c Cached) Document() []byte {
+	needs := c.ConfigFullFeatures
+	if needs == nil {
+		// A full copy without the list predates it, from builds whose only reduced feature was exclude_add.
+		needs = []string{protocol.ExcludeAddFeature}
+	}
+	unsupported := func(feature string) bool { return !slices.Contains(config.Features, feature) }
+	if len(c.ConfigFull) > 0 && !slices.ContainsFunc(needs, unsupported) {
+		return c.ConfigFull
+	}
+	return c.Config
+}
+
+// reduceCachedConfig rewrites what an older reader cannot enforce and names each feature it rewrote.
+func reduceCachedConfig(raw []byte) (reduced []byte, features []string, err error) {
+	var doc map[string]any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return nil, nil, err
+	}
+	sources, _ := doc["sources"].([]any)
+	var records []map[string]any
+	var scopes []protocol.SourceExclusions
+	reducedFeatures := map[string]bool{}
+	for _, item := range sources {
+		source, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, exists := source["exclude_add"]; exists {
+			reducedFeatures[protocol.ExcludeAddFeature] = true
+		}
+		records = append(records, source)
+	}
+	features = slices.Sorted(maps.Keys(reducedFeatures))
+	if len(features) == 0 {
+		return raw, nil, nil
+	}
+	for _, source := range records {
+		encoded, err := yaml.Marshal(source)
+		if err != nil {
+			return nil, nil, err
+		}
+		var scope protocol.SourceExclusions
+		if err := yaml.Unmarshal(encoded, &scope); err != nil {
+			return nil, nil, err
+		}
+		scopes = append(scopes, scope)
+	}
+	for i, scope := range protocol.ReduceSourceExclusions(scopes) {
+		delete(records[i], "exclude_add")
+		if scope.Enabled != nil {
+			records[i]["enabled"] = *scope.Enabled
+		}
+	}
+	reduced, err = yaml.Marshal(doc)
+	return reduced, features, err
 }

@@ -2,6 +2,9 @@ module github.com/QuesmaOrg/quesma-shipper/shipper-protocol
 
 go 1.27.0
 
-require github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
+require (
+	github.com/bmatcuk/doublestar/v4 v4.10.4
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
+)
 
 require golang.org/x/text v0.14.0 // indirect

@@ -11,6 +11,10 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
 - Document the existing `403` body `this install is revoked` as the stable install-revocation
   signal on device-authenticated calls. Other 403s do not revoke an install locally. No response,
   schema or fixture bytes change.
+- Grant enrollment accepts a valid replacement claim for an active install with the same
+  organization, install ID, device key and age recipient, without rewriting the original record.
+  Invite replay remains exact. Request/response schemas and fixtures are unchanged. Deploy the
+  server support before clients rotate pending grants; older servers may return 409.
 
 - The module moved into the [quesma-shipper](https://github.com/QuesmaOrg/quesma-shipper)
   repository as `shipper-protocol/`. Its import path is now
@@ -24,6 +28,13 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
   bytes change.
 
 ### Added
+
+- `sources[].exclude_add` unions relative exclusion globs after all replacement layers.
+  Globs use forward-slash separators on every platform; backslashes, a leading `~` or `$`, and
+  empty, `.` or `..` segments are rejected.
+  `sources.exclude_add` capability negotiation and the shared reduction disable affected sources
+  for older readers; the two-copy cache preserves that behavior through offline downgrades, and
+  its `config_full_features` keeps a build lacking a later feature on the reduced copy.
 
 - `/v1/config` requests may carry `catalog`: the build's compiled source catalog (sources, rule
   packs, served-document features), root templates unexpanded. Optional, so older clients are

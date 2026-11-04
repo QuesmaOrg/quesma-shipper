@@ -30,6 +30,7 @@
           "roots": { "$ref": "#/$defs/strings" },
           "include": { "$ref": "#/$defs/strings" },
           "exclude": { "$ref": "#/$defs/strings" },
+          "exclude_add": { "type": "array", "items": { "type": "string", "format": "source-exclusion-glob" } },
           "max_file_bytes": { "$ref": "#/$defs/count" },
           "enrichers": { "type": "object", "additionalProperties": { "const": false } }
         }

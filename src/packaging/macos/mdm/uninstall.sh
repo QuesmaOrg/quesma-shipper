@@ -43,4 +43,4 @@ rm -rf "$app"
 if /usr/sbin/pkgutil --pkg-info "$label" >/dev/null 2>&1; then
 	/usr/sbin/pkgutil --forget "$label"
 fi
-printf 'Quesma Shipper removed; per-user enrollment and upload history kept. Remove its enrollment profile in MDM as well.\n'
+printf 'Quesma Shipper system installation removed; personal installations, if any, were left intact. Per-user enrollment and upload history kept. Remove its enrollment profile in MDM as well.\n'

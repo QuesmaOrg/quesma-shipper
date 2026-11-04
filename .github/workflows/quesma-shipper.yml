@@ -215,7 +215,7 @@ jobs:
       # three platforms disagree.
       - run: go test ./...
         working-directory: src
-      - name: Build and inspect the rootless package
+      - name: Build and inspect the personal/system package
         run: |
           version="$(sh scripts/release-version.sh)"
           make macos-pkg RELEASE_VERSION="$version"
@@ -224,5 +224,7 @@ jobs:
           installer -dominfo -pkg bin/dist/quesma-shipper-macos-universal.pkg | grep -q CurrentUserHomeDirectory
           (cd src && QUESMA_SHIPPER_PKG="$PWD/../bin/dist/quesma-shipper-macos-universal.pkg" \
             QUESMA_SHIPPER_RELEASE_VERSION="$version" go test ./packaging/macos/ -run BuiltPackage -v)
+      - name: Install, repair, and remove personal and system packages, including mixed-install recovery
+        run: bash scripts/test-macos-package.sh
       - name: Install, upgrade, and remove the Homebrew cask
         run: bash scripts/test-homebrew.sh

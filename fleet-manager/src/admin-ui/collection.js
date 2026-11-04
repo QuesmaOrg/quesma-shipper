@@ -59,7 +59,21 @@ function addCollectionSource(form, source = {}) {
   const row = document.createElement('fieldset');
   row._source = structuredClone(source);
   row.dataset.collectionSource = '';
-  row.innerHTML = '<legend>Source override</legend><div data-source-field></div><label>Collection<select data-source-enabled><option value="">Use default</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label><label>Additional exclusions (one per line)<textarea data-source-exclude></textarea></label><button type="button" data-remove-source class="quiet">Remove override</button>';
+  row.innerHTML = '<legend>Source override</legend><div data-source-field></div><label>Collection<select data-source-enabled><option value="">Use default</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label><label>Additional exclusions (one per line)<textarea data-source-exclude-add placeholder="relative to the source root, e.g. projects/&lt;folder&gt;/**"></textarea></label><div data-exclusion-notes></div>' +
+    (source.exclude?.length ? '<details><summary>Existing replacement exclusions</summary><label>Replacement exclusions (one per line)<textarea data-source-exclude></textarea></label></details>' : '') +
+    '<button type="button" data-remove-source class="quiet">Remove override</button>';
+  const exclusionSupport = sourceNote('', true);
+  exclusionSupport.dataset.exclusionSupport = '';
+  row.querySelector('[data-exclusion-notes]').append(
+    sourceNote('Added to the effective exclusions after catalog, local, and replacement settings are applied.'),
+    exclusionSupport,
+  );
+  if (source.exclude?.length) {
+    // An active replacement drops the catalog's binary-attachment exclusions, so it starts open.
+    const details = row.querySelector('details');
+    details.open = true;
+    details.append(sourceNote('This replaces catalog and machine-owner exclusions, including binary-attachment protections. Clear it to restore those defaults; additional exclusions still apply.', true));
+  }
   const catalog = form._catalog;
   const field = row.querySelector('[data-source-field]');
   if (source.id) {
@@ -93,9 +107,24 @@ function addCollectionSource(form, source = {}) {
     field.append(label);
   }
   row.querySelector('[data-source-enabled]').value = source.enabled === undefined ? '' : String(source.enabled);
-  row.querySelector('[data-source-exclude]').value = (source.exclude || []).join('\n');
+  const replacement = row.querySelector('[data-source-exclude]');
+  if (replacement) replacement.value = (source.exclude || []).join('\n');
+  const additions = row.querySelector('[data-source-exclude-add]');
+  additions.value = (source.exclude_add || []).join('\n');
+  additions.oninput = () => {
+    exclusionSupport.textContent = additions.value.trim() ? exclusionSupportText(catalog) : '';
+  };
+  additions.oninput();
   row.querySelector('[data-remove-source]').onclick = () => row.remove();
   form.querySelector('[data-source-list]').append(row);
+}
+
+function exclusionSupportText(catalog) {
+  if (!catalog) return 'Machines without support for additional exclusions keep this source off until their shipper updates.';
+  if (!catalog.installs.active) return 'No install is active yet: an older shipper that enrolls later will have this source off until it updates.';
+  const supported = (catalog.features || []).find((feature) => feature.name === 'sources.exclude_add')?.installs || 0;
+  const paused = Math.max(0, catalog.installs.active - supported);
+  return paused ? `${plural(paused, 'machine lacks', 'machines lack')} support for additions; those collecting this source will pause until their shipper updates.` : '';
 }
 
 function sourcePicker(row, field, catalog) {
@@ -180,8 +209,13 @@ function collectionBody(form) {
     const source = {...row._source, id: row.querySelector('[data-source-id]').value.trim()};
     const enabled = row.querySelector('[data-source-enabled]').value;
     if (enabled === '') delete source.enabled; else source.enabled = enabled === 'true';
-    const exclude = preservedLines(row.querySelector('[data-source-exclude]').value, source.exclude);
-    if (exclude.length) source.exclude = exclude; else delete source.exclude;
+    const replacement = row.querySelector('[data-source-exclude]');
+    if (replacement) {
+      const exclude = preservedLines(replacement.value, source.exclude);
+      if (exclude.length) source.exclude = exclude; else delete source.exclude;
+    }
+    const additions = preservedLines(row.querySelector('[data-source-exclude-add]').value, source.exclude_add);
+    if (additions.length) source.exclude_add = additions; else delete source.exclude_add;
     return source;
   });
   if (sources.length) collection.sources = sources; else delete collection.sources;

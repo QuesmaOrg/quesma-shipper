@@ -1,0 +1,33 @@
+{
+  "config_version": 1,
+  "sources": [
+    {
+      "id": "claude-code-transcripts",
+      "enabled": true,
+      "exclude": [
+        "projects/replaced/**"
+      ],
+      "exclude_add": [
+        "projects/private/**"
+      ]
+    },
+    {
+      "id": "codex-rollouts",
+      "exclude_add": []
+    },
+    {
+      "id": "custom-unreported",
+      "exclude_add": [
+        "secret/**"
+      ]
+    },
+    {
+      "id": "claude-code-history",
+      "enabled": false
+    },
+    {
+      "id": "claude-code-transcripts",
+      "enabled": true
+    }
+  ]
+}

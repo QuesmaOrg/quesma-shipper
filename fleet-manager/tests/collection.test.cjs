@@ -36,11 +36,11 @@ function form(overrides = {}) {
 
 test('collection form keeps advanced source settings when editing supported fields', () => {
   const source = {id: 'claude-code', roots: ['~/logs'], include: ['*.jsonl'], max_file_bytes: 123, enrichers: {'join': false}};
-  const row = {_source: source, querySelector: (selector) => ({value: {'[data-source-id]': 'claude-code', '[data-source-enabled]': 'false', '[data-source-exclude]': 'private/**\n'}[selector]})};
+  const row = {_source: source, querySelector: (selector) => ({value: {'[data-source-id]': 'claude-code', '[data-source-enabled]': 'false', '[data-source-exclude]': 'private/**\n', '[data-source-exclude-add]': 'new-private/**\n'}[selector]})};
   const fields = form({schedule: '2m', max_files_per_run: '17', drain_deadline: '30s'});
   fields.querySelectorAll = () => [row];
   const result = JSON.parse(JSON.stringify(sandbox.collectionBody(fields)));
-  assert.deepEqual(result.sources, [{...source, enabled: false, exclude: ['private/**']}]);
+  assert.deepEqual(result.sources, [{...source, enabled: false, exclude: ['private/**'], exclude_add: ['new-private/**']}]);
   assert.equal(result.max_files_per_run, 17);
   assert.deepEqual(result.mode, {schedule: '2m'});
 });
@@ -129,4 +129,50 @@ test('support is worded as what installs report, never as enabled, collecting or
     assert.doesNotMatch(sandbox.supportText(catalog, id), /enabled|collecting|detected|installed/i);
   }
   assert.equal(sandbox.supportText({installs: {active: 1, reporting: 1}, sources: [{id: 'a', installs: 1}]}, 'a'), '1 install reports it can collect this source');
+});
+
+test('adding exclusions keeps existing replacement settings and catalog defaults out of the write', () => {
+  const form = pickerForm(catalog);
+  form.elements = fieldsOf();
+  sandbox.addCollectionSource(form, {id: 'claude-code-transcripts', exclude: ['legacy/**']});
+  const row = form.querySelectorAll('[data-collection-source]')[0];
+  row.querySelector('[data-source-exclude-add]').value = 'private/**\n';
+  const body = JSON.parse(JSON.stringify(sandbox.collectionBody(form)));
+  assert.deepEqual(body.sources, [{id: 'claude-code-transcripts', exclude: ['legacy/**'], exclude_add: ['private/**']}]);
+  row.querySelector('[data-source-exclude-add]').value = '';
+  assert.equal(sandbox.collectionBody(form).sources[0].exclude_add, undefined);
+  assert.deepEqual(Array.from(sandbox.collectionBody(form).sources[0].exclude), ['legacy/**']);
+});
+
+test('additional exclusion editor counts machines without the feature, including non-reporters', () => {
+  const featureCatalog = {...catalog, features: [{name: 'sources.exclude_add', installs: 9}]};
+  const form = pickerForm(featureCatalog);
+  sandbox.addCollectionSource(form, {id: 'claude-code-transcripts'});
+  const row = form.querySelectorAll('[data-collection-source]')[0];
+  const additions = row.querySelector('[data-source-exclude-add]');
+  assert.equal(row.querySelector('[data-exclusion-support]').textContent, '');
+  additions.value = 'private/**';
+  additions.oninput();
+  assert.equal(row.querySelector('[data-exclusion-support]').textContent, '5 machines lack support for additions; those collecting this source will pause until their shipper updates.');
+  assert.equal(sandbox.exclusionSupportText({...featureCatalog, features: [{name: 'sources.exclude_add', installs: 14}]}), '');
+  assert.match(sandbox.exclusionSupportText(null), /without support/);
+  additions.value = '';
+  additions.oninput();
+  assert.equal(row.querySelector('[data-exclusion-support]').textContent, '');
+});
+
+test('an existing replacement list is shown open with its warning', () => {
+  const form = pickerForm(catalog);
+  sandbox.addCollectionSource(form, {id: 'claude-code-transcripts', exclude: ['legacy/**']});
+  const details = form.querySelectorAll('[data-collection-source]')[0].querySelector('details');
+  assert.equal(details.open, true);
+  assert.ok(texts(details).some((text) => text.startsWith('This replaces catalog and machine-owner exclusions')));
+});
+
+test('with no active install, additions warn that older shippers enrolling later keep the source off', () => {
+  const empty = {installs: {active: 0, reporting: 0}, sources: [], rule_packs: [], features: []};
+  const form = pickerForm(empty);
+  sandbox.addCollectionSource(form, {id: 'claude-code-transcripts', exclude_add: ['private/**']});
+  const note = form.querySelectorAll('[data-collection-source]')[0].querySelector('[data-exclusion-support]');
+  assert.equal(note.textContent, 'No install is active yet: an older shipper that enrolls later will have this source off until it updates.');
 });

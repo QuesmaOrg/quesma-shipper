@@ -173,6 +173,41 @@ func logCmd() *cobra.Command {
 	return cmd
 }
 
+func bucketCmd() *cobra.Command {
+	var asEnv bool
+	cmd := &cobra.Command{
+		Use:   "bucket",
+		Short: "Ask the control plane for one upload ticket, never spent, and print the bucket it names",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, err := app.ProbeSink(cmd.Context())
+			if err != nil {
+				return err
+			}
+			printSink(cmd.OutOrStdout(), s, asEnv)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&asEnv, "env", false, "print shell assignments for eval")
+	return cmd
+}
+
+func printSink(out io.Writer, s app.Sink, asEnv bool) {
+	rows := [][2]string{{"provider", s.Provider}, {"bucket", s.Bucket}, {"region", s.Region},
+		{"prefix", s.Prefix}, {"origin", s.Origin}}
+	if asEnv {
+		for _, r := range rows {
+			fmt.Fprintf(out, "%s='%s'\n", strings.ToUpper(r[0]), strings.ReplaceAll(r[1], "'", `'\''`))
+		}
+		return
+	}
+	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	defer w.Flush()
+	for _, r := range rows {
+		fmt.Fprintf(w, "%s\t%s\n", r[0], cmp.Or(r[1], "(not named by the ticket URL)"))
+	}
+}
+
 func configCmd() *cobra.Command {
 	var withProvenance bool
 	cmd := &cobra.Command{

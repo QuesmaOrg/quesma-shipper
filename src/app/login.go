@@ -51,6 +51,9 @@ func ManagedLogin(ctx context.Context) (bool, error) {
 
 func managedEnrollmentError(err error) error {
 	// Response bodies may echo a grant, so only report structured failure details.
+	if errors.Is(err, controlplane.ErrManagedEnrollmentTargetChanged) {
+		return controlplane.ErrManagedEnrollmentTargetChanged
+	}
 	if errors.Is(err, formats.ErrCredentialsRefused) {
 		return fmt.Errorf("managed enrollment grant was refused; ask an administrator to replace an expired or revoked grant")
 	}

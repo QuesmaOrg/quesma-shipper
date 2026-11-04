@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"filippo.io/age"
-
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/packs"
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 )
 
 // ResolvedSource is sources.Resolved, aliased because this is the package that produces one.
@@ -324,11 +324,21 @@ func applySourceOverrides(eff *Effective, overrides map[string][]layeredOverride
 	for i := range eff.Sources {
 		src := &eff.Sources[i]
 		locallyDisabledBy := Layer(0)
+		var additions []string
 		// The enricher map is detached from the compiled catalog on first touch, once per source.
 		clonedEnrichers := false
 
 		for _, lo := range overrides[src.ID] {
 			o := lo.override
+			for _, pattern := range o.ExcludeAdd {
+				if err := protocol.ValidateExcludeAdd(pattern); err != nil {
+					return &RejectionError{lo.layer, "sources." + src.ID + ".exclude_add", err.Error()}
+				}
+			}
+			if len(o.ExcludeAdd) > 0 {
+				additions = append(additions, o.ExcludeAdd...)
+				eff.setOrigin("sources."+src.ID+".exclude_add", lo.layer)
+			}
 			if o.Enabled != nil {
 				if locallyDisabledBy != 0 && !lo.layer.IsLocal() && *o.Enabled {
 					// A remote enable cannot undo a local disable.
@@ -373,6 +383,15 @@ func applySourceOverrides(eff *Effective, overrides map[string][]layeredOverride
 				}
 				src.Enrichers[id] = on
 				eff.setOrigin("sources."+src.ID+".enrichers."+id, lo.layer)
+			}
+		}
+
+		if len(additions) > 0 {
+			src.Exclude = slices.Clone(src.Exclude)
+			for _, pattern := range additions {
+				if !slices.Contains(src.Exclude, pattern) {
+					src.Exclude = append(src.Exclude, pattern)
+				}
 			}
 		}
 

@@ -247,6 +247,15 @@ func rulebookProbes(t *testing.T) map[string]rulebookProbe {
 			reject: "encryption:\n  include_install_recipient: false\n",
 		},
 
+		"sources[].exclude_add": {
+			accept: "sources: [{id: claude-code-transcripts, exclude_add: ['projects/private/**']}]\n",
+			verify: func(t *testing.T, eff *config.Effective) {
+				if !slices.Contains(sourceByID(t, eff, "claude-code-transcripts").Exclude, "projects/private/**") {
+					t.Fatal("addition missing")
+				}
+			},
+			reject: "sources: [{id: claude-code-transcripts, exclude_add: ['../private/**']}]\n",
+		},
 		"sources[].enabled": {
 			accept: "sources:\n  - id: claude-code-transcripts\n    enabled: false\n",
 			verify: func(t *testing.T, eff *config.Effective) {
@@ -434,7 +443,17 @@ func TestRulebookDefaultsMatchResolver(t *testing.T) {
 	if len(eff.UploadTargets) > 0 {
 		uploadTargets = fmt.Sprint(eff.UploadTargets)
 	}
+	var defaultAdditions []string
+	for _, source := range eff.Sources {
+		compiled, _ := eff.Catalog.Source(source.ID)
+		for _, pattern := range source.Exclude {
+			if !slices.Contains(compiled.Exclude, pattern) {
+				defaultAdditions = append(defaultAdditions, pattern)
+			}
+		}
+	}
 	resolved := map[string]string{
+		"sources[].exclude_add":                emptyOr(defaultAdditions),
 		"config_version":                       strconv.Itoa(eff.ConfigVersion),
 		"mode.schedule":                        eff.Schedule,
 		"max_files_per_run":                    strconv.Itoa(eff.MaxFilesPerRun),

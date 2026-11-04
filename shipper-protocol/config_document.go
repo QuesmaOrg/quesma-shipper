@@ -24,7 +24,18 @@ func ValidateConfigDocument(rawJSON []byte) error {
 	return schema.Validate(doc)
 }
 
-var configDocumentSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
+// Keep authoring assets out of binaries that only use runtime exclusion helpers.
+// Not sync.OnceValues: set at package level it links this compiler and FS into the shipper (~100 KB).
+var configSchemaOnce sync.Once
+var configSchema *jsonschema.Schema
+var configSchemaErr error
+
+func configDocumentSchema() (*jsonschema.Schema, error) {
+	configSchemaOnce.Do(func() { configSchema, configSchemaErr = compileConfigDocumentSchema() })
+	return configSchema, configSchemaErr
+}
+
+func compileConfigDocumentSchema() (*jsonschema.Schema, error) {
 	const name = "schemas/config-document.schema.json"
 	const schemaID = "https://github.com/QuesmaOrg/shipper-protocol/schemas/config-document.schema.json"
 	raw, err := FS.ReadFile(name)
@@ -38,6 +49,16 @@ var configDocumentSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
 	compiler := jsonschema.NewCompiler()
 	compiler.AssertFormat()
 	compiler.RegisterFormat(&jsonschema.Format{
+		Name: "source-exclusion-glob",
+		Validate: func(value any) error {
+			pattern, ok := value.(string)
+			if !ok {
+				return nil
+			}
+			return ValidateExcludeAdd(pattern)
+		},
+	})
+	compiler.RegisterFormat(&jsonschema.Format{
 		Name:     "go-positive-duration",
 		Validate: durationAtLeast(time.Nanosecond),
 	})
@@ -49,7 +70,7 @@ var configDocumentSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
 		return nil, err
 	}
 	return compiler.Compile(schemaID)
-})
+}
 
 func durationAtLeast(minimum time.Duration) func(any) error {
 	return func(value any) error {

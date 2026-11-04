@@ -99,6 +99,12 @@
       "note": "Roots must stay within the compiled scope ceiling. A new root requires a release. Globs are not subsumption-checked. A served exclude replaces the catalog's excludes, including any that keep unscrubbable files out."
     },
     {
+      "field": "sources[].exclude_add",
+      "default": "empty",
+      "server_may": "union",
+      "note": "Relative doublestar globs, added after every layer resolves exclude. Additions from every layer survive a later replacement. A reader without sources.exclude_add receives the affected source disabled."
+    },
+    {
       "field": "sources[].max_file_bytes",
       "default": "catalog",
       "server_may": "set"

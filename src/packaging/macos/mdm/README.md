@@ -45,8 +45,17 @@ distribution and revoke an exposed grant. Expiry or revocation stops new enrollm
 the profile before expiry for future users. Existing users retain their device credentials
 when the grant changes or the profile is removed. Manual login remains available with
 `quesma-shipper login --server URL TOKEN`.
-An unfinished enrollment keeps its original request, including the grant, in a private per-user
-state file until enrollment succeeds or local state is purged.
+An unfinished enrollment keeps its request in a private per-user state file. Rotating `Grant`
+replaces only the saved grant before the next request, preserving the install ID, device key,
+age recipient and other request fields. Repeated response loss retries that saved request exactly
+until the grant changes again. A valid replacement for the same organization also recovers an
+install created by an earlier request whose response was lost; deploy the Fleet Manager support
+for grant rotation before updating shippers. Invalid, expired or revoked grants remain refused.
+
+Changing `Server` or the grant's organization while enrollment is pending stops requests and keeps
+the saved state. Restore the original destination and use a valid grant for that organization, or
+ask an administrator to recover the original enrollment before migration. A grant whose organization
+cannot be read also requires administrator recovery. Do not delete pending state to force a move.
 
 ## Jamf Pro
 
@@ -80,6 +89,25 @@ personal app bundles and LaunchAgents in existing local accounts before copying 
 personal/Homebrew installer refuses a system installation. First uninstall the previous
 installation through its owner, without purging state; then deploy the new installation.
 For system-to-personal migration, have an administrator remove the system package first.
+
+If a machine already has both installations, the root removal script can remove the system
+half without access to the personal installation's home directory. It checks the loaded
+LaunchAgent's plist path for each discovered account and stops agents loaded from
+`/Library/LaunchAgents/com.quesma.shipper.plist`. If the service has no plist path (including
+launchd's `(submitted by launchctl[PID])` marker), it stops it only when its program is the
+system app's executable. Malformed or duplicate fields abort
+removal. The script reports the UIDs of loaded non-system agents it leaves intact.
+Personal and Homebrew agents, app bundles, command links, plists, enrollment and upload history
+are kept. An unknown service owner or
+launchd inspection failure stops removal before system files are deleted. Account discovery
+covers local accounts and the current console account, not every dormant directory account;
+removing the shared plist prevents future logins from starting the system agent.
+
+After system removal, a dormant personal LaunchAgent starts again at that user's next GUI login.
+It can also be started immediately by running its executable with `postinstall` as that user,
+or by rerunning its installer. Conversely, the personal executable's `uninstall` command can
+remove the personal half while keeping a
+loaded system agent intact. Do not use `--purge` when retaining enrollment and upload history.
 
 Run these as the affected logged-in user, without `sudo`:
 

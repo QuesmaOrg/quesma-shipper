@@ -1,0 +1,11 @@
+{
+  "config_version": 1,
+  "sources": [
+    {
+      "id": "claude-code-transcripts",
+      "exclude_add": [
+        "projects/private/**"
+      ]
+    }
+  ]
+}
