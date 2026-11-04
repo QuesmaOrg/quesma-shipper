@@ -99,6 +99,14 @@ assert_personal_preserved() {
   assert_state
 }
 
+echo 'Root inspection distinguishes missing GUI domains and missing services'
+exit_code=0
+sudo launchctl print "gui/987654/$label" > "$work/absent-domain.txt" 2>&1 || exit_code=$?
+[[ $exit_code == 112 ]] || { echo "Missing GUI domain returned $exit_code, expected 112" >&2; exit 1; }
+exit_code=0
+sudo launchctl print "$target" > "$work/absent-service.txt" 2>&1 || exit_code=$?
+[[ $exit_code == 113 ]] || { echo "Missing service returned $exit_code, expected 113" >&2; exit 1; }
+
 echo 'Personal install, repair, conflict rejection, removal, and reinstall'
 install_personal
 install_personal
@@ -148,11 +156,38 @@ launchctl bootout "$target"
 assert_gone
 launchctl bootstrap "gui/$(id -u)" "$personal_plist"
 assert_loaded "$personal_plist"
-sudo /bin/sh "$remover"
+sudo /bin/sh "$remover" | tee "$work/mixed-removal.txt"
+grep -qF "Leaving non-system agent for uid $(id -u) loaded." "$work/mixed-removal.txt"
+grep -qF 'system installation removed; personal installations, if any, were left intact' "$work/mixed-removal.txt"
 assert_system_removed
 assert_personal_preserved
 assert_loaded "$personal_plist"
 remove_personal
+
+echo 'Removal preserves a submitted job without a source plist'
+install_system
+launchctl bootout "$target"
+assert_gone
+launchctl submit -l "$label" -- /bin/sleep 600
+submitted_pid=''
+for ((attempt=0; attempt<30; attempt++)); do
+  sudo launchctl print "$target" > "$work/submitted-before.txt"
+  submitted_pid=$(sed -n $'s/^\tpid = //p' "$work/submitted-before.txt")
+  [[ -z "$submitted_pid" ]] || break
+  sleep 1
+done
+[[ -n "$submitted_pid" ]]
+if grep -q $'^\tpath = ' "$work/submitted-before.txt"; then
+  echo 'Submitted job unexpectedly has a source plist.' >&2; exit 1
+fi
+grep -q $'^\tprogram = /bin/sleep$' "$work/submitted-before.txt"
+sudo /bin/sh "$remover" | tee "$work/submitted-removal.txt"
+assert_system_removed
+grep -qF "Leaving non-system agent for uid $(id -u) loaded." "$work/submitted-removal.txt"
+sudo launchctl print "$target" > "$work/submitted-after.txt"
+[[ $(sed -n $'s/^\tpid = //p' "$work/submitted-after.txt") == "$submitted_pid" ]]
+launchctl bootout "$target"
+assert_gone
 
 echo 'Reinstall after recovery, then personal purge'
 install_personal

@@ -117,11 +117,12 @@ func preUninstallSystem(users []localUser) error {
 			continue
 		}
 		// A personal agent can share the label, even when its account's home is unavailable.
-		path := launchdServicePath(string(out))
-		if path == "" {
-			return fmt.Errorf("cannot determine which LaunchAgent owns %s; system installation left in place", target)
+		system, err := isSystemLaunchdService(string(out))
+		if err != nil {
+			return fmt.Errorf("cannot determine which LaunchAgent owns %s; system installation left in place: %w", target, err)
 		}
-		if path != systemAgentPath {
+		if !system {
+			fmt.Printf("Leaving non-system agent for uid %s loaded.\n", account.uid)
 			continue
 		}
 		if _, err := os.Stat(systemAgentPath); err != nil {
@@ -135,6 +136,25 @@ func preUninstallSystem(users []localUser) error {
 		}
 	}
 	return nil
+}
+
+func isSystemLaunchdService(out string) (bool, error) {
+	path, err := launchdAbsoluteField(out, "path")
+	if err != nil {
+		return false, err
+	}
+	if path != "" {
+		return path == systemAgentPath, nil
+	}
+	// Jobs registered with launchctl submit have a program but no source plist.
+	program, err := launchdAbsoluteField(out, "program")
+	if err != nil {
+		return false, err
+	}
+	if program == "" {
+		return false, fmt.Errorf("no path or program field")
+	}
+	return systemExecutable(program), nil
 }
 
 func localUsers() ([]localUser, error) {

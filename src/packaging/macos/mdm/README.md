@@ -83,16 +83,20 @@ For system-to-personal migration, have an administrator remove the system packag
 
 If a machine already has both installations, the root removal script can remove the system
 half without access to the personal installation's home directory. It checks the loaded
-LaunchAgent's plist path for each discovered account and stops only agents loaded from
-`/Library/LaunchAgents/com.quesma.shipper.plist`. Personal and Homebrew agents, app bundles,
-command links, plists, enrollment and upload history are kept. An unknown service owner or
+LaunchAgent's plist path for each discovered account and stops agents loaded from
+`/Library/LaunchAgents/com.quesma.shipper.plist`. If the service has no plist path, it stops it
+only when its program is the system app's executable. Malformed or duplicate fields abort
+removal. The script reports the UIDs of loaded non-system agents it leaves intact.
+Personal and Homebrew agents, app bundles, command links, plists, enrollment and upload history
+are kept. An unknown service owner or
 launchd inspection failure stops removal before system files are deleted. Account discovery
 covers local accounts and the current console account, not every dormant directory account;
 removing the shared plist prevents future logins from starting the system agent.
 
-After system removal, a personal installation that was dormant can be started again by running
-its executable with `postinstall` as that user, or by rerunning its installer. Conversely,
-the personal executable's `uninstall` command can remove the personal half while keeping a
+After system removal, a dormant personal LaunchAgent starts again at that user's next GUI login.
+It can also be started immediately by running its executable with `postinstall` as that user,
+or by rerunning its installer. Conversely, the personal executable's `uninstall` command can
+remove the personal half while keeping a
 loaded system agent intact. Do not use `--purge` when retaining enrollment and upload history.
 
 Run these as the affected logged-in user, without `sudo`:

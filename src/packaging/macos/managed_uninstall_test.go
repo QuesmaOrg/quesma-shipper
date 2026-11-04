@@ -13,6 +13,7 @@ import (
 func TestSystemRemovalPreservesPersonalInstallation(t *testing.T) {
 	for _, tc := range []struct {
 		name, owner                       string
+		fields                            string
 		printExit, bootoutExit            int
 		missingPlist, wantStop, wantError bool
 	}{
@@ -23,6 +24,15 @@ func TestSystemRemovalPreservesPersonalInstallation(t *testing.T) {
 		{name: "logged out user", printExit: 112},
 		{name: "unavailable home", owner: "personal"},
 		{name: "unknown owner", owner: "unknown", wantError: true},
+		{name: "submitted system job", fields: "\tprogram = " + installedExecutable("/") + "\n", wantStop: true},
+		{name: "submitted personal job", fields: "\tprogram = /bin/sleep\n"},
+		{name: "relative path cannot fall back", fields: "\tpath = relative.plist\n\tprogram = /bin/sleep\n", wantError: true},
+		{name: "empty path cannot fall back", fields: "\tpath = \n\tprogram = /bin/sleep\n", wantError: true},
+		{name: "duplicate path cannot fall back", fields: "\tpath = /a.plist\n\tpath = /b.plist\n\tprogram = /bin/sleep\n", wantError: true},
+		{name: "duplicate program", fields: "\tprogram = /bin/sleep\n\tprogram = /bin/sleep\n", wantError: true},
+		{name: "relative program", fields: "\tprogram = sleep\n", wantError: true},
+		{name: "nested program", fields: "\tenvironment = {\n\t\tprogram = /bin/sleep\n\t}\n", wantError: true},
+		{name: "neither field", fields: "\tstate = running\n", wantError: true},
 		{name: "inspection denied", printExit: 1, wantError: true},
 		{name: "system stop failed", owner: "system", bootoutExit: 1, wantStop: true, wantError: true},
 		{name: "loaded system missing plist", owner: "system", missingPlist: true, wantError: true},
@@ -54,6 +64,12 @@ func TestSystemRemovalPreservesPersonalInstallation(t *testing.T) {
 				writeUninstallFixture(t, systemAgentPath, renderSystemPlist(), 0o644)
 			}
 			path := map[string]string{"system": systemAgentPath, "personal": launchdPath(home)}[tc.owner]
+			fields := tc.fields
+			if fields == "" {
+				fields = "\tpath = " + path + "\n"
+			}
+			output := filepath.Join(t.TempDir(), "service-output")
+			writeUninstallFixture(t, output, "gui/501/com.quesma.shipper = {\n"+fields+"}\n", 0o600)
 			marker := filepath.Join(t.TempDir(), "bootout")
 			calls := filepath.Join(t.TempDir(), "calls")
 			fake := fmt.Sprintf(`#!/bin/sh
@@ -62,7 +78,7 @@ case "$1" in
 print)
   [ ! -e %q ] || exit 113
   [ %d = 0 ] || exit %d
-  printf 'gui/501/com.quesma.shipper = {\n\tpath = %%s\n}\n' %q
+  cat %q
   ;;
 bootout)
   touch %q
@@ -70,7 +86,7 @@ bootout)
   ;;
 *) exit 99 ;;
 esac
-`, calls, marker, tc.printExit, tc.printExit, path, marker, tc.bootoutExit)
+`, calls, marker, tc.printExit, tc.printExit, output, marker, tc.bootoutExit)
 			writeUninstallFixture(t, launchctl, fake, 0o700)
 			accountHome := home
 			if tc.name == "unavailable home" {

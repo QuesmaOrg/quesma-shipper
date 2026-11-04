@@ -281,17 +281,28 @@ func uninstallPersonalService(exe, home string) error {
 }
 
 func launchdServicePath(out string) string {
-	var path string
+	path, _ := launchdAbsoluteField(out, "path")
+	return path
+}
+
+func launchdAbsoluteField(out, field string) (string, error) {
+	var value string
+	found := false
 	for _, line := range strings.Split(out, "\n") {
 		// Only the service's own field counts, never a nested environment or endpoint's path.
-		if value, ok := strings.CutPrefix(strings.TrimPrefix(line, "\t"), "path = "); ok {
-			if path != "" || !filepath.IsAbs(value) {
-				return ""
+		if rest, ok := strings.CutPrefix(strings.TrimPrefix(line, "\t"), field+" ="); ok {
+			if found {
+				return "", fmt.Errorf("duplicate launchd %s field", field)
 			}
-			path = value
+			found = true
+			var spaced bool
+			value, spaced = strings.CutPrefix(rest, " ")
+			if !spaced || !filepath.IsAbs(value) {
+				return "", fmt.Errorf("invalid launchd %s field", field)
+			}
 		}
 	}
-	return path
+	return value, nil
 }
 
 // An old cask must not stop a replacement installation during cleanup or rollback.
