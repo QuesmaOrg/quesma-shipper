@@ -28,28 +28,35 @@ func EnrollmentRevocation(stateDir string) error {
 	return nil
 }
 
+func RevocationRecovery() string {
+	return revocationRecovery(packaging.SystemManaged())
+}
+
+func revocationRecovery(managed bool) string {
+	if managed {
+		return "Ask your administrator to supply a new enrollment token or remove this managed installation."
+	}
+	return "Run `quesma-shipper login <token>` to enroll again, or `quesma-shipper uninstall`."
+}
+
 func notifyRevocation(stateDir string) {
 	notifyRevocationWith(stateDir, packaging.NotifyRevocation)
 }
 
-func notifyRevocationWith(stateDir string, notify func(context.Context, string)) {
+func notifyRevocationWith(stateDir string, notify func(context.Context, string) bool) {
 	unlock, err := controlplane.LockEnrollment(stateDir)
 	if err != nil {
 		return
 	}
+	defer unlock()
 	var revoked *controlplane.Revocation
 	if !errors.As(EnrollmentRevocation(stateDir), &revoked) || revoked.Notified {
-		unlock()
 		return
 	}
-	// Claim before attempting desktop delivery: unattended services may have no desktop session.
-	revoked.Notified = true
-	err = revoked.Save(stateDir)
-	unlock()
-	if err != nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	notify(ctx, revoked.Error())
+	if notify(ctx, revoked.Error()+" "+RevocationRecovery()) {
+		revoked.Notified = true
+		_ = revoked.Save(stateDir)
+	}
 }

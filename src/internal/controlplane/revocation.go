@@ -25,7 +25,7 @@ type Revocation struct {
 }
 
 func (r *Revocation) Error() string {
-	return fmt.Sprintf("This machine's install was revoked from %s (detected %s). Nothing is being collected. Run `quesma-shipper login <token>` to enroll again, or `quesma-shipper uninstall`.", r.Organization, r.DetectedAt.UTC().Format(time.RFC3339))
+	return fmt.Sprintf("This machine's install was revoked from %s (detected %s). Nothing is being collected.", r.Organization, r.DetectedAt.UTC().Format(time.RFC3339))
 }
 
 func (r *Revocation) Unwrap() error { return formats.ErrCredentialsRefused }

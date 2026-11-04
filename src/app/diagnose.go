@@ -36,7 +36,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 	var revoked *controlplane.Revocation
 	if errors.As(remote.Err, &revoked) || errors.As(revocationErr, &revoked) {
 		notifyRevocation(paths.StateDir)
-		rep.Sections = []Section{{Title: "Collecting", Rows: []Row{{Sev: SevFail, Label: "install", Brief: "install revoked", Detail: revoked.Error()}}}}
+		rep.Sections = []Section{{Title: "Collecting", Rows: []Row{{Sev: SevFail, Label: "install", Brief: "install revoked", Detail: revoked.Error(), Fix: RevocationRecovery()}}}}
 		rep.Update = UpdateStatus{State: "skipped", Detail: "not checked - install revoked"}
 		return rep
 	}

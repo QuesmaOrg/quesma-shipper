@@ -31,9 +31,23 @@ func reenroll(ctx context.Context, stateDir, server, token string, old *controlp
 		return LoginResult{}, err
 	}
 	hostname, _ := os.Hostname()
-	resp, endpoint, priv, err := controlplane.EnrollInteractive(ctx, pending, server, token, controlplane.EnrollRequest{
-		InstallID: unit.InstallID.String(), AgeRecipient: unit.Recipient().String(), Hostname: hostname, Platform: runtime.GOOS + "/" + runtime.GOARCH,
-	})
+	enroll := func() (*controlplane.EnrollResponse, string, []byte, error) {
+		return controlplane.EnrollInteractive(ctx, pending, server, token, controlplane.EnrollRequest{
+			InstallID: unit.InstallID.String(), AgeRecipient: unit.Recipient().String(), Hostname: hostname, Platform: runtime.GOOS + "/" + runtime.GOARCH,
+		})
+	}
+	resp, endpoint, priv, err := enroll()
+	if errors.Is(err, controlplane.ErrEnrollmentConflict) {
+		// A definitive conflict cannot be recovered by replaying this identity again.
+		if err := clearPendingEnrollment(pending); err != nil {
+			return LoginResult{}, err
+		}
+		unit, err = loadOrMintIdentity(pending)
+		if err != nil {
+			return LoginResult{}, err
+		}
+		resp, endpoint, priv, err = enroll()
+	}
 	if err != nil {
 		return LoginResult{}, err
 	}
@@ -51,8 +65,20 @@ func reenroll(ctx context.Context, stateDir, server, token string, old *controlp
 	if err := rec.Save(stateDir); err != nil {
 		return LoginResult{}, err
 	}
-	_ = platform.RemoveFile(filepath.Join(pending, "interactive-enrollment-attempt.json"))
+	if err := clearPendingEnrollment(pending); err != nil {
+		return LoginResult{}, fmt.Errorf("enrollment succeeded, but could not remove pending keys in %s: %w", pending, err)
+	}
 	return LoginResult{Organization: resp.Organization, Machine: hostname}, nil
+}
+
+func clearPendingEnrollment(pending string) error {
+	if err := controlplane.ClearInteractiveEnrollmentAttempt(pending); err != nil {
+		return err
+	}
+	if err := platform.RemoveFile(filepath.Join(pending, identity.FileName)); err != nil {
+		return err
+	}
+	return platform.RemoveFile(pending)
 }
 
 func archiveRevokedState(stateDir, installID string) error {

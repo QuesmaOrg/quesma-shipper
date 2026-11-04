@@ -475,9 +475,7 @@ func clientBlock() transforms.Client {
 
 func (r *Runtime) revocation() error {
 	if r.client != nil {
-		if err := r.client.Revocation(); err != nil {
-			return err
-		}
+		return r.client.Revocation()
 	}
 	return EnrollmentRevocation(r.eff.StateDir)
 }

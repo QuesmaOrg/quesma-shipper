@@ -38,8 +38,14 @@ func loginCmd() *cobra.Command {
 			p := paletteFor(w)
 			if token == "" {
 				if org, ok := app.LoggedIn(); ok {
-					fmt.Fprintf(w, "Already logged in to %s\n", styled(p.cyan, org, p.reset))
-					return nil
+					_, paths, err := app.ResolveEffective()
+					if err != nil {
+						return err
+					}
+					if app.EnrollmentRevocation(paths.StateDir) == nil {
+						fmt.Fprintf(w, "Already logged in to %s\n", styled(p.cyan, org, p.reset))
+						return nil
+					}
 				}
 				token = askToken(cmd)
 			}

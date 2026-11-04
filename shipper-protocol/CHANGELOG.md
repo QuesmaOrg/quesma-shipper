@@ -8,6 +8,10 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
 
 ### Changed
 
+- Document the existing `403` body `this install is revoked` as the stable install-revocation
+  signal on device-authenticated calls. Other 403s do not revoke an install locally. No response,
+  schema or fixture bytes change.
+
 - The module moved into the [quesma-shipper](https://github.com/QuesmaOrg/quesma-shipper)
   repository as `shipper-protocol/`. Its import path is now
   `github.com/QuesmaOrg/quesma-shipper/shipper-protocol` and releases are tags named

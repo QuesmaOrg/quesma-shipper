@@ -254,7 +254,7 @@ func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, dra
 		if once || !errors.As(err, &revoked) {
 			return err
 		}
-		fmt.Fprintln(cmd.ErrOrStderr(), revoked.Error())
+		fmt.Fprintln(cmd.ErrOrStderr(), revoked.Error(), app.RevocationRecovery())
 		fl.Phase("revoked: waiting for enrollment")
 		stateDir, err := app.StateDirWithoutConfig()
 		if err != nil {

@@ -83,19 +83,30 @@ func EnrollManaged(ctx context.Context, stateDir, endpoint string, req EnrollReq
 // ManagedEnrollmentAttempt preserves the exact request after response loss; the grant is private
 // state until enrollment succeeds. The caller holds LockEnrollment.
 func ManagedEnrollmentAttempt(stateDir, endpoint string, req EnrollRequest) (string, []byte, ed25519.PrivateKey, error) {
-	if endpoint == "" || req.InstallID == "" || req.AgeRecipient == "" || req.Grant == "" {
-		return "", nil, nil, fmt.Errorf("managed enrollment request is incomplete")
+	if req.Grant == "" || req.Invite != "" {
+		return "", nil, nil, fmt.Errorf("managed enrollment requires a grant")
 	}
-	path := filepath.Join(stateDir, managedAttemptFile)
+	return enrollmentAttempt(filepath.Join(stateDir, managedAttemptFile), endpoint, req)
+}
+
+func enrollmentAttempt(path, endpoint string, req EnrollRequest) (savedEndpoint string, body []byte, key ed25519.PrivateKey, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("pending enrollment %s: %w", path, err)
+		}
+	}()
+	if endpoint == "" || req.InstallID == "" || req.AgeRecipient == "" || (req.Grant == "") == (req.Invite == "") {
+		return "", nil, nil, fmt.Errorf("enrollment request is incomplete")
+	}
 	raw, err := platform.ReadPrivate(path, 32768)
 	if err == nil {
 		var saved managedAttempt
 		if err := json.Unmarshal(raw, &saved); err != nil {
-			return "", nil, nil, fmt.Errorf("read pending enrollment request: %w", err)
+			return "", nil, nil, err
 		}
 		var previous EnrollRequest
 		if err := json.Unmarshal(saved.Request, &previous); err != nil {
-			return "", nil, nil, fmt.Errorf("read pending enrollment request: %w", err)
+			return "", nil, nil, err
 		}
 		priv, err := (&Enrollment{DeviceKey: saved.DeviceKey}).PrivateKey()
 		if err != nil {
@@ -103,7 +114,7 @@ func ManagedEnrollmentAttempt(stateDir, endpoint string, req EnrollRequest) (str
 		}
 		if previous.InstallID != req.InstallID || previous.AgeRecipient != req.AgeRecipient ||
 			previous.DevicePublicKey != EncodeKey(priv.Public().(ed25519.PublicKey)) ||
-			previous.Grant == "" || saved.Endpoint == "" {
+			(previous.Grant == "") == (previous.Invite == "") || (req.Grant != "" && previous.Grant == "") || saved.Endpoint == "" {
 			return "", nil, nil, fmt.Errorf("pending enrollment request does not match this installation")
 		}
 		return saved.Endpoint, saved.Request, priv, nil
@@ -116,11 +127,11 @@ func ManagedEnrollmentAttempt(stateDir, endpoint string, req EnrollRequest) (str
 		return "", nil, nil, err
 	}
 	req.DevicePublicKey = EncodeKey(pub)
-	body, err := json.Marshal(req)
+	body, err = json.Marshal(req)
 	if err != nil {
 		return "", nil, nil, err
 	}
-	if err := saveManagedEnrollmentAttempt(stateDir, endpoint, body, priv); err != nil {
+	if err := platform.WriteJSON(path, managedAttempt{Endpoint: endpoint, DeviceKey: EncodeKey(priv), Request: body}, 0o600); err != nil {
 		return "", nil, nil, err
 	}
 	return endpoint, body, priv, nil

@@ -31,8 +31,8 @@ func TestRevocationStopsCollectionAndDoctorWithoutRetry(t *testing.T) {
 		t.Fatalf("resolve: %v, %v", err, remote.Err)
 	}
 	notifications := 0
-	notifyRevocationWith(paths.StateDir, func(context.Context, string) { notifications++ })
-	notifyRevocationWith(paths.StateDir, func(context.Context, string) { notifications++ })
+	notifyRevocationWith(paths.StateDir, func(context.Context, string) bool { notifications++; return true })
+	notifyRevocationWith(paths.StateDir, func(context.Context, string) bool { notifications++; return true })
 	if notifications != 1 {
 		t.Fatalf("notifications = %d", notifications)
 	}
@@ -148,6 +148,9 @@ func TestReenrollmentRetainsOldStateAndRetriesExactRequest(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(paths.StateDir, controlplane.CacheFile)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("old organization cache survived recovery")
 	}
+	if _, err := os.Stat(filepath.Join(paths.StateDir, "re-enrollment", oldEnrollment.InstallID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("pending identity survived successful enrollment: %v", err)
+	}
 	if _, err := login(); !errors.Is(err, ErrAlreadyLoggedIn) {
 		t.Fatalf("active enrollment replaced: %v", err)
 	}
@@ -247,5 +250,114 @@ func TestInterruptedReenrollmentKeepsOriginalArchive(t *testing.T) {
 	archived, err := os.ReadFile(filepath.Join(paths.StateDir, "revoked-installs", old.InstallID.String(), identity.FileName))
 	if err != nil || !bytes.Equal(archived, original) {
 		t.Fatal("retry overwrote original archived key")
+	}
+}
+
+func TestReenrollmentConflictMintsFreshPendingIdentity(t *testing.T) {
+	var requests []controlplane.EnrollRequest
+	firstID := ""
+	paths := enrolledConfigServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var req controlplane.EnrollRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+		}
+		requests = append(requests, req)
+		if firstID == "" {
+			firstID = req.InstallID
+		}
+		switch {
+		case len(requests) == 1:
+			http.Error(w, "grant required", 403)
+		case len(requests) == 2:
+			http.Error(w, "response lost after grant was consumed", 503)
+		case req.Grant == "old-token" || req.Invite == "new-token":
+			http.Error(w, "grant required or expired", 403)
+		case req.InstallID == firstID:
+			http.Error(w, "install already exists with another request digest", 409)
+		default:
+			_ = json.NewEncoder(w).Encode(controlplane.EnrollResponse{Organization: "new-org"})
+		}
+	})
+	old, err := identity.Mint(paths.StateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enr, _ := controlplane.LoadEnrollment(paths.StateDir)
+	enr.InstallID = old.InstallID.String()
+	if err := enr.Save(paths.StateDir); err != nil {
+		t.Fatal(err)
+	}
+	revoked := &controlplane.Revocation{InstallID: enr.InstallID, Organization: enr.Organization, Endpoint: enr.Endpoint, DetectedAt: time.Now(), Notified: true}
+	if err := revoked.Save(paths.StateDir); err != nil {
+		t.Fatal(err)
+	}
+	login := func(token string) (LoginResult, error) {
+		return loginWithRunCheck(context.Background(), enr.Endpoint, token, false, func() error { return nil })
+	}
+	if _, err := login("old-token"); err == nil {
+		t.Fatal("expected lost response")
+	}
+	if _, err := login("new-token"); err != nil {
+		t.Fatal(err)
+	}
+	current, err := identity.Load(paths.StateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.InstallID.String() == firstID || current.InstallID == old.InstallID {
+		t.Fatal("conflict reused pending or revoked identity")
+	}
+	if len(requests) != 7 {
+		t.Fatalf("requests = %d, want bounded retry sequence of 7", len(requests))
+	}
+	if requests[1] != requests[2] {
+		t.Fatal("lost grant response was not retried exactly")
+	}
+	if err := EnrollmentRevocation(paths.StateDir); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFailedNotificationRemainsPending(t *testing.T) {
+	paths := enrolledConfigServer(t, func(http.ResponseWriter, *http.Request) { t.Error("notification contacted server") })
+	enr, _ := controlplane.LoadEnrollment(paths.StateDir)
+	revoked := &controlplane.Revocation{InstallID: enr.InstallID, Organization: enr.Organization, Endpoint: enr.Endpoint, DetectedAt: time.Now()}
+	if err := revoked.Save(paths.StateDir); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	notify := func(ctx context.Context, message string) bool {
+		calls++
+		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) < 10*time.Second {
+			t.Error("cold notification startup has too little time")
+		}
+		if !strings.Contains(message, "detected") {
+			t.Error("missing revocation detail")
+		}
+		return calls > 1
+	}
+	notifyRevocationWith(paths.StateDir, notify)
+	saved, err := controlplane.LoadRevocation(paths.StateDir, enr)
+	if err != nil || saved.Notified {
+		t.Fatalf("failed delivery consumed notification: %v", err)
+	}
+	notifyRevocationWith(paths.StateDir, notify)
+	notifyRevocationWith(paths.StateDir, notify)
+	if calls != 2 {
+		t.Fatalf("delivery attempts = %d", calls)
+	}
+}
+
+func TestManagedRevocationGuidanceDoesNotOfferRefusedCommands(t *testing.T) {
+	managed := revocationRecovery(true)
+	if !strings.Contains(managed, "administrator") || strings.Contains(managed, "quesma-shipper uninstall") {
+		t.Fatal(managed)
+	}
+	personal := revocationRecovery(false)
+	if !strings.Contains(personal, "login <token>") || !strings.Contains(personal, "quesma-shipper uninstall") {
+		t.Fatal(personal)
+	}
+	if strings.Contains((&controlplane.Revocation{}).Error(), "quesma-shipper") {
+		t.Fatal("control plane error contains installation policy")
 	}
 }
