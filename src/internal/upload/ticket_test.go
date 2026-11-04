@@ -57,6 +57,11 @@ func TestValidateTicketAcceptsEveryProviderDialect(t *testing.T) {
 			if err := ValidateTicket(UploadTargetList{goldenTarget(t)}, prepared, ticket); err != nil {
 				t.Fatalf("%s ticket refused: %v", tc.name, err)
 			}
+			delete(ticket.RequiredHeaders, "x-amz-tagging")
+			delete(ticket.RequiredHeaders, "x-ms-tags")
+			if err := ValidateTicket(UploadTargetList{goldenTarget(t)}, prepared, ticket); err != nil {
+				t.Fatalf("%s ticket without tags refused: %v", tc.name, err)
+			}
 		})
 	}
 }

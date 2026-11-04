@@ -171,7 +171,7 @@ func validateUploadObject(obj uploadObject, rec InstallRecord) (UploadObjectRequ
 		if match[1] != rec.Organization || match[2] != canonical {
 			return UploadObjectRequest{}, fmt.Errorf("key is outside this install's root")
 		}
-		allowed, v.Tagging, v.Mirror = uploadMirrorMetadata, "class=trajectory", true
+		allowed, v.Mirror = uploadMirrorMetadata, true
 		if obj.Metadata["source-id"] != match[3] {
 			return UploadObjectRequest{}, fmt.Errorf("key source does not equal metadata source-id")
 		}
@@ -179,7 +179,7 @@ func validateUploadObject(obj uploadObject, rec InstallRecord) (UploadObjectRequ
 		if match[1] != rec.Organization || match[2] != canonical {
 			return UploadObjectRequest{}, fmt.Errorf("key is outside this install's root")
 		}
-		allowed, v.Tagging = uploadHeartbeatMetadata, "class=context"
+		allowed = uploadHeartbeatMetadata
 	} else {
 		return UploadObjectRequest{}, fmt.Errorf("key names no object v2 authorizes")
 	}

@@ -94,3 +94,64 @@ func TestAzureSignerProducesAzureHeaderDialect(t *testing.T) {
 		t.Fatalf("delegation cache calls=%d err=%v", delegation.calls, err)
 	}
 }
+
+func TestUploadSignersOmitClassTags(t *testing.T) {
+	client := awss3.NewFromConfig(aws.Config{Region: "eu-central-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")})
+	signers := map[string]UploadSigner{
+		"s3": &s3Signer{bucket: "archive", client: client},
+		"gcs": &gcsSigner{bucket: "archive", account: "signer@example.iam.gserviceaccount.com",
+			signBytes: func(context.Context, []byte) ([]byte, error) { return []byte("signature"), nil }},
+		"azure": &azureSigner{account: "archive", container: "trajectories", delegation: &fakeDelegation{},
+			clock: func() time.Time { return providerBatch().IssuedAt },
+			signSAS: func(values sas.BlobSignatureValues, _ *service.UserDelegationCredential) (string, error) {
+				if strings.Contains(values.Permissions, "t") {
+					return "", fmt.Errorf("untagged upload grants Azure tag permission")
+				}
+				return "sv=test&sig=secret", nil
+			}},
+	}
+	install := InstallRecord{Organization: "acme", InstallID: "3f2504e0-4f89-41d3-9a0c-0305e82c3301"}
+	for _, fixture := range []string{"request.json", "request-heartbeat.json"} {
+		t.Run(fixture, func(t *testing.T) {
+			raw, err := readProtocol("fixtures/v2/uploads-authorize", fixture)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var req uploadAuthorizeRequest
+			if err := strictDecode(raw, &req); err != nil {
+				t.Fatal(err)
+			}
+			objects, err := validateUploadRequest(req, install, req.IssuedAt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range objects {
+				objects[i].TicketID = "8403c1de-6940-4e35-a19b-5c91c45fc379"
+				objects[i].Metadata["ticket-id"] = objects[i].TicketID
+			}
+			batch := UploadBatch{IssuedAt: req.IssuedAt, ExpiresAt: req.IssuedAt.Add(uploadTicketLifetime), Objects: objects}
+			for name, signer := range signers {
+				t.Run(name, func(t *testing.T) {
+					response, err := signer.Authorize(context.Background(), InstallScope{install.Organization, install.InstallID}, batch)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if len(response.Tickets) != len(objects) {
+						t.Fatalf("got %d tickets for %d objects", len(response.Tickets), len(objects))
+					}
+					for i, ticket := range response.Tickets {
+						if err := validateTicketHeaders(objects[i], ticket.RequiredHeaders); err != nil {
+							t.Fatal(err)
+						}
+						for _, header := range []string{"x-amz-tagging", "x-ms-tags"} {
+							if _, ok := ticket.RequiredHeaders[header]; ok {
+								t.Errorf("upload ticket carries %s", header)
+							}
+						}
+					}
+					validateSchema(t, "v2/uploads-authorize-response.schema.json", uploadAuthorizeResponse{Tickets: response.Tickets})
+				})
+			}
+		})
+	}
+}
