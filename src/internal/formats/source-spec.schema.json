@@ -135,7 +135,7 @@
           "if": { "properties": { "gather": { "const": "sidecar" } }, "required": ["gather"] },
           "then": {
             "required": ["emit"],
-            "properties": { "emit": { "enum": ["opencode_sessions", "hermes_sessions"] } }
+            "properties": { "emit": { "enum": ["opencode_sessions", "hermes_sessions", "opencode_tool_outputs"] } }
           }
         }
       ]

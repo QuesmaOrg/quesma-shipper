@@ -27,6 +27,8 @@ func sessionCollector(emit string) (Primitive, bool) {
 	switch emit {
 	case "opencode_sessions":
 		return opencodeSessions{}, true
+	case "opencode_tool_outputs":
+		return opencodeToolOutputs{}, true
 	case "hermes_sessions":
 		return hermesSessions{}, true
 	default:

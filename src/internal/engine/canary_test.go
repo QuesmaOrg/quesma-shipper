@@ -129,8 +129,11 @@ CREATE TABLE session(id TEXT,parent_id TEXT,directory TEXT,title TEXT,version TE
 CREATE TABLE message(id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
 CREATE TABLE part(id TEXT,message_id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
 INSERT INTO session VALUES ('canary',NULL,'/work/api','test','1.18.20',1000,1000);`,
-			`INSERT INTO message VALUES ('m','canary',1000,1000,?)`,
-			`{"role":"user","text":`+jsonString(canaryText())+`}`)
+			`INSERT INTO part VALUES ('p','m','canary',1000,1000,?)`,
+			`{"type":"tool","state":{"status":"completed","output":`+jsonString(canaryText())+`,"metadata":{"truncated":true,"outputPath":`+jsonString(filepath.Join(home, ".local", "share", "opencode", "tool-output", "tool_canary"))+`}}}`)
+	},
+	"opencode-tool-outputs": func(t *testing.T, home string) {
+		writeFile(t, filepath.Join(home, ".local", "share", "opencode", "tool-output", "tool_canary"), []byte(canaryText()))
 	},
 	"hermes-sessions": func(t *testing.T, home string) {
 		writeSessionCanary(t, filepath.Join(home, ".hermes", "state.db"), `
