@@ -99,6 +99,7 @@ func TestManagedEnrollmentRejectsDestinationChangesBeforeSending(t *testing.T) {
 	for _, tc := range []struct{ name, endpoint, grant string }{
 		{"server", "https://other.example", "fmi2.acme.new.secret"},
 		{"organization", "", "fmi2.other.new.secret"},
+		{"dotted organization", "", "fmi2.acme.corp.new.secret"},
 		{"unroutable grant", "", "invalid-grant"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -181,5 +182,22 @@ func TestManagedEnrollmentCanRotateAgainAfterResponseLoss(t *testing.T) {
 		if err != nil || !bytes.Equal(body, retry) {
 			t.Fatalf("retry changed bytes: %v", err)
 		}
+	}
+}
+
+func TestManagedEnrollmentRotatesDottedOrganizationAcrossServerSpellings(t *testing.T) {
+	dir := t.TempDir()
+	req := EnrollRequest{InstallID: "one", AgeRecipient: "recipient", Grant: "fmi2.acme.corp.first.secret"}
+	if _, _, _, err := ManagedEnrollmentAttempt(dir, "https://fleet.example/", req); err != nil {
+		t.Fatal(err)
+	}
+	req.Grant = "fmi2.acme.corp.second.secret"
+	endpoint, body, _, err := ManagedEnrollmentAttempt(dir, "https://fleet.example", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved EnrollRequest
+	if err := json.Unmarshal(body, &saved); err != nil || saved.Grant != req.Grant || endpoint != "https://fleet.example" {
+		t.Fatalf("rotation was not saved: %v", err)
 	}
 }

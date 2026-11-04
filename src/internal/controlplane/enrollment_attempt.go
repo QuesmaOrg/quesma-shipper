@@ -56,6 +56,7 @@ func EnrollManaged(ctx context.Context, stateDir, endpoint string, req EnrollReq
 // ManagedEnrollmentAttempt keeps identity and request bytes across retries, replacing only a
 // rotated grant for the same destination. The caller holds LockEnrollment.
 func ManagedEnrollmentAttempt(stateDir, endpoint string, req EnrollRequest) (string, []byte, ed25519.PrivateKey, error) {
+	endpoint = normalizeEndpoint(endpoint)
 	if endpoint == "" || req.InstallID == "" || req.AgeRecipient == "" || req.Grant == "" {
 		return "", nil, nil, fmt.Errorf("managed enrollment request is incomplete")
 	}
@@ -79,14 +80,12 @@ func ManagedEnrollmentAttempt(stateDir, endpoint string, req EnrollRequest) (str
 			previous.Grant == "" || saved.Endpoint == "" {
 			return "", nil, nil, fmt.Errorf("pending enrollment request does not match this installation")
 		}
-		if saved.Endpoint != endpoint {
+		if normalizeEndpoint(saved.Endpoint) != endpoint {
 			return "", nil, nil, ErrManagedEnrollmentTargetChanged
 		}
 		if previous.Grant != req.Grant {
 			// Token routing is only a migration guard; the server authenticates the grant.
-			oldParts, newParts := strings.Split(previous.Grant, "."), strings.Split(req.Grant, ".")
-			if len(oldParts) != 4 || len(newParts) != 4 || oldParts[0] != "fmi2" || newParts[0] != "fmi2" ||
-				oldParts[1] == "" || oldParts[1] != newParts[1] {
+			if org := grantOrganization(previous.Grant); org == "" || org != grantOrganization(req.Grant) {
 				return "", nil, nil, ErrManagedEnrollmentTargetChanged
 			}
 			previous.Grant = req.Grant
@@ -116,6 +115,20 @@ func ManagedEnrollmentAttempt(stateDir, endpoint string, req EnrollRequest) (str
 		return "", nil, nil, err
 	}
 	return endpoint, body, priv, nil
+}
+
+// grantOrganization reads a grant from the right, as the server does: organizations may contain dots.
+func grantOrganization(grant string) string {
+	rest, ok := strings.CutPrefix(grant, "fmi2.")
+	secret := strings.LastIndexByte(rest, '.')
+	if !ok || secret < 0 {
+		return ""
+	}
+	id := strings.LastIndexByte(rest[:secret], '.')
+	if id < 0 {
+		return ""
+	}
+	return rest[:id]
 }
 
 func saveManagedEnrollmentAttempt(stateDir, endpoint string, body []byte, priv ed25519.PrivateKey) error {
