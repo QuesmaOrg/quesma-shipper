@@ -78,19 +78,21 @@ and revoke or rotate it through the control plane. An expired grant prevents
 successful new enrollments; removing the policy stops new policy-driven enrollment
 attempts. Neither action revokes existing user credentials. Grant values are kept
 out of process arguments and script output.
-If enrollment is refused because the grant expired or was revoked, deploy a valid
-replacement grant. The shipper retries with the replacement while retaining that
-user's identity; reinstalling or deleting user state is unnecessary. A request whose
-response was lost is retried unchanged until the server accepts or refuses it.
-An existing-enrollment conflict requires an administrator to recover the server
-record; preserve the user's local identity and pending enrollment state. Repeated
-conflicts use randomized exponential backoff capped at 15 minutes, and continue
-retrying so server-side recovery does not require restarting every collector.
-Pending requests retain their original server as well as their grant. Changing
-`Server` alone does not redirect them, and an unreachable original server cannot
-approve replacement credentials. Restore access to that server and recover its
-record before migrating; do not delete pending state to force a new enrollment.
-Automatic migration of pending requests needs a separate recovery policy.
+To replace an expired or revoked grant, deploy a valid grant for the same organization and
+`Server`. For unfinished enrollments, the shipper saves the replacement before sending it,
+retaining the user's install ID, device key, age recipient and other request fields. It retries
+that saved request exactly after response loss until the policy grant changes again. Fleet Manager
+also accepts a valid replacement when the earlier request already created the same install but its
+response was lost. Deploy Fleet Manager's grant-rotation support before updating shippers;
+reinstalling or deleting user state is unnecessary. Invalid, expired or revoked grants remain refused.
+
+A changed device key or age recipient, or a revoked install, still conflicts. Preserve local
+identity and pending state and ask an administrator to recover the server record. Repeated conflicts
+use randomized exponential backoff capped at 15 minutes and continue retrying.
+Changing `Server` or the grant's organization while enrollment is pending stops requests and keeps
+the saved state. Restore the original destination and use a valid grant for that organization, or
+ask an administrator to recover the original enrollment before migration. A grant whose organization
+cannot be read also requires administrator recovery. Do not delete pending state to force a move.
 To remove the policy, deploy the same script with `-Remove` after withdrawing its
 installation assignment. This preserves enrollment and collected upload history.
 

@@ -8,6 +8,11 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
 
 ### Changed
 
+- Grant enrollment accepts a valid replacement claim for an active install with the same
+  organization, install ID, device key and age recipient, without rewriting the original record.
+  Invite replay remains exact. Request/response schemas and fixtures are unchanged. Deploy the
+  server support before clients rotate pending grants; older servers may return 409.
+
 - The module moved into the [quesma-shipper](https://github.com/QuesmaOrg/quesma-shipper)
   repository as `shipper-protocol/`. Its import path is now
   `github.com/QuesmaOrg/quesma-shipper/shipper-protocol` and releases are tags named
