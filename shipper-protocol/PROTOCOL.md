@@ -247,8 +247,9 @@ fields the build reads. Only the build knows those, so it says so: the config re
   collected by default, its root templates, its include and exclude globs, its size cap and the
   enrichers a served document may turn off.
 - `rule_packs`: the scrub rule packs the build has.
-- `features`: the served-document features it reads beyond the `config_version` it accepts. None
-  is defined yet; the list lets a later field be served only to builds that read it.
+- `features`: the served-document features it reads beyond the `config_version` it accepts.
+  `sources.exclude_add` means it applies additive source exclusions and caches a safe reduced
+  document for readers without that feature.
 
 **What it never carries.** Root templates are reported as compiled (`$CLAUDE_CONFIG_DIR`,
 `~/.claude`), never expanded. The catalog is the same on every machine running the build: it
@@ -272,7 +273,60 @@ served document against its own catalog and remains the authority.
    out `sources[]` entries the build does not have, so the build does not refuse the whole
    document over an entry another build needs. That build cannot collect the source either way.
 
-A build without a catalog is served as before.
+A build without a catalog is served as before, except that sources with additive exclusions
+are disabled as specified below.
+
+## Additive source exclusions
+
+`sources[].exclude_add` is a list of non-empty, relative doublestar globs. Absolute paths, a
+leading `~` or `$`, empty, `.` or `..` segments (`a//b`, `./a`, a trailing `/`), backslashes, and
+invalid glob syntax are refused. Use `/` as the path separator on every platform. Globs are matched
+against the path relative to the source's resolved root, like `exclude`: `projects/<folder>/**`,
+not `~/.claude/projects/<folder>/**`. Any layer may add them:
+
+```
+effective exclusions = (remote exclude ?? local exclude ?? catalog exclude)
+                       union every layer's exclude_add
+```
+
+An empty `exclude` retains the existing behavior of making no replacement. Additions survive
+later replacements and cannot remove another layer's additions. They do not change which
+source IDs are valid; an unknown source ID still needs administrator acknowledgement on write.
+
+On every config fetch, a control plane serves additions only when that request's catalog lists
+`sources.exclude_add`. Otherwise it removes `exclude_add` and sets `enabled: false` on each
+source with non-empty additions, including every override entry for the same source ID. Sources absent from a reported catalog may still be omitted.
+There is no attempt to reconstruct local exclusions from a catalog, and no successful response
+enables a source after dropping its additions. The shared `ReduceSourceExclusions` function and
+`fixtures/v1/exclusion-reduction/` pin the reduction. The administrator sees how many active
+installs have not reported the feature; the service logs each changed pause decision once per
+install per replica.
+
+A supporting shipper keeps cache schema 3 and `remote-config.json`. `config` contains the reduced
+document; `config_full`, when needed, contains the original document, and `config_full_features`
+lists the features a reader must support to use it, `["sources.exclude_add"]` today. `config` is
+reduced for every listed feature. A reader uses `config_full` only when it supports every listed
+feature, and otherwise `config`; a `config_full` without the list needs `sources.exclude_add`. A
+later feature that reduces the document lists itself there too, so a build without it reads
+`config` even offline. A reader that rejects `config_full`, for example under a stricter validator,
+resolves `config` before it falls back to local configuration only, and reports the rejection.
+
+Older readers ignore `config_full` and keep the source off, even offline after a downgrade. An
+older writer drops `config_full`; a re-upgraded reader therefore keeps the source off until its
+next successful fetch. If both copies exceed the older reader's 4 MiB cache limit, only the reduced
+copy is saved. The current successful fetch still uses the full document; an offline run safely
+pauses the affected source. A candidate whose reduced copy also exceeds the cache limit is rejected
+before activation, preserving the last accepted cache.
+
+A paused source's local files are kept. On resume the source's local record resets, as for any
+exclusion change: files still present are read again, and the archive's `already_present` answer
+keeps those it already holds from being uploaded twice. The same happens on every supporting
+install the first time an organization adds or edits an addition. Files deleted by their producer
+during the pause cannot be recovered.
+
+Fleet Manager replicas must all upgrade before the first write containing additions. Its stored
+collection decoder is strict, so rolling back requires removing additions with the new version
+first. Shippers without the feature remain safe through the reduced document above.
 
 ## Served configuration validation
 
@@ -419,6 +473,7 @@ document may set, only add to, only disable, or not touch at all. It lives in
 | `encryption.include_install_recipient` | true | **set** | false means the install cannot decrypt what it ships. Setting false requires at least one additional recipient. A config that would seal objects no key can open is rejected whole. |
 | `sources[].enabled` | catalog | **set** | A local disable beats a remote enable. |
 | `sources[].roots / include / exclude` | catalog | **set** | Roots must stay within the compiled scope ceiling. A new root requires a release. Globs are not subsumption-checked. A served exclude replaces the catalog's excludes, including any that keep unscrubbable files out. |
+| `sources[].exclude_add` | empty | **add only** | Relative doublestar globs, added after every layer resolves exclude. Additions from every layer survive a later replacement. A reader without sources.exclude_add receives the affected source disabled. |
 | `sources[].max_file_bytes` | catalog | **set** | — |
 | `sources[].enrichers{}` | catalog | **turn off only** | May disable a registered enricher. May not enable one, and may not attach one the catalog does not have. An enricher reads a store the raw pipeline never touches. |
 | `a source id not in the compiled catalog` | — | **refused** | A config layer cannot create a source. It can only adjust one. |

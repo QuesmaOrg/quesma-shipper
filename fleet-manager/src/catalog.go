@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 )
 
 // sourceCatalog is this service's own copy of the config request's catalog; the protocol ships
@@ -270,22 +272,36 @@ func (m *Manager) FleetCatalog(ctx context.Context) (fleetCatalog, error) {
 
 // collectionForBuild renders the collection for a build that reported its catalog: a sources[]
 // entry the build lacks is left out, so the build does not refuse the whole document over an entry
-// another build needs -- it could not collect that source either way. Nothing else changes. A
-// requested rule pack in particular is never left out: that would scrub less than was asked for,
+// another build needs -- it could not collect that source either way. Sources whose additions
+// the build cannot enforce are paused. A requested rule pack is never left out: that would scrub less than was asked for,
 // and a build refusing the document keeps its last working one. It reports what it left out.
 func collectionForBuild(collection *CollectionConfig, catalog *sourceCatalog) (*CollectionConfig, []string) {
-	if collection == nil || catalog == nil {
+	if collection == nil {
 		return collection, nil
 	}
 	out := *collection
 	var notes []string
 	out.Sources = make([]CollectionSource, 0, len(collection.Sources))
 	for i, source := range collection.Sources {
-		if _, ok := catalog.source(source.ID); !ok {
-			notes = append(notes, fmt.Sprintf("left out sources[%d] %q, which its catalog lacks", i, source.ID))
-			continue
+		if catalog != nil {
+			if _, ok := catalog.source(source.ID); !ok {
+				notes = append(notes, fmt.Sprintf("left out sources[%d] %q, which its catalog lacks", i, source.ID))
+				continue
+			}
 		}
 		out.Sources = append(out.Sources, source)
+	}
+	if catalog == nil || !slices.Contains(catalog.Features, protocol.ExcludeAddFeature) {
+		scopes := make([]protocol.SourceExclusions, len(out.Sources))
+		for i, source := range out.Sources {
+			scopes[i] = protocol.SourceExclusions{ID: source.ID, Enabled: source.Enabled, ExcludeAdd: source.ExcludeAdd}
+			if len(source.ExcludeAdd) > 0 {
+				notes = append(notes, fmt.Sprintf("paused source %q until this shipper supports %s", source.ID, protocol.ExcludeAddFeature))
+			}
+		}
+		for i, scope := range protocol.ReduceSourceExclusions(scopes) {
+			out.Sources[i].Enabled, out.Sources[i].ExcludeAdd = scope.Enabled, scope.ExcludeAdd
+		}
 	}
 	return &out, notes
 }

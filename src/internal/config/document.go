@@ -59,6 +59,7 @@ type SourceOverride struct {
 	Roots        []string `yaml:"roots"`
 	Include      []string `yaml:"include"`
 	Exclude      []string `yaml:"exclude"`
+	ExcludeAdd   []string `yaml:"exclude_add"`
 	MaxFileBytes *int64   `yaml:"max_file_bytes"`
 
 	// Enrichers toggles a registered enricher; config can never attach one, that would be config installing code.

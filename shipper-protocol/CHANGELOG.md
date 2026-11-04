@@ -21,6 +21,13 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
 
 ### Added
 
+- `sources[].exclude_add` unions relative exclusion globs after all replacement layers.
+  Globs use forward-slash separators on every platform; backslashes, a leading `~` or `$`, and
+  empty, `.` or `..` segments are rejected.
+  `sources.exclude_add` capability negotiation and the shared reduction disable affected sources
+  for older readers; the two-copy cache preserves that behavior through offline downgrades, and
+  its `config_full_features` keeps a build lacking a later feature on the reduced copy.
+
 - `/v1/config` requests may carry `catalog`: the build's compiled source catalog (sources, rule
   packs, served-document features), root templates unexpanded. Optional, so older clients are
   served as before. PROTOCOL.md gains "Source catalog report": the reported sources are what a

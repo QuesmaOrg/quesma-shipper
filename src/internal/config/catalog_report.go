@@ -10,11 +10,11 @@ import (
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/packs"
+	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 )
 
-// Features are the served-document fields this resolver reads beyond its accepted config_version. None
-// is defined yet; the list exists so a later field can be served only to builds that read it.
-var Features = []string{}
+// Features are the served-document extensions this resolver can enforce.
+var Features = []string{protocol.ExcludeAddFeature}
 
 // CatalogReport is the config request's `catalog`. It lives here, beside the resolver, because only
 // the resolver knows which sources, packs and features a served document may name.

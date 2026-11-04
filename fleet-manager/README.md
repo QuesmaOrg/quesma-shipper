@@ -340,11 +340,11 @@ accepted tradeoff of using each organization's `config.json` as the only organiz
 ## Source catalogs
 
 A shipper build that has one reports its compiled source catalog on every config fetch: the
-sources it can collect, its scrub rule packs, and the served-document features it reads, of which
-none is defined yet (see
-"Source catalog report" in the shipper-protocol `PROTOCOL.md`). Root templates arrive unexpanded,
-so a catalog is the same on every machine running that build and says nothing about the machine or
-its files. The service keeps each install's latest one, content-addressed:
+sources it can collect, its scrub rule packs, and the served-document features it reads, such as
+`sources.exclude_add` (see "Source catalog report" in the shipper-protocol `PROTOCOL.md`). Root
+templates arrive unexpanded, so a catalog is the same on every machine running that build and says
+nothing about the machine or its files. The service keeps each install's latest one,
+content-addressed:
 
 ```
 v1/organization=<org>/control/catalogs/<sha256>.json   one per distinct catalog, written once
@@ -370,11 +370,14 @@ being upgraded itself.
 
 **Serving per install.** With the requesting build's catalog, a `sources[]` entry the build lacks is
 left out of its document, so the build does not refuse the whole document over an entry another
-build needs; it could not collect that source either way. Nothing else changes. A requested
-`scrub.rule_packs` name is never left out: that would scrub less than the organization asked for,
-and a build lacking a pack refuses the document and keeps collecting on its last working one. What
-was left out is logged once per change for each install, not on every fetch. A fetch without a
-catalog is served exactly as before.
+build needs; it could not collect that source either way. A source carrying `exclude_add` is served
+as stored only to a fetch whose catalog lists `sources.exclude_add`. Any other fetch, one without a
+catalog included, gets that source with `enabled: false` and no `exclude_add`, so a build that
+cannot apply the additions stops collecting the source rather than collecting more (see "Additive
+source exclusions" in `PROTOCOL.md`). A requested `scrub.rule_packs` name is
+never left out: that would scrub less than the organization asked for, and a build lacking a pack
+refuses the document and keeps collecting on its last working one. What was left out or paused is
+logged once per change for each install, not on every fetch.
 
 **What installs report.** `GET /v1/admin/orgs/{org}/sources` answers what the active installs report
 they can collect:
@@ -396,7 +399,9 @@ listed when a reporting install has it, `installs` is how many do, and a source'
 from the most recently reported catalog that has it. Per source, `installs` report they can collect
 it, `reporting - installs` report they cannot, and `active - reporting` have not said: unknown.
 Sources sort by `family_name`, then `id`; packs and features by name. Lists are empty arrays, never
-null, and `max_file_bytes` is absent when the catalog states none. No feature is defined yet.
+null, and `max_file_bytes` is absent when the catalog states none. The one feature defined so far is
+`sources.exclude_add`; the administration UI counts the active installs that do not report it as
+the machines that would pause a source with additions.
 
 **Checking writes.** A `PUT /v1/admin/orgs/{org}/config` that states a collection, and every
 `PUT /v1/admin/orgs/{org}/collection`, is checked after the schema. The body may carry `unverified_sources`, the source IDs the administrator accepts
@@ -417,7 +422,10 @@ or one source, is not blocked because the fleet moved since the collection was s
 administration UI sends the collection with every save, and this is what keeps that safe. A write
 that does not mention the collection keeps the stored one and is not checked. Older fleet-manager releases decode
 check-in records strictly: upgrade every replica before installs report catalogs, and keep this in
-mind when rolling back.
+mind when rolling back. They decode the stored configuration strictly too, so a replica still on one
+fails every request that reads an organization whose collection carries `exclude_add`: upgrade
+every replica before saving the first addition, and to roll back, remove the additions with the new
+release first.
 
 The administration UI offers sources from this endpoint: each override picks a source by family
 and description, stores its ID, and says how many installs report they can collect it, how many
@@ -425,6 +433,11 @@ report they cannot, and how many have not reported. A stored ID nobody reports i
 not reported by any install. **Use an unreported source ID** takes a typed ID, with a warning that
 no install has confirmed it, and sends it in `unverified_sources`. If the endpoint cannot be read,
 the form falls back to a typed ID, sent the same way.
+
+**Additional exclusions** writes `sources[].exclude_add`, preserving catalog and machine-owner
+exclusions. The UI shows any existing `sources[].exclude` replacement list and lets you edit or
+clear it. Creating a new replacement list, including restoring one after clearing it, requires the
+configuration or collection API; the UI only creates additive exclusions.
 
 ## Telemetry proxy
 

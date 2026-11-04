@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -91,13 +92,17 @@ func Refresh(ctx context.Context, o RefreshOptions) Remote {
 	}
 
 	// Older clients may have cached a document that parses but cannot resolve.
-	doc, err := config.ParseServedDocument(cached.Config)
-	var eff *config.Effective
-	if err == nil && o.Validate != nil {
-		eff, err = o.Validate(doc)
-		if localRejection(err) {
-			return Remote{Origin: OriginNone, Err: err}
+	raw := cached.Document()
+	doc, eff, err := resolveCached(raw, o)
+	if err != nil && !localRejection(err) && !bytes.Equal(raw, cached.Config) {
+		// A stricter build may refuse the full copy; the reduced copy still keeps the remote layer.
+		fullErr := fmt.Errorf("%w: cached config_full: %w", ErrConfigRejected, err)
+		if doc, eff, err = resolveCached(cached.Config, o); err == nil {
+			fetchErr = fmt.Errorf("%w; %w", fetchErr, fullErr)
 		}
+	}
+	if localRejection(err) {
+		return Remote{Origin: OriginNone, Err: err}
 	}
 	if err != nil {
 		return Remote{Origin: OriginNone, FetchedAt: cached.FetchedAt,
@@ -112,6 +117,15 @@ func Refresh(ctx context.Context, o RefreshOptions) Remote {
 		Expired:   cached.Expired(o.Now),
 		Err:       fetchErr,
 	}
+}
+
+func resolveCached(raw []byte, o RefreshOptions) (*config.Document, *config.Effective, error) {
+	doc, err := config.ParseServedDocument(raw)
+	if err != nil || o.Validate == nil {
+		return doc, nil, err
+	}
+	eff, err := o.Validate(doc)
+	return doc, eff, err
 }
 
 // Both causes survive so credential refusals and cached remote rejections remain distinguishable.

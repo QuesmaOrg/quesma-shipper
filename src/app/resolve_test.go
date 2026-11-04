@@ -19,6 +19,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
 
 func enrolledConfigServer(t *testing.T, serve http.HandlerFunc) config.Paths {
@@ -187,7 +188,8 @@ func TestInvalidLegacyCacheReportsRejectionWithoutFreshConfig(t *testing.T) {
 					w.WriteHeader(http.StatusServiceUnavailable)
 				})
 				fetchedAt := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-				if err := controlplane.SaveCache(paths.StateDir, controlplane.Cached{Config: []byte(bad), FetchedAt: fetchedAt}); err != nil {
+				// Reproduce the older writer: current SaveCache refuses malformed documents.
+				if err := platform.WriteJSON(filepath.Join(paths.StateDir, controlplane.CacheFile), controlplane.Cached{CacheSchema: 3, Config: []byte(bad), FetchedAt: fetchedAt}, 0o600); err != nil {
 					t.Fatal(err)
 				}
 				eff, _, remote, err := resolve(context.Background(), offline)
