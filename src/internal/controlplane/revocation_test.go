@@ -110,3 +110,32 @@ func TestRevocationSurvivesPersistenceFailureInMemory(t *testing.T) {
 		t.Fatal("persist failure caused retry")
 	}
 }
+
+func TestDiskRevocationRemainsLatchedForExistingClient(t *testing.T) {
+	dir := t.TempDir()
+	_, key, _ := controlplane.NewDeviceKey()
+	options := controlplane.Options{Endpoint: "https://fleet.example.com", InstallID: "old", Organization: "acme", DeviceKey: key, StateDir: dir}
+	client, err := controlplane.New(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := &controlplane.Revocation{InstallID: options.InstallID, Organization: options.Organization, Endpoint: options.Endpoint, DetectedAt: time.Now()}
+	if err := marker.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	var revoked *controlplane.Revocation
+	if !errors.As(client.Revocation(), &revoked) {
+		t.Fatal("persisted revocation was not loaded")
+	}
+	if err := os.Remove(filepath.Join(dir, controlplane.RevocationFile)); err != nil {
+		t.Fatal(err)
+	}
+	if !errors.As(client.Revocation(), &revoked) {
+		t.Fatal("existing client lost its loaded revocation")
+	}
+	options.InstallID = "replacement"
+	replacement, err := controlplane.New(options)
+	if err != nil || replacement.Revocation() != nil {
+		t.Fatalf("replacement client inherited revocation: %v", err)
+	}
+}

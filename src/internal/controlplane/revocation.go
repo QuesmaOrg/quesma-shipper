@@ -15,6 +15,8 @@ import (
 
 const RevocationFile = "revocation.json"
 
+var ErrInvalidRevocation = errors.New("revocation record is invalid; collection is stopped")
+
 // Revocation records observation time: the server does not disclose when an administrator revoked it.
 type Revocation struct {
 	InstallID    string    `json:"install_id"`
@@ -38,7 +40,8 @@ func LoadRevocation(stateDir string, enrollment *Enrollment) (*Revocation, error
 	if enrollment == nil {
 		return nil, nil
 	}
-	raw, err := platform.ReadPrivate(filepath.Join(stateDir, RevocationFile), 1<<20)
+	path := filepath.Join(stateDir, RevocationFile)
+	raw, err := platform.ReadPrivate(path, 1<<20)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -47,10 +50,10 @@ func LoadRevocation(stateDir string, enrollment *Enrollment) (*Revocation, error
 	}
 	var r Revocation
 	if err := json.Unmarshal(raw, &r); err != nil {
-		return nil, fmt.Errorf("read revocation: %w", err)
+		return nil, fmt.Errorf("%s: %w: %w", path, ErrInvalidRevocation, err)
 	}
 	if r.InstallID == "" || r.Organization == "" || r.Endpoint == "" || r.DetectedAt.IsZero() {
-		return nil, errors.New("revocation record is incomplete; collection is stopped")
+		return nil, fmt.Errorf("%s: %w: missing required fields", path, ErrInvalidRevocation)
 	}
 	if r.InstallID != enrollment.InstallID || r.Organization != enrollment.Organization || strings.TrimSuffix(r.Endpoint, "/") != strings.TrimSuffix(enrollment.Endpoint, "/") {
 		return nil, nil
@@ -69,6 +72,7 @@ func (c *Client) Revocation() error {
 	if err != nil || r == nil {
 		return err
 	}
+	c.revoked.Store(r)
 	return r
 }
 

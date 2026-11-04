@@ -159,6 +159,11 @@ func RemoveFile(path string) error {
 	return err
 }
 
+// RemoveTree removes an owned state directory, including stranded atomic-write files, without following symlinks.
+func RemoveTree(path string) error {
+	return os.RemoveAll(path)
+}
+
 // WriteAtomic writes data to path via a temp file, fsync, and rename. The rename is the commit
 // point. The temp name is random, never derived from the pid: a temp stranded by a crash is inert
 // garbage next to its document and can never collide with a later write. CreateTemp's O_EXCL

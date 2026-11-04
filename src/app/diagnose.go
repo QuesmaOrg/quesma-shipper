@@ -41,7 +41,11 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		return rep
 	}
 	if revocationErr != nil {
-		rep.Sections = []Section{{Title: "Collecting", Rows: []Row{{Sev: SevFail, Label: "install", Detail: revocationErr.Error(), Fix: "repair the revocation record; collection is stopped"}}}}
+		fix := "Restore read access and private file permissions for the revocation record named above; collection is stopped."
+		if errors.Is(revocationErr, controlplane.ErrInvalidRevocation) {
+			fix = RevocationRecovery()
+		}
+		rep.Sections = []Section{{Title: "Collecting", Rows: []Row{{Sev: SevFail, Label: "install", Detail: revocationErr.Error(), Fix: fix}}}}
 		return rep
 	}
 	updCh := make(chan UpdateStatus, 1)

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -124,6 +125,12 @@ func TestReenrollmentRetainsOldStateAndRetriesExactRequest(t *testing.T) {
 			t.Fatalf("failed login changed %s", file)
 		}
 	}
+	pending := filepath.Join(paths.StateDir, "re-enrollment", oldEnrollment.InstallID)
+	for _, name := range []string{"identity.json.tmp-interrupted", "interactive-enrollment-attempt.json.tmp-interrupted"} {
+		if err := os.WriteFile(filepath.Join(pending, name), []byte("synthetic stranded key material"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	accept = true
 	result, err := login()
 	if err != nil || result.Organization != "new-org" {
@@ -156,6 +163,132 @@ func TestReenrollmentRetainsOldStateAndRetriesExactRequest(t *testing.T) {
 	}
 	if !strings.Contains(revoked.Error(), "detected") {
 		t.Fatal("observation time presented as revocation time")
+	}
+}
+
+func TestCorruptRevocationCanRecoverWithoutResumingOldEnrollment(t *testing.T) {
+	for _, raw := range []string{"{", "{}"} {
+		t.Run(raw, func(t *testing.T) {
+			calls := 0
+			paths := enrolledConfigServer(t, func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Path != "/v1/enroll" {
+					t.Error("corrupt record allowed a signed request")
+				}
+				if calls == 1 {
+					http.Error(w, "response lost", 503)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(controlplane.EnrollResponse{Organization: "acme"})
+			})
+			unit, err := identity.Mint(paths.StateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			enr, _ := controlplane.LoadEnrollment(paths.StateDir)
+			enr.InstallID = unit.InstallID.String()
+			if err := enr.Save(paths.StateDir); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(paths.StateDir, controlplane.RevocationFile)
+			if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := New(Build{}); !errors.Is(err, controlplane.ErrInvalidRevocation) {
+				t.Fatalf("corrupt record did not stop startup: %v", err)
+			}
+			report := Diagnose(context.Background(), Build{}, false)
+			row := report.Sections[0].Rows[0]
+			if !strings.Contains(row.Detail, path) || !strings.Contains(row.Fix, "token") {
+				t.Fatalf("doctor omitted recovery: %+v", row)
+			}
+			login := func(managed bool) error {
+				_, err := loginWithRunCheck(context.Background(), enr.Endpoint, "new-token", managed, func() error { return nil })
+				return err
+			}
+			if err := login(true); !errors.Is(err, controlplane.ErrInvalidRevocation) || calls != 0 {
+				t.Fatalf("managed policy silently recovered corrupt enrollment: %v", err)
+			}
+			if err := login(false); err == nil {
+				t.Fatal("expected response loss")
+			}
+			var revoked *controlplane.Revocation
+			if !errors.As(EnrollmentRevocation(paths.StateDir), &revoked) {
+				t.Fatal("failed recovery did not retain a stop marker")
+			}
+			if err := login(false); err != nil {
+				t.Fatal(err)
+			}
+			archived, err := os.ReadFile(filepath.Join(paths.StateDir, "revoked-installs", enr.InstallID, controlplane.RevocationFile))
+			if err != nil || string(archived) != raw {
+				t.Fatalf("lost damaged original: %q, %v", archived, err)
+			}
+			if err := EnrollmentRevocation(paths.StateDir); err != nil {
+				t.Fatalf("replacement stayed stopped: %v", err)
+			}
+			current, _ := controlplane.LoadEnrollment(paths.StateDir)
+			if current.InstallID == enr.InstallID || calls != 2 {
+				t.Fatalf("recovery did not replace enrollment: %+v, calls=%d", current, calls)
+			}
+		})
+	}
+}
+
+func TestPendingEnrollmentCleanupDoesNotFollowSymlinks(t *testing.T) {
+	pending, outside := t.TempDir(), t.TempDir()
+	keep := filepath.Join(outside, "keep")
+	if err := os.WriteFile(keep, []byte("unrelated state"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(pending, "link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := clearPendingEnrollment(pending); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("cleanup followed a symlink: %v", err)
+	}
+}
+
+func TestReenrollmentDoesNotBypassRevocationFileSafety(t *testing.T) {
+	for _, kind := range []string{"symlink", "permissions"} {
+		t.Run(kind, func(t *testing.T) {
+			paths := enrolledConfigServer(t, func(http.ResponseWriter, *http.Request) { t.Error("unsafe revocation file allowed enrollment") })
+			enr, _ := controlplane.LoadEnrollment(paths.StateDir)
+			original, err := os.ReadFile(filepath.Join(paths.StateDir, controlplane.EnrollmentFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(paths.StateDir, controlplane.RevocationFile)
+			if kind == "symlink" {
+				target := filepath.Join(t.TempDir(), "marker")
+				if err := os.WriteFile(target, []byte("{}"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, path); err != nil {
+					t.Skipf("symlinks unavailable: %v", err)
+				}
+			} else {
+				if runtime.GOOS == "windows" {
+					t.Skip("Windows has no POSIX file mode gate")
+				}
+				if err := os.WriteFile(path, []byte("{}"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(path, 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err = loginWithRunCheck(context.Background(), enr.Endpoint, "new-token", false, func() error { return nil })
+			if err == nil || errors.Is(err, controlplane.ErrInvalidRevocation) || !strings.Contains(err.Error(), path) {
+				t.Fatalf("unsafe file not refused with its path: %v", err)
+			}
+			current, err := os.ReadFile(filepath.Join(paths.StateDir, controlplane.EnrollmentFile))
+			if err != nil || !bytes.Equal(current, original) {
+				t.Fatal("unsafe file recovery changed enrollment")
+			}
+		})
 	}
 }
 

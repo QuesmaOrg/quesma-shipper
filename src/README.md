@@ -195,6 +195,11 @@ Failed enrollment keeps collection stopped; the same command retries the saved r
 A corrected `--server` starts a new attempt at that server. A definitive enrollment conflict
 starts a fresh pending identity; other errors name the pending attempt file and retain it for retry.
 After enrollment succeeds, the pending directory and its extra copy of the new keys are removed.
+This includes temporary key files left by an interrupted atomic write.
+An invalid or incomplete `revocation.json` also stops collection. `doctor` names its path, and
+`quesma-shipper login <new-token>` archives the damaged record and recovers with a fresh identity.
+Read errors or unsafe file permissions must first be repaired at the path reported by `doctor`;
+login does not bypass those checks. Never delete a revocation record to resume collection.
 Local archived state is kept until `uninstall --purge` removes it.
 
 For an administrator-managed installation, ask the administrator to supply a new invite or grant

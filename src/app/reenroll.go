@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
@@ -23,6 +24,15 @@ func reenroll(ctx context.Context, stateDir, server, token string, old *controlp
 	}
 	defer store.Close()
 	if err := archiveRevokedState(stateDir, old.InstallID); err != nil {
+		return LoginResult{}, err
+	}
+	if _, err := controlplane.LoadRevocation(stateDir, old); errors.Is(err, controlplane.ErrInvalidRevocation) {
+		// Keep a valid stop marker through every interrupted recovery; the corrupt original is archived.
+		revoked := &controlplane.Revocation{InstallID: old.InstallID, Organization: old.Organization, Endpoint: old.Endpoint, DetectedAt: time.Now().UTC(), Notified: true}
+		if err := revoked.Save(stateDir); err != nil {
+			return LoginResult{}, err
+		}
+	} else if err != nil {
 		return LoginResult{}, err
 	}
 	pending := filepath.Join(stateDir, "re-enrollment", old.InstallID)
@@ -72,13 +82,7 @@ func reenroll(ctx context.Context, stateDir, server, token string, old *controlp
 }
 
 func clearPendingEnrollment(pending string) error {
-	if err := controlplane.ClearInteractiveEnrollmentAttempt(pending); err != nil {
-		return err
-	}
-	if err := platform.RemoveFile(filepath.Join(pending, identity.FileName)); err != nil {
-		return err
-	}
-	return platform.RemoveFile(pending)
+	return platform.RemoveTree(pending)
 }
 
 func archiveRevokedState(stateDir, installID string) error {
