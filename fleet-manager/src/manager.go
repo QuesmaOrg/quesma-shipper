@@ -238,7 +238,7 @@ func (m *Manager) EnrollGrant(ctx context.Context, token string, in InstallRecor
 		if readErr != nil {
 			return readErr
 		}
-		if current.Status == InstallActive && sameEnrollment(current, in) {
+		if current.Status == InstallActive && sameEnrollmentIdentity(current, in) {
 			return nil
 		}
 		return ErrEnrollmentConflict
@@ -355,8 +355,12 @@ func (m *Manager) EnrollInvite(ctx context.Context, token string, in InstallReco
 }
 
 func sameEnrollment(current, requested InstallRecord) bool {
+	return current.EnrollmentDigest == requested.EnrollmentDigest && sameEnrollmentIdentity(current, requested)
+}
+
+func sameEnrollmentIdentity(current, requested InstallRecord) bool {
 	return current.Schema == schemaVersion && current.Organization == requested.Organization &&
-		current.InstallID == requested.InstallID && current.EnrollmentDigest == requested.EnrollmentDigest &&
+		current.InstallID == requested.InstallID &&
 		current.DevicePublicKey == requested.DevicePublicKey && current.AgeRecipient == requested.AgeRecipient
 }
 

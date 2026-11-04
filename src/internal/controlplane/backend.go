@@ -79,13 +79,16 @@ type Options struct {
 	DeviceKey ed25519.PrivateKey
 }
 
+// normalizeEndpoint is the one spelling of a Server URL that requests use and saved state compares.
+func normalizeEndpoint(endpoint string) string { return strings.TrimSuffix(endpoint, "/") }
+
 // New builds a client. An empty endpoint is an error rather than a no-op: that caller has a bug.
 func New(o Options) (*Client, error) {
 	if o.Endpoint == "" {
 		return nil, errors.New("backend: no endpoint configured")
 	}
 	return &Client{
-		endpoint: strings.TrimSuffix(o.Endpoint, "/"),
+		endpoint: normalizeEndpoint(o.Endpoint),
 		http: &http.Client{
 			Timeout: defaultTimeout,
 

@@ -137,7 +137,7 @@ sequenceDiagram
     end
     Note over S: shipper enroll mints the identity before any network call:<br/>install UUID + device Ed25519 key + age X25519 keypair
     S->>CP: POST /v1/enroll, unauthenticated; the claim in the body is the credential
-    Note over CP: verify the claim, record the install<br/>(an identical retry succeeds; changed enrollment material conflicts)
+    Note over CP: verify the claim, record the install<br/>(grant retries may rotate claims for the same identity; invites require identical retries)
     CP-->>S: 200 organization
     Note over S: write the enrollment record (organization + keys) to enrollment.json (0600)
 ```
@@ -197,6 +197,21 @@ organization without a change to this request body. The request also carries the
 `install_id` (UUID), the `device_public_key` that every later request is verified against, the
 install's public `age_recipient`, and the cosmetic `hostname` and `platform`. This is the only
 moment the service learns anything about an install.
+
+For grant enrollment, the claim must be valid, unexpired and unrevoked on every attempt. An active
+install in that organization with the same `install_id`, `device_public_key` and `age_recipient`
+is the same enrollment even if the grant or request digest differs. Return the existing organization
+without rewriting the install record, including its original digest, hostname and timestamps.
+A different device key or age recipient, a pending install or a revoked install still conflicts.
+Invite enrollment retains exact-request replay and reservation rules.
+
+Managed clients persist a rotated grant for the same organization before sending it, retaining the
+pending identity and all other request fields. Until the next grant change, retries use those exact
+saved bytes. A changed Server URL or organization must not silently redirect a pending install:
+managed clients stop requests, preserve pending state and require administrator recovery. This also
+applies when a rotated token's organization cannot be determined. These routing checks do not
+validate the credential; the server does. Upgrade the server before clients rely on grant rotation;
+older servers may return 409 after the original grant created the install.
 
 **enroll response**: the server-assigned `organization` slug, and nothing else. The server assigns
 it so an install cannot place itself in another organization's subtree. It becomes the

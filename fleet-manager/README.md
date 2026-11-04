@@ -223,6 +223,20 @@ the [AWS template's README](terraform/aws/README.md#an-analytics-identity-under-
 The templates, for running them by hand: [AWS](terraform/aws/README.md) and
 [Google Cloud](terraform/gcp/README.md).
 
+## Enrollment retries
+
+An unexpired, unrevoked grant can complete an existing active enrollment in the same organization
+when its install ID, device public key and age recipient match, even if the grant or request digest
+changed. For example, after grant A created an install but the response was lost, a valid grant B
+can recover it. The original install record, including its digest, hostname and timestamps, is
+preserved. Changed keys, pending installs and revoked installs still conflict. Invites retain
+exact-request replay rules.
+
+Deploy this Fleet Manager behavior before updating managed shippers to rotate pending grants.
+Older shippers remain compatible; older Fleet Managers can return an enrollment conflict after a
+pending grant rotates. Managed shippers refuse Server URL or organization changes during a pending
+attempt; those require explicit administrator recovery, not automatic migration.
+
 ## Install names
 
 An install id is a UUID baked into every object key, and nothing a shipper uploads says who holds

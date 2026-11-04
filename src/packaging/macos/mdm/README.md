@@ -45,8 +45,17 @@ distribution and revoke an exposed grant. Expiry or revocation stops new enrollm
 the profile before expiry for future users. Existing users retain their device credentials
 when the grant changes or the profile is removed. Manual login remains available with
 `quesma-shipper login --server URL TOKEN`.
-An unfinished enrollment keeps its original request, including the grant, in a private per-user
-state file until enrollment succeeds or local state is purged.
+An unfinished enrollment keeps its request in a private per-user state file. Rotating `Grant`
+replaces only the saved grant before the next request, preserving the install ID, device key,
+age recipient and other request fields. Repeated response loss retries that saved request exactly
+until the grant changes again. A valid replacement for the same organization also recovers an
+install created by an earlier request whose response was lost; deploy the Fleet Manager support
+for grant rotation before updating shippers. Invalid, expired or revoked grants remain refused.
+
+Changing `Server` or the grant's organization while enrollment is pending stops requests and keeps
+the saved state. Restore the original destination and use a valid grant for that organization, or
+ask an administrator to recover the original enrollment before migration. A grant whose organization
+cannot be read also requires administrator recovery. Do not delete pending state to force a move.
 
 ## Jamf Pro
 
