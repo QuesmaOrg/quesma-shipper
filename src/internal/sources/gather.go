@@ -292,6 +292,8 @@ func NewRegistry() *Registry {
 		"account":      &Accounts{},
 		"cursor_usage": &CursorUsage{},
 		"sidecar":      sessionDispatch{},
+		// repositories: the git checkout and remotes of every directory the other sources' sessions ran in.
+		RepositoriesGather: Repositories{},
 	}}
 }
 

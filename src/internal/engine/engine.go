@@ -206,7 +206,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 		budget = math.MaxInt
 	}
 
-	for _, src := range o.Plan.Sources {
+	for _, src := range runOrder(o.Plan.Sources) {
 		if ctx.Err() != nil {
 			return rep, ctx.Err()
 		}
@@ -521,4 +521,18 @@ func backoffFor(attempt int, spread uint64) time.Duration {
 	// Up to an eighth off, so the spread is visible without meaningfully shortening the delay.
 	jitter := time.Duration(spread%9) * d / 64
 	return d - jitter
+}
+
+// runOrder moves the repositories source last: it reports the directories the others' discovery saw.
+func runOrder(srcs []sources.Resolved) []sources.Resolved {
+	out := make([]sources.Resolved, 0, len(srcs))
+	var last []sources.Resolved
+	for _, s := range srcs {
+		if s.Gather == sources.RepositoriesGather {
+			last = append(last, s)
+		} else {
+			out = append(out, s)
+		}
+	}
+	return append(out, last...)
 }

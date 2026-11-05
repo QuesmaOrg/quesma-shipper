@@ -1,0 +1,23 @@
+# Which git repository each session ran in. Agents record the working directory but not the
+# remote, and a worktree is removed or a session reaped long before anyone asks, so it is read
+# here while both are on disk. Facts per directory; grouping them is the reader's decision.
+spec_version: 1
+family: repositories
+display_name: Repositories
+
+sources:
+  - id: repositories
+    description: >-
+      One record per working directory a collected session named: the directory, the checkout
+      and main worktree holding it, its common git dir, and each remote of that repository as
+      host/path (https, ssh and scp-like forms alike). Only remote.<name>.url is read from the
+      git config, and a remote's user and token are dropped before anything is written.
+      Uploaded when the set changes.
+    gather: repositories
+    artifact_class: context
+    roots:
+      - "~"
+    max_file_bytes: 8388608
+    emit: repositories
+    sniff:
+      kind: jsonl

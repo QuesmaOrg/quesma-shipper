@@ -170,6 +170,7 @@
         "account",
         "cursor_usage",
         "file_glob",
+        "repositories",
         "sidecar"
       ]
     },

@@ -38,10 +38,10 @@ type RepoFilter struct {
 	anchored map[string][]string
 }
 
-// gitScope is the checkout containing a working directory and the repository's main
-// checkout; both empty outside git, main alone empty for a bare repository.
+// gitScope is the checkout containing a working directory, the repository's main checkout and
+// its common git dir; all empty outside git, main alone empty for a bare repository.
 type gitScope struct {
-	root, main string
+	root, main, common string
 }
 
 // CWDProbe is the bounded head-of-file probe: the sources whose files name their session's cwd,
@@ -193,7 +193,7 @@ func (f *RepoFilter) scopeOf(cwd string) gitScope {
 	}
 	sc := gitScope{}
 	if root, common, ok := findGitDir(cwd, f.git, f.home); ok {
-		sc = gitScope{root: root, main: mainWorktreeDir(common)}
+		sc = gitScope{root: root, main: mainWorktreeDir(common), common: common}
 	}
 	f.scopes[cwd] = sc
 	return sc

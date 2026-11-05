@@ -43,8 +43,17 @@ const (
 	smokeRoundTrips = (smokeRoundFiles + smokePutWidth - 1) / smokePutWidth
 )
 
-// A heartbeat and Claude account snapshot.
-const smokeSidecarObjects = 2
+// A heartbeat, the Claude account snapshot and the repositories snapshot.
+const smokeSidecarObjects = 3
+
+// sidecarsFor drops the repositories snapshot where no directory can be read: the probe parses
+// whole lines in a file's head, and a single 50 MiB line has none.
+func sidecarsFor(scenario string) int {
+	if scenario == singleLineScenario || scenario == singleLineSecretScenario {
+		return smokeSidecarObjects - 1
+	}
+	return smokeSidecarObjects
+}
 
 // Measured, and narrow: two runs of unchanged code over this corpus agree to within an HTTP header.
 const (

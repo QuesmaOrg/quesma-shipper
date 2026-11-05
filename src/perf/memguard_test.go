@@ -248,9 +248,9 @@ func runUnderBudget(t *testing.T, w *world, scenario string, budget resourceBudg
 	if counts["failed"] != 0 {
 		t.Errorf("%s: the run failed %d files:\n%s", scenario, counts["failed"], obs.Output)
 	}
-	if want := files + smokeSidecarObjects; objects != want {
+	if want := files + sidecarsFor(scenario); objects != want {
 		t.Errorf("%s: %d objects under %s, want exactly %d (%d files and %d sidecars)",
-			scenario, objects, w.keyRoot, want, files, smokeSidecarObjects)
+			scenario, objects, w.keyRoot, want, files, sidecarsFor(scenario))
 	}
 	if floor := int64(logical) / 2; c.up < floor {
 		t.Errorf("%s: %d bytes went up for %d logical bytes, under the %d floor: the fixture "+

@@ -244,7 +244,8 @@
         "sidecar",
         "compressed_file",
         "hook_spool_dir",
-        "metadata_only"
+        "metadata_only",
+        "repositories"
       ]
     },
     "artifact_class": { "enum": ["trajectory", "context"] },

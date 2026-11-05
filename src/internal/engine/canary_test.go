@@ -139,7 +139,7 @@ CREATE TABLE messages(id INTEGER,session_id TEXT,role TEXT,content TEXT,tool_cal
 INSERT INTO sessions VALUES ('canary',NULL,'cli','model','/work/api',1,NULL,'test',5,2,0,0);`,
 			`INSERT INTO messages VALUES (1,'canary','user',?,NULL,NULL,NULL,1,NULL)`, canaryText())
 	},
-	"project-map": func(t *testing.T, home string) {
+	"repositories": func(t *testing.T, home string) {
 		// The transcript fixture supplies the cwd; the remote's userinfo is the planted credential.
 		writeFile(t, filepath.Join(home, "work", "api", ".git", "config"), []byte(
 			"[remote \"origin\"]\n\turl = https://jane:"+codexSecrets["ghp"]+"@github.com/acme/api.git\n"+
@@ -256,6 +256,7 @@ func TestEveryCatalogSourceScrubsItsCanary(t *testing.T) {
 	rep := f.runWith(func(o *engine.Options) {
 		o.Unbounded = true
 		o.Env = env
+		o.Plan.Ignore = f.eff.Catalog.RepoFilter()
 		o.Enrichers = transforms.NewRegistry(&fixtureEnricher{Enricher: cursorjoin.New(), db: cursorCanaryDB(f.home)})
 	})
 	for _, so := range rep.Sources {
