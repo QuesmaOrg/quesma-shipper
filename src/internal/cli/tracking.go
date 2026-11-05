@@ -125,12 +125,12 @@ func renderRepos(a app.AgentRow, sel int, now time.Time, pal palette) string {
 		} else {
 			pending = toSync(r.Pending, a.PendingKnown)
 		}
-		cells[i] = []string{cursor(i == sel), cmp.Or(r.Name, "(no repository found)"),
+		cells[i] = []string{cursor(i == sel), cmp.Or(r.Name, "(no repository found)"), r.Remote,
 			bytesCell(r.Bytes), pending, app.Ago(r.Last, now), state}
 		styles[i] = rowStyle(pal, i == sel, r.Off)
 	}
-	return table([]string{" ", strings.ToLower(a.Display), "size", "to send", "last used", ""},
-		[]bool{false, false, true, true, false, false}, 1, cells, styles, pal)
+	return table([]string{" ", strings.ToLower(a.Display), "remote", "size", "to send", "last used", ""},
+		[]bool{false, false, false, true, true, false, false}, 1, cells, styles, pal)
 }
 
 func cursor(on bool) string {

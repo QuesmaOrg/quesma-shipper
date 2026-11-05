@@ -57,3 +57,32 @@ func TestGitRemotesReadsOnlyRemoteURLs(t *testing.T) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
+
+// The remote shown for a directory: origin first, then upstream, then whichever there is, with a
+// count of the other addresses; none outside git.
+func TestAttributionRemoteNamesTheRepository(t *testing.T) {
+	home := t.TempDir()
+	cfg := func(rel, body string) string {
+		dir := gitRepo(t, home, rel)
+		writeFile(t, filepath.Join(dir, ".git", "config"), body)
+		return dir
+	}
+	fork := cfg("fork", "[remote \"upstream\"]\n\turl = git@github.com:Up/api.git\n[remote \"origin\"]\n\turl = git@github.com:Me/api.git\n")
+	up := cfg("up", "[remote \"upstream\"]\n\turl = git@github.com:Up/api.git\n[remote \"mirror\"]\n\turl = https://gitlab.com/Up/api\n")
+	same := cfg("same", "[remote \"origin\"]\n\turl = git@github.com:Me/api.git\n[remote \"push\"]\n\turl = https://github.com/Me/api\n")
+	none := gitRepo(t, home, "none")
+	plain := repoDir(t, home, "plain", false)
+
+	f := newAttribution(testProbe(), testGitRead(), home)
+	for dir, want := range map[string]string{
+		fork:                     "github.com/Me/api +1",
+		filepath.Join(up, "sub"): "github.com/Up/api +1",
+		same:                     "github.com/Me/api",
+		none:                     "",
+		plain:                    "",
+	} {
+		if got := f.Remote(dir); got != want {
+			t.Errorf("Remote(%s) = %q, want %q", dir, got, want)
+		}
+	}
+}

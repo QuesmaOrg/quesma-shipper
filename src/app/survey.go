@@ -12,6 +12,7 @@ import (
 
 type RepoRow struct {
 	Name, Dir      string
+	Remote         string
 	Bytes, Pending int64
 	Last           time.Time
 	Markers        []string
@@ -76,6 +77,9 @@ func Survey(eff *config.Effective, paths config.Paths, attr *sources.Attribution
 	out := make([]AgentRow, 0, len(order))
 	for _, family := range order {
 		row := byFamily[family]
+		for i := range row.Repos {
+			row.Repos[i].Remote = attr.Remote(row.Repos[i].Dir)
+		}
 		SortRepos(row.Repos)
 		out = append(out, *row)
 	}

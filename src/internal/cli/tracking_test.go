@@ -155,7 +155,7 @@ func renderRows() []app.AgentRow {
 	return []app.AgentRow{
 		{Family: "claude-code", Display: "Claude Code", Bytes: 1747 << 20, Pending: 40 << 20, PendingKnown: true, Last: testNow.Add(-time.Minute),
 			Repos: []app.RepoRow{
-				{Name: "keeper", Bytes: 100 << 20, Pending: 40 << 20, Last: testNow.Add(-2 * time.Hour)},
+				{Name: "keeper", Remote: "github.com/acme/keeper", Bytes: 100 << 20, Pending: 40 << 20, Last: testNow.Add(-2 * time.Hour)},
 				{Name: "client-acme", Bytes: 48 << 20, Last: testNow.Add(-72 * time.Hour), Off: true},
 				{Name: "", Bytes: 1 << 10, Last: testNow.Add(-time.Hour)},
 			}},
@@ -173,7 +173,7 @@ func TestPlainRendering(t *testing.T) {
 			t.Errorf("agents table lacks %q:\n%s", want, agents)
 		}
 	}
-	for _, want := range []string{"client-acme", "not tracked", "(no repository found)", "100.0 MB", "48.0 MB"} {
+	for _, want := range []string{"client-acme", "not tracked", "(no repository found)", "remote", "github.com/acme/keeper", "100.0 MB", "48.0 MB"} {
 		if !strings.Contains(repos, want) {
 			t.Errorf("repos table lacks %q:\n%s", want, repos)
 		}

@@ -2,6 +2,7 @@ package sources
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -30,6 +31,9 @@ type Attribution struct {
 	// while the daemon runs must bite on the next flush, not the next restart.
 	cwds   map[string]string
 	scopes map[string]gitScope
+
+	// remotes caches each repository's remotes by common git dir.
+	remotes map[string][]gitRemote
 
 	// anchors names the Copilot sources whose files take their folders from one anchor file per
 	// directory, and anchored caches those folders; see anchor.go.
@@ -64,7 +68,7 @@ func (c *Compiled) Attribution() *Attribution {
 }
 
 func newAttribution(probe *CWDProbe, git *GitRead, home string) *Attribution {
-	return &Attribution{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}, anchored: map[string][]string{}}
+	return &Attribution{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}, remotes: map[string][]gitRemote{}, anchored: map[string][]string{}}
 }
 
 // CWD is the working directory a candidate's session ran in, or "" when none was found,
@@ -300,4 +304,46 @@ func (f *Attribution) attributed() map[string]gitScope {
 		}
 	}
 	return out
+}
+
+// remotesOf is a repository's remotes, read once per run.
+func (f *Attribution) remotesOf(common string) []gitRemote {
+	if common == "" {
+		return nil
+	}
+	rs, hit := f.remotes[common]
+	if !hit {
+		rs = gitRemotes(common)
+		f.remotes[common] = rs
+	}
+	return rs
+}
+
+// Remote is the remote that names dir's repository on screen, "" outside git or with none:
+// origin, else upstream, else the first, and "+N" for the other addresses.
+func (f *Attribution) Remote(dir string) string {
+	if f == nil || dir == "" || f.git == nil {
+		return ""
+	}
+	rs := f.remotesOf(f.scopeOf(dir).common)
+	if len(rs) == 0 {
+		return ""
+	}
+	shown := rs[0].URL
+	for _, name := range []string{"origin", "upstream"} {
+		if i := slices.IndexFunc(rs, func(r gitRemote) bool { return r.Name == name }); i >= 0 {
+			shown = rs[i].URL
+			break
+		}
+	}
+	others := map[string]bool{}
+	for _, r := range rs {
+		if r.URL != shown {
+			others[r.URL] = true
+		}
+	}
+	if len(others) > 0 {
+		return fmt.Sprintf("%s +%d", shown, len(others))
+	}
+	return shown
 }

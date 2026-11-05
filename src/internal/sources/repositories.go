@@ -56,7 +56,7 @@ func (Repositories) Discover(req Request) (Discovery, error) {
 	return d, nil
 }
 
-// loadRepositories reads each repository's remotes once. Paths take the username placeholder the
+// loadRepositories places each directory in its repository. Paths take the username placeholder the
 // manifest's native path takes, so a directory matches the cwd its sessions name.
 func loadRepositories(ctx context.Context, req Request, dirs map[string]gitScope) (Payload, error) {
 	user := func(p string) string { return formats.ApplyUserPlaceholder(p, req.Username) }
@@ -68,9 +68,7 @@ func loadRepositories(ctx context.Context, req Request, dirs map[string]gitScope
 		rec, seen := byGitDir[sc.common]
 		if !seen {
 			rec = &repositoryRecord{GitDir: user(sc.common), MainWorktree: user(sc.main)}
-			if sc.common != "" {
-				rec.Remotes = gitRemotes(sc.common)
-			}
+			rec.Remotes = req.Attribution.remotesOf(sc.common)
 			byGitDir[sc.common] = rec
 		}
 		_, err := os.Lstat(dir)
