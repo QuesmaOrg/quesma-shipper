@@ -12,9 +12,9 @@ sources:
       worktree, each remote as host/path (https, ssh and scp forms alike), and the session
       directories it holds, worktrees included; one more record for directories outside git.
       Only remote.<name>.url is read from the git config, and a remote's user and token are
-      dropped. Shipper-authored, like the heartbeat, so not scrubbed. Uploaded when it changes.
+      dropped. The directories come from transcripts, so it is scrubbed like them. Uploaded
+      when it changes.
     gather: repositories
-    scrub: false
     artifact_class: context
     max_file_bytes: 8388608
     emit: repositories

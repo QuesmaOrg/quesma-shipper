@@ -3,7 +3,9 @@ package sources
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"slices"
 	"strings"
@@ -72,7 +74,7 @@ func loadRepositories(ctx context.Context, req Request, dirs map[string]gitScope
 			byGitDir[sc.common] = rec
 		}
 		_, err := os.Lstat(dir)
-		rec.Directories = append(rec.Directories, repositoryDirectory{Path: user(dir), Missing: err != nil})
+		rec.Directories = append(rec.Directories, repositoryDirectory{Path: user(dir), Missing: errors.Is(err, fs.ErrNotExist)})
 	}
 
 	recs := make([]*repositoryRecord, 0, len(byGitDir))

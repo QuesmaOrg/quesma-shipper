@@ -28,7 +28,6 @@ var canaryUnscrubbed = map[string]string{
 	"codex-account":  "scrub: false, account and usage snapshots fetched from the provider, not user files",
 	"cursor-account": "scrub: false, account and usage snapshots fetched from the provider, not user files",
 	"cursor-usage":   "scrub: false, usage events fetched from the provider, not user files",
-	"repositories":   "scrub: false, shipper-authored paths and host/path remotes; credentials never read",
 }
 
 const canaryUUID = "0199cccc-dddd-7eee-8fff-000011112222"
@@ -139,6 +138,12 @@ CREATE TABLE sessions(id TEXT,parent_session_id TEXT,source TEXT,model TEXT,cwd 
 CREATE TABLE messages(id INTEGER,session_id TEXT,role TEXT,content TEXT,tool_call_id TEXT,tool_calls TEXT,tool_name TEXT,timestamp REAL,finish_reason TEXT);
 INSERT INTO sessions VALUES ('canary',NULL,'cli','model','/work/api',1,NULL,'test',5,2,0,0);`,
 			`INSERT INTO messages VALUES (1,'canary','user',?,NULL,NULL,NULL,1,NULL)`, canaryText())
+	},
+	"repositories": func(t *testing.T, home string) {
+		// The transcript fixture supplies the cwd; the remotes' userinfo is the planted credential.
+		writeFile(t, filepath.Join(home, "work", "api", ".git", "config"), []byte(
+			"[remote \"origin\"]\n\turl = https://jane:"+codexSecrets["ghp"]+"@github.com/acme/api.git\n"+
+				"[remote \"ci\"]\n\turl = https://x-access-token:"+codexSecrets["ghfg"]+"@github.com/acme/api.git\n"))
 	},
 }
 
@@ -251,6 +256,7 @@ func TestEveryCatalogSourceScrubsItsCanary(t *testing.T) {
 	rep := f.runWith(func(o *engine.Options) {
 		o.Unbounded = true
 		o.Env = env
+		o.Plan.Attribution = f.eff.Catalog.Attribution()
 		o.Enrichers = transforms.NewRegistry(&fixtureEnricher{Enricher: cursorjoin.New(), db: cursorCanaryDB(f.home)})
 	})
 	for _, so := range rep.Sources {

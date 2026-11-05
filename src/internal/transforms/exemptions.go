@@ -29,6 +29,11 @@ func CompiledExemptions() map[string][]string {
 			// Maps keyed by the tool_use id (toolu_…): the key is the join to the tool_use block.
 			"wireToolInputs.*", "wireIngestContext.*",
 		},
+		"repositories": {
+			// Paths and host/path remotes: torn by the backstop, a directory would no longer match the
+			// cwd its transcript names, which is exempt above.
+			"git_dir", "main_worktree", "directories[].path", "remotes[].url",
+		},
 		"codex": {
 			// The rollout's tool-call join id (call_…): codex's tool_use_id.
 			"payload.call_id",

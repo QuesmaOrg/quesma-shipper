@@ -611,3 +611,31 @@ func TestTheScrubberKeepsItsWorstCase(t *testing.T) {
 		t.Errorf("slowest scrub is attributed to %d bytes, want %d", n, len(big))
 	}
 }
+
+// A repositories record names the directories its transcripts name as cwd: the same email is
+// redacted from both, and a random-looking worktree name survives both, so the two still join.
+func TestRepositoriesDirectoryScrubsLikeTheTranscriptCwd(t *testing.T) {
+	s := newScrubber(t)
+	dir := "/Users/jane/Library/CloudStorage/GoogleDrive-jane.doe@example.com/My Drive/x/.t3/worktrees/x/wt-9fK2xQ7mZ4pL8vR3tY6bN1cH5sD0"
+	quoted, _ := json.Marshal(dir)
+	cwd := scrubJSONL(t, s, "claude-code", `{"type":"user","cwd":`+string(quoted)+`}`+"\n")
+	repo := scrubJSONL(t, s, "repositories", `{"git_dir":`+string(quoted)+`,"directories":[{"path":`+string(quoted)+`}]}`+"\n")
+
+	var c struct{ CWD string }
+	var r struct {
+		GitDir      string `json:"git_dir"`
+		Directories []struct{ Path string }
+	}
+	if err := json.Unmarshal(cwd.Out.Bytes(), &c); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(repo.Out.Bytes(), &r); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(c.CWD, "jane.doe@example.com") || !strings.Contains(c.CWD, "wt-9fK2xQ7mZ4pL8vR3tY6bN1cH5sD0") {
+		t.Fatalf("the transcript's cwd scrubbed unexpectedly: %s", c.CWD)
+	}
+	if r.Directories[0].Path != c.CWD || r.GitDir != c.CWD {
+		t.Errorf("the record scrubbed apart from the transcript:\n record %s / %s\n cwd    %s", r.Directories[0].Path, r.GitDir, c.CWD)
+	}
+}
