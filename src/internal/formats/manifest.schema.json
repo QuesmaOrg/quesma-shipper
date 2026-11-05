@@ -78,6 +78,31 @@
       "$ref": "#/$defs/shape_sniff"
     },
 
+    "repository": {
+      "description": "The git repository the session ran in, read from disk when it shipped. git_dir is the common git dir, so worktrees name their repository; paths take the username placeholder native_path takes. Absent outside git or when the session names no directory.",
+      "type": "object",
+      "required": ["git_dir"],
+      "additionalProperties": false,
+      "properties": {
+        "git_dir": { "type": "string", "minLength": 1 },
+        "main_worktree": { "type": "string", "minLength": 1 },
+        "remotes": {
+          "description": "remote.<name>.url only, as host and path; the user and any token are dropped, and local-path remotes are left out.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "host", "path"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "host": { "type": "string", "minLength": 1 },
+              "path": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+
     "redaction": { "$ref": "#/$defs/redaction_summary" },
 
     "encryption": {

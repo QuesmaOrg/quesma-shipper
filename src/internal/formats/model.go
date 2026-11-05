@@ -334,3 +334,19 @@ type Report struct {
 	SlowestScrubNanos int64
 	SlowestScrubBytes int64
 }
+
+// Repository is the git repository a session ran in, read from disk when the session ships.
+// GitDir is the common git dir, so a worktree names the repository it belongs to.
+type Repository struct {
+	GitDir string `json:"git_dir"`
+	// MainWorktree is empty for a bare repository, whose checkouts are all linked worktrees.
+	MainWorktree string   `json:"main_worktree,omitempty"`
+	Remotes      []Remote `json:"remotes,omitempty"`
+}
+
+// Remote is a remote's host and path, kept apart: on a plain ssh server the path is the repository's name.
+type Remote struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Path string `json:"path"`
+}

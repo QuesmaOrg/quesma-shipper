@@ -39,6 +39,9 @@ type Manifest struct {
 	AgentVersion string `json:"agent_version,omitempty"`
 	ShapeSniff   string `json:"shape_sniff,omitempty"`
 
+	// Repository is the git repository the session ran in, absent outside git or when unknown.
+	Repository *formats.Repository `json:"repository,omitempty"`
+
 	Redaction *RedactionSummary `json:"redaction,omitempty"`
 
 	Encryption *Encryption `json:"encryption,omitempty"`

@@ -121,6 +121,12 @@ snapshot is capped at 64 MiB by default; unchanged snapshots are not uploaded ag
 
 A repository marked as not tracked is matched through the folder the session ran in. For Copilot Chat this is the folder VS Code opened; in a multi-root workspace a mark on any of its folders applies. Chats from a remote VS Code window (SSH, WSL, dev container) name a folder on another machine, so they ship without a repository and a mark there does not apply.
 
+Each session also records the git repository its folder belongs to, read from disk when the
+session is sent: the repository's git directory (shared by its worktrees), its main worktree,
+and each remote as host and path (`github.com` and `Acme/api`, the same for https and ssh). Only
+`remote.<name>.url` is read from the git config, and the user and any token in a remote are
+dropped.
+
 One more record is produced by the shipper itself:
 
 - **Account and usage history.** Independent Claude Code, Codex, and Cursor collectors upload

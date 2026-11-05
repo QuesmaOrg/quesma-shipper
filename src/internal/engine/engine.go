@@ -125,8 +125,8 @@ type Plan struct {
 	// Deny is the compiled path deny list. Required: a nil deny list would read as "nothing is denied".
 	Deny *sources.List
 
-	// Ignore drops candidates of an ignored repository. Nil is the ordinary state and
-	// means nothing is ignored.
+	// Ignore drops candidates of an ignored repository and names the rest's. Nil is the ordinary
+	// state and means nothing is ignored and no repository is recorded.
 	Ignore *sources.RepoFilter
 
 	ConfigVersion int
@@ -252,6 +252,10 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			out.Reason = err.Error()
 			rep.Sources = append(rep.Sources, out)
 			continue
+		}
+		// On the run's one goroutine: the filter's caches are not safe for the file workers.
+		for i, c := range disc.Candidates {
+			disc.Candidates[i].Repository = o.Plan.Ignore.Repository(src, c)
 		}
 		out.Health = disc.Health
 		out.Sniff = disc.Sniff

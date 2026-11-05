@@ -48,6 +48,8 @@ const (
 type Candidate struct {
 	// CWD is available without opening a virtual database-backed transcript.
 	CWD string
+	// Repository is the git repository the session ran in, filled by the engine after discovery.
+	Repository *formats.Repository
 	// AlwaysLoad skips stat-only change detection for mutable database snapshots.
 	AlwaysLoad bool
 
