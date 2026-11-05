@@ -33,6 +33,28 @@ naming are pinned by tests but can still change between minor releases.
 \* Experimental. We actively run and test Claude Code, Codex, and Cursor.
 Pi, OpenCode, and Hermes support may change or be withdrawn.
 
+OpenCode collection requires a SQLite-backed store: V1 layouts with `session`,
+`message`, and `part`, or V2 layouts with `session_v2` and `session_message`
+(including the transitional shared-session layout). Pre-SQLite V1 releases before
+[v1.2.0](https://github.com/anomalyco/opencode/releases/tag/v1.2.0) whose history
+exists only as `storage/session/*/*.json`, `storage/message/*/*.json`, and
+`storage/part/*/*.json` are unsupported. This storage-format boundary, rather than
+a semver cutoff, also applies to development/channel builds. JSON copies left
+behind after SQLite migration are deliberately ignored; no stale history is
+re-uploaded from them.
+
+`opencode-tool-outputs` collects full text spills only when enabled, supported
+OpenCode transcripts reference their `outputPath` in truncated tool metadata.
+Only flat `tool-output/tool_*` files inside the same configured data root are
+eligible (64 MiB per file by default), with normal deny rules, repository ignores,
+symlink rejection and scrubbing. Keys use the root-relative spill path, as for
+Claude Code tool results; a spill referenced by several sessions/databases ships
+once, unless any referencing session belongs to an ignored repository. An empty
+session `directory` supplies no repository attribution for either its transcript
+or spills. Unreferenced/expired spills, credentials, arbitrary referenced paths
+and unrelated storage are not collected. Disabling `opencode-sessions` also disables
+spill discovery; no whole-data-directory scan or legacy JSON fallback is performed.
+
 ## Get started
 
 | | |

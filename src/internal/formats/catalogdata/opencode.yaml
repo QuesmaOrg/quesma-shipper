@@ -14,3 +14,16 @@ sources:
     max_file_bytes: 67108864
     sniff:
       kind: jsonl
+
+  - id: opencode-tool-outputs
+    description: Referenced full text tool results only; unreferenced spills and unrelated storage are not collected.
+    gather: sidecar
+    emit: opencode_tool_outputs
+    artifact_class: trajectory
+    roots:
+      - $XDG_DATA_HOME/opencode
+      - ~/.local/share/opencode
+    include: ["tool-output/tool_*"]
+    max_file_bytes: 67108864
+    sniff:
+      kind: none
