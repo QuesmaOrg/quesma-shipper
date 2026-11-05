@@ -25,6 +25,9 @@ func TestNormaliseRemoteKeepsHostAndPathApart(t *testing.T) {
 		{"file:///srv/git/api.git", "", ""},
 		{"https://github.com/", "", ""},
 		{"", "", ""},
+		{"ext::sshpass -p hunter2 ssh git@host %S repo", "", ""},
+		{"fd::17/foo", "", ""},
+		{"jane:ghp_secret@github.com:Acme/api.git", "", ""},
 	} {
 		if host, path := normaliseRemote(tc.in); host != tc.host || path != tc.path {
 			t.Errorf("normaliseRemote(%q) = %q, %q, want %q, %q", tc.in, host, path, tc.host, tc.path)
@@ -47,11 +50,14 @@ func TestGitRemotesReadsOnlyRemoteURLs(t *testing.T) {
 	URL = "git@github.com:Up/api.git" ; the canonical one
 [remote.legacy]
 	url = git@gitlab.com:Acme/api.git # old
+[Remote "mixed"]
+	url = git@github.com:Mixed/api.git
 [remote "local"]
 	url = /srv/git/api.git
 `)
 	want := []formats.Remote{
 		{Name: "legacy", Host: "gitlab.com", Path: "Acme/api"},
+		{Name: "mixed", Host: "github.com", Path: "Mixed/api"},
 		{Name: "origin", Host: "github.com", Path: "Acme/api"},
 		{Name: "upstream", Host: "github.com", Path: "Up/api"},
 	}

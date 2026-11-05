@@ -344,8 +344,7 @@ type Repository struct {
 	Remotes      []Remote `json:"remotes,omitempty"`
 }
 
-// Remote is a remote's host and path, kept apart: on a plain ssh server the path is the
-// repository's name, as owner/repo is on GitHub. The user and any token are never kept.
+// Remote is a remote's host and path, kept apart: on a plain ssh server the path is the repository's name.
 type Remote struct {
 	Name string `json:"name"`
 	Host string `json:"host"`

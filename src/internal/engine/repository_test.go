@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -14,7 +13,7 @@ import (
 )
 
 // A session's manifest names the repository it ran in, a worktree's included, with remotes stripped of
-// credentials; a session outside git names none.
+// credentials; a session outside git, or in a worktree whose repository is gone, names none.
 func TestManifestNamesTheSessionRepository(t *testing.T) {
 	f := newFixture(t)
 	t.Setenv("HOME", f.home)
@@ -25,11 +24,14 @@ func TestManifestNamesTheSessionRepository(t *testing.T) {
 	writeFile(t, filepath.Join(admin, "commondir"), []byte("../..\n"))
 	worktree := filepath.Join(f.home, "wt")
 	writeFile(t, filepath.Join(worktree, ".git"), []byte("gitdir: "+admin+"\n"))
+	orphan := filepath.Join(f.home, "orphan")
+	writeFile(t, filepath.Join(orphan, ".git"), []byte("gitdir: "+filepath.Join(f.home, "gone", ".git", "worktrees", "x")+"\n"))
 
-	session := func(cwd string) string { return `{"type":"user","cwd":` + strconv.Quote(cwd) + "}\n" }
+	session := func(cwd string) string { return `{"type":"user","cwd":` + jsonString(cwd) + "}\n" }
 	f.writeTranscript("a/main.jsonl", session(repo))
 	f.writeTranscript("b/worktree.jsonl", session(worktree))
 	f.writeTranscript("c/notes.jsonl", session(filepath.Join(f.home, "notes")))
+	f.writeTranscript("d/orphan.jsonl", session(orphan))
 
 	catalog, err := sources.Load()
 	if err != nil {
@@ -51,7 +53,7 @@ func TestManifestNamesTheSessionRepository(t *testing.T) {
 			t.Errorf("%s: the remote's token reached the manifest", m.NativePath)
 		}
 	}
-	for name, w := range map[string]*formats.Repository{"main.jsonl": want, "worktree.jsonl": want, "notes.jsonl": nil} {
+	for name, w := range map[string]*formats.Repository{"main.jsonl": want, "worktree.jsonl": want, "notes.jsonl": nil, "orphan.jsonl": nil} {
 		if !reflect.DeepEqual(got[name], w) {
 			t.Errorf("%s: repository %+v, want %+v", name, got[name], w)
 		}

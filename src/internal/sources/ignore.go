@@ -33,8 +33,8 @@ type RepoFilter struct {
 	cwds   map[string]string
 	scopes map[string]gitScope
 
-	// remotes caches each repository's remotes by common git dir, so worktrees read its config once.
-	remotes map[string][]formats.Remote
+	// repos caches each repository by common git dir, so its worktrees read its config once.
+	repos map[string]*formats.Repository
 
 	// anchors names the Copilot sources whose files take their folders from one anchor file per
 	// directory, and anchored caches those folders; see anchor.go.
@@ -75,7 +75,7 @@ func (c *Compiled) RepoFilter() *RepoFilter {
 }
 
 func newRepoFilter(probe *CWDProbe, git *GitRead, home string) *RepoFilter {
-	return &RepoFilter{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}, remotes: map[string][]formats.Remote{}, anchored: map[string][]string{}}
+	return &RepoFilter{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}, repos: map[string]*formats.Repository{}, anchored: map[string][]string{}}
 }
 
 // CWD is the working directory a candidate's session ran in, or "" when none was found,
@@ -210,12 +210,15 @@ func (f *RepoFilter) Repository(src Resolved, c Candidate) *formats.Repository {
 	if sc.common == "" {
 		return nil
 	}
-	rs, hit := f.remotes[sc.common]
+	repo, hit := f.repos[sc.common]
 	if !hit {
-		rs = gitRemotes(sc.common)
-		f.remotes[sc.common] = rs
+		// A worktree whose repository was deleted points at a git dir that is no longer there.
+		if _, err := os.Stat(sc.common); err == nil {
+			repo = &formats.Repository{GitDir: sc.common, MainWorktree: sc.main, Remotes: gitRemotes(sc.common)}
+		}
+		f.repos[sc.common] = repo
 	}
-	return &formats.Repository{GitDir: sc.common, MainWorktree: sc.main, Remotes: rs}
+	return repo
 }
 
 func (f *RepoFilter) Match(src Resolved, c Candidate) bool {

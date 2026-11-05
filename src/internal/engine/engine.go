@@ -125,8 +125,8 @@ type Plan struct {
 	// Deny is the compiled path deny list. Required: a nil deny list would read as "nothing is denied".
 	Deny *sources.List
 
-	// Ignore drops candidates of an ignored repository. Nil is the ordinary state and
-	// means nothing is ignored.
+	// Ignore drops candidates of an ignored repository and names the rest's. Nil is the ordinary
+	// state and means nothing is ignored and no repository is recorded.
 	Ignore *sources.RepoFilter
 
 	ConfigVersion int

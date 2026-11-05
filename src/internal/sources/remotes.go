@@ -34,23 +34,21 @@ func gitRemotes(commonDir string) []formats.Remote {
 			continue
 		}
 		if host, path := normaliseRemote(configValue(value)); host != "" {
-			if r := (formats.Remote{Name: remote, Host: host, Path: path}); !slices.Contains(out, r) {
-				out = append(out, r)
-			}
+			out = append(out, formats.Remote{Name: remote, Host: host, Path: path})
 		}
 	}
 	slices.SortFunc(out, func(a, b formats.Remote) int {
 		return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.Host, b.Host), strings.Compare(a.Path, b.Path))
 	})
-	return out
+	return slices.Compact(out)
 }
 
 // remoteSection is the name in [remote "name"] or the older [remote.name], "" for any other section.
 func remoteSection(header string) string {
 	inner, _, _ := strings.Cut(strings.TrimPrefix(header, "["), "]")
 	inner = strings.TrimSpace(inner)
-	if name, ok := strings.CutPrefix(inner, "remote "); ok {
-		return strings.Trim(strings.TrimSpace(name), `"`)
+	if len(inner) > len("remote ") && strings.EqualFold(inner[:len("remote ")], "remote ") {
+		return strings.Trim(strings.TrimSpace(inner[len("remote "):]), `"`)
 	}
 	if name, ok := strings.CutPrefix(strings.ToLower(inner), "remote."); ok {
 		return name
@@ -76,7 +74,7 @@ func configValue(v string) string {
 // so both are "".
 func normaliseRemote(raw string) (host, path string) {
 	s := strings.TrimSpace(raw)
-	if i := strings.Index(s, "://"); i > 0 {
+	if strings.Contains(s, "://") {
 		u, err := url.Parse(s)
 		if err != nil || strings.EqualFold(u.Scheme, "file") {
 			return "", ""
@@ -85,6 +83,11 @@ func normaliseRemote(raw string) (host, path string) {
 	} else if i := strings.Index(s, ":"); i > 1 && !strings.ContainsAny(s[:i], `/\`) {
 		// A single letter before the colon is a Windows drive, not a host.
 		host, path = s[:i], s[i+1:]
+		// transport::address is a remote helper's command line, and an @ or a space after the
+		// colon is a mangled URL; either may carry a credential, so neither is a remote.
+		if strings.HasPrefix(path, ":") || strings.ContainsAny(path, "@ \t") {
+			return "", ""
+		}
 		if at := strings.LastIndex(host, "@"); at >= 0 {
 			host = host[at+1:]
 		}
@@ -92,7 +95,8 @@ func normaliseRemote(raw string) (host, path string) {
 		return "", ""
 	}
 	host = strings.ToLower(host)
-	path = strings.TrimRight(strings.TrimSuffix(strings.TrimRight(path, "/"), ".git"), "/")
+	path = strings.TrimSuffix(strings.TrimRight(path, "/"), ".git")
+	path = strings.TrimRight(path, "/")
 	if host == "" || path == "" {
 		return "", ""
 	}
