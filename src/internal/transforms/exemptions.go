@@ -28,10 +28,13 @@ func CompiledExemptions() map[string][]string {
 			"cwd",
 			// Maps keyed by the tool_use id (toolu_…): the key is the join to the tool_use block.
 			"wireToolInputs.*", "wireIngestContext.*",
+			// Request shapes and message blobs are reassembled by their content hashes.
+			"shapeHash", "hash", "requestDigest", "tail[]",
 		},
 		"codex": {
 			// The rollout's tool-call join id (call_…): codex's tool_use_id.
 			"payload.call_id",
+			"payload.response_id",
 			// A patch's changed files, keyed by path: a hash-named directory must not tear the path.
 			"payload.item.changes.*",
 		},
