@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
 
@@ -32,16 +33,19 @@ type RepoFilter struct {
 	cwds   map[string]string
 	scopes map[string]gitScope
 
+	// remotes caches each repository's remotes by common git dir, so worktrees read its config once.
+	remotes map[string][]formats.Remote
+
 	// anchors names the Copilot sources whose files take their folders from one anchor file per
 	// directory, and anchored caches those folders; see anchor.go.
 	anchors  map[string]sessionAnchor
 	anchored map[string][]string
 }
 
-// gitScope is the checkout containing a working directory and the repository's main
-// checkout; both empty outside git, main alone empty for a bare repository.
+// gitScope is the checkout containing a working directory, the repository's main checkout and
+// its common git dir; all empty outside git, main alone empty for a bare repository.
 type gitScope struct {
-	root, main string
+	root, main, common string
 }
 
 // CWDProbe is the bounded head-of-file probe: the sources whose files name their session's cwd,
@@ -71,7 +75,7 @@ func (c *Compiled) RepoFilter() *RepoFilter {
 }
 
 func newRepoFilter(probe *CWDProbe, git *GitRead, home string) *RepoFilter {
-	return &RepoFilter{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}, anchored: map[string][]string{}}
+	return &RepoFilter{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}, remotes: map[string][]formats.Remote{}, anchored: map[string][]string{}}
 }
 
 // CWD is the working directory a candidate's session ran in, or "" when none was found,
@@ -193,10 +197,25 @@ func (f *RepoFilter) scopeOf(cwd string) gitScope {
 	}
 	sc := gitScope{}
 	if root, common, ok := findGitDir(cwd, f.git, f.home); ok {
-		sc = gitScope{root: root, main: mainWorktreeDir(common)}
+		sc = gitScope{root: root, main: mainWorktreeDir(common), common: common}
 	}
 	f.scopes[cwd] = sc
 	return sc
+}
+
+// Repository is the git repository a candidate's session ran in, nil outside git or when no
+// working directory was found.
+func (f *RepoFilter) Repository(src Resolved, c Candidate) *formats.Repository {
+	sc := f.scopeOf(f.CWD(src, c))
+	if sc.common == "" {
+		return nil
+	}
+	rs, hit := f.remotes[sc.common]
+	if !hit {
+		rs = gitRemotes(sc.common)
+		f.remotes[sc.common] = rs
+	}
+	return &formats.Repository{GitDir: sc.common, MainWorktree: sc.main, Remotes: rs}
 }
 
 func (f *RepoFilter) Match(src Resolved, c Candidate) bool {

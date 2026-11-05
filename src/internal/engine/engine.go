@@ -253,6 +253,10 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			rep.Sources = append(rep.Sources, out)
 			continue
 		}
+		// On the run's one goroutine: the filter's caches are not safe for the file workers.
+		for i, c := range disc.Candidates {
+			disc.Candidates[i].Repository = o.Plan.Ignore.Repository(src, c)
+		}
 		out.Health = disc.Health
 		out.Sniff = disc.Sniff
 		out.AgentVersion = disc.AgentVersion
