@@ -1,6 +1,7 @@
 package sources
 
 import (
+	"cmp"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -92,10 +93,12 @@ func mainWorktreeDir(commonDir string) string {
 // gitConfigMaxBytes bounds the read of a repository's config; a real one is a few kilobytes.
 const gitConfigMaxBytes = 256 << 10
 
-// gitRemote is one of a repository's remotes, its URL reduced to host/path.
+// gitRemote is one of a repository's remotes as host and path, kept apart: a path on a plain ssh
+// server (/home/jane/repo) is as much the repository's name as owner/repo is on GitHub.
 type gitRemote struct {
 	Name string `json:"name"`
-	URL  string `json:"url"`
+	Host string `json:"host"`
+	Path string `json:"path"`
 }
 
 // gitRemotes reads only remote.<name>.url out of a repository's config: the file can also hold
@@ -117,11 +120,15 @@ func gitRemotes(commonDir string) []gitRemote {
 		if remote == "" || !ok || !strings.EqualFold(strings.TrimSpace(key), "url") {
 			continue
 		}
-		if u := normaliseRemote(configValue(value)); u != "" && !slices.Contains(out, gitRemote{remote, u}) {
-			out = append(out, gitRemote{remote, u})
+		if host, path := normaliseRemote(configValue(value)); host != "" {
+			if r := (gitRemote{remote, host, path}); !slices.Contains(out, r) {
+				out = append(out, r)
+			}
 		}
 	}
-	slices.SortFunc(out, func(a, b gitRemote) int { return strings.Compare(a.Name+"\x00"+a.URL, b.Name+"\x00"+b.URL) })
+	slices.SortFunc(out, func(a, b gitRemote) int {
+		return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.Host, b.Host), strings.Compare(a.Path, b.Path))
+	})
 	return out
 }
 
@@ -151,18 +158,18 @@ func configValue(v string) string {
 	return strings.TrimSpace(v)
 }
 
-// normaliseRemote is a remote as host/path whatever the transport: https, ssh, git and scp-like
-// user@host:path all name the same repository, and the user and any token never survive. A local
-// path or file:// remote names no host, so it is "".
-func normaliseRemote(raw string) string {
+// normaliseRemote is a remote's host and path whatever the transport, so https, ssh, git and
+// scp-like user@host:path name a GitHub repository alike: the URL path loses its leading slash,
+// an scp path keeps what it says. The user and any token never survive. A local path or file://
+// remote names no host, so both are "".
+func normaliseRemote(raw string) (host, path string) {
 	s := strings.TrimSpace(raw)
-	var host, path string
 	if i := strings.Index(s, "://"); i > 0 {
 		u, err := url.Parse(s)
 		if err != nil || strings.EqualFold(u.Scheme, "file") {
-			return ""
+			return "", ""
 		}
-		host, path = u.Hostname(), u.Path
+		host, path = u.Hostname(), strings.TrimPrefix(u.Path, "/")
 	} else if i := strings.Index(s, ":"); i > 1 && !strings.ContainsAny(s[:i], `/\`) {
 		// A single letter before the colon is a Windows drive, not a host.
 		host, path = s[:i], s[i+1:]
@@ -170,12 +177,12 @@ func normaliseRemote(raw string) string {
 			host = host[at+1:]
 		}
 	} else {
-		return ""
+		return "", ""
 	}
 	host = strings.ToLower(host)
-	path = strings.Trim(strings.TrimSuffix(strings.Trim(path, "/"), ".git"), "/")
+	path = strings.TrimRight(strings.TrimSuffix(strings.TrimRight(path, "/"), ".git"), "/")
 	if host == "" || path == "" {
-		return ""
+		return "", ""
 	}
-	return host + "/" + path
+	return host, path
 }

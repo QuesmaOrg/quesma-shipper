@@ -70,9 +70,9 @@ func TestRepositoriesGroupsDirectoriesByRepository(t *testing.T) {
 	}
 	want := strings.Join([]string{
 		line(repositoryRecord{GitDir: filepath.Join(repo, ".git"), MainWorktree: repo,
-			Remotes:     []gitRemote{{"origin", "github.com/Acme/acme"}},
+			Remotes:     []gitRemote{{"origin", "github.com", "Acme/acme"}},
 			Directories: []repositoryDirectory{{Path: elsewhere}, {Path: gone, Missing: true}, {Path: sub}}}),
-		line(repositoryRecord{GitDir: bare, Remotes: []gitRemote{{"origin", "github.com/Acme/tool"}},
+		line(repositoryRecord{GitDir: bare, Remotes: []gitRemote{{"origin", "github.com", "Acme/tool"}},
 			Directories: []repositoryDirectory{{Path: bareWT}}}),
 		line(repositoryRecord{Directories: []repositoryDirectory{{Path: plain}}}),
 	}, "\n")

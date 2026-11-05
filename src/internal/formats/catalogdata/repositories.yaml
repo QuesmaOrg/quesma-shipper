@@ -9,11 +9,11 @@ sources:
   - id: repositories
     description: >-
       One record per git repository a collected session ran in: its common git dir, main
-      worktree, each remote as host/path (https, ssh and scp forms alike), and the session
+      worktree, each remote as host and path (https, ssh and scp forms alike), and the session
       directories it holds, worktrees included; one more record for directories outside git.
       Only remote.<name>.url is read from the git config, and a remote's user and token are
-      dropped. The directories come from transcripts, so it is scrubbed like them. Uploaded
-      when it changes.
+      dropped. The directories come from transcripts, so they are scrubbed like them; a
+      remote's host and path are compiled verbatim fields. Uploaded when it changes.
     gather: repositories
     artifact_class: context
     max_file_bytes: 8388608

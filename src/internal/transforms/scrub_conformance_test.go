@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
@@ -25,6 +26,7 @@ type scrubVectors struct {
 	Sentinel      string              `json:"sentinel_form"`
 	Username      string              `json:"username"`
 	Exemptions    map[string][]string `json:"structural_exempt"`
+	Verbatim      map[string][]string `json:"verbatim"`
 	Vectors       []scrubVector       `json:"vectors"`
 }
 
@@ -57,6 +59,10 @@ func TestConformanceRedaction(t *testing.T) {
 	var v scrubVectors
 	if err := json.Unmarshal(raw, &v); err != nil {
 		t.Fatal(err)
+	}
+	// Verbatim is compiled, not configured: the file states it for a port, and must match the code.
+	if !reflect.DeepEqual(v.Verbatim, transforms.CompiledVerbatim()) {
+		t.Errorf("verbatim fields drifted: vector %v, code %v", v.Verbatim, transforms.CompiledVerbatim())
 	}
 	if v.Sentinel != transforms.Sentinel("{rule_id}") {
 		t.Errorf("sentinel form drifted: vector %q, code %q", v.Sentinel, transforms.Sentinel("{rule_id}"))
@@ -175,6 +181,11 @@ func generateScrubVectors(t *testing.T) []byte {
 			"username in a cwd becomes a structural placeholder", "claude-code", true,
 			`{"type":"user","uuid":"u1","cwd":"/Users/jane/work/api"}` + "\n",
 			"",
+		},
+		{
+			"a remote's host and path ship verbatim", "repositories", true,
+			`{"git_dir":"/Users/jane/work/api/.git","remotes":[{"name":"origin","host":"devbox","path":"/srv/git/wt-9fK2xQ7mZ4pL8vR3tY6bN1cH5sD0"}],"directories":[{"path":"/Users/jane/work/api"}]}` + "\n",
+			"No detector or rewriter runs on a remote's host and path, which name the repository on its server; the local paths still take the placeholder.",
 		},
 		{
 			// A deliberate over-redaction: url-userinfo and email overlap and the wider span wins,
@@ -352,6 +363,7 @@ func generateScrubVectors(t *testing.T) []byte {
 		Sentinel:   transforms.Sentinel("{rule_id}"),
 		Username:   "jane",
 		Exemptions: exemptions(),
+		Verbatim:   transforms.CompiledVerbatim(),
 	}
 
 	for _, c := range cases {

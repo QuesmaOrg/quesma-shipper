@@ -319,8 +319,8 @@ func (f *Attribution) remotesOf(common string) []gitRemote {
 	return rs
 }
 
-// Remote is the remote that names dir's repository on screen, "" outside git or with none:
-// origin, else upstream, else the first, and "+N" for the other addresses.
+// Remote is the remote that names dir's repository on screen, as git writes it (host:path), ""
+// outside git or with none: origin, else upstream, else the first, and "+N" for the other addresses.
 func (f *Attribution) Remote(dir string) string {
 	if f == nil || dir == "" || f.git == nil {
 		return ""
@@ -329,21 +329,22 @@ func (f *Attribution) Remote(dir string) string {
 	if len(rs) == 0 {
 		return ""
 	}
-	shown := rs[0].URL
+	shown := rs[0]
 	for _, name := range []string{"origin", "upstream"} {
 		if i := slices.IndexFunc(rs, func(r gitRemote) bool { return r.Name == name }); i >= 0 {
-			shown = rs[i].URL
+			shown = rs[i]
 			break
 		}
 	}
-	others := map[string]bool{}
+	others := map[[2]string]bool{}
 	for _, r := range rs {
-		if r.URL != shown {
-			others[r.URL] = true
+		if r.Host != shown.Host || r.Path != shown.Path {
+			others[[2]string{r.Host, r.Path}] = true
 		}
 	}
+	text := shown.Host + ":" + shown.Path
 	if len(others) > 0 {
-		return fmt.Sprintf("%s +%d", shown, len(others))
+		return fmt.Sprintf("%s +%d", text, len(others))
 	}
-	return shown
+	return text
 }

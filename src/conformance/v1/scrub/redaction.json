@@ -34,8 +34,7 @@
     "repositories": [
       "git_dir",
       "main_worktree",
-      "directories[].path",
-      "remotes[].url"
+      "directories[].path"
     ],
     "codex": [
       "payload.call_id",
@@ -111,6 +110,12 @@
       "content[].image.hex"
     ]
   },
+  "verbatim": {
+    "repositories": [
+      "remotes[].host",
+      "remotes[].path"
+    ]
+  },
   "vectors": [
     {
       "name": "provider key in an assistant text block",
@@ -153,6 +158,18 @@
         "path-user": 1
       },
       "scan_mode": "decoded_json_values"
+    },
+    {
+      "name": "a remote's host and path ship verbatim",
+      "family": "repositories",
+      "jsonl": true,
+      "before": "{\"git_dir\":\"/Users/jane/work/api/.git\",\"remotes\":[{\"name\":\"origin\",\"host\":\"devbox\",\"path\":\"/srv/git/wt-9fK2xQ7mZ4pL8vR3tY6bN1cH5sD0\"}],\"directories\":[{\"path\":\"/Users/jane/work/api\"}]}\n",
+      "after": "{\"git_dir\":\"/Users/__USER__/work/api/.git\",\"remotes\":[{\"name\":\"origin\",\"host\":\"devbox\",\"path\":\"/srv/git/wt-9fK2xQ7mZ4pL8vR3tY6bN1cH5sD0\"}],\"directories\":[{\"path\":\"/Users/__USER__/work/api\"}]}\n",
+      "rule_hits": {
+        "path-user": 2
+      },
+      "scan_mode": "decoded_json_values",
+      "note": "No detector or rewriter runs on a remote's host and path, which name the repository on its server; the local paths still take the placeholder."
     },
     {
       "name": "connection string in a tool result (email rule over-reaches)",

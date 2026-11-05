@@ -30,9 +30,9 @@ func CompiledExemptions() map[string][]string {
 			"wireToolInputs.*", "wireIngestContext.*",
 		},
 		"repositories": {
-			// Paths and host/path remotes: torn by the backstop, a directory would no longer match the
-			// cwd its transcript names, which is exempt above.
-			"git_dir", "main_worktree", "directories[].path", "remotes[].url",
+			// Paths: torn by the backstop, a directory would no longer match the cwd its transcript
+			// names, which is exempt above.
+			"git_dir", "main_worktree", "directories[].path",
 		},
 		"codex": {
 			// The rollout's tool-call join id (call_…): codex's tool_use_id.
@@ -107,5 +107,16 @@ func CompiledExemptions() map[string][]string {
 			"tool_call_id", "tool_calls#json[].id", "tool_calls#json[].call_id", "tool_calls#json[].response_item_id",
 		},
 		"*": {"timestamp", "version"},
+	}
+}
+
+// CompiledVerbatim names the fields no detector or rewriter touches, the username placeholder
+// included: values the shipper built itself that cannot carry a credential. Compiled only, never
+// merged with served configuration, since an entry here is scrubbing switched off for a field.
+func CompiledVerbatim() map[string][]string {
+	return map[string][]string{
+		// A remote's host and path, from which the user and any token were already dropped. A path
+		// on a plain ssh server names its repository, so a username in it must survive as written.
+		"repositories": {"remotes[].host", "remotes[].path"},
 	}
 }

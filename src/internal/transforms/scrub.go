@@ -111,6 +111,7 @@ type Scrubber struct {
 
 	keyNames *keyNameMatcher
 	exempt   *ExemptionSet
+	verbatim *ExemptionSet
 	drops    map[string]map[FieldPath]bool
 
 	// Answers every pattern matcher's keyword question in one pass; read-only once
@@ -176,7 +177,7 @@ var keyValueRules = []string{"aws-secret-key", "secret-access-key"}
 // New compiles a Scrubber. A pack named in config but absent from the corpus is an
 // error: running with fewer rules than configured must not be reachable by omission.
 func New(cfg Config) (*Scrubber, error) {
-	s := &Scrubber{exempt: NewExemptionSet(cfg.Exemptions)}
+	s := &Scrubber{exempt: NewExemptionSet(cfg.Exemptions), verbatim: NewExemptionSet(CompiledVerbatim())}
 	// Rejected rather than clamped: the scanner would read a negative floor as "every
 	// run", the opposite of what lowering a threshold means.
 	if cfg.Entropy.MinLength < 0 {
@@ -413,6 +414,9 @@ func (p valuePlan) apply(value string) string {
 // planValue applies the full ladder to one decoded JSON string without building the
 // rewritten value; the walker maps the decoded spans back to the original token.
 func (s *Scrubber) planValue(value string, secretKey bool, field FieldPath, family string, scan *packs.ValueScan) valuePlan {
+	if s.verbatim.Exempt(family, field) {
+		return valuePlan{}
+	}
 	entropy := s.entropy
 	if s.exempt.Exempt(family, field) {
 		// Detector-scoped: the field stands down the heuristics and nothing else.

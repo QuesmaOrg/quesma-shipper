@@ -6,25 +6,26 @@ import (
 	"testing"
 )
 
-func TestNormaliseRemoteKeepsHostAndPathOnly(t *testing.T) {
-	for _, tc := range []struct{ in, want string }{
-		{"https://github.com/Acme/api.git", "github.com/Acme/api"},
-		{"https://jane:ghp_secret@GitHub.com/Acme/api/", "github.com/Acme/api"},
-		{"git@github.com:Acme/api.git", "github.com/Acme/api"},
-		{"ssh://git@github.com:2222/Acme/api.git", "github.com/Acme/api"},
-		{"git://github.com/Acme/api", "github.com/Acme/api"},
-		{"github.com:Acme/api", "github.com/Acme/api"},
-		{"https://gitlab.com/group/sub/api.git", "gitlab.com/group/sub/api"},
-		{"git@github-work:Acme/api.git", "github-work/Acme/api"},
-		{"/srv/git/api.git", ""},
-		{"../api", ""},
-		{`C:\repos\api`, ""},
-		{"file:///srv/git/api.git", ""},
-		{"https://github.com/", ""},
-		{"", ""},
+func TestNormaliseRemoteKeepsHostAndPathApart(t *testing.T) {
+	for _, tc := range []struct{ in, host, path string }{
+		{"https://github.com/Acme/api.git", "github.com", "Acme/api"},
+		{"https://jane:ghp_secret@GitHub.com/Acme/api/", "github.com", "Acme/api"},
+		{"git@github.com:Acme/api.git", "github.com", "Acme/api"},
+		{"ssh://git@github.com:2222/Acme/api.git", "github.com", "Acme/api"},
+		{"git://github.com/Acme/api", "github.com", "Acme/api"},
+		{"https://gitlab.com/group/sub/api.git", "gitlab.com", "group/sub/api"},
+		{"jane@devbox:/home/jane/api.git", "devbox", "/home/jane/api"},
+		{"devbox:projects/api", "devbox", "projects/api"},
+		{"git@github-work:Acme/api.git", "github-work", "Acme/api"},
+		{"/srv/git/api.git", "", ""},
+		{"../api", "", ""},
+		{`C:\repos\api`, "", ""},
+		{"file:///srv/git/api.git", "", ""},
+		{"https://github.com/", "", ""},
+		{"", "", ""},
 	} {
-		if got := normaliseRemote(tc.in); got != tc.want {
-			t.Errorf("normaliseRemote(%q) = %q, want %q", tc.in, got, tc.want)
+		if host, path := normaliseRemote(tc.in); host != tc.host || path != tc.path {
+			t.Errorf("normaliseRemote(%q) = %q, %q, want %q, %q", tc.in, host, path, tc.host, tc.path)
 		}
 	}
 }
@@ -49,9 +50,9 @@ func TestGitRemotesReadsOnlyRemoteURLs(t *testing.T) {
 `)
 	got := gitRemotes(dir)
 	want := []gitRemote{
-		{"legacy", "gitlab.com/Acme/api"},
-		{"origin", "github.com/Acme/api"},
-		{"upstream", "github.com/Up/api"},
+		{"legacy", "gitlab.com", "Acme/api"},
+		{"origin", "github.com", "Acme/api"},
+		{"upstream", "github.com", "Up/api"},
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("got %v, want %v", got, want)
@@ -75,9 +76,9 @@ func TestAttributionRemoteNamesTheRepository(t *testing.T) {
 
 	f := newAttribution(testProbe(), testGitRead(), home)
 	for dir, want := range map[string]string{
-		fork:                     "github.com/Me/api +1",
-		filepath.Join(up, "sub"): "github.com/Up/api +1",
-		same:                     "github.com/Me/api",
+		fork:                     "github.com:Me/api +1",
+		filepath.Join(up, "sub"): "github.com:Up/api +1",
+		same:                     "github.com:Me/api",
 		none:                     "",
 		plain:                    "",
 	} {

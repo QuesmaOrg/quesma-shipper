@@ -120,11 +120,12 @@ A repository marked as not tracked is matched through the folder the session ran
 The shipper also produces these records itself:
 
 - **Repositories.** One record per git repository a collected session ran in: its git directory,
-  main worktree and remotes as `host/owner/repo` (the same for https and ssh), and the session
-  folders it holds, worktrees included; one more record lists the folders outside git. Only
-  `remote.<name>.url` is read from the git config, and the user and any token in a remote are
-  dropped. Repositories marked as not tracked are left out. Scrubbed like the transcripts the
-  folders come from; uploaded when it changes. Disable it with `sources: [{id: repositories, enabled: false}]`.
+  main worktree, its remotes as separate host and path (`github.com` and `Acme/api`, the same for
+  https and ssh), and the session folders it holds, worktrees included; one more record lists the
+  folders outside git. Only `remote.<name>.url` is read from the git config, and the user and any
+  token in a remote are dropped. Repositories marked as not tracked are left out. The folders are
+  scrubbed like the transcripts they come from; a remote's host and path ship as written. Uploaded
+  when it changes. Disable it with `sources: [{id: repositories, enabled: false}]`.
 - **Account and usage history.** Independent Claude Code, Codex, and Cursor collectors upload
   account metadata and provider usage JSON in UTC buckets matching the collection interval (default
   15 minutes), only when it changed since the last upload, and at least once per UTC day. Unknown

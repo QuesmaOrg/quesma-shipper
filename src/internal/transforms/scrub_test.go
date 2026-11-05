@@ -639,3 +639,15 @@ func TestRepositoriesDirectoryScrubsLikeTheTranscriptCwd(t *testing.T) {
 		t.Errorf("the record scrubbed apart from the transcript:\n record %s / %s\n cwd    %s", r.Directories[0].Path, r.GitDir, c.CWD)
 	}
 }
+
+// A remote's path keeps a username as written: on a plain ssh server it names the repository.
+// The same name in a local path still takes the placeholder.
+func TestRemoteFieldsAreVerbatim(t *testing.T) {
+	s := newScrubber(t)
+	res := scrubJSONL(t, s, "repositories",
+		`{"git_dir":"/Users/jane/x/.git","remotes":[{"name":"origin","host":"devbox","path":"/home/jane/x"}],"directories":[{"path":"/Users/jane/x"}]}`+"\n")
+	want := `{"git_dir":"/Users/__USER__/x/.git","remotes":[{"name":"origin","host":"devbox","path":"/home/jane/x"}],"directories":[{"path":"/Users/__USER__/x"}]}` + "\n"
+	if got := string(res.Out.Bytes()); got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
