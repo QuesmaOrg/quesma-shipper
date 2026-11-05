@@ -112,7 +112,7 @@ var writeCapableFiles = []string{
 	"packaging/common/remove.go",
 	"packaging/common/selfupdate.go",
 	"internal/platform/pause.go",
-	"internal/sources/ignore.go",
+	"internal/sources/attribution.go",
 }
 
 // bannedWrites are the os-level calls that create or truncate a file.
