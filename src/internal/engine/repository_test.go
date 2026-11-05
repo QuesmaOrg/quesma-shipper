@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -13,7 +14,8 @@ import (
 )
 
 // A session's manifest names the repository it ran in, a worktree's included, with remotes stripped of
-// credentials; a session outside git, or in a worktree whose repository is gone, names none.
+// credentials and one git_dir however the checkout was reached; a session outside git, or in a
+// worktree whose repository is gone, names none.
 func TestManifestNamesTheSessionRepository(t *testing.T) {
 	f := newFixture(t)
 	t.Setenv("HOME", f.home)
@@ -32,6 +34,12 @@ func TestManifestNamesTheSessionRepository(t *testing.T) {
 	f.writeTranscript("b/worktree.jsonl", session(worktree))
 	f.writeTranscript("c/notes.jsonl", session(filepath.Join(f.home, "notes")))
 	f.writeTranscript("d/orphan.jsonl", session(orphan))
+	sessions := map[string]bool{"main.jsonl": true, "worktree.jsonl": true}
+	// Windows needs a privilege for symlinks, so there the linked checkout goes untested.
+	if err := os.Symlink(filepath.Join(f.home, "work"), filepath.Join(f.home, "code")); err == nil {
+		f.writeTranscript("e/linked.jsonl", session(filepath.Join(f.home, "code", "api")))
+		sessions["linked.jsonl"] = true
+	}
 
 	catalog, err := sources.Load()
 	if err != nil {
@@ -40,9 +48,13 @@ func TestManifestNamesTheSessionRepository(t *testing.T) {
 	f.runWith(func(o *engine.Options) { o.Plan.Ignore = catalog.RepoFilter() })
 
 	user := engine.UsernameFromStateDir(f.stateDir)
+	resolved, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := &formats.Repository{
-		GitDir:       formats.ApplyUserPlaceholder(filepath.Join(repo, ".git"), user),
-		MainWorktree: formats.ApplyUserPlaceholder(repo, user),
+		GitDir:       formats.ApplyUserPlaceholder(filepath.Join(resolved, ".git"), user),
+		MainWorktree: formats.ApplyUserPlaceholder(resolved, user),
 		Remotes:      []formats.Remote{{Name: "origin", Host: "github.com", Path: "Acme/api"}},
 	}
 	got := map[string]*formats.Repository{}
@@ -53,9 +65,14 @@ func TestManifestNamesTheSessionRepository(t *testing.T) {
 			t.Errorf("%s: the remote's token reached the manifest", m.NativePath)
 		}
 	}
-	for name, w := range map[string]*formats.Repository{"main.jsonl": want, "worktree.jsonl": want, "notes.jsonl": nil, "orphan.jsonl": nil} {
-		if !reflect.DeepEqual(got[name], w) {
-			t.Errorf("%s: repository %+v, want %+v", name, got[name], w)
+	for name := range sessions {
+		if !reflect.DeepEqual(got[name], want) {
+			t.Errorf("%s: repository %+v, want %+v", name, got[name], want)
+		}
+	}
+	for _, name := range []string{"notes.jsonl", "orphan.jsonl"} {
+		if got[name] != nil {
+			t.Errorf("%s: repository %+v, want none", name, got[name])
 		}
 	}
 }

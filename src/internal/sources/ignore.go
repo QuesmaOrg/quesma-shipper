@@ -212,9 +212,10 @@ func (f *RepoFilter) Repository(src Resolved, c Candidate) *formats.Repository {
 	}
 	repo, hit := f.repos[sc.common]
 	if !hit {
-		// A worktree whose repository was deleted points at a git dir that is no longer there.
-		if _, err := os.Stat(sc.common); err == nil {
-			repo = &formats.Repository{GitDir: sc.common, MainWorktree: sc.main, Remotes: gitRemotes(sc.common)}
+		// One repository, one git_dir: a worktree's .git file holds the resolved path, while a
+		// checkout reached through a symlink keeps the link. A deleted repository fails here.
+		if common, err := filepath.EvalSymlinks(sc.common); err == nil {
+			repo = &formats.Repository{GitDir: common, MainWorktree: mainWorktreeDir(common), Remotes: gitRemotes(common)}
 		}
 		f.repos[sc.common] = repo
 	}
