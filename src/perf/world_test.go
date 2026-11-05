@@ -69,6 +69,10 @@ type world struct {
 	// gomaxprocs is the child's view of the machine. See childGOMAXPROCS.
 	gomaxprocs int
 
+	// namesNoDirectory: no staged session names a directory the cwd probe can read, so a run ships
+	// no repositories snapshot.
+	namesNoDirectory bool
+
 	// Appended last, so a scenario can hand the child a limit of its own without a launcher.
 	extraEnv []string
 

@@ -29,11 +29,6 @@ func CompiledExemptions() map[string][]string {
 			// Maps keyed by the tool_use id (toolu_…): the key is the join to the tool_use block.
 			"wireToolInputs.*", "wireIngestContext.*",
 		},
-		"repositories": {
-			// Paths and host/path remotes by construction, and the join to the sessions' own cwd:
-			// a torn directory would no longer match the transcript that names it.
-			"directory", "worktree", "main_worktree", "git_dir", "remotes[].url",
-		},
 		"codex": {
 			// The rollout's tool-call join id (call_…): codex's tool_use_id.
 			"payload.call_id",

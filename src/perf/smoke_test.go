@@ -46,10 +46,9 @@ const (
 // A heartbeat, the Claude account snapshot and the repositories snapshot.
 const smokeSidecarObjects = 3
 
-// sidecarsFor drops the repositories snapshot where no directory can be read: the probe parses
-// whole lines in a file's head, and a single 50 MiB line has none.
-func sidecarsFor(scenario string) int {
-	if scenario == singleLineScenario || scenario == singleLineSecretScenario {
+// sidecars is what a run in this world ships besides its files.
+func (w *world) sidecars() int {
+	if w.namesNoDirectory {
 		return smokeSidecarObjects - 1
 	}
 	return smokeSidecarObjects
@@ -196,10 +195,10 @@ func smokeBacklog(t *testing.T, m *smokeMachine, baseline time.Duration) smokeBa
 			t.Errorf("the backlog put %d bytes on the wire for %d logical bytes, a ratio of %.3f "+
 				"over the %.2f bound", moved, m.bytes, ratio, smokeWireRatioMax)
 		}
-		if want := m.files + smokeSidecarObjects; meas.objects != want {
+		if want := m.files + m.w.sidecars(); meas.objects != want {
 			t.Errorf("the backlog left %d objects under %s, want exactly %d "+
 				"(%d files and %d sidecars)", meas.objects, m.w.keyRoot, want, m.files,
-				smokeSidecarObjects)
+				m.w.sidecars())
 		}
 
 		assertNoResidualScratch(t, m.w)

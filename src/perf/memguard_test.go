@@ -248,9 +248,9 @@ func runUnderBudget(t *testing.T, w *world, scenario string, budget resourceBudg
 	if counts["failed"] != 0 {
 		t.Errorf("%s: the run failed %d files:\n%s", scenario, counts["failed"], obs.Output)
 	}
-	if want := files + sidecarsFor(scenario); objects != want {
+	if want := files + w.sidecars(); objects != want {
 		t.Errorf("%s: %d objects under %s, want exactly %d (%d files and %d sidecars)",
-			scenario, objects, w.keyRoot, want, files, sidecarsFor(scenario))
+			scenario, objects, w.keyRoot, want, files, w.sidecars())
 	}
 	if floor := int64(logical) / 2; c.up < floor {
 		t.Errorf("%s: %d bytes went up for %d logical bytes, under the %d floor: the fixture "+
@@ -574,6 +574,8 @@ func stageSingleLineSecretFile(t *testing.T, w *world, target int64) (int, int) 
 
 func stageSingleLineValue(t *testing.T, w *world, slug string, target int64, secret string) (int, int) {
 	t.Helper()
+	// The one line is far longer than the cwd probe reads, so its directory is never seen.
+	w.namesNoDirectory = true
 	session := corpusSessionID(0)
 	cwd := "/Users/perf/work/" + strings.TrimPrefix(slug, "-Users-perf-work-")
 	path := filepath.Join(w.Home, ".claude", "projects", slug, session+".jsonl")

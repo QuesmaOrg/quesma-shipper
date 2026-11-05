@@ -40,14 +40,19 @@ func (p *Accounts) Discover(req Request) (Discovery, error) {
 	return d, nil
 }
 
-// generatedDiscovery is the preamble of a source that writes its own files: its checks, and the
-// collection bucket. When ready is false, d and err are already the answer.
+// generatedDiscovery is the preamble of a source that writes its own files from an agent's store:
+// the store must be present, then collectionBucket's checks.
 func generatedDiscovery(req Request, what string) (d Discovery, bucket time.Time, ready bool, err error) {
-	d = Discovery{Health: RootPresentNoMatch, Sniff: SniffOK}
 	if req.Source.Root == "" {
-		d.Health = AgentAbsent
-		return d, bucket, false, nil
+		return Discovery{Health: AgentAbsent, Sniff: SniffOK}, bucket, false, nil
 	}
+	return collectionBucket(req, what)
+}
+
+// collectionBucket is the preamble of a source that writes its own files: its checks, and the
+// collection bucket. When ready is false, d and err are already the answer.
+func collectionBucket(req Request, what string) (d Discovery, bucket time.Time, ready bool, err error) {
+	d = Discovery{Health: RootPresentNoMatch, Sniff: SniffOK}
 	if !req.Capture {
 		d.Deferred = true
 		d.Reason = "configured; checked during collection"

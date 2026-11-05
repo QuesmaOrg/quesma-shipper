@@ -206,7 +206,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 		budget = math.MaxInt
 	}
 
-	for _, src := range runOrder(o.Plan.Sources) {
+	for _, src := range o.runOrder() {
 		if ctx.Err() != nil {
 			return rep, ctx.Err()
 		}
@@ -523,16 +523,18 @@ func backoffFor(attempt int, spread uint64) time.Duration {
 	return d - jitter
 }
 
-// runOrder moves the repositories source last: it reports the directories the others' discovery saw.
-func runOrder(srcs []sources.Resolved) []sources.Resolved {
-	out := make([]sources.Resolved, 0, len(srcs))
-	var last []sources.Resolved
-	for _, s := range srcs {
-		if s.Gather == sources.RepositoriesGather {
-			last = append(last, s)
-		} else {
-			out = append(out, s)
+// runOrder puts every summary after the sources it summarises, keeping the configured order otherwise.
+func (o Options) runOrder() []sources.Resolved {
+	out := make([]sources.Resolved, 0, len(o.Plan.Sources))
+	var summaries []sources.Resolved
+	for _, src := range o.Plan.Sources {
+		if prim, err := o.Registry.For(src.Gather); err == nil {
+			if _, ok := prim.(sources.Summary); ok {
+				summaries = append(summaries, src)
+				continue
+			}
 		}
+		out = append(out, src)
 	}
-	return append(out, last...)
+	return append(out, summaries...)
 }

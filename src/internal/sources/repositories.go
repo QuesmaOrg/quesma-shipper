@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -14,93 +12,89 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
 
-// Repositories reports every working directory this flush's sessions named, with the git checkout
-// holding it and that repository's remotes as host/path. It states facts per directory and leaves
-// which directories form one repository to the reader, so a remote added later re-links old sessions.
+// Repositories records, while it is still on disk, which git repository each directory a collected
+// session ran in belongs to: one record per repository (its common git dir, so worktrees fold in)
+// with its remotes and those directories. Which repositories are one project is the reader's call.
 type Repositories struct{}
 
-// RepositoriesGather runs after every other source: the directories it reports are the ones their
-// discovery attributed.
-const RepositoriesGather = "repositories"
+// Summary is a primitive whose input is what the run's other sources discovered, so it runs after them.
+type Summary interface{ summarizesDiscovery() }
 
+func (Repositories) summarizesDiscovery() {}
+
+// repositoryRecord is one repository; the record without a GitDir holds the directories outside git.
 type repositoryRecord struct {
-	Directory string `json:"directory"`
-	// Missing: the directory is gone (a removed worktree, a remote machine's path), so the git
-	// fields, if any, come from the nearest checkout above it.
-	Missing      bool               `json:"missing,omitempty"`
-	Worktree     string             `json:"worktree,omitempty"`
-	MainWorktree string             `json:"main_worktree,omitempty"`
-	GitDir       string             `json:"git_dir,omitempty"`
-	Remotes      []repositoryRemote `json:"remotes,omitempty"`
+	GitDir string `json:"git_dir,omitempty"`
+	// MainWorktree is empty for a bare repository, whose checkouts are all linked worktrees.
+	MainWorktree string                `json:"main_worktree,omitempty"`
+	Remotes      []gitRemote           `json:"remotes,omitempty"`
+	Directories  []repositoryDirectory `json:"directories"`
 }
 
-type repositoryRemote struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+type repositoryDirectory struct {
+	Path string `json:"path"`
+	// Missing: gone from disk (a removed worktree, a remote machine's path), so it was placed by
+	// the nearest checkout above it.
+	Missing bool `json:"missing,omitempty"`
 }
-
-// gitConfigMaxBytes bounds the read of a repository's config; a real one is a few kilobytes.
-const gitConfigMaxBytes = 256 << 10
 
 func (Repositories) Discover(req Request) (Discovery, error) {
-	d, bucket, ready, err := generatedDiscovery(req, "repositories")
+	d, bucket, ready, err := collectionBucket(req, "repositories")
 	if !ready {
 		return d, err
 	}
-	scopes := req.Ignore.observed()
-	if len(scopes) == 0 {
+	dirs := req.Ignore.attributed()
+	if len(dirs) == 0 {
 		d.Reason = "no collected session named a working directory"
 		return d, nil
 	}
 	name := "repositories." + bucket.Format("20060102T150405Z") + ".jsonl"
 	d.Candidates = []Candidate{{Path: name, RelPath: name, Series: req.Source.ID, Size: req.Source.MaxFileBytes, MTime: bucket,
-		Load: func(ctx context.Context) (Payload, error) { return loadRepositories(ctx, req, scopes) },
+		Load: func(ctx context.Context) (Payload, error) { return loadRepositories(ctx, req, dirs) },
 	}}
 	d.Health = Collected
 	return d, nil
 }
 
-type observedDir struct {
-	dir   string
-	scope gitScope
-}
-
-// observed is every directory the filter attributed, sorted, minus the ones a marker keeps out.
-func (f *RepoFilter) observed() []observedDir {
-	if f == nil {
-		return nil
-	}
-	var out []observedDir
-	for dir, sc := range f.scopes {
-		if _, marked := f.Marker(dir); !marked {
-			out = append(out, observedDir{dir, sc})
-		}
-	}
-	slices.SortFunc(out, func(a, b observedDir) int { return strings.Compare(a.dir, b.dir) })
-	return out
-}
-
-func loadRepositories(ctx context.Context, req Request, dirs []observedDir) (Payload, error) {
+// loadRepositories reads each repository's remotes once. Paths take the username placeholder the
+// manifest's native path takes, so a directory matches the cwd its sessions name.
+func loadRepositories(ctx context.Context, req Request, dirs map[string]gitScope) (Payload, error) {
 	user := func(p string) string { return formats.ApplyUserPlaceholder(p, req.Username) }
-	remotes := map[string][]repositoryRemote{}
-	var b strings.Builder
-	enc := json.NewEncoder(&b)
-	for _, o := range dirs {
+	byGitDir := map[string]*repositoryRecord{}
+	for dir, sc := range dirs {
 		if err := ctx.Err(); err != nil {
 			return Payload{}, err
 		}
-		rec := repositoryRecord{Directory: user(o.dir), Worktree: user(o.scope.root), MainWorktree: user(o.scope.main), GitDir: user(o.scope.common)}
-		if _, err := os.Lstat(o.dir); err != nil {
-			rec.Missing = true
-		}
-		if o.scope.common != "" {
-			rs, seen := remotes[o.scope.common]
-			if !seen {
-				rs = gitRemotes(o.scope.common)
-				remotes[o.scope.common] = rs
+		rec, seen := byGitDir[sc.common]
+		if !seen {
+			rec = &repositoryRecord{GitDir: user(sc.common), MainWorktree: user(sc.main)}
+			if sc.common != "" {
+				rec.Remotes = gitRemotes(sc.common)
 			}
-			rec.Remotes = rs
+			byGitDir[sc.common] = rec
 		}
+		_, err := os.Lstat(dir)
+		rec.Directories = append(rec.Directories, repositoryDirectory{Path: user(dir), Missing: err != nil})
+	}
+
+	recs := make([]*repositoryRecord, 0, len(byGitDir))
+	for _, rec := range byGitDir {
+		slices.SortFunc(rec.Directories, func(a, b repositoryDirectory) int { return strings.Compare(a.Path, b.Path) })
+		recs = append(recs, rec)
+	}
+	// Outside git last, then by git dir, so an unchanged set encodes to the same bytes.
+	slices.SortFunc(recs, func(a, b *repositoryRecord) int {
+		switch {
+		case a.GitDir == "":
+			return 1
+		case b.GitDir == "":
+			return -1
+		}
+		return strings.Compare(a.GitDir, b.GitDir)
+	})
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	for _, rec := range recs {
 		if err := enc.Encode(rec); err != nil {
 			return Payload{}, err
 		}
@@ -109,92 +103,4 @@ func loadRepositories(ctx context.Context, req Request, dirs []observedDir) (Pay
 		return Payload{}, fmt.Errorf("%w: generated content exceeds file size limit", platform.ErrTooLarge)
 	}
 	return Payload{Bytes: []byte(b.String())}, nil
-}
-
-// gitRemotes reads only remote.<name>.url out of a repository's config: the file can also hold
-// credentials (http.extraHeader), so nothing else is taken, and an unreadable config is no remotes.
-func gitRemotes(commonDir string) []repositoryRemote {
-	body, _, err := platform.ReadWhole(filepath.Join(commonDir, "config"), gitConfigMaxBytes)
-	if err != nil {
-		return nil
-	}
-	var out []repositoryRemote
-	remote := ""
-	for line := range strings.SplitSeq(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "[") {
-			remote = remoteSection(line)
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		if remote == "" || !ok || !strings.EqualFold(strings.TrimSpace(key), "url") {
-			continue
-		}
-		if u := NormaliseRemote(configValue(value)); u != "" {
-			r := repositoryRemote{Name: remote, URL: u}
-			if !slices.Contains(out, r) {
-				out = append(out, r)
-			}
-		}
-	}
-	slices.SortFunc(out, func(a, b repositoryRemote) int {
-		return strings.Compare(a.Name+"\x00"+a.URL, b.Name+"\x00"+b.URL)
-	})
-	return out
-}
-
-// remoteSection is the name in [remote "name"] or the older [remote.name], "" for any other section.
-func remoteSection(header string) string {
-	inner, _, _ := strings.Cut(strings.TrimPrefix(header, "["), "]")
-	inner = strings.TrimSpace(inner)
-	if name, ok := strings.CutPrefix(inner, "remote "); ok {
-		return strings.Trim(strings.TrimSpace(name), `"`)
-	}
-	if name, ok := strings.CutPrefix(strings.ToLower(inner), "remote."); ok {
-		return name
-	}
-	return ""
-}
-
-// configValue drops a quoted value's quotes and an unquoted value's trailing comment.
-func configValue(v string) string {
-	v = strings.TrimSpace(v)
-	if rest, ok := strings.CutPrefix(v, `"`); ok {
-		v, _, _ = strings.Cut(rest, `"`)
-		return v
-	}
-	if i := strings.IndexAny(v, "#;"); i >= 0 {
-		v = v[:i]
-	}
-	return strings.TrimSpace(v)
-}
-
-// NormaliseRemote is a remote as host/path whatever the transport: https, ssh, git and scp-like
-// user@host:path all name the same repository, and the user and any token never survive. A local
-// path or file:// remote names no host, so it is "".
-func NormaliseRemote(raw string) string {
-	s := strings.TrimSpace(raw)
-	var host, path string
-	if i := strings.Index(s, "://"); i > 0 {
-		u, err := url.Parse(s)
-		if err != nil || strings.EqualFold(u.Scheme, "file") {
-			return ""
-		}
-		host, path = u.Hostname(), u.Path
-	} else if i := strings.Index(s, ":"); i > 1 && !strings.ContainsAny(s[:i], `/\`) {
-		// A single letter before the colon is a Windows drive, not a host.
-		host, path = s[:i], s[i+1:]
-		if at := strings.LastIndex(host, "@"); at >= 0 {
-			host = host[at+1:]
-		}
-	} else {
-		return ""
-	}
-	host = strings.ToLower(host)
-	path = strings.TrimSuffix(strings.Trim(path, "/"), ".git")
-	path = strings.Trim(path, "/")
-	if host == "" || path == "" {
-		return ""
-	}
-	return host + "/" + path
 }

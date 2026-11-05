@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
 
 const notrajectories = ".notrajectories"
@@ -50,12 +48,6 @@ type CWDProbe struct {
 	From      []string
 	Fields    []string
 	ScanBytes int64
-}
-
-// GitRead is the equally bounded .git handling.
-type GitRead struct {
-	WalkUp           bool
-	FollowGitdirFile bool
 }
 
 // RepoFilter builds the attributor. Claude Code states cwd at the top level of a transcript
@@ -294,72 +286,17 @@ func lookupField(rec map[string]json.RawMessage, field string) (string, bool) {
 	return "", false
 }
 
-// findGitDir walks up from cwd to the checkout root holding .git and the repository's
-// COMMON git dir: a linked worktree's own gitdir holds no config, and its commondir
-// names the one that does.
-func findGitDir(cwd string, cfg *GitRead, ceiling string) (root, common string, ok bool) {
-	if !filepath.IsAbs(cwd) {
-		return "", "", false
+// attributed is every directory the filter attributed a candidate to, with its git scope, minus
+// the ones a marker keeps out: the input of the repositories source.
+func (f *RepoFilter) attributed() map[string]gitScope {
+	if f == nil {
+		return nil
 	}
-	dir := filepath.Clean(cwd)
-	for dir != ceiling {
-		candidate := filepath.Join(dir, ".git")
-		info, err := os.Lstat(candidate)
-		if err == nil {
-			if info.IsDir() {
-				return dir, candidate, true
-			}
-			// A worktree: .git is a file holding "gitdir: <path>".
-			if cfg.FollowGitdirFile {
-				if target, ok := gitPointer(candidate, "gitdir:", dir); ok {
-					return dir, gitCommonDir(target), true
-				}
-			}
-			return "", "", false
+	out := map[string]gitScope{}
+	for dir, sc := range f.scopes {
+		if _, marked := f.Marker(dir); !marked {
+			out[dir] = sc
 		}
-		if !cfg.WalkUp {
-			return "", "", false
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", "", false
-		}
-		dir = parent
 	}
-	return "", "", false
-}
-
-// gitPointer reads one of git's pointer files (a "gitdir:" line, or commondir's bare
-// path) and resolves it against base.
-func gitPointer(file, prefix, base string) (string, bool) {
-	body, _, err := platform.ReadWhole(file, 64<<10)
-	if err != nil {
-		return "", false
-	}
-	target, ok := strings.CutPrefix(strings.TrimSpace(string(body)), prefix)
-	target = filepath.FromSlash(strings.TrimSpace(target))
-	if !ok || target == "" {
-		return "", false
-	}
-	if !filepath.IsAbs(target) {
-		target = filepath.Join(base, target)
-	}
-	return filepath.Clean(target), true
-}
-
-// gitCommonDir follows a linked worktree's commondir; none means this is the common dir.
-func gitCommonDir(gitDir string) string {
-	if common, ok := gitPointer(filepath.Join(gitDir, "commondir"), "", gitDir); ok {
-		return common
-	}
-	return gitDir
-}
-
-// mainWorktreeDir is the checkout holding the common git dir; "" for a bare repository,
-// which has no working tree to mark.
-func mainWorktreeDir(commonDir string) string {
-	if filepath.Base(commonDir) == ".git" {
-		return filepath.Dir(commonDir)
-	}
-	return ""
+	return out
 }

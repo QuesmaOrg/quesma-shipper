@@ -31,13 +31,6 @@
       "wireToolInputs.*",
       "wireIngestContext.*"
     ],
-    "repositories": [
-      "directory",
-      "worktree",
-      "main_worktree",
-      "git_dir",
-      "remotes[].url"
-    ],
     "codex": [
       "payload.call_id",
       "payload.item.changes.*"
