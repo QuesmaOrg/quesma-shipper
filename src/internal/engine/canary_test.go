@@ -83,6 +83,10 @@ var canaryFixtures = map[string]func(t *testing.T, home string){
 			[]byte(`{"toolUseId":"toolu_01","env":`+jsonObject(canaryLines())+`}`))
 		writeFile(t, filepath.Join(dir, canaryUUID, "tool-results", "toolu_01.txt"), []byte(canaryText()))
 	},
+	"codex-togetherlink-rollouts": func(t *testing.T, home string) {
+		path := filepath.Join(home, ".codex-togetherlink", "sessions", codexRolloutName(canaryUUID))
+		writeFile(t, path, []byte(codexRollout(canaryUUID)))
+	},
 	"claude-code-context": func(t *testing.T, home string) {
 		root := filepath.Join(home, ".claude")
 		writeFile(t, filepath.Join(root, "projects", "-work-api", "memory", "notes.md"), []byte("# Notes\n\n"+canaryText()))
