@@ -57,6 +57,27 @@ sources:
       kind: jsonl
       max_scan_bytes: 65536
 
+  - id: codex-togetherlink-rollouts
+    description: Together Link desktop profile sessions, collected alongside the normal Codex store.
+    gather: file_glob
+    artifact_class: trajectory
+    roots:
+      - ~/.codex-togetherlink
+    require_subdir: sessions
+    max_file_bytes: 536870912
+    include:
+      - "sessions/**/*.jsonl"
+      - "sessions/**/*.jsonl.zst"
+      - "archived_sessions/**/*.jsonl"
+      - "archived_sessions/**/*.jsonl.zst"
+      - "session_index.jsonl"
+    identity:
+      match: '(?:^|/)rollout-[^/]*-([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})\.jsonl(?:\.zst)?$'
+      key: 'codex-session/$1'
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 65536
+
   - id: codex-account
     description: Account and raw provider usage snapshots, uploaded when they change and at least daily.
     gather: account

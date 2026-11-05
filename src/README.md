@@ -86,12 +86,16 @@ The shipper collects more than chat transcripts. Per agent, from the agent's own
 | Agent | Trajectories | Context artifacts |
 |---|---|---|
 | Claude Code | Session and subagent transcripts, spilled tool results | Per-project memory files, plans, todos, file-history checkpoint metadata, the user-level `CLAUDE.md`, `settings.json` |
-| Codex | Sessions, one object each whether live, archived or zstd-compressed (decompressed and scrubbed like the rest), the session index | None |
+| Codex | Sessions, one object each whether live, archived or zstd-compressed (decompressed and scrubbed like the rest), the session index; includes Together Link's desktop profile | None |
 | Cursor | Agent transcripts, enriched with conversation text, tool calls, and model names read from Cursor's database | Spilled tool output, terminal captures, agent scratchpad notes |
 | GitHub Copilot | Copilot CLI session event logs; Copilot Chat transcripts and VS Code's chat session store, which holds tool results and token counts, including chats opened with no folder and sessions moved between workspaces | CLI session plans, checkpoints, research reports, session files and rewind snapshots; personal `copilot-instructions.md` and `instructions/*.instructions.md`; VS Code chat editing checkpoints and file baselines |
 | Pi (experimental) | Native JSONL session trees, messages, usage, branches and tool results | None |
 | OpenCode (experimental) | Per-session JSONL snapshots from `opencode.db` and channel databases such as `opencode-stable.db`: session, message and part records (1.x), or session and `session_message` records (2.x) | None |
 | Hermes (experimental) | Per-session JSONL snapshots of messages and model usage from `state.db`, including named profiles | None |
+
+Codex collects its normal store (`$CODEX_HOME` or `~/.codex`) and, independently,
+Together Link's `~/.codex-togetherlink` desktop profile. The latter ships under the
+`codex-togetherlink-rollouts` source in the `codex` family and can be disabled separately.
 
 Pi uses `$PI_CODING_AGENT_SESSION_DIR`, `$PI_CODING_AGENT_DIR/sessions`, or
 `~/.pi/agent/sessions`. OpenCode uses `$XDG_DATA_HOME/opencode` or
@@ -116,6 +120,12 @@ committed WAL changes. Database files and credentials are not uploaded. Each
 snapshot is capped at 64 MiB by default; unchanged snapshots are not uploaded again.
 
 A repository marked as not tracked is matched through the folder the session ran in. For Copilot Chat this is the folder VS Code opened; in a multi-root workspace a mark on any of its folders applies. Chats from a remote VS Code window (SSH, WSL, dev container) name a folder on another machine, so they ship without a repository and a mark there does not apply.
+
+Each session also records the git repository its folder belongs to, read from disk when the
+session is sent: the repository's git directory (shared by its worktrees), its main worktree,
+and each remote as host and path (`github.com` and `Acme/api`, the same for https and ssh). Only
+`remote.<name>.url` is read from the git config, and the user and any token in a remote are
+dropped.
 
 One more record is produced by the shipper itself:
 

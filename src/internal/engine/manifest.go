@@ -62,5 +62,11 @@ func (o Options) manifestFor(
 	if m.ShapeSniff == "" {
 		m.ShapeSniff = string(sources.SniffOK)
 	}
+	if r := cand.Repository; r != nil {
+		repo := *r
+		repo.GitDir = formats.ApplyUserPlaceholder(repo.GitDir, o.user)
+		repo.MainWorktree = formats.ApplyUserPlaceholder(repo.MainWorktree, o.user)
+		m.Repository = &repo
+	}
 	return m
 }
