@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -101,6 +102,36 @@ func TestOpenCodeReferencedSpillsLayoutsAndIdentity(t *testing.T) {
 				t.Fatalf("load: %+v %v", p, err)
 			}
 		})
+	}
+}
+
+func TestOpenCodeSharedSpillIgnoredReferenceWins(t *testing.T) {
+	for _, layout := range []string{"v1", "shared", "split"} {
+		for _, ignoredFirst := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/ignored-first=%t", layout, ignoredFirst), func(t *testing.T) {
+				root, allowed, ignored := t.TempDir(), t.TempDir(), t.TempDir()
+				writeSpill(t, ignored, ".notrajectories", "")
+				for _, name := range []string{"shared", "allowed", "ignored"} {
+					writeSpill(t, root, "tool-output/tool_"+name, "full output")
+				}
+				for i, db := range []string{"opencode.db", "opencode-stable.db"} {
+					cwd, own := allowed, "allowed"
+					if (i == 0) == ignoredFirst {
+						cwd, own = ignored, "ignored"
+					}
+					spillStore(t, root, db, layout, cwd, []string{
+						filepath.Join(root, "tool-output", "tool_shared"),
+						filepath.Join(root, "tool-output", "tool_"+own),
+					})
+				}
+				req := spillRequest(t, root)
+				req.All[0].Include = []string{"opencode.db", "opencode-stable.db"}
+				d, err := (opencodeToolOutputs{}).Discover(req)
+				if err != nil || !d.Ignored || d.Health != Collected || len(d.Candidates) != 1 || d.Candidates[0].RelPath != "tool-output/tool_allowed" {
+					t.Fatalf("shared or ignored spill escaped repository ignore: %+v %v", d, err)
+				}
+			})
+		}
 	}
 }
 

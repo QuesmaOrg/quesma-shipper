@@ -45,12 +45,16 @@ func (opencodeToolOutputs) Discover(req Request) (Discovery, error) {
 		d.UnreadableExample, d.UnreadableReason = path, err.Error()
 	}
 	seen := map[string]bool{}
+	ignored := map[string]bool{}
+	var referenced []Candidate
 	for _, transcripts := range req.All {
 		if transcripts.ID != "opencode-sessions" || !transcripts.Enabled || transcripts.Root != src.Root {
 			continue
 		}
 		r := req
 		r.Source = transcripts
+		// Ignored sessions still veto shared spills; none of their transcript bytes are emitted here.
+		r.Ignore = nil
 		sessions, err := (opencodeSessions{}).Discover(r)
 		if err != nil {
 			return d, err
@@ -64,6 +68,8 @@ func (opencodeToolOutputs) Discover(req Request) (Discovery, error) {
 			if err := ctx.Err(); err != nil {
 				return d, err
 			}
+			ignoredSession := req.Ignore.Match(transcripts, session)
+			d.Ignored = d.Ignored || ignoredSession
 			payload, err := session.Load(ctx)
 			if err != nil {
 				if ctx.Err() != nil {
@@ -86,62 +92,79 @@ func (opencodeToolOutputs) Discover(req Request) (Discovery, error) {
 					continue
 				}
 				file := sessionDatabase{Path: filepath.Join(src.Root, filepath.FromSlash(rel)), RelPath: rel, root: root}
-				path, err := file.checkedPath(req.Deny)
-				if err != nil {
+				if _, err := file.checkedPath(req.Deny); err != nil {
 					if !os.IsNotExist(err) {
 						note(file.Path, err)
 					}
 					continue
 				}
 				c := Candidate{Path: file.Path, RelPath: rel, CWD: session.CWD}
-				if req.Ignore.Match(src, c) {
+				if ignoredSession || req.Ignore.Match(src, c) {
 					d.Ignored = true
+					ignored[rel] = true
 					continue
 				}
-				if seen[rel] {
-					continue
+				if !seen[rel] {
+					seen[rel] = true
+					referenced = append(referenced, c)
 				}
-				seen[rel] = true
-				info, err := os.Lstat(path)
-				if err != nil {
-					note(file.Path, err)
-					continue
-				}
-				if info.Size() > src.MaxFileBytes {
-					d.Oversize = append(d.Oversize, Oversize{RelPath: rel, Size: info.Size(), Limit: src.MaxFileBytes})
-					continue
-				}
-				c.Size, c.MTime = info.Size(), info.ModTime().UTC()
-				c.Load = func(ctx context.Context) (Payload, error) {
-					if err := ctx.Err(); err != nil {
-						return Payload{}, err
-					}
-					path, err := file.checkedPath(req.Deny)
-					if err != nil {
-						return Payload{}, err
-					}
-					before, err := os.Lstat(path)
-					if err != nil {
-						return Payload{}, err
-					}
-					raw, opened, err := platform.ReadWhole(path, src.MaxFileBytes)
-					if err != nil {
-						return Payload{}, err
-					}
-					if _, err := file.checkedPath(req.Deny); err != nil {
-						return Payload{}, err
-					}
-					if !os.SameFile(before, opened) {
-						return Payload{}, fmt.Errorf("tool output changed during open")
-					}
-					if err := ctx.Err(); err != nil {
-						return Payload{}, err
-					}
-					return Payload{Bytes: raw, MTime: opened.ModTime().UTC()}, nil
-				}
-				d.Candidates = append(d.Candidates, c)
 			}
 		}
+	}
+	for _, c := range referenced {
+		if err := ctx.Err(); err != nil {
+			return d, err
+		}
+		if ignored[c.RelPath] {
+			continue
+		}
+		rel := c.RelPath
+		file := sessionDatabase{Path: c.Path, RelPath: rel, root: root}
+		path, err := file.checkedPath(req.Deny)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				note(file.Path, err)
+			}
+			continue
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			note(file.Path, err)
+			continue
+		}
+		if info.Size() > src.MaxFileBytes {
+			d.Oversize = append(d.Oversize, Oversize{RelPath: rel, Size: info.Size(), Limit: src.MaxFileBytes})
+			continue
+		}
+		c.Size, c.MTime = info.Size(), info.ModTime().UTC()
+		c.Load = func(ctx context.Context) (Payload, error) {
+			if err := ctx.Err(); err != nil {
+				return Payload{}, err
+			}
+			path, err := file.checkedPath(req.Deny)
+			if err != nil {
+				return Payload{}, err
+			}
+			before, err := os.Lstat(path)
+			if err != nil {
+				return Payload{}, err
+			}
+			raw, opened, err := platform.ReadWhole(path, src.MaxFileBytes)
+			if err != nil {
+				return Payload{}, err
+			}
+			if _, err := file.checkedPath(req.Deny); err != nil {
+				return Payload{}, err
+			}
+			if !os.SameFile(before, opened) {
+				return Payload{}, fmt.Errorf("tool output changed during open")
+			}
+			if err := ctx.Err(); err != nil {
+				return Payload{}, err
+			}
+			return Payload{Bytes: raw, MTime: opened.ModTime().UTC()}, nil
+		}
+		d.Candidates = append(d.Candidates, c)
 	}
 	slices.SortFunc(d.Candidates, func(a, b Candidate) int {
 		if c := a.MTime.Compare(b.MTime); c != 0 {

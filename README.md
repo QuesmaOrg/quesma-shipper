@@ -49,8 +49,10 @@ Only flat `tool-output/tool_*` files inside the same configured data root are
 eligible (64 MiB per file by default), with normal deny rules, repository ignores,
 symlink rejection and scrubbing. Keys use the root-relative spill path, as for
 Claude Code tool results; a spill referenced by several sessions/databases ships
-once. Unreferenced/expired spills, credentials, arbitrary referenced paths and
-unrelated storage are not collected. Disabling `opencode-sessions` also disables
+once, unless any referencing session belongs to an ignored repository. An empty
+session `directory` supplies no repository attribution for either its transcript
+or spills. Unreferenced/expired spills, credentials, arbitrary referenced paths
+and unrelated storage are not collected. Disabling `opencode-sessions` also disables
 spill discovery; no whole-data-directory scan or legacy JSON fallback is performed.
 
 ## Get started
