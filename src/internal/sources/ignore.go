@@ -97,6 +97,10 @@ func (f *RepoFilter) CWD(src Resolved, c Candidate) string {
 	if c.CWD != "" {
 		return cleanCWD(c.CWD)
 	}
+	// Spill content is tool output, not a source of session attribution.
+	if src.ID == "opencode-tool-outputs" {
+		return ""
+	}
 	key := c.Path
 	if dir := projectDirOf(c.RelPath); dir != "" {
 		key = src.Root + "\x00" + dir

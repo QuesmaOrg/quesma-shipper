@@ -135,6 +135,35 @@ func TestOpenCodeSharedSpillIgnoredReferenceWins(t *testing.T) {
 	}
 }
 
+func TestOpenCodeSpillDoesNotProbeOutputForCWD(t *testing.T) {
+	for _, layout := range []string{"v1", "shared", "split"} {
+		for _, marked := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/marked=%t", layout, marked), func(t *testing.T) {
+				root := t.TempDir()
+				repo := gitRepo(t, t.TempDir(), "work/other")
+				if marked {
+					writeSpill(t, repo, ".notrajectories", "")
+				}
+				rel := "tool-output/tool_fixture"
+				writeSpill(t, root, rel, fmt.Sprintf("{\"cwd\":%q}\n", repo))
+				spillStore(t, root, "opencode.db", layout, "", []string{filepath.Join(root, filepath.FromSlash(rel))})
+				req := spillRequest(t, root)
+				d, err := (opencodeToolOutputs{}).Discover(req)
+				if err != nil || len(d.Candidates) != 1 {
+					t.Fatalf("spill incorrectly filtered: %+v %v", d, err)
+				}
+				c := d.Candidates[0]
+				if cwd := req.Ignore.CWD(req.Source, c); cwd != "" {
+					t.Errorf("attributed spill to output cwd %q", cwd)
+				}
+				if repo := req.Ignore.Repository(req.Source, c); repo != nil {
+					t.Errorf("attributed spill to output repository: %+v", repo)
+				}
+			})
+		}
+	}
+}
+
 func TestOpenCodeSpillReferenceGrammar(t *testing.T) {
 	root, outside := t.TempDir(), t.TempDir()
 	for _, rel := range []string{"tool-output/tool_good", "tool-output/tool_unreferenced", "tool-output/nested/tool_hidden", "auth.json", "storage/session/project/session.json"} {
