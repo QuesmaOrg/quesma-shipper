@@ -254,7 +254,7 @@ func TestToggle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attr := catalog.RepoFilter()
+	attr := catalog.Attribution()
 	toggle := func(rows []app.AgentRow, open string, sel int) (string, string) {
 		t.Helper()
 		b := &browser{rows: rows, attr: attr, pal: ansiPalette(), open: open, sel: sel}

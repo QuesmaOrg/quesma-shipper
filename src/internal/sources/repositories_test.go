@@ -9,10 +9,10 @@ import (
 	"time"
 )
 
-func repositoriesRequest(home string, f *RepoFilter) Request {
+func repositoriesRequest(home string, f *Attribution) Request {
 	return Request{
-		Source: Resolved{Source: Source{ID: "repositories", MaxFileBytes: 1 << 20}},
-		Ignore: f, Capture: true, Context: context.Background(), Env: Env{Home: home},
+		Source:      Resolved{Source: Source{ID: "repositories", MaxFileBytes: 1 << 20}},
+		Attribution: f, Capture: true, Context: context.Background(), Env: Env{Home: home},
 		Now:      func() time.Time { return time.Date(2026, 11, 5, 10, 7, 0, 0, time.UTC) },
 		Interval: 15 * time.Minute,
 	}
@@ -43,9 +43,9 @@ func TestRepositoriesGroupsDirectoriesByRepository(t *testing.T) {
 	for i, cwd := range []string{sub, elsewhere, gone, bareWT, plain, marked} {
 		writeSession(t, filepath.Join(root, "projects", "p"+string(rune('a'+i)), "s.jsonl"), cwd)
 	}
-	f := newRepoFilter(testProbe(), testGitRead(), home)
+	f := newAttribution(testProbe(), testGitRead(), home)
 	src := Resolved{Source: Source{ID: "claude-code-transcripts", Include: []string{"projects/**/*.jsonl"}}, Root: root}
-	if _, err := discoverByGlob(Request{Source: src, Ignore: f}); err != nil {
+	if _, err := discoverByGlob(Request{Source: src, Attribution: f}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -84,7 +84,7 @@ func TestRepositoriesGroupsDirectoriesByRepository(t *testing.T) {
 
 func TestRepositoriesWithNoDirectoryShipsNothing(t *testing.T) {
 	home := t.TempDir()
-	d, err := Repositories{}.Discover(repositoriesRequest(home, newRepoFilter(testProbe(), testGitRead(), home)))
+	d, err := Repositories{}.Discover(repositoriesRequest(home, newAttribution(testProbe(), testGitRead(), home)))
 	if err != nil || len(d.Candidates) != 0 || d.Health != RootPresentNoMatch {
 		t.Errorf("got %v, %d candidates, %s", err, len(d.Candidates), d.Health)
 	}

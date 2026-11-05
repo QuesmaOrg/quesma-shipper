@@ -43,7 +43,7 @@ func (Repositories) Discover(req Request) (Discovery, error) {
 	if !ready {
 		return d, err
 	}
-	dirs := req.Ignore.attributed()
+	dirs := req.Attribution.attributed()
 	if len(dirs) == 0 {
 		d.Reason = "no collected session named a working directory"
 		return d, nil

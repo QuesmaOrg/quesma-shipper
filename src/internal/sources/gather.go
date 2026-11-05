@@ -256,9 +256,9 @@ type Request struct {
 	// Deny is install-wide: the compiled list plus served additions, not something a source configures.
 	Deny *List
 
-	// Ignore drops candidates of an ignored repository. Install-wide like Deny; nil
-	// means nothing is ignored.
-	Ignore *RepoFilter
+	// Attribution places candidates in their repositories and drops a marked one's. Install-wide
+	// like Deny, and shared by every source of a run; nil means nothing is placed or dropped.
+	Attribution *Attribution
 
 	// StateDir is the ONLY place a primitive may write its derived artifacts, never inside an agent's store.
 	StateDir string
@@ -326,7 +326,7 @@ func discoverByGlob(req Request) (Discovery, error) {
 	if err != nil {
 		return d, fmt.Errorf("source %s: %w", src.ID, err)
 	}
-	matched, oversize, bad, ignored := walkGlobs(src, req.Deny, req.Ignore)
+	matched, oversize, bad, ignored := walkGlobs(src, req.Deny, req.Attribution)
 	matched = collapseIdentities(matched, identity)
 	d.Oversize, d.Ignored = oversize, ignored
 	d.Unreadable, d.UnreadableExample = bad.count, bad.example
@@ -434,7 +434,7 @@ func (u unreadable) reason() string {
 // walkGlobs walks the root once against the globs, the deny list and the ignore list
 // (the last return says whether ignore dropped anything); symlinks below the root are
 // never followed, which pairs with O_NOFOLLOW at open time.
-func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Oversize, unreadable, bool) {
+func walkGlobs(src Resolved, deny *List, attr *Attribution) ([]Candidate, []Oversize, unreadable, bool) {
 	var out []Candidate
 	var oversize []Oversize
 	var bad unreadable
@@ -543,7 +543,7 @@ func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Ove
 
 		// Before the size cap, so an ignored repository's oversized file is not reported
 		// by name either.
-		if ignore.Match(src, Candidate{Path: named, RelPath: rel}) {
+		if attr.Match(src, Candidate{Path: named, RelPath: rel}) {
 			ignored = true
 			return nil
 		}

@@ -10,14 +10,15 @@ import (
 
 const notrajectories = ".notrajectories"
 
-// RepoFilter attributes candidates to the repository their session ran in and drops the
-// ones whose repository carries a .notrajectories marker.
+// Attribution places each candidate in the directory its session ran in and that directory in
+// its git repository. Two readers: the .notrajectories markers drop a marked repository's
+// candidates, and the repositories source reports what was placed.
 //
 // Not a glob: only Claude Code encodes the working directory in the path; Codex files a
 // rollout under its start date and the repository appears only in a cwd field inside the
 // file. So attribution asks the file, with the catalog's own bounded head probe, and only
 // for the sources that probe names.
-type RepoFilter struct {
+type Attribution struct {
 	probe *CWDProbe
 	git   *GitRead
 	home  string
@@ -50,11 +51,11 @@ type CWDProbe struct {
 	ScanBytes int64
 }
 
-// RepoFilter builds the attributor. Claude Code states cwd at the top level of a transcript
+// Attribution builds the catalog's attribution. Claude Code states cwd at the top level of a transcript
 // record, Codex under payload, the Copilot CLI under data.context.
-func (c *Compiled) RepoFilter() *RepoFilter {
+func (c *Compiled) Attribution() *Attribution {
 	home, _ := os.UserHomeDir()
-	f := newRepoFilter(
+	f := newAttribution(
 		&CWDProbe{From: []string{"claude-code-transcripts", "codex-rollouts", "pi-sessions", "opencode-sessions", "hermes-sessions"}, Fields: []string{"cwd", "payload.cwd", "data.context.cwd"}, ScanBytes: 64 << 10},
 		&GitRead{WalkUp: true, FollowGitdirFile: true},
 		home)
@@ -62,13 +63,13 @@ func (c *Compiled) RepoFilter() *RepoFilter {
 	return f
 }
 
-func newRepoFilter(probe *CWDProbe, git *GitRead, home string) *RepoFilter {
-	return &RepoFilter{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}, anchored: map[string][]string{}}
+func newAttribution(probe *CWDProbe, git *GitRead, home string) *Attribution {
+	return &Attribution{probe: probe, git: git, home: home, cwds: map[string]string{}, scopes: map[string]gitScope{}, anchored: map[string][]string{}}
 }
 
 // CWD is the working directory a candidate's session ran in, or "" when none was found,
 // which is a legal outcome.
-func (f *RepoFilter) CWD(src Resolved, c Candidate) string {
+func (f *Attribution) CWD(src Resolved, c Candidate) string {
 	if f == nil {
 		return ""
 	}
@@ -125,7 +126,7 @@ func RepoName(cwd string) string {
 
 // Marker is the .notrajectories governing dir: the nearest up to the checkout root (home
 // outside git), else the main checkout's. A marker above a repository never counts.
-func (f *RepoFilter) Marker(dir string) (string, bool) {
+func (f *Attribution) Marker(dir string) (string, bool) {
 	if f == nil || dir == "" {
 		return "", false
 	}
@@ -141,7 +142,7 @@ func (f *RepoFilter) Marker(dir string) (string, bool) {
 
 // markerBetween walks from dir up to stop inclusive; an empty stop means the walk runs to
 // the home directory, and the filesystem root always ends it.
-func (f *RepoFilter) markerBetween(dir, stop string) (string, bool) {
+func (f *Attribution) markerBetween(dir, stop string) (string, bool) {
 	for d := dir; ; d = filepath.Dir(d) {
 		if p, ok := markerAt(d); ok {
 			return p, true
@@ -167,7 +168,7 @@ func markerAt(dir string) (string, bool) {
 // RepoDir is the directory that stands for a candidate's repository: the main working
 // tree when the session ran inside a git checkout (so a worktree folds into its
 // repository), the session's own working directory otherwise, "" when none was found.
-func (f *RepoFilter) RepoDir(src Resolved, c Candidate) string {
+func (f *Attribution) RepoDir(src Resolved, c Candidate) string {
 	cwd := f.CWD(src, c)
 	if main := f.scopeOf(cwd).main; main != "" {
 		return main
@@ -176,7 +177,7 @@ func (f *RepoFilter) RepoDir(src Resolved, c Candidate) string {
 }
 
 // A checkout at or above home (dotfiles) would claim every directory under it.
-func (f *RepoFilter) scopeOf(cwd string) gitScope {
+func (f *Attribution) scopeOf(cwd string) gitScope {
 	if cwd == "" || f.git == nil {
 		return gitScope{}
 	}
@@ -191,7 +192,7 @@ func (f *RepoFilter) scopeOf(cwd string) gitScope {
 	return sc
 }
 
-func (f *RepoFilter) Match(src Resolved, c Candidate) bool {
+func (f *Attribution) Match(src Resolved, c Candidate) bool {
 	if f == nil {
 		return false
 	}
@@ -210,11 +211,11 @@ func (f *RepoFilter) Match(src Resolved, c Candidate) bool {
 // Untrack drops a marker in dir; Track removes dir's own marker. Both are idempotent, and
 // Track deliberately never removes an ancestor's marker: that one may govern other
 // repositories too, so lifting it is a decision to make where the file is.
-func (f *RepoFilter) Untrack(dir string) error {
+func (f *Attribution) Untrack(dir string) error {
 	return os.WriteFile(MarkerPath(dir), nil, 0o644)
 }
 
-func (f *RepoFilter) Track(dir string) error {
+func (f *Attribution) Track(dir string) error {
 	if err := os.Remove(MarkerPath(dir)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -288,7 +289,7 @@ func lookupField(rec map[string]json.RawMessage, field string) (string, bool) {
 
 // attributed is every directory the filter attributed a candidate to, with its git scope, minus
 // the ones a marker keeps out: the input of the repositories source.
-func (f *RepoFilter) attributed() map[string]gitScope {
+func (f *Attribution) attributed() map[string]gitScope {
 	if f == nil {
 		return nil
 	}

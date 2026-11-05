@@ -60,7 +60,7 @@ func TestAgentSessionRepositoryMarkers(t *testing.T) {
 	}
 	home := t.TempDir()
 	project := repoDir(t, home, "work with spaces", true)
-	filter := catalog.RepoFilter()
+	filter := catalog.Attribution()
 	for _, id := range []string{"pi-sessions", "opencode-sessions", "hermes-sessions"} {
 		spec, ok := catalog.Source(id)
 		if !ok {

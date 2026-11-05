@@ -60,7 +60,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 	}
 	doc, docErr := engine.Peek(paths.StateDir)
 	registry := sources.NewRegistry()
-	trackFilter := eff.Catalog.RepoFilter()
+	attr := eff.Catalog.Attribution()
 	var probes []sourceProbe
 	for _, src := range eff.Sources {
 		pr := sourceProbe{src: src}
@@ -69,7 +69,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 				pr.err = err
 			} else {
 				pr.d, pr.err = prim.Discover(sources.Request{
-					Source: src, All: eff.Sources, Deny: eff.Deny, Ignore: trackFilter,
+					Source: src, All: eff.Sources, Deny: eff.Deny, Attribution: attr,
 					StateDir: paths.StateDir, Username: username,
 				})
 			}

@@ -28,7 +28,7 @@ type AgentRow struct {
 
 // Survey groups every trajectory source's candidates by agent family and repository. The
 // attributor is the caller's: the tracking browser keeps one across refreshes for its cwd cache.
-func Survey(eff *config.Effective, paths config.Paths, attr *sources.RepoFilter) []AgentRow {
+func Survey(eff *config.Effective, paths config.Paths, attr *sources.Attribution) []AgentRow {
 	names := familyNames(eff.Catalog)
 	registry := sources.NewRegistry()
 	byFamily := map[string]*AgentRow{}

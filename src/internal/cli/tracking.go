@@ -241,7 +241,7 @@ func browseTracking(cmd *cobra.Command) error {
 
 type browser struct {
 	// attr outlives a refresh: its cwd cache is what keeps a toggle from re-probing every file.
-	attr *sources.RepoFilter
+	attr *sources.Attribution
 	rows []app.AgentRow
 	pal  palette
 
@@ -263,7 +263,7 @@ func (b *browser) refresh() error {
 		return err
 	}
 	if b.attr == nil {
-		b.attr = eff.Catalog.RepoFilter()
+		b.attr = eff.Catalog.Attribution()
 	}
 	b.rows = app.Survey(eff, paths, b.attr)
 	if b.agent() == nil {

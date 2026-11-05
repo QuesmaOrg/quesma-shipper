@@ -407,7 +407,7 @@ func planFor(eff *config.Effective) engine.Plan {
 		SecretKeyNames: eff.SecretKeyNames,
 		StructuralEx:   eff.StructuralEx,
 		Deny:           eff.Deny,
-		Ignore:         eff.Catalog.RepoFilter(),
+		Attribution:    eff.Catalog.Attribution(),
 		ConfigVersion:  eff.ConfigVersion,
 		ConfigExpired:  eff.ConfigExpired,
 	}

@@ -36,7 +36,7 @@ func copilotAnchors(probe *CWDProbe) map[string]sessionAnchor {
 	}
 }
 
-func (f *RepoFilter) anchoredDirs(src Resolved, c Candidate, a sessionAnchor) []string {
+func (f *Attribution) anchoredDirs(src Resolved, c Candidate, a sessionAnchor) []string {
 	parts := strings.Split(filepath.ToSlash(c.RelPath), "/")
 	if len(parts) <= a.depth || slices.Contains(parts[:a.depth], "..") {
 		return nil

@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-func copilotFilter(home string) *RepoFilter {
+func copilotFilter(home string) *Attribution {
 	probe := &CWDProbe{Fields: []string{"data.context.cwd"}, ScanBytes: 64 << 10}
-	f := newRepoFilter(probe, nil, home)
+	f := newAttribution(probe, nil, home)
 	f.anchors = copilotAnchors(probe)
 	return f
 }

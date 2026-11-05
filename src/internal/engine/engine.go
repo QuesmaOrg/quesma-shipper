@@ -125,9 +125,9 @@ type Plan struct {
 	// Deny is the compiled path deny list. Required: a nil deny list would read as "nothing is denied".
 	Deny *sources.List
 
-	// Ignore drops candidates of an ignored repository. Nil is the ordinary state and
-	// means nothing is ignored.
-	Ignore *sources.RepoFilter
+	// Attribution places candidates in their repositories and drops a marked one's. Nil means
+	// nothing is placed or dropped.
+	Attribution *sources.Attribution
 
 	ConfigVersion int
 
@@ -235,17 +235,17 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 		o.stages = &stageTracker{step: o.Step, source: src.ID, base: "discover"}
 		o.stages.refresh()
 		disc, err := prim.Discover(sources.Request{
-			Source:   src,
-			All:      o.Plan.Sources,
-			Deny:     o.Plan.Deny,
-			Ignore:   o.Plan.Ignore,
-			StateDir: o.Plan.StateDir,
-			Username: o.user,
-			Now:      o.Now,
-			Interval: o.Plan.Interval,
-			Context:  ctx,
-			Env:      o.Env,
-			Capture:  !o.DryRun,
+			Source:      src,
+			All:         o.Plan.Sources,
+			Deny:        o.Plan.Deny,
+			Attribution: o.Plan.Attribution,
+			StateDir:    o.Plan.StateDir,
+			Username:    o.user,
+			Now:         o.Now,
+			Interval:    o.Plan.Interval,
+			Context:     ctx,
+			Env:         o.Env,
+			Capture:     !o.DryRun,
 		})
 		if err != nil {
 			out.Health = sources.MatchPresentUnreadable

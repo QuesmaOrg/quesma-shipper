@@ -84,7 +84,7 @@ func discoverSessions(req Request, reader sessionReader) (Discovery, error) {
 			// Keep arbitrary IDs out of virtual paths; raw identifiers remain inside records.
 			name := fmt.Sprintf("%x.jsonl", sha256.Sum256([]byte(session.ID)))
 			cand := Candidate{Path: filepath.Join(db.Path, "sessions", name), RelPath: filepath.ToSlash(filepath.Join(db.RelPath, "sessions", name)), CWD: session.CWD, Size: src.MaxFileBytes, MTime: now, AlwaysLoad: true}
-			if req.Ignore.Match(src, cand) {
+			if req.Attribution.Match(src, cand) {
 				d.Ignored = true
 				continue
 			}

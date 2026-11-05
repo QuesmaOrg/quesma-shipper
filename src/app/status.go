@@ -79,7 +79,7 @@ func CurrentStatus(build Build) (Status, error) {
 		}
 		return st, nil
 	}
-	rows := Survey(eff, paths, eff.Catalog.RepoFilter())
+	rows := Survey(eff, paths, eff.Catalog.Attribution())
 	doc, docErr := engine.Peek(paths.StateDir)
 	registry := sources.NewRegistry()
 	for _, a := range rows {
@@ -96,7 +96,7 @@ func CurrentStatus(build Build) (Status, error) {
 				continue
 			}
 			d, err := prim.Discover(sources.Request{Source: src, All: eff.Sources, Deny: eff.Deny,
-				Ignore: eff.Catalog.RepoFilter(), StateDir: paths.StateDir})
+				Attribution: eff.Catalog.Attribution(), StateDir: paths.StateDir})
 			if err != nil {
 				continue
 			}
