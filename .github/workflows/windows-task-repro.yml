@@ -1,0 +1,65 @@
+name: Windows task query diagnostic
+
+on:
+  push:
+    branches: [diagnostic/windows-task-repro]
+
+permissions:
+  contents: read
+
+jobs:
+  targeted:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 9fb35a89cb515cbfd8a2e25da0601830e06e7c19
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/go.mod
+          cache: false
+      - name: Runner and scheduler status before test
+        shell: pwsh
+        run: |
+          git rev-parse HEAD
+          go version
+          [System.Environment]::OSVersion.VersionString
+          Get-Service -Name Schedule | Select-Object Name, Status, StartType | Format-List
+      - name: Repeat exact failing test
+        working-directory: src
+        timeout-minutes: 17
+        run: go test ./packaging/windows -run '^TestManagedTaskConflictQueryUsesTaskSchedulerWithoutModifyingIt$' -count=20 -v -timeout=15m
+      - name: Scheduler status after test
+        if: ${{ always() }}
+        shell: pwsh
+        run: Get-Service -Name Schedule | Select-Object Name, Status, StartType | Format-List
+
+  full-suite:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 9fb35a89cb515cbfd8a2e25da0601830e06e7c19
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/go.mod
+          cache: false
+      - name: Runner and scheduler status before test
+        shell: pwsh
+        run: |
+          git rev-parse HEAD
+          go version
+          [System.Environment]::OSVersion.VersionString
+          Get-Service -Name Schedule | Select-Object Name, Status, StartType | Format-List
+      - name: Full Go suite
+        working-directory: src
+        timeout-minutes: 15
+        run: go test ./... -count=1
+      - name: Scheduler status after test
+        if: ${{ always() }}
+        shell: pwsh
+        run: Get-Service -Name Schedule | Select-Object Name, Status, StartType | Format-List
