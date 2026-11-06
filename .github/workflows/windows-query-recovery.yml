@@ -1,0 +1,35 @@
+name: Windows query recovery comparison
+on:
+  push:
+    branches: [diagnostic/windows-query-recovery]
+permissions:
+  contents: read
+jobs:
+  compare:
+    strategy:
+      fail-fast: false
+      matrix:
+        implementation: [original, retry]
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: src/go.mod
+          cache: false
+      - name: Original implementation control
+        if: matrix.implementation == 'original'
+        run: git restore --source=9fb35a89cb515cbfd8a2e25da0601830e06e7c19 -- src/packaging/windows/managed_windows.go src/packaging/windows/managed_service_windows_test.go
+      - name: Full Windows suite with fix
+        if: matrix.implementation == 'retry'
+        working-directory: src
+        run: go test ./... -count=1 -timeout=10m
+      - name: Compare recovery and fail-closed behavior
+        shell: pwsh
+        env:
+          DIAGNOSTIC_IMPLEMENTATION: ${{ matrix.implementation }}
+        run: ./.github/diagnostics/windows-query-recovery.ps1
