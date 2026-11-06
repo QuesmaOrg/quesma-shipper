@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [cold-1, cold-2, contention]
+        mode: [cold-query, contention]
     runs-on: windows-latest
     timeout-minutes: 22
     steps:
@@ -20,11 +20,6 @@ jobs:
         with:
           go-version-file: src/go.mod
           cache: false
-      - name: Original cold full suite
-        if: startsWith(matrix.mode, 'cold')
-        working-directory: src
-        continue-on-error: true
-        run: go test ./... -count=1 -timeout=10m
       - name: Phase instrumentation and bounded probes
         shell: pwsh
         env:

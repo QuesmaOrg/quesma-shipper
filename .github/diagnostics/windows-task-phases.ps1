@@ -31,10 +31,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 Pop-Location
 $test = '^TestManagedTaskConflictQueryUsesTaskSchedulerWithoutModifyingIt$'
 if ($env:DIAGNOSTIC_MODE -eq 'contention') {
-  ./task-diagnostic.exe -test.run '^TestDiagnosticConcurrentQueries$' -test.count=3 -test.v -test.timeout=5m
+  ./task-diagnostic.exe '-test.run=^TestDiagnosticConcurrentQueries$' '-test.count=3' '-test.v' '-test.timeout=5m'
+  if ($LASTEXITCODE -gt 1) { throw "Invalid diagnostic execution: $LASTEXITCODE" }
   Write-Host "CONCURRENT exit=$LASTEXITCODE"
 } else {
-  ./task-diagnostic.exe -test.run $test -test.count=10 -test.v -test.timeout=7m
+  ./task-diagnostic.exe "-test.run=$test" '-test.count=10' '-test.v' '-test.timeout=7m'
+  if ($LASTEXITCODE -gt 1) { throw "Invalid diagnostic execution: $LASTEXITCODE" }
   Write-Host "SEQUENTIAL exit=$LASTEXITCODE"
 }
 if ($env:DIAGNOSTIC_MODE -eq 'contention') {
@@ -60,14 +62,16 @@ public static class DiagnosticNative {
       $status = [DiagnosticNative]::NtSuspendProcess($h)
       if ($status -ne 0) { throw "Suspend failed: $status" }
       Write-Host "CONTROLLED Schedule PID=$($svc.ProcessId) suspended UTC=$([DateTime]::UtcNow.ToString('o'))"
-      ./task-diagnostic.exe -test.run $test -test.v -test.timeout=45s
+      ./task-diagnostic.exe "-test.run=$test" '-test.v' '-test.timeout=45s'
+      if ($LASTEXITCODE -gt 1) { throw "Invalid diagnostic execution: $LASTEXITCODE" }
       Write-Host "CONTROLLED expected failure exit=$LASTEXITCODE"
     } finally {
       $resume = [DiagnosticNative]::NtResumeProcess($h)
       [DiagnosticNative]::CloseHandle($h) | Out-Null
       Write-Host "CONTROLLED resume status=$resume UTC=$([DateTime]::UtcNow.ToString('o'))"
     }
-    ./task-diagnostic.exe -test.run $test -test.count=2 -test.v -test.timeout=90s
+    ./task-diagnostic.exe "-test.run=$test" '-test.count=2' '-test.v' '-test.timeout=90s'
+    if ($LASTEXITCODE -ne 0) { throw "Recovery failed: $LASTEXITCODE" }
     Write-Host "RECOVERY exit=$LASTEXITCODE"
   }
 }
