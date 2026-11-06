@@ -1,16 +1,60 @@
 package windows
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 	"golang.org/x/sys/windows"
 )
 
+func TestManagedTaskQueryRetriesOnlyOneTimeoutAndPreservesTheResult(t *testing.T) {
+	unreadable := errors.New("access denied")
+	timeout := fmt.Errorf("cannot verify absence: %w", context.DeadlineExceeded)
+	for _, tc := range []struct {
+		name    string
+		results []error
+		want    error
+	}{
+		{"absent", []error{nil}, nil},
+		{"managed", []error{common.ErrSystemManaged}, common.ErrSystemManaged},
+		{"unreadable", []error{unreadable}, unreadable},
+		{"canceled", []error{context.Canceled}, context.Canceled},
+		{"recovered absent", []error{timeout, nil}, nil},
+		{"recovered managed", []error{timeout, common.ErrSystemManaged}, common.ErrSystemManaged},
+		{"recovered unreadable", []error{timeout, unreadable}, unreadable},
+		{"still unavailable", []error{timeout, timeout}, context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			err := retryManagedTaskQuery(func() error {
+				if calls == len(tc.results) {
+					t.Fatal("unexpected extra query")
+				}
+				result := tc.results[calls]
+				calls++
+				return result
+			})
+			if calls != len(tc.results) || !errors.Is(err, tc.want) {
+				t.Fatalf("queries=%d, error=%v; want queries=%d, error=%v", calls, err, len(tc.results), tc.want)
+			}
+		})
+	}
+}
+
 func TestManagedTaskConflictQueryUsesTaskSchedulerWithoutModifyingIt(t *testing.T) {
 	if err := checkNoManagedTask(); err != nil && !errors.Is(err, common.ErrSystemManaged) {
 		t.Fatalf("read-only managed task query did not distinguish an existing task from absence: %v", err)
+	}
+}
+
+func TestManagedTaskQueryPreservesExpiredDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	if err := checkNoManagedTaskOnce(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("the real query must preserve the deadline error for its retry policy, got %v", err)
 	}
 }
 

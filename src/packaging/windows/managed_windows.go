@@ -314,6 +314,24 @@ func PrepareUserInstall(dir string) error {
 }
 
 func checkNoManagedTask() error {
+	return retryManagedTaskQuery(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return checkNoManagedTaskOnce(ctx)
+	})
+}
+
+func retryManagedTaskQuery(query func() error) error {
+	err := query()
+	// A fresh process gives transient PowerShell or Scheduler stalls one bounded recovery attempt.
+	// Only a successful query can establish absence; all other errors still block the scope change.
+	if errors.Is(err, context.DeadlineExceeded) {
+		return query()
+	}
+	return err
+}
+
+func checkNoManagedTaskOnce(ctx context.Context) error {
 	system, err := windows.GetSystemDirectory()
 	if err != nil {
 		return err
@@ -323,8 +341,6 @@ func checkNoManagedTask() error {
 		`$f = $s.GetFolder('\'); try { $null = $f.GetTask('Quesma Shipper Managed') } catch { ` +
 		`$e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }; ` +
 		`if ($e.HResult -eq -2147024894) { exit 0 }; throw }; exit 10`
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 	cmd := exec.CommandContext(ctx, filepath.Join(system, `WindowsPowerShell\v1.0\powershell.exe`),
 		"-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
