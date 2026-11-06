@@ -314,6 +314,20 @@ func PrepareUserInstall(dir string) error {
 }
 
 func checkNoManagedTask() error {
+	return retryManagedTaskQuery(checkNoManagedTaskOnce)
+}
+
+func retryManagedTaskQuery(query func() error) error {
+	err := query()
+	// A fresh process gives transient PowerShell or Scheduler stalls one bounded recovery attempt.
+	// Only a successful query can establish absence; all other errors still block the scope change.
+	if errors.Is(err, context.DeadlineExceeded) {
+		return query()
+	}
+	return err
+}
+
+func checkNoManagedTaskOnce() error {
 	system, err := windows.GetSystemDirectory()
 	if err != nil {
 		return err
