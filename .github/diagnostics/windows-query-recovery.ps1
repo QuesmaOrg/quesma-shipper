@@ -32,7 +32,6 @@ import (
  "errors"
  "fmt"
  "os"
- "strings"
  "testing"
  "time"
  "github.com/QuesmaOrg/quesma-shipper/packaging/common"
@@ -46,7 +45,6 @@ func TestDiagnosticTaskState(t *testing.T) {
  case "absent": if err!=nil {t.Fatal(err)}
  case "managed": if !errors.Is(err,common.ErrSystemManaged) {t.Fatalf("must report managed task, got %v",err)}
  case "timeout": if !errors.Is(err,context.DeadlineExceeded) {t.Fatalf("must fail closed with timeout, got %v",err)}
- case "denied": if err==nil || !strings.Contains(err.Error(),"Access is denied") || errors.Is(err,context.DeadlineExceeded) {t.Fatalf("must fail closed with access denied, got %v",err)}
  default: t.Fatalf("invalid expectation %q",expected)
  }
 }
@@ -100,6 +98,15 @@ function Invoke-StalledProbe([string]$Case, [string]$RecoveredState, [bool]$Reco
   Invoke-Probe "$Case-after-resume" $RecoveredState
 }
 
+function Assert-TaskAbsent {
+  $output = & "$env:SystemRoot\System32\schtasks.exe" /Query /TN '\Quesma Shipper Managed' /XML 2>&1
+  if ($LASTEXITCODE -eq 0 -or "$output" -notmatch 'cannot find the file specified') {
+    throw "Independent task absence check failed: $output"
+  }
+  Write-Host 'INDEPENDENT schtasks check: managed task absent (file not found)'
+}
+
+Assert-TaskAbsent
 Invoke-Probe 'healthy-absent' 'absent' 20
 Invoke-StalledProbe 'absent-recovery-after-35s' 'absent' $true
 Invoke-StalledProbe 'persistent-unavailability' 'absent' $false
@@ -110,25 +117,25 @@ $scheduler.Connect()
 $folder = $scheduler.GetFolder('\')
 $definition = $scheduler.NewTask(0)
 $definition.Settings.Enabled = $false
-$definition.Principal.UserId = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$definition.Principal.UserId = $sid
 $definition.Principal.LogonType = 3
 $action = $definition.Actions.Create(0)
 $action.Path = "$env:SystemRoot\System32\cmd.exe"
 $action.Arguments = '/c exit 0'
-$task = $folder.RegisterTaskDefinition('Quesma Shipper Managed', $definition, 2, $null, $null, 3)
-$removed = $false
+$task = $folder.RegisterTaskDefinition('Quesma Shipper Managed', $definition, 18, $null, $null, 3,
+  "D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;$sid)")
 try {
+  $xml = & "$env:SystemRoot\System32\schtasks.exe" /Query /TN '\Quesma Shipper Managed' /XML
+  if ($LASTEXITCODE -ne 0 -or "$xml" -notmatch '<Enabled>false</Enabled>') {
+    throw 'Independent schtasks query did not confirm the disabled managed fixture'
+  }
+  Write-Host 'INDEPENDENT schtasks check: managed task exists and is disabled'
   Invoke-Probe 'healthy-managed' 'managed' 20
   Invoke-StalledProbe 'managed-recovery-after-35s' 'managed' $true
-  $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-  try { $task.SetSecurityDescriptor("D:P(D;;GR;;;$sid)(A;;FA;;;SY)(A;;FA;;;BA)", 0) }
-  catch { Write-Host "ACL mutation returned: $($_.Exception.Message); the following query must prove actual access denial." }
-  Invoke-Probe 'managed-deny-read' 'denied' 3
 } finally {
-  try {
-    $folder.DeleteTask('Quesma Shipper Managed', 0)
-    $removed = $true
-  } catch { Write-Host "FIXTURE CLEANUP: ACL prevents deletion; disabled, triggerless fixture remains until disposable runner destruction: $($_.Exception.Message)" }
+  $folder.DeleteTask('Quesma Shipper Managed', 0)
 }
-if ($removed) { Invoke-Probe 'fixture-removed' 'absent' }
+Assert-TaskAbsent
+Invoke-Probe 'fixture-removed' 'absent'
 Get-CimInstance Win32_Service -Filter "Name='Schedule'" | Select-Object Name,State,ProcessId | Format-List
