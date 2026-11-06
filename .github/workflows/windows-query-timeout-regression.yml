@@ -1,0 +1,47 @@
+name: Windows query real timeout regression
+on:
+  push:
+    branches: [diagnostic/windows-query-timeout-regression]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: src/go.mod
+          cache: false
+      - name: Full Windows suite on the revised candidate
+        working-directory: src
+        run: go test ./... -count=1 -timeout=10m
+      - name: Prove deadline wrapping regression is detected
+        working-directory: src
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $file = 'packaging/windows/managed_windows.go'
+          $original = Get-Content $file -Raw
+          $before = 'fmt.Errorf("cannot verify absence of the managed scheduled task: %w", ctx.Err())'
+          $after = 'fmt.Errorf("cannot verify absence of the managed scheduled task: %s", ctx.Err())'
+          if (-not $original.Contains($before)) { throw 'Timeout wrapping mutation target not found' }
+          try {
+            Set-Content $file ($original.Replace($before, $after)) -NoNewline
+            go test ./packaging/windows -run '^TestManagedTaskQueryRetriesOnlyOneTimeoutAndPreservesTheResult$' -count=1 -v
+            if ($LASTEXITCODE -ne 0) { throw 'Old policy tests unexpectedly caught the mutation' }
+            $output = & go test ./packaging/windows -run '^TestManagedTaskQueryPreservesExpiredDeadline$' -count=1 -v 2>&1
+            $code = $LASTEXITCODE
+            $output | ForEach-Object { Write-Host $_ }
+            if ($code -ne 1 -or "$output" -notmatch 'the real query must preserve the deadline error' -or "$output" -notmatch 'FAIL: TestManagedTaskQueryPreservesExpiredDeadline') {
+              throw "Mutation did not produce the expected new-test assertion failure: exit=$code"
+            }
+            Write-Host 'VERIFIED: old policy tests pass with %s, but the real-path regression test fails.'
+          } finally {
+            Set-Content $file $original -NoNewline
+          }
+          go test ./packaging/windows -run '^TestManagedTaskQueryPreservesExpiredDeadline$' -count=1 -v
+          if ($LASTEXITCODE -ne 0) { throw 'Restored real-path test failed' }
