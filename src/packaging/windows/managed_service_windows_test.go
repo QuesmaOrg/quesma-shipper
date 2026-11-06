@@ -50,6 +50,14 @@ func TestManagedTaskConflictQueryUsesTaskSchedulerWithoutModifyingIt(t *testing.
 	}
 }
 
+func TestManagedTaskQueryPreservesExpiredDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	if err := checkNoManagedTaskOnce(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("the real query must preserve the deadline error for its retry policy, got %v", err)
+	}
+}
+
 func TestManagedSupervisorLockPreventsDuplicateCollectorsAndReleasesOnExit(t *testing.T) {
 	dir := t.TempDir()
 	first, err := acquireSupervisorLock(dir)
