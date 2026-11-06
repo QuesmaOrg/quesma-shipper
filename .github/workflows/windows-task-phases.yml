@@ -1,0 +1,32 @@
+name: Windows managed task phase diagnostics
+on:
+  push:
+    branches: [diagnostic/windows-task-phases]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [cold-1, cold-2, contention]
+    runs-on: windows-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: src/go.mod
+          cache: false
+      - name: Original cold full suite
+        if: startsWith(matrix.mode, 'cold')
+        working-directory: src
+        continue-on-error: true
+        run: go test ./... -count=1 -timeout=10m
+      - name: Phase instrumentation and bounded probes
+        shell: pwsh
+        env:
+          DIAGNOSTIC_MODE: ${{ matrix.mode }}
+        run: ./.github/diagnostics/windows-task-phases.ps1
