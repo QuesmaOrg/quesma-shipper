@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -319,8 +320,9 @@ func checkNoManagedTask() error {
 		return err
 	}
 	// Only Task Scheduler's typed not-found HRESULT proves absence; an unreadable task blocks a scope change.
-	script := `$ErrorActionPreference = 'Stop'; $s = New-Object -ComObject 'Schedule.Service'; $s.Connect(); ` +
-		`$f = $s.GetFolder('\'); try { $null = $f.GetTask('Quesma Shipper Managed') } catch { ` +
+	script := `$ErrorActionPreference = 'Stop'; [Console]::Out.WriteLine('COM'); $s = New-Object -ComObject 'Schedule.Service'; ` +
+		`[Console]::Out.WriteLine('connect'); $s.Connect(); [Console]::Out.WriteLine('folder'); $f = $s.GetFolder('\'); ` +
+		`[Console]::Out.WriteLine('task'); try { $null = $f.GetTask('Quesma Shipper Managed') } catch { ` +
 		`$e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }; ` +
 		`if ($e.HResult -eq -2147024894) { exit 0 }; throw }; exit 10`
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -328,18 +330,22 @@ func checkNoManagedTask() error {
 	cmd := exec.CommandContext(ctx, filepath.Join(system, `WindowsPowerShell\v1.0\powershell.exe`),
 		"-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
-	out, err := cmd.CombinedOutput()
+	var phases taskQueryPhases
+	var out bytes.Buffer
+	cmd.Stdout = &phases
+	cmd.Stderr = &out
+	err = cmd.Run()
 	if err == nil {
 		return nil
 	}
 	if ctx.Err() != nil {
-		return fmt.Errorf("cannot verify absence of the managed scheduled task: %w", ctx.Err())
+		return fmt.Errorf("cannot verify absence of the managed scheduled task (phase: %s): %w", phases.phase(), ctx.Err())
 	}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() == 10 {
 		return common.ErrSystemManaged
 	}
-	return fmt.Errorf("cannot verify absence of the managed scheduled task: %s", commandError(err, out))
+	return fmt.Errorf("cannot verify absence of the managed scheduled task: %s", commandError(err, out.Bytes()))
 }
 
 func ManagedRunLog(stateDir string) (*os.File, error) {
