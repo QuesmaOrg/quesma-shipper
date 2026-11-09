@@ -30,8 +30,27 @@ bucket.
 
 **The age recipients are fixed when the organization is created.** Files are encrypted to the
 recipients registered at the time of upload. Changing the recipients later does not re-encrypt
-existing files, even after a shipper's `state reset`: upload deduplication writes a new version of a
-stored file only when its scrubbed bytes changed, for example after a scrub-rule change.
+existing files during normal runs, even after a shipper's `state reset`: upload deduplication
+still skips a matching original file and scrubbed payload.
+
+To explicitly replace files still available on one enrolled machine, first upgrade Fleet Manager
+to support `/v3/uploads/authorize`, then run locally:
+
+```sh
+quesma-shipper run --once --force-resend
+```
+
+This rereads all currently collected files, scrubs and encrypts them with the resolved settings,
+and uploads a new version under each existing key. It bypasses local change detection and the
+server's stored-hash check, without deleting local state. No remote configuration or UI action
+triggers it. Normal runs still use v2; an older server refuses forced runs with an upgrade error.
+
+The command drains beyond `max_files_per_run`, bounded by `drain_deadline`. Pause, exclusions,
+size limits, scrubbing and install isolation still apply. Failed uploads do not advance their
+fingerprints. An interrupted or failed command must be rerun with `--force-resend`; each invocation
+starts a new pass, including files successfully resent by a previous attempt. There is no persistent
+resend job. Successful completion does not affect the next normal run's duplicate detection.
+Files no longer available on the machine require the archive reseal workflow below.
 
 A custodian can reseal the history to a recipient added later. Resealing is the organization's
 decision; the fleet manager keeps no record of it. Add the recipient to the organization first, so

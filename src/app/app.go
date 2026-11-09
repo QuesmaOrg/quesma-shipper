@@ -74,6 +74,9 @@ type Runtime struct {
 	// per-run artifact from here, not at startup, where it would reset another's.
 	OnLocked func()
 
+	// ForceResend is local to an explicit one-shot run, never served configuration.
+	ForceResend bool
+
 	// runID and lastCrash come from the CLI's crash journal; audit entries and heartbeats carry them.
 	runID     string
 	lastCrash *formats.LastCrash
@@ -202,19 +205,20 @@ func recipientsFor(eff *config.Effective, unit *identity.Unit) ([]age.Recipient,
 
 func (r *Runtime) options(dryRun bool) engine.Options {
 	return engine.Options{
-		Plan:       planFor(r.eff),
-		Identity:   r.unit,
-		Upload:     r.upload,
-		Log:        r.log,
-		Registry:   sources.NewRegistry(),
-		Enrichers:  Enrichers(),
-		Env:        r.env,
-		Recipients: r.recipients,
-		DryRun:     dryRun,
-		Client:     clientBlock(),
-		Progress:   r.OnProgress,
-		RunID:      r.runID,
-		Step:       r.noteStep,
+		Plan:        planFor(r.eff),
+		Identity:    r.unit,
+		Upload:      r.upload,
+		Log:         r.log,
+		Registry:    sources.NewRegistry(),
+		Enrichers:   Enrichers(),
+		Env:         r.env,
+		Recipients:  r.recipients,
+		DryRun:      dryRun,
+		ForceResend: r.ForceResend,
+		Client:      clientBlock(),
+		Progress:    r.OnProgress,
+		RunID:       r.runID,
+		Step:        r.noteStep,
 	}
 }
 

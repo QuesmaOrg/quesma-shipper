@@ -212,7 +212,7 @@ func (o Options) prepareDerived(
 	fp, seen := store.Get(key)
 
 	// Determinism supplies the change signal: an unchanged output hash means nothing to upload.
-	if seen && fp.OutputHash == d.OutputHash && fp.SourceHash != "" {
+	if !o.ForceResend && seen && fp.OutputHash == d.OutputHash && fp.SourceHash != "" {
 		fo.Decision = auditlog.DecisionUnchanged
 		fo.Reason = "enricher output hash unchanged"
 		return fo, nil

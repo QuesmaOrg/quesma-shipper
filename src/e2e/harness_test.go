@@ -92,8 +92,9 @@ type fakeStore struct {
 	server *httptest.Server
 	secret []byte
 
-	mu   sync.Mutex
-	puts []storedPut
+	mu        sync.Mutex
+	puts      []storedPut
+	putStatus map[string]int
 }
 
 func startFakeStore(t *testing.T) *fakeStore {
@@ -121,6 +122,13 @@ func (s *fakeStore) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := strings.TrimPrefix(r.URL.Path, prefix)
+	s.mu.Lock()
+	status := s.putStatus[key]
+	s.mu.Unlock()
+	if status != 0 {
+		http.Error(w, "injected object failure", status)
+		return
+	}
 	if !hmac.Equal([]byte(r.URL.Query().Get("sig")), []byte(s.sign(key))) {
 		http.Error(w, "signature does not cover this key", http.StatusForbidden)
 		return
@@ -210,9 +218,10 @@ func (s *fakeStore) versions(key string) int {
 // --- the fake control plane ---------------------------------------------------
 
 type authorizeRequest struct {
-	WriterID string    `json:"writer_id"`
-	IssuedAt time.Time `json:"issued_at"`
-	Objects  []struct {
+	ForceResend bool      `json:"force_resend"`
+	WriterID    string    `json:"writer_id"`
+	IssuedAt    time.Time `json:"issued_at"`
+	Objects     []struct {
 		ObjectID   string            `json:"object_id"`
 		Key        string            `json:"key"`
 		Size       int64             `json:"size"`
@@ -267,7 +276,8 @@ func (p *fakePlane) setStatus(status int) {
 }
 
 func (p *fakePlane) serve(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/v2/uploads/authorize" {
+	forced := r.URL.Path == "/v3/uploads/authorize"
+	if r.URL.Path != "/v2/uploads/authorize" && !forced {
 		// Including the config fetch: an unreachable config is ordinary, and the run continues on
 		// the layers it already has.
 		http.Error(w, "not found", http.StatusNotFound)
@@ -278,7 +288,11 @@ func (p *fakePlane) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := p.verify(r.Header.Get("Authorization"), body); err != nil {
+	preamble := vendPreamble
+	if forced {
+		preamble = "trajectory-shipper-upload-authorize-v3\nPOST\n/v3/uploads/authorize\n"
+	}
+	if err := p.verify(r.Header.Get("Authorization"), body, preamble); err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
@@ -307,6 +321,10 @@ func (p *fakePlane) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "undecodable request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	if req.ForceResend != forced {
+		http.Error(w, "force_resend must match the endpoint", http.StatusBadRequest)
+		return
+	}
 
 	tickets := make([]map[string]any, 0, len(req.Objects))
 	keys := make([]string, 0, len(req.Objects))
@@ -319,7 +337,7 @@ func (p *fakePlane) serve(w http.ResponseWriter, r *http.Request) {
 		// Bytes a landed PUT stored under these source and shipped hashes are answered for: no
 		// capability is minted, so the client sends nothing for them.
 		source, shipped := p.store.storedHashes(obj.Key)
-		if source == obj.SourceHash && shipped != "" && shipped == obj.Metadata["shipped-hash"] {
+		if !forced && source == obj.SourceHash && shipped != "" && shipped == obj.Metadata["shipped-hash"] {
 			present = append(present, obj.Key)
 			tickets = append(tickets, map[string]any{
 				"ticket_id": ticketID, "object_id": obj.ObjectID, "already_present": true,
@@ -357,7 +375,7 @@ func (p *fakePlane) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 // verify authenticates the device before any object field is read.
-func (p *fakePlane) verify(header string, body []byte) error {
+func (p *fakePlane) verify(header string, body []byte, preamble string) error {
 	_, rest, ok := strings.Cut(header, "sig=")
 	if !strings.HasPrefix(header, "Shipper-Device org=default, install=") || !ok {
 		return fmt.Errorf("authorization header is not a device signature: %q", header)
@@ -366,7 +384,7 @@ func (p *fakePlane) verify(header string, body []byte) error {
 	if err != nil {
 		return fmt.Errorf("device signature is not base64: %w", err)
 	}
-	if !ed25519.Verify(p.pub, append([]byte(vendPreamble), body...), sig) {
+	if !ed25519.Verify(p.pub, append([]byte(preamble), body...), sig) {
 		return fmt.Errorf("device signature does not cover the preamble and this body")
 	}
 	return nil

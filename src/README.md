@@ -187,6 +187,14 @@ quesma-shipper local-dev                    Set up without a control plane
 To look at the pipeline without any control plane, run `quesma-shipper local-dev`, then
 `quesma-shipper preview`: collection and scrubbing work, and upload is disabled.
 
+To resend available files with today's resolved scrub rules and encryption readers, run
+`quesma-shipper run --once --force-resend`. Upgrade Fleet Manager to support v3 uploads first.
+This bypasses local change detection and server deduplication for one pass, including derived
+outputs. It drains beyond the normal file-count limit, up to `drain_deadline`, while honoring
+pause and collection restrictions. Old bucket versions remain. A failed or interrupted pass
+returns an error; rerunning the flag starts a new pass, including earlier successes. Ordinary
+runs afterward still skip unchanged files. See [operations](../fleet-manager/OPERATIONS.md).
+
 If an operator revokes this install, collection and server retries stop. `status` and `doctor`
 show the organization and when this machine detected the revocation. macOS and Windows attempt
 a desktop notification when an interactive session allows it. A failed notification command or

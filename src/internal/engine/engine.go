@@ -46,6 +46,9 @@ type Options struct {
 	// DryRun reads, scrubs and seals but neither uploads nor commits. This is `preview`.
 	DryRun bool
 
+	// ForceResend bypasses local change detection and requires a fresh PUT for this run.
+	ForceResend bool
+
 	// Enrichers is the compiled registry. Nil disables enrichment, and a source declaring one
 	// is then refused rather than silently collected raw-only.
 	Enrichers *transforms.Registry

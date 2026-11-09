@@ -49,7 +49,7 @@ func (o Options) prepareFile(
 
 	// A parked entry waits out its backoff, except a new snapshot in a series, which is a new object.
 	newSnapshot := cand.Series != "" && cand.Path != observedPath(key, fp)
-	if fp.Parked && o.Now().Before(fp.BackoffUntil) && !newSnapshot {
+	if !o.ForceResend && fp.Parked && o.Now().Before(fp.BackoffUntil) && !newSnapshot {
 		out.Decision = auditlog.DecisionSkipped
 		out.Reason = "parked until " + fp.BackoffUntil.Format(time.RFC3339) + ": " + fp.LastError
 		return res, nil
@@ -88,7 +88,7 @@ func (o Options) prepareFile(
 	}
 
 	// The content hash is the authority: an mtime-only change refreshes the stat and ships nothing.
-	if seen && changeHash == fp.SourceHash {
+	if !o.ForceResend && seen && changeHash == fp.SourceHash {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "content hash unchanged"
 		if !o.DryRun {
@@ -170,7 +170,7 @@ func (o Options) prepareFile(
 // and a staged file changed within the recompute window is still read, for its enricher. A stat
 // says nothing across paths: a copy that kept size and mtime can still differ in content.
 func (o Options) unchangedByStat(key Key, fp Fingerprint, seen bool, cand sources.Candidate, staging bool) bool {
-	return seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
+	return !o.ForceResend && seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
 		cand.Path == observedPath(key, fp) && !(staging && o.Now().Sub(cand.MTime) < recomputeWindow)
 }
 
