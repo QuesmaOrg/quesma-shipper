@@ -48,12 +48,17 @@ make race        # the same under the race detector
 make check       # the commit gate: fmt, vet, version, dead code, licenses, race
 make perf-smoke  # PR-sized performance gates, needs Docker
 make perf        # full performance suite, needs Docker
+make chaos       # network fault scenarios, needs Docker
 make help        # every target
 ```
 
-CI runs `make check` and `make perf-smoke`. `make perf` runs the full performance tier against a
-local MinIO and Toxiproxy. Both perf targets need Docker and are skipped without it. Tests that run
-the shipper against a live Fleet Manager are not part of this repository yet.
+CI runs `make check`, `make perf-smoke` and `make chaos`. `make perf` runs the full performance tier
+against a local MinIO and Toxiproxy. `make chaos` runs the Linux shipper in a container against
+in-process fakes of the control plane and store, through Toxiproxy and a controllable DNS server,
+and prints a matrix of what each fault records (also written to `$SHIPPER_CHAOS_RESULTS`, default
+`$TMPDIR/trajectory-shipper-chaos`). Its scenarios pin current behaviour, so a change that alters how a fault is
+recorded must update them. All three need Docker and are skipped without it. Tests that run the
+shipper against a live Fleet Manager are not part of this repository yet.
 
 To test the Linux installer and the background service with a local build, `make build` and then
 `sh src/packaging/linux/install.sh --from bin/quesma-shipper`; it installs into `~/.local/bin` for

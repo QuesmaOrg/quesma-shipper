@@ -70,6 +70,38 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  chaos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SHIPPER_CHAOS_RESULTS: ${{ github.workspace }}/chaos-results
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+      - name: Compile while pulling the pinned test images
+        run: |
+          pids=""
+          for image in ghcr.io/shopify/toxiproxy:2.12.0 alpine:3.20.3; do
+            docker pull -q "$image" & pids="$pids $!"
+          done
+          (cd src && go test -tags chaos -c -o /dev/null ./chaos/)
+          for pid in $pids; do wait "$pid"; done
+      - name: Run the network chaos suite
+        run: make chaos
+      - name: Upload the chaos matrix
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: chaos-matrix
+          path: chaos-results/
+          if-no-files-found: warn
+          retention-days: 30
+
   windows-task-session:
     # Requires a second standard-user RDP desktop; main installer coverage also runs on Windows Server 2025.
     runs-on: windows-2022
