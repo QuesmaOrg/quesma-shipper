@@ -239,7 +239,10 @@ type fakePlane struct {
 
 	mu sync.Mutex
 	// status is what the next authorize answers. 200 issues tickets.
-	status int
+	status       int
+	config       string
+	configStatus int
+	configExpiry time.Time
 	// ttl is how long an issued ticket lives.
 	ttl time.Duration
 	// How many of the next authorizations issue already-expired tickets, so the client's single
@@ -276,6 +279,20 @@ func (p *fakePlane) setStatus(status int) {
 }
 
 func (p *fakePlane) serve(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v1/config" {
+		p.mu.Lock()
+		config, status, expiry := p.config, p.configStatus, p.configExpiry
+		p.mu.Unlock()
+		if config == "" || status >= 400 {
+			if status < 400 {
+				status = http.StatusNotFound
+			}
+			http.Error(w, "config unavailable", status)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"config": []byte(config), "expires_at": expiry})
+		return
+	}
 	forced := r.URL.Path == "/v3/uploads/authorize"
 	if r.URL.Path != "/v2/uploads/authorize" && !forced {
 		// Including the config fetch: an unreachable config is ordinary, and the run continues on

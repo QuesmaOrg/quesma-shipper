@@ -88,7 +88,7 @@ func (o Options) prepareFile(
 	}
 
 	// The content hash is the authority: an mtime-only change refreshes the stat and ships nothing.
-	if !o.ForceResend && seen && changeHash == fp.SourceHash {
+	if o.policySatisfied(fp) && seen && changeHash == fp.SourceHash {
 		out.Decision = auditlog.DecisionUnchanged
 		out.Reason = "content hash unchanged"
 		if !o.DryRun {
@@ -162,6 +162,7 @@ func (o Options) prepareFile(
 			SourceSize:  cand.Size,
 			SourceMTime: cand.MTime,
 			SourceHash:  changeHash,
+			SealPolicy:  o.sealPolicy,
 		},
 	}
 }
@@ -170,8 +171,12 @@ func (o Options) prepareFile(
 // and a staged file changed within the recompute window is still read, for its enricher. A stat
 // says nothing across paths: a copy that kept size and mtime can still differ in content.
 func (o Options) unchangedByStat(key Key, fp Fingerprint, seen bool, cand sources.Candidate, staging bool) bool {
-	return !o.ForceResend && seen && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
-		cand.Path == observedPath(key, fp) && !(staging && o.Now().Sub(cand.MTime) < recomputeWindow)
+	return o.policySatisfied(fp) && seen && !fp.Parked && fp.SourceSize == cand.Size && fp.SourceMTime.Equal(cand.MTime) && fp.SourceHash != "" &&
+		cand.Path == observedPath(key, fp) && !(staging && (o.ForceResend || o.Now().Sub(cand.MTime) < recomputeWindow))
+}
+
+func (o Options) policySatisfied(fp Fingerprint) bool {
+	return !o.ForceResend || (o.sealPolicy != "" && fp.SealPolicy == o.sealPolicy)
 }
 
 // keySpread is a cheap stable hash of a state key, used only to separate backoff wakeups.

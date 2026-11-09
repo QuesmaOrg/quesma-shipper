@@ -5,6 +5,7 @@
 package packs
 
 import (
+	"crypto/sha256"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,18 @@ const (
 
 // HeuristicPacks are the low-confidence packs; the engine checks exemptions first.
 var HeuristicPacks = []string{GenericEntropy}
+
+// Digest includes the embedded rules, so changing a pack under the same name invalidates a resend.
+func Digest(pack string) (string, error) {
+	if slices.Contains(HeuristicPacks, pack) {
+		return pack, nil
+	}
+	raw, err := corpora.ReadFile("data/" + pack + ".json")
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(raw)), nil
+}
 
 // Span is one matched byte range; the engine's transforms.Span is an alias of it.
 type Span struct {

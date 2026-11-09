@@ -46,8 +46,9 @@ type Options struct {
 	// DryRun reads, scrubs and seals but neither uploads nor commits. This is `preview`.
 	DryRun bool
 
-	// ForceResend bypasses local change detection and requires a fresh PUT for this run.
+	// ForceResend requires a PUT unless unchanged content already completed this seal policy.
 	ForceResend bool
+	sealPolicy  string
 
 	// Enrichers is the compiled registry. Nil disables enrichment, and a source declaring one
 	// is then refused rather than silently collected raw-only.
@@ -202,6 +203,32 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 	// gate: a paused tick must stay cheap. The compiled scrubber is immutable, so every pass's
 	// goroutines share it; a compile failure still parks each candidate.
 	o.scrub, o.scrubErr = o.scrubber()
+	var policies map[string]string
+	if o.ForceResend {
+		base, err := transforms.SealPolicyDigest(o.scrubConfig(), o.Recipients)
+		if err != nil {
+			return rep, err
+		}
+		policies = make(map[string]string, len(o.Plan.Sources))
+		for _, src := range o.Plan.Sources {
+			policies[src.ID] = transforms.Hash([]byte(fmt.Sprintf("%s\n%s\n%s\n%t", base,
+				src.SpecFingerprint, src.Family, src.Scrub == nil || *src.Scrub)))
+		}
+		previous := make([]Key, 0, st.Len())
+		for k, fp := range st.entries {
+			if fp.SourceHash != "" {
+				previous = append(previous, k)
+			}
+		}
+		defer func() {
+			for _, k := range previous {
+				fp, ok := store.Get(k)
+				if !ok || fp.SealPolicy == "" || fp.SealPolicy != policies[k.SourceID] {
+					rep.ResendOutstanding++
+				}
+			}
+		}()
+	}
 
 	budget := o.Plan.MaxFilesPerRun
 	if o.Unbounded {
@@ -210,6 +237,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 	}
 
 	for _, src := range o.Plan.Sources {
+		o.sealPolicy = policies[src.ID]
 		if ctx.Err() != nil {
 			return rep, ctx.Err()
 		}
@@ -351,7 +379,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 
 		// Forget files this source no longer has. Only a source that COLLECTED and returned
 		// candidates proves absence, so a run the budget truncated forgets nothing.
-		if !o.DryRun && out.Health == sources.Collected && len(disc.Candidates) > 0 && out.Remaining == 0 {
+		if !o.DryRun && !o.ForceResend && out.Health == sources.Collected && len(disc.Candidates) > 0 && out.Remaining == 0 {
 			live := make(map[string]bool, len(disc.Candidates))
 			for _, c := range disc.Candidates {
 				live[KeyOf(src.ID, c).ID] = true
@@ -502,13 +530,17 @@ func (t *stageTracker) refresh() {
 }
 
 func (o Options) scrubber() (*transforms.Scrubber, error) {
+	return transforms.New(o.scrubConfig())
+}
+
+func (o Options) scrubConfig() transforms.Config {
 	cfg := transforms.DefaultConfig()
 	cfg.RulePacks = o.Plan.RulePacks
 	// Additive: configuration can only lengthen the compiled default list, never replace it.
 	cfg.SecretKeyNames = append(cfg.SecretKeyNames, o.Plan.SecretKeyNames...)
 	cfg.Exemptions = o.Plan.StructuralEx
 	cfg.Username = o.user
-	return transforms.New(cfg)
+	return cfg
 }
 
 // orgOf is the organization= key segment, always the RESOLVED value: a hardcoded "default" splits

@@ -410,6 +410,9 @@ func (s *Server) authorizeUploads(w http.ResponseWriter, r *http.Request, rec In
 		}
 	}
 	s.touch(r, rec, seenVend, nil)
+	if forceResend {
+		s.logger.Printf("forced upload authorized for install %s: objects=%d", rec.InstallID, len(objects))
+	}
 	writeJSON(w, uploadAuthorizeResponse{Tickets: append(tickets.Tickets, settled...)})
 }
 

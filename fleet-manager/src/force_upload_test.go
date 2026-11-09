@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +14,8 @@ import (
 
 func TestForceUploadAuthorizationIssuesTicketsWithoutProbing(t *testing.T) {
 	server, manager, key, installID := enrolledServer(t)
+	var logs bytes.Buffer
+	server.logger = log.New(&logs, "", 0)
 	raw, err := readProtocol("fixtures", "v3", "uploads-authorize", "request.json")
 	if err != nil {
 		t.Fatal(err)
@@ -53,12 +57,19 @@ func TestForceUploadAuthorizationIssuesTicketsWithoutProbing(t *testing.T) {
 	if reads != 0 {
 		t.Fatalf("force request probed stored hashes %d times", reads)
 	}
+	wantLog := "forced upload authorized for install " + installID + ": objects=1"
+	if strings.Count(logs.String(), wantLog) != 2 {
+		t.Fatalf("missing forced batch audit: %s", logs.String())
+	}
 
 	body, _ = json.Marshal(req.uploadAuthorizeRequest)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, signedRequest(http.MethodPost, "/v2/uploads/authorize", body, installID, key, uploadAuthorizePreamble))
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"already_present":true`) {
 		t.Fatalf("v2 dedup changed: %d %s", w.Code, w.Body.String())
+	}
+	if strings.Count(logs.String(), wantLog) != 2 {
+		t.Fatal("normal authorization logged as forced")
 	}
 }
 

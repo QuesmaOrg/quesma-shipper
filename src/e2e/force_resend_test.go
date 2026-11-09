@@ -2,22 +2,35 @@ package e2e
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"filippo.io/age"
+	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
+func stageForceWorld(t *testing.T) *world {
+	t.Helper()
+	w := stageWorld(t)
+	w.plane.mu.Lock()
+	w.plane.config = "config_version: 1\n"
+	w.plane.configExpiry = time.Now().Add(time.Hour)
+	w.plane.mu.Unlock()
+	return w
+}
+
 func TestForceResendAppliesCurrentRecipients(t *testing.T) {
 	for _, reset := range []bool{false, true} {
 		t.Run(fmt.Sprintf("reset=%t", reset), func(t *testing.T) {
-			w := stageWorld(t)
+			w := stageForceWorld(t)
 			stageClaudeSession(t, w, realUsername(t), claudeSessionID)
 			alice, err := age.GenerateX25519Identity()
 			if err != nil {
@@ -28,7 +41,10 @@ func TestForceResendAppliesCurrentRecipients(t *testing.T) {
 				t.Fatal(err)
 			}
 			configure := func(id *age.X25519Identity) {
-				writeConfig(t, w, "sources:\n  - id: claude-account\n    enabled: false\nencryption:\n  include_install_recipient: false\n  additional_recipients:\n    - "+id.Recipient().String()+"\n")
+				writeConfig(t, w, "sources:\n  - id: claude-account\n    enabled: false\n")
+				w.plane.mu.Lock()
+				w.plane.config = "config_version: 1\nencryption:\n  include_install_recipient: false\n  additional_recipients:\n    - " + id.Recipient().String() + "\n"
+				w.plane.mu.Unlock()
 			}
 			configure(alice)
 			runOneShot(t)
@@ -47,6 +63,11 @@ func TestForceResendAppliesCurrentRecipients(t *testing.T) {
 			runOneShot(t)
 			if got := len(w.store.mirrorPuts()); got != 1 {
 				t.Fatalf("normal run wrote %d copies", got)
+			}
+			output := runOneShot(t, "--force-resend")
+			wantID := fmt.Sprintf("%x", sha256.Sum256([]byte(bob.Recipient().String())))[:12]
+			if !strings.Contains(output, "sealing to 1 recipient(s)") || !strings.Contains(output, wantID) {
+				t.Fatalf("missing recipient confirmation: %s", output)
 			}
 			runOneShot(t, "--force-resend")
 			puts := w.store.mirrorPuts()
@@ -79,6 +100,61 @@ func TestForceResendAppliesCurrentRecipients(t *testing.T) {
 	}
 }
 
+func TestForceResendRefusesUnavailableOrExpiredConfig(t *testing.T) {
+	for _, state := range []string{"cached", "missing", "expired"} {
+		t.Run(state, func(t *testing.T) {
+			w := stageForceWorld(t)
+			stageClaudeSession(t, w, realUsername(t), claudeSessionID)
+			writeConfig(t, w, "sources:\n  - id: claude-account\n    enabled: false\n")
+			runOneShot(t)
+			if state == "missing" {
+				if err := os.Remove(filepath.Join(statePath(w), controlplane.CacheFile)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			w.plane.mu.Lock()
+			if state == "expired" {
+				w.plane.configExpiry = time.Now().Add(-time.Hour)
+			} else {
+				w.plane.configStatus = http.StatusServiceUnavailable
+			}
+			before := w.plane.issued
+			w.plane.mu.Unlock()
+			_, err := runOneShotExpectingFailure(t, "--force-resend")
+			if err == nil || !strings.Contains(err.Error(), "requires freshly fetched, unexpired") {
+				t.Fatalf("%s config accepted: %v", state, err)
+			}
+			w.plane.mu.Lock()
+			after := w.plane.issued
+			w.plane.mu.Unlock()
+			if after != before || len(w.store.mirrorPuts()) != 1 {
+				t.Fatal("refused config still reached upload authorization")
+			}
+		})
+	}
+}
+
+func TestForceResendReportsMissingPreviouslyShippedSources(t *testing.T) {
+	w := stageForceWorld(t)
+	username := realUsername(t)
+	missing := stageClaudeSession(t, w, username, claudeSessionID)
+	stageClaudeSession(t, w, username, numericSessionID)
+	writeConfig(t, w, "sources:\n  - id: claude-account\n    enabled: false\n")
+	runOneShot(t)
+	if err := os.Remove(missing); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		out := runOneShot(t, "--force-resend")
+		if !strings.Contains(out, "1 previously shipped object(s)") || !strings.Contains(out, "archive reseal") {
+			t.Fatalf("missing source not reported: %s", out)
+		}
+	}
+	if len(w.store.mirrorPuts()) != 3 {
+		t.Fatal("repeated warning duplicated the available source")
+	}
+}
+
 func keysOf(puts []storedPut) []string {
 	keys := make([]string, len(puts))
 	for i, put := range puts {
@@ -88,7 +164,7 @@ func keysOf(puts []storedPut) []string {
 }
 
 func TestForceResendScrubsAgainAndDrainsPastTheNormalLimit(t *testing.T) {
-	w := stageWorld(t)
+	w := stageForceWorld(t)
 	username := realUsername(t)
 	appendLine(t, stageClaudeSession(t, w, username, claudeSessionID), houseLine)
 	stageClaudeSession(t, w, username, numericSessionID)
@@ -132,7 +208,7 @@ func TestForceResendScrubsAgainAndDrainsPastTheNormalLimit(t *testing.T) {
 }
 
 func TestForceResendFailurePreservesStateAndCanBeRetried(t *testing.T) {
-	w := stageWorld(t)
+	w := stageForceWorld(t)
 	stageClaudeSession(t, w, realUsername(t), claudeSessionID)
 	writeConfig(t, w, "sources:\n  - id: claude-account\n    enabled: false\n")
 	runOneShot(t)
@@ -166,7 +242,7 @@ func TestForceResendRequiresOnceAndHonorsPause(t *testing.T) {
 	if _, err := runExpectingFailure(t, "run", "--force-resend"); err == nil || !strings.Contains(err.Error(), "requires --once") {
 		t.Fatalf("scheduler accepted force resend: %v", err)
 	}
-	w := stageWorld(t)
+	w := stageForceWorld(t)
 	stageClaudeSession(t, w, realUsername(t), claudeSessionID)
 	run(t, "pause", "1h")
 	if _, err := runOneShotExpectingFailure(t, "--force-resend"); err == nil {
@@ -178,7 +254,7 @@ func TestForceResendRequiresOnceAndHonorsPause(t *testing.T) {
 }
 
 func TestForceResendReportsPartialFailure(t *testing.T) {
-	w := stageWorld(t)
+	w := stageForceWorld(t)
 	username := realUsername(t)
 	stageClaudeSession(t, w, username, claudeSessionID)
 	stageClaudeSession(t, w, username, numericSessionID)
@@ -198,15 +274,35 @@ func TestForceResendReportsPartialFailure(t *testing.T) {
 	if w.store.versions(puts[0].Key) != 1 || w.store.versions(puts[1].Key) != 2 {
 		t.Fatal("partial upload did not preserve independent results")
 	}
+	w.store.mu.Lock()
+	w.store.putStatus = nil
+	w.store.mu.Unlock()
+	runOneShot(t, "--force-resend")
+	runOneShot(t, "--force-resend")
+	if w.store.versions(puts[0].Key) != 2 || w.store.versions(puts[1].Key) != 2 {
+		t.Fatal("retry duplicated the successful file")
+	}
 }
 
 func TestForceResendCancellationIsNotSuccess(t *testing.T) {
-	w := stageWorld(t)
+	w := stageForceWorld(t)
 	stageClaudeSession(t, w, realUsername(t), claudeSessionID)
 	if _, err := runUntilCancelled(t, "run", "--once", "--force-resend"); err == nil {
 		t.Fatal("cancelled force resend returned success")
 	}
 	if len(w.store.mirrorPuts()) != 0 {
 		t.Fatal("cancelled force resend uploaded a file")
+	}
+}
+
+func TestForceResendDeadlineExplainsHowToResume(t *testing.T) {
+	w := stageForceWorld(t)
+	stageClaudeSession(t, w, realUsername(t), claudeSessionID)
+	w.plane.mu.Lock()
+	w.plane.config += "drain_deadline: 1ns\n"
+	w.plane.mu.Unlock()
+	_, err := runOneShotExpectingFailure(t, "--force-resend")
+	if err == nil || !strings.Contains(err.Error(), "resume from saved progress") {
+		t.Fatalf("deadline did not explain resume: %v", err)
 	}
 }
