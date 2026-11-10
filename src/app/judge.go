@@ -85,7 +85,7 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 			// shortcut would silently empty the field.
 			rec.ConsecutiveFailures = 0
 			// A tick that shipped nothing and whose heartbeat got no answer is no success: the outage goes on.
-			if rep.Shipped > 0 || !r.heartbeatUnanswered.Load() {
+			if rep.Shipped > 0 || !r.heartbeatUnanswered {
 				rec.OfflineSince, rec.OfflineCounted = "", false
 			}
 		case offline:
@@ -93,10 +93,7 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 			r.noteOutage(rec, kind, err)
 		default:
 			ev := newEvent(r.eff.StateDir, r.runID, kind, err.Error())
-			rec.Append(ev)
-			if ev.Counted() {
-				rec.ConsecutiveFailures++
-			}
+			rec.Record(ev)
 		}
 	})
 
@@ -137,10 +134,7 @@ func (r *Runtime) noteOutage(rec *formats.FailureRecord, kind string, err error)
 	rec.OfflineCounted = true
 	ev := newEvent(r.eff.StateDir, r.runID, kind, fmt.Sprintf("offline for %s, since %s: %v",
 		now.Sub(since).Round(time.Minute), rec.OfflineSince, err))
-	rec.Append(ev)
-	if ev.Counted() {
-		rec.ConsecutiveFailures++
-	}
+	rec.Record(ev)
 }
 
 const failureHeartbeatTimeout = 30 * time.Second
@@ -293,10 +287,7 @@ func RecordUpdateFailure(message string) {
 func recordWithoutRuntime(runID, kind, message string) {
 	appendWithoutRuntime("failure", func(dir string, rec *formats.FailureRecord) bool {
 		ev := newEvent(dir, runID, kind, message)
-		rec.Append(ev)
-		if ev.Counted() {
-			rec.ConsecutiveFailures++
-		}
+		rec.Record(ev)
 		return true
 	})
 }

@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -91,9 +90,8 @@ type Runtime struct {
 	// now is the judge's clock for outages; nil is the wall clock. A field so a test can move it.
 	now func() time.Time
 
-	// heartbeatUnanswered says this tick's own heartbeat got no answer, so a tick that shipped
-	// nothing did not prove the outage over.
-	heartbeatUnanswered atomic.Bool
+	// Set when this tick's heartbeat got no answer: an idle tick then does not end an outage.
+	heartbeatUnanswered bool
 
 	// lastRep is the last completed tick's report, reused by the stall heartbeat so a stalled
 	// install does not blank its own per-source health. Judge writes it, the next tick's watchdog
@@ -277,7 +275,7 @@ func (r *Runtime) Drain(ctx context.Context) (formats.Report, bool, error) {
 }
 
 func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (formats.Report, error) {
-	r.heartbeatUnanswered.Store(false)
+	r.heartbeatUnanswered = false
 	if r.ForceResend {
 		if err := r.checkForceResend(); err != nil {
 			return formats.Report{}, err
@@ -307,7 +305,7 @@ func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (format
 	o.Unbounded = unbounded
 	o.Heartbeat = func(ctx context.Context, rep formats.Report) error {
 		err := r.WriteHeartbeat(ctx, rep)
-		r.heartbeatUnanswered.Store(errors.Is(err, engine.ErrOffline))
+		r.heartbeatUnanswered = errors.Is(err, engine.ErrOffline)
 		return err
 	}
 	rep, err := engine.Run(ctx, store, o)

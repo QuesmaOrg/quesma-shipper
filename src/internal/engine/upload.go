@@ -162,13 +162,13 @@ func (o Options) authorizeAndUpload(ctx context.Context, items []stagedUpload) (
 			len(batch))
 	}
 
+	// The run is stopping: an expired ticket beside an offline object is not worth another authorization.
+	if slices.ContainsFunc(outcomes, func(oc error) bool { return errors.Is(oc, ErrOffline) }) {
+		return outcomes
+	}
 	var expired []int
 	for i, oc := range outcomes {
-		switch {
-		case errors.Is(oc, ErrOffline):
-			// The run is stopping: an expired ticket beside it is not worth another authorization.
-			return outcomes
-		case errors.Is(oc, ErrTicketExpired):
+		if errors.Is(oc, ErrTicketExpired) {
 			expired = append(expired, i)
 		}
 	}

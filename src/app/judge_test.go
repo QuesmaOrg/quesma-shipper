@@ -550,7 +550,7 @@ func (c outageClock) judge(hours float64, err error, rep formats.Report, unanswe
 	c.t.Helper()
 	at := c.t0.Add(time.Duration(hours * float64(time.Hour)))
 	r := &Runtime{eff: &config.Effective{StateDir: c.dir}, runID: "0123456789abcdef", now: func() time.Time { return at }}
-	r.heartbeatUnanswered.Store(unanswered)
+	r.heartbeatUnanswered = unanswered
 	r.JudgeTick(err, rep, false, platform.Delta{})
 	return readFailureRecord(c.dir)
 }

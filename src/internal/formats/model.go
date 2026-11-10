@@ -148,8 +148,7 @@ type FailureRecord struct {
 
 	ConsecutiveFailures int `json:"consecutive_failures,omitempty"`
 
-	// OfflineSince is when the current outage began, empty while online; OfflineCounted says its one
-	// counted failure has been raised. A clean tick clears both; neither leaves the machine.
+	// The current outage's start and whether its one counted failure was raised; neither leaves the machine.
 	OfflineSince   string `json:"offline_since,omitempty"`
 	OfflineCounted bool   `json:"offline_counted,omitempty"`
 
@@ -252,6 +251,14 @@ func (r *FailureRecord) Append(e FailureEvent) {
 	r.Recent = append(r.Recent, e)
 	if n := len(r.Recent); n > MaxRecentFailures {
 		r.Recent = append(r.Recent[:0], r.Recent[n-MaxRecentFailures:]...)
+	}
+}
+
+// Record appends an event and counts it when its kind is counted.
+func (r *FailureRecord) Record(e FailureEvent) {
+	r.Append(e)
+	if e.Counted() {
+		r.ConsecutiveFailures++
 	}
 }
 

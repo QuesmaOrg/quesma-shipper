@@ -170,19 +170,12 @@ func (p *vendPort) send(ctx context.Context, obj engine.PreparedObject, issued c
 		// The same ticket: a PUT that did land is rewritten onto the same key with the same bytes.
 		err = p.uploader.Upload(ctx, ticket, obj.Body)
 	}
-	switch {
-	case err == nil:
-		return nil
-	case ctx.Err() == nil && platform.Offline(err):
-		return fmt.Errorf("%w: %w", engine.ErrOffline, err)
-	}
-	return p.classifyPut(err, ticket)
+	return p.classifyPut(ctx, err, ticket)
 }
 
-// retry says whether a request that got no answer goes once more, after the pause. Never when
-// the caller is gone, before or during the pause: shutdown must not wait on the network.
+// retry says whether a request that got no answer goes once more, after a pause that shutdown cuts short.
 func (p *vendPort) retry(ctx context.Context, err error) bool {
-	if err == nil || ctx.Err() != nil || ctx.Value(singleAttempt{}) != nil || !platform.Offline(err) {
+	if ctx.Err() != nil || ctx.Value(singleAttempt{}) != nil || !platform.Offline(err) {
 		return false
 	}
 	t := time.NewTimer(p.retryPause)
@@ -296,7 +289,10 @@ func classifyAuthorize(ctx context.Context, err error) error {
 
 // classifyPut names the one PUT failure worth a second authorization inside a run: a store refusal
 // on a ticket whose own expiry has passed. Every other refusal waits for the next run.
-func (p *vendPort) classifyPut(err error, ticket upload.Ticket) error {
+func (p *vendPort) classifyPut(ctx context.Context, err error, ticket upload.Ticket) error {
+	if ctx.Err() == nil && platform.Offline(err) {
+		return fmt.Errorf("%w: %w", engine.ErrOffline, err)
+	}
 	var status *upload.StatusError
 	if !errors.As(err, &status) {
 		return err

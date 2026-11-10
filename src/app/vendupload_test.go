@@ -78,18 +78,18 @@ func TestOnlyAnExpiredTicketAsksForAnotherAuthorization(t *testing.T) {
 	live := upload.Ticket{ExpiresAt: now.Add(time.Minute)}
 	refusal := &upload.StatusError{Status: 403, Reason: "Request has expired"}
 
-	if got := p.classifyPut(refusal, expired); !errors.Is(got, engine.ErrTicketExpired) {
+	if got := p.classifyPut(context.Background(), refusal, expired); !errors.Is(got, engine.ErrTicketExpired) {
 		t.Errorf("a refusal on an expired ticket was classified as %v", got)
 	}
-	if got := p.classifyPut(refusal, live); errors.Is(got, engine.ErrTicketExpired) {
+	if got := p.classifyPut(context.Background(), refusal, live); errors.Is(got, engine.ErrTicketExpired) {
 		t.Error("a refusal on a live ticket asked for a second authorization")
 	}
 	notFound := &upload.StatusError{Status: 404}
-	if got := p.classifyPut(notFound, expired); errors.Is(got, engine.ErrTicketExpired) {
+	if got := p.classifyPut(context.Background(), notFound, expired); errors.Is(got, engine.ErrTicketExpired) {
 		t.Error("a 404 on an expired ticket was read as an expiry")
 	}
 	transport := errors.New("connection reset")
-	if got := p.classifyPut(transport, expired); got != transport {
+	if got := p.classifyPut(context.Background(), transport, expired); got != transport {
 		t.Errorf("a transport failure was rewritten to %v", got)
 	}
 }

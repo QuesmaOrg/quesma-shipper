@@ -351,7 +351,9 @@ var scenarios = []scenario{
 					t.Errorf("a group's authorize arrived %s after the tick was judged offline", st.at.Sub(verdict))
 				}
 			}
-			return describeStalls(stalls)
+			mirror, heartbeat, shortest, longest := countStalls(stalls)
+			return fmt.Sprintf("authorize stalled for %d mirror group(s) and %d heartbeat(s), each waited %s-%s",
+				mirror, heartbeat, shortest.Round(time.Second), longest.Round(time.Second))
 		},
 	},
 }
