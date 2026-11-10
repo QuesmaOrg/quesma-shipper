@@ -52,7 +52,8 @@ make chaos       # network fault scenarios, needs Docker
 make help        # every target
 ```
 
-CI runs `make check`, `make perf-smoke` and `make chaos`. `make perf` runs the full performance tier
+CI runs `make check` and `make perf-smoke`; `make chaos` runs only by hand, locally or from the
+"Quesma Shipper Chaos" workflow (Actions, Run workflow). `make perf` runs the full performance tier
 against a local MinIO and Toxiproxy. `make chaos` runs the Linux shipper in a container against
 in-process fakes of the control plane and store, through Toxiproxy and a controllable DNS server,
 and prints a matrix of what each fault records (also written to `$SHIPPER_CHAOS_RESULTS`, default
