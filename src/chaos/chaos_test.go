@@ -16,9 +16,9 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -129,7 +129,7 @@ func setup(ctx context.Context, cleanups *[]func()) error {
 	if err != nil {
 		return fmt.Errorf("start toxiproxy: %w", err)
 	}
-	apiAddr, err := hostAddr(ctx, proxy, toxiproxyAPIPort)
+	apiAddr, err := proxy.PortEndpoint(ctx, toxiproxyAPIPort+"/tcp", "")
 	if err != nil {
 		return err
 	}
@@ -165,11 +165,9 @@ func setup(ctx context.Context, cleanups *[]func()) error {
 	if err != nil {
 		return fmt.Errorf("start the DNS server: %w", err)
 	}
-	dnsAddr, err := hostAddr(ctx, dns, dnsAPIPort)
-	if err != nil {
+	if dnsAPI, err = dns.PortEndpoint(ctx, dnsAPIPort+"/tcp", "http"); err != nil {
 		return err
 	}
-	dnsAPI = "http://" + dnsAddr
 	if dnsIP, err = ipOn(ctx, dns, chaosNet); err != nil {
 		return err
 	}
@@ -236,23 +234,7 @@ func writeTestCA() (tls.Certificate, error) {
 	return tls.Certificate{Certificate: [][]byte{leafDER}, PrivateKey: leafKey}, nil
 }
 
-func listenerPort(s *httptest.Server) int {
-	u, _ := url.Parse(s.URL)
-	port, _ := strconv.Atoi(u.Port())
-	return port
-}
-
-func hostAddr(ctx context.Context, c testcontainers.Container, port string) (string, error) {
-	host, err := c.Host(ctx)
-	if err != nil {
-		return "", err
-	}
-	mapped, err := c.MappedPort(ctx, port+"/tcp")
-	if err != nil {
-		return "", err
-	}
-	return host + ":" + mapped.Port(), nil
-}
+func listenerPort(s *httptest.Server) int { return s.Listener.Addr().(*net.TCPAddr).Port }
 
 func ipOn(ctx context.Context, c testcontainers.Container, nw *testcontainers.DockerNetwork) (string, error) {
 	inspect, err := c.Inspect(ctx)

@@ -22,14 +22,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 )
 
 const (
 	chaosOrg          = "acme"
 	chaosBucket       = "chaos"
 	authorizePreamble = "trajectory-shipper-upload-authorize-v2\nPOST\n/v2/uploads/authorize\n"
+	telemetryPath     = "/v1/telemetry"
+	telemetryPreamble = "trajectory-shipper-telemetry-v1\nPOST\n/v1/telemetry\n"
 )
 
 // Throwaway: it only lets the store tell a ticket it issued from a forged URL.
@@ -191,15 +191,17 @@ func (p *peers) serveControlPlane(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{
 			"config": []byte("config_version: 1\nissued_at: \"2026-09-03T00:00:00Z\"\norg: " + chaosOrg +
-				"\ntelemetry_endpoint: " + controlplane.TelemetryPath + "\n"),
+				"\ntelemetry_endpoint: " + telemetryPath + "\n"),
 			"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano),
 		})
-	case controlplane.TelemetryPath:
-		if !ed25519.Verify(in.key, append([]byte(controlplane.TelemetryPreamble), body...), sig) {
+	case telemetryPath:
+		if !ed25519.Verify(in.key, append([]byte(telemetryPreamble), body...), sig) {
 			http.Error(w, "invalid device signature", http.StatusUnauthorized)
 			return
 		}
-		var req controlplane.TelemetryRequest
+		var req struct {
+			Payload json.RawMessage `json:"payload"`
+		}
 		if err := json.Unmarshal(body, &req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
