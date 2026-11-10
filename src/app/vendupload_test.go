@@ -274,10 +274,12 @@ func hangUp(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// retryingPort counts what reaches the far end; authorize and put answer the nth request (from 1).
+// retryingPort counts what reaches the far end; authorize answers the nth request (from 1), a PUT
+// the nth attempt at its own object, so concurrent PUTs cannot trade places.
 type retryingPort struct {
 	mu                sync.Mutex
 	authorizes, puts  int
+	attempts          map[string]int
 	authorize, putter func(n int, w http.ResponseWriter, r *http.Request)
 }
 
@@ -288,7 +290,11 @@ func (rp *retryingPort) port(t *testing.T) *vendPort {
 		handle := rp.authorize
 		if r.Method == http.MethodPut {
 			rp.puts++
-			n, handle = rp.puts, rp.putter
+			if rp.attempts == nil {
+				rp.attempts = map[string]int{}
+			}
+			rp.attempts[r.URL.Path]++
+			n, handle = rp.attempts[r.URL.Path], rp.putter
 		} else {
 			rp.authorizes++
 			n = rp.authorizes
@@ -449,7 +455,8 @@ func TestARefusedConnectionIsRetriedAfterThePause(t *testing.T) {
 	for name, p := range map[string]*vendPort{"authorize": cp, "PUT": store} {
 		started := time.Now()
 		out := p.AuthorizeAndUpload(context.Background(), twoObjects)
-		if !errors.Is(out[0], engine.ErrOffline) || !errors.Is(out[0], syscall.ECONNREFUSED) {
+		var op *net.OpError
+		if !errors.Is(out[0], engine.ErrOffline) || !errors.As(out[0], &op) || op.Op != "dial" {
 			t.Errorf("%s: want offline with the refusal kept, got %v", name, out[0])
 		}
 		if elapsed := time.Since(started); elapsed < pause {
@@ -549,7 +556,7 @@ func TestAnUnansweredPutIsRetriedOnceThenOffline(t *testing.T) {
 
 func TestAPutAnsweredOnTheRetryShips(t *testing.T) {
 	rp := &retryingPort{authorize: healthyAuthorize, putter: func(n int, w http.ResponseWriter, r *http.Request) {
-		if n <= 2 {
+		if n == 1 {
 			hangUp(w, r)
 			return
 		}
@@ -583,7 +590,7 @@ func TestAnAnsweredPutIsNotRetried(t *testing.T) {
 // reauthorization, not offline and not a second retry.
 func TestARetryOnAnExpiredTicketAsksForAnotherAuthorization(t *testing.T) {
 	rp := &retryingPort{authorize: healthyAuthorize, putter: func(n int, w http.ResponseWriter, r *http.Request) {
-		if n <= 2 {
+		if n == 1 {
 			hangUp(w, r)
 			return
 		}
