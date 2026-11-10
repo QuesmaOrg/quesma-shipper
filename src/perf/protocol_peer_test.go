@@ -89,9 +89,10 @@ func (c *protocolPeer) register(installID, org string, key ed25519.PublicKey, or
 }
 
 type perfAuthorizeRequest struct {
-	WriterID string    `json:"writer_id"`
-	IssuedAt time.Time `json:"issued_at"`
-	Objects  []struct {
+	ForceResend bool      `json:"force_resend,omitempty"`
+	WriterID    string    `json:"writer_id"`
+	IssuedAt    time.Time `json:"issued_at"`
+	Objects     []struct {
 		ObjectID   string            `json:"object_id"`
 		Key        string            `json:"key"`
 		Size       int64             `json:"size"`
@@ -121,7 +122,12 @@ func (c *protocolPeer) serve(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if r.URL.Path != "/v2/uploads/authorize" {
+	preamble := authorizePreamble
+	force := r.URL.Path == "/v3/uploads/authorize"
+	if force {
+		preamble = "trajectory-shipper-upload-authorize-v3\nPOST\n/v3/uploads/authorize\n"
+	}
+	if r.URL.Path != "/v2/uploads/authorize" && !force {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -138,7 +144,7 @@ func (c *protocolPeer) serve(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	install, exists := c.installs[installID]
 	c.mu.Unlock()
-	if !exists || org != install.org || !ed25519.Verify(install.key, append([]byte(authorizePreamble), body...), signature) {
+	if !exists || org != install.org || !ed25519.Verify(install.key, append([]byte(preamble), body...), signature) {
 		http.Error(w, "invalid device signature", http.StatusUnauthorized)
 		return
 	}
@@ -150,6 +156,11 @@ func (c *protocolPeer) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if req.ForceResend != force {
+		http.Error(w, "force_resend must match the signed route", http.StatusBadRequest)
+		return
+	}
+
 	tickets, err := issueTickets(r.Context(), install, req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

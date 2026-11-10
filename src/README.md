@@ -189,8 +189,8 @@ To look at the pipeline without any control plane, run `quesma-shipper local-dev
 
 To re-encrypt from available source files without a custodian decryption identity, run
 `quesma-shipper run --once --force-resend`. Upgrade Fleet Manager to support v3 uploads first.
-The command requires freshly fetched, unexpired settings and prints the recipient count and short
-SHA-256 fingerprints. It drains beyond the normal file-count limit, up to `drain_deadline`, while
+The command requires freshly fetched, unexpired settings and prints the recipient count and age
+public keys. It drains beyond the normal file-count limit, up to `drain_deadline`, while
 honoring pause and collection restrictions. A failed or interrupted pass returns an error;
 rerunning the flag resumes the same seal policy and skips unchanged files already resent, including
 derived outputs. Keep local state to preserve that progress. If the background service holds the

@@ -41,9 +41,8 @@ quesma-shipper run --once --force-resend
 
 The command requires a successful, unexpired served-config fetch during this invocation. It refuses
 cached or missing configuration even if upload authorization works. Before uploading it prints the
-recipient count and short fingerprints (the first 12 hex characters of SHA-256 over each age public
-recipient string). Check these against the intended readers. Fleet Manager logs each authorized
-forced batch with the install ID and object count. Forced uploads use v3; an older server returns
+recipient count and age public keys. Check these against the intended readers. Fleet Manager logs
+each authorized forced batch with the install ID and object count. Forced uploads use v3; an older server returns
 an upgrade error. Normal uploads and heartbeats continue using v2.
 
 A successful forced PUT records a digest of the recipient set and scrub policy in the local
@@ -54,6 +53,8 @@ The fleet-wide trigger remains separate work in [#77](https://github.com/QuesmaO
 There is no remote resend setting, UI action, or stored resend job.
 
 Each attempt drains beyond `max_files_per_run`, bounded by `drain_deadline` (5 minutes by default).
+Sources with enrichment run in slices bounded by `max_files_per_run` and the in-flight byte cap,
+so raw transcript memory does not grow with the entire history. Each slice commits before the next.
 Pause, exclusions, size limits, scrubbing and install isolation still apply. Failures, parked files,
 and deadline expiry return an error. Fix the reported cause and rerun the same command: successful
 files retain their progress, so one unreadable file does not duplicate the readable history.

@@ -5,7 +5,6 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -330,7 +329,7 @@ func (r *Runtime) ForceResendRecipients() ([]string, error) {
 	}
 	var ids []string
 	for _, recipient := range r.recipients {
-		ids = append(ids, fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprint(recipient))))[:12])
+		ids = append(ids, fmt.Sprint(recipient))
 	}
 	slices.Sort(ids)
 	return slices.Compact(ids), nil

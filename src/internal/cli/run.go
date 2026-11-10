@@ -323,7 +323,7 @@ func runEnrolledLoop(cmd *cobra.Command, ctx context.Context, build app.Build, o
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(errOut, "force resend: sealing to %d recipient(s), SHA-256 fingerprints: %s\n", len(ids), strings.Join(ids, ", "))
+		fmt.Fprintf(errOut, "force resend: sealing to %d recipient(s), public keys: %s\n", len(ids), strings.Join(ids, ", "))
 	}
 
 	// Resolved for --once too: the interval doubles as the stall watchdog's threshold.
@@ -436,6 +436,9 @@ func runEnrolledLoop(cmd *cobra.Command, ctx context.Context, build app.Build, o
 			if drain && !complete {
 				return fmt.Errorf("drain hit its %s deadline with work left: raise drain_deadline or accept the loss",
 					env.Effective().DrainDeadline)
+			}
+			if forceResend {
+				fmt.Fprintln(errOut, "force resend: use archive reseal for unavailable history; objects forgotten by state pruning or reset cannot be counted.")
 			}
 			if forceResend && !quiet {
 				fmt.Fprintln(out, "force resend complete for currently collectable files")

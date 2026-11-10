@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"filippo.io/age"
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
+	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
 func TestForceResendIncludesUnchangedRawAndDerivedObjects(t *testing.T) {
@@ -204,5 +207,114 @@ func TestForceResendNeverCommitsAnAlreadyPresentAnswer(t *testing.T) {
 				t.Fatalf("already-present answer committed a forced upload: %+v, fingerprints=%d", rep, f.store.Len())
 			}
 		})
+	}
+}
+
+func TestForceResendBoundsEnrichmentAndResumesDerivedFailures(t *testing.T) {
+	for _, byteBound := range []bool{false, true} {
+		t.Run(fmt.Sprintf("byteBound=%t", byteBound), func(t *testing.T) {
+			f := newFixture(t)
+			db := cursorFixture(t, f)
+			for i := range 6 {
+				path := filepath.Join(f.home, ".cursor", "projects", "api", "agent-transcripts", fmt.Sprintf("%d.jsonl", i))
+				if err := os.WriteFile(path, []byte(cursorTranscript), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			o := enrichOpts(t, f, db, true)
+			o.ForceResend, o.Unbounded = true, true
+			o.Plan.MaxFilesPerRun = 2
+			if byteBound {
+				o.Plan.MaxFilesPerRun = 100
+				t.Setenv(platform.EnvMaxInFlightBytes, fmt.Sprint(2*len(cursorTranscript)))
+				if err := platform.ApplyMaxInFlightBytesFromEnv(); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					os.Unsetenv(platform.EnvMaxInFlightBytes)
+					if err := platform.ApplyMaxInFlightBytesFromEnv(); err != nil {
+						t.Error(err)
+					}
+				})
+			}
+			enricher := &boundedEnricher{fixtureEnricher: &fixtureEnricher{db: db}, t: t, maxUnits: 2}
+			o.Enrichers = transforms.NewRegistry(enricher)
+			var failed atomic.Bool
+			f.port.verdict = func(_, _ int, obj engine.PreparedObject) error {
+				if obj.Metadata["derived"] == "true" && failed.CompareAndSwap(false, true) {
+					return errors.New("derived PUT failed")
+				}
+				return nil
+			}
+			rep := runEnrich(t, f, o)
+			if rep.Shipped != 13 || rep.Failed != 1 || enricher.calls != 4 || rep.Truncated {
+				t.Fatalf("bounded pass: shipped=%d failed=%d calls=%d truncated=%t", rep.Shipped, rep.Failed, enricher.calls, rep.Truncated)
+			}
+			f.port.verdict = nil
+			f.reopen()
+			rep = runEnrich(t, f, o)
+			if rep.Shipped != 1 || rep.ResendOutstanding != 0 {
+				t.Fatalf("derived retry: %+v", rep)
+			}
+			if rep = runEnrich(t, f, o); rep.Shipped != 0 {
+				t.Fatalf("completed pair repeated: %+v", rep)
+			}
+		})
+	}
+}
+
+type boundedEnricher struct {
+	*fixtureEnricher
+	t               *testing.T
+	maxUnits, calls int
+}
+
+func (*boundedEnricher) ID() string       { return "cursor-transcript-join" }
+func (*boundedEnricher) Version() int     { return 1 }
+func (*boundedEnricher) NeedsUnits() bool { return true }
+func (e *boundedEnricher) Enrich(in transforms.Input) transforms.EnrichResult {
+	e.calls++
+	if len(in.Units) > e.maxUnits {
+		e.t.Fatalf("retained %d raw units, limit %d", len(in.Units), e.maxUnits)
+	}
+	res := transforms.EnrichResult{}
+	for _, unit := range in.Units {
+		res.Objects = append(res.Objects, transforms.Derived{NativePath: unit.NativePath + ".enriched.jsonl",
+			Payload: unit.Content, DerivedFrom: []string{unit.SourceHash}, OutputHash: unit.SourceHash,
+			Status: transforms.StatusOK})
+	}
+	return res
+}
+
+func TestForceResendSlicesPreserveCursorEnrichment(t *testing.T) {
+	f := newFixture(t)
+	db := cursorFixture(t, f)
+	for i := range 2 {
+		dir := filepath.Join(f.home, ".cursor", "projects", "api", "agent-transcripts", fmt.Sprint(i))
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, enrichConv+".jsonl"), []byte(cursorTranscript), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	o := enrichOpts(t, f, db, true)
+	if rep := runEnrich(t, f, o); rep.Shipped != 6 {
+		t.Fatalf("initial Cursor pairs: %+v", rep)
+	}
+	o.ForceResend, o.Unbounded = true, true
+	o.Plan.MaxFilesPerRun = 1
+	for attempt := range 2 {
+		f.reopen()
+		rep := runEnrich(t, f, o)
+		if rep.Shipped != 6*(1-attempt) || rep.ResendOutstanding != 0 || rep.Truncated || rep.Failed != 0 {
+			t.Fatalf("sliced Cursor attempt %d: %+v", attempt, rep)
+		}
+	}
+	for _, key := range f.port.keys() {
+		obj, _ := f.port.get(key)
+		if obj.Versions != 2 {
+			t.Errorf("%s: %d versions", key, obj.Versions)
+		}
 	}
 }

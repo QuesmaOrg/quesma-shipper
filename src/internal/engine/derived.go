@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
@@ -45,6 +46,64 @@ func (o Options) enrichersFor(src sources.Resolved) []transforms.Enricher {
 		out = append(out, e)
 	}
 	return out
+}
+
+// Forced enrichment drains bounded slices, committing each before releasing its raw bytes.
+func (o Options) runSource(ctx context.Context, store *commitBuffer, src sources.Resolved, disc sources.Discovery,
+	enrichers []transforms.Enricher, budget *int, out *SourceOutcome, rep *Report) error {
+	remaining := disc.Candidates
+	for {
+		batch := disc
+		if o.ForceResend && len(enrichers) > 0 {
+			n, bytes := 0, int64(0)
+			for n < len(remaining) && n < max(1, o.Plan.MaxFilesPerRun) {
+				size := sources.LoadBytes(remaining[n], src.MaxFileBytes)
+				if n > 0 && size > platform.MaxInFlightBytes()-bytes {
+					break
+				}
+				bytes += size
+				n++
+			}
+			batch.Candidates = remaining[:n]
+		} else {
+			batch.Candidates = remaining
+		}
+		passOptions := o
+		if o.Progress != nil {
+			offset := len(disc.Candidates) - len(remaining)
+			passOptions.Progress = func(source string, done, _ int, file FileOutcome) {
+				o.Progress(source, offset+done, len(disc.Candidates), file)
+			}
+		}
+		pass := &sourcePass{o: passOptions, store: store, src: src, disc: batch, rep: rep, out: out,
+			budget: budget, staging: len(enrichers) > 0}
+		o.stages.enter("read and seal")
+		if err := pass.run(ctx); err != nil {
+			return err
+		}
+		staged := pass.stagedUnits()
+		for _, enricher := range enrichers {
+			if len(staged) == 0 && enricher.NeedsUnits() {
+				continue
+			}
+			o.stages.enter("enrich")
+			if err := o.enrichSource(ctx, store, src, enricher, staged, out, rep); err != nil {
+				return err
+			}
+		}
+		remaining = remaining[len(batch.Candidates):]
+		if out.Remaining > 0 {
+			out.Remaining += len(remaining)
+			rep.Remaining += len(remaining)
+			return nil
+		}
+		if len(remaining) == 0 {
+			return nil
+		}
+		if err := store.Flush(); err != nil {
+			return err
+		}
+	}
 }
 
 // enrichSource runs one enricher and ships whatever it derived. A non-nil error is the run's:

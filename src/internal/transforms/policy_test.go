@@ -1,6 +1,8 @@
 package transforms_test
 
 import (
+	"encoding/json"
+	"os"
 	"slices"
 	"testing"
 
@@ -45,5 +47,45 @@ func TestSealPolicyTracksEffectiveScrubbingAndRecipientSets(t *testing.T) {
 				t.Fatal("changed scrub policy kept the same digest")
 			}
 		})
+	}
+}
+
+// A scrub-output change under the same policy would incorrectly reuse forced progress.
+func TestSealPolicyPinsScrubConformanceOutputs(t *testing.T) {
+	raw, err := os.ReadFile(scrubVectorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vectors scrubVectors
+	if err := json.Unmarshal(raw, &vectors); err != nil {
+		t.Fatal(err)
+	}
+	cfg := transforms.DefaultConfig()
+	cfg.Username, cfg.Exemptions = vectors.Username, vectors.Exemptions
+	scrubber, err := transforms.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputs := map[string]string{}
+	for _, vector := range vectors.Vectors {
+		res, err := scrubber.Scrub([]byte(vector.Before), transforms.Hint{Family: vector.Family, JSONL: vector.JSONL})
+		if err != nil {
+			t.Fatal(err)
+		}
+		outputs[vector.Name] = string(res.Out.Bytes())
+	}
+	body, err := json.Marshal(outputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := transforms.SealPolicyDigest(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baselines := map[string]string{
+		"723d85b26761d7e8a8a28cb5080f07c4b267a1f592c4fd28bcf0af69234cdc22": "735afc073b37a38ca2dff0660e1e7dc07e1cc72efbbaa8955d72ee09614d27ca",
+	}
+	if want, ok := baselines[policy]; !ok || want != transforms.Hash(body) {
+		t.Fatalf("scrub conformance changed: policy=%s output=%s; code-only scrub changes must bump Version in policy.go before recording a reviewed baseline", policy, transforms.Hash(body))
 	}
 }

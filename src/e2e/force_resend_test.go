@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"os"
@@ -65,8 +64,8 @@ func TestForceResendAppliesCurrentRecipients(t *testing.T) {
 				t.Fatalf("normal run wrote %d copies", got)
 			}
 			output := runOneShot(t, "--force-resend")
-			wantID := fmt.Sprintf("%x", sha256.Sum256([]byte(bob.Recipient().String())))[:12]
-			if !strings.Contains(output, "sealing to 1 recipient(s)") || !strings.Contains(output, wantID) {
+			wantID := bob.Recipient().String()
+			if !strings.Contains(output, "sealing to 1 recipient(s)") || !strings.Contains(output, wantID) || !strings.Contains(output, "objects forgotten by state pruning or reset cannot be counted") {
 				t.Fatalf("missing recipient confirmation: %s", output)
 			}
 			runOneShot(t, "--force-resend")

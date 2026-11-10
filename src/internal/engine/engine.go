@@ -340,40 +340,10 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 
 		enrichers := o.enrichersFor(src)
 
-		// Staged raw units live in memory for this source's pass only: there is no spool.
-		pass := &sourcePass{
-			o:       o,
-			store:   store,
-			src:     src,
-			disc:    disc,
-			rep:     &rep,
-			out:     &out,
-			budget:  &budget,
-			staging: len(enrichers) > 0,
-		}
-		o.stages.enter("read and seal")
-		if err := pass.run(ctx); err != nil {
-			// A refusal and an unavailable control plane both carry a source outcome worth
-			// reporting; a cancelled context, the only other way this returns, does not.
+		if err := o.runSource(ctx, store, src, disc, enrichers, &budget, &out, &rep); err != nil {
 			if stopsRun(err) {
 				rep.Sources = append(rep.Sources, out)
 			}
-			return rep, err
-		}
-		staged := pass.stagedUnits()
-
-		// Enrichment runs only after every raw unit has shipped: an enricher cannot abort, park or
-		// delay a raw file. A unit-free one runs every flush, gated only by shipDerived's output hash.
-		for _, enricher := range enrichers {
-			if len(staged) == 0 && enricher.NeedsUnits() {
-				continue
-			}
-			o.stages.enter("enrich")
-			err := o.enrichSource(ctx, store, src, enricher, staged, &out, &rep)
-			if err == nil {
-				continue
-			}
-			rep.Sources = append(rep.Sources, out)
 			return rep, err
 		}
 
