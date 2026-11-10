@@ -148,6 +148,11 @@ type FailureRecord struct {
 
 	ConsecutiveFailures int `json:"consecutive_failures,omitempty"`
 
+	// OfflineSince is when the current outage began, empty while online; OfflineCounted says its one
+	// counted failure has been raised. A clean tick clears both; neither leaves the machine.
+	OfflineSince   string `json:"offline_since,omitempty"`
+	OfflineCounted bool   `json:"offline_counted,omitempty"`
+
 	// Overwritten every run, unlike the log above. None of it is a failure; it is what makes one
 	// explicable, and what a machine that is degrading rather than erroring shows first.
 	Facts *RunFacts `json:"facts,omitempty"`
@@ -208,7 +213,7 @@ const (
 	// forever never reaches the judge. Uncounted, and the tick may yet complete.
 	FailureStalled = "tick_stalled"
 
-	// The control plane could not be reached, so the run stopped. Uncounted and standing: the
+	// The control plane or the store gave no answer, so the run stopped. Uncounted and standing: the
 	// machine is off the network, not the shipper broken, and the next online tick ships it all.
 	FailureOffline = "offline"
 )

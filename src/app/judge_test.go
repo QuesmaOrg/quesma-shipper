@@ -466,9 +466,9 @@ func TestAnOfflineTickIsRecordedOnceAndNotCounted(t *testing.T) {
 		t.Errorf("an offline tick moved consecutive_failures to %d", rec.ConsecutiveFailures)
 	}
 
-	// A PUT that failed after the control plane answered reached the network: a failure.
+	// A PUT the store answered with a refusal reached the network: a failure.
 	r.JudgeTick(nil, formats.Report{Failed: 2, Sources: []formats.SourceOutcome{{Files: []formats.FileOutcome{
-		{Decision: formats.DecisionFailed, Reason: "upload: PUT object \"0\": dial tcp: lookup bucket.example: no such host"},
+		{Decision: formats.DecisionFailed, Reason: "upload: PUT object \"0\": object store answered HTTP 403: AccessDenied"},
 	}}}}, false, platform.Delta{})
 	rec = readFailureRecord(dir)
 	if rec.ConsecutiveFailures != 1 || rec.Latest().Kind != formats.FailureTick || len(rec.Recent) != 2 {
@@ -512,20 +512,110 @@ func TestStandingEventsDoNotEvictCountedFailures(t *testing.T) {
 	}
 }
 
-// A run that failed a PUT and then lost the network is a failed run: the earlier failure reached
-
-// the network, and going offline afterwards must not hide it.
-
-func TestAFailureBeforeGoingOfflineStillCounts(t *testing.T) {
+// A tick that ended offline is offline however many uploads failed before it stopped: the field
+// fault that lost a few PUTs and then the network was counted, and paged, as a broken install.
+func TestAnOfflineTickStaysOfflineWhateverFailedBeforeIt(t *testing.T) {
 	dir := t.TempDir()
 	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "0123456789abcdef"}
-	mixed := formats.Report{Failed: 2, Sources: []formats.SourceOutcome{{Files: []formats.FileOutcome{
+	mixed := formats.Report{Failed: 4, Sources: []formats.SourceOutcome{{Files: []formats.FileOutcome{
 		{Decision: formats.DecisionFailed, Reason: "upload: HTTP 403 AccessDenied"},
 	}}}}
 	r.JudgeTick(fmt.Errorf("%w: collection stopped after 1 of 6 files", engine.ErrOffline), mixed, false, platform.Delta{})
 	rec := readFailureRecord(dir)
-	if rec.ConsecutiveFailures != 1 || rec.Latest() == nil || rec.Latest().Kind != formats.FailureTick {
-		t.Fatalf("the AccessDenied before the outage was not counted: %+v", rec)
+	if rec.ConsecutiveFailures != 0 || rec.Latest() == nil || rec.Latest().Kind != formats.FailureOffline {
+		t.Fatalf("an offline tick with earlier failures was judged as %+v", rec)
+	}
+}
+
+// outageClock judges each tick from a fresh runtime, as each tick of a daemon restart would, at
+// hours after t0; nil err is a clean tick.
+type outageClock struct {
+	t   *testing.T
+	dir string
+	t0  time.Time
+}
+
+func (c outageClock) tick(hours float64, err error) formats.FailureRecord {
+	c.t.Helper()
+	return c.judge(hours, err, formats.Report{}, false)
+}
+
+// idle is a tick with nothing to ship whose own heartbeat got no answer.
+func (c outageClock) idle(hours float64) formats.FailureRecord {
+	c.t.Helper()
+	return c.judge(hours, nil, formats.Report{}, true)
+}
+
+func (c outageClock) judge(hours float64, err error, rep formats.Report, unanswered bool) formats.FailureRecord {
+	c.t.Helper()
+	at := c.t0.Add(time.Duration(hours * float64(time.Hour)))
+	r := &Runtime{eff: &config.Effective{StateDir: c.dir}, runID: "0123456789abcdef", now: func() time.Time { return at }}
+	r.heartbeatUnanswered.Store(unanswered)
+	r.JudgeTick(err, rep, false, platform.Delta{})
+	return readFailureRecord(c.dir)
+}
+
+var disconnected = fmt.Errorf("%w: collection stopped after 0 of 2 files: dial tcp: lookup cp.example: no such host", engine.ErrOffline)
+
+func countedEvents(rec formats.FailureRecord) int {
+	n := 0
+	for _, e := range rec.Recent {
+		if e.Counted() {
+			n++
+		}
+	}
+	return n
+}
+
+// A long outage is counted once: at the first tick 24h or more after it began, and never again
+// while it lasts. Anything shorter stays the standing, uncounted offline entry.
+func TestALongOutageIsCountedOnce(t *testing.T) {
+	c := outageClock{t: t, dir: t.TempDir(), t0: time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)}
+	for _, h := range []float64{0, 1, 12, 23.99} {
+		if rec := c.tick(h, disconnected); rec.ConsecutiveFailures != 0 || countedEvents(rec) != 0 {
+			t.Fatalf("%vh into the outage it was counted: %+v", h, rec)
+		}
+	}
+	rec := c.tick(24, disconnected)
+	if rec.ConsecutiveFailures != 1 || countedEvents(rec) != 1 {
+		t.Fatalf("24h into the outage it was not counted once: %+v", rec)
+	}
+	if ev := rec.LatestCounted(); ev.Kind != formats.FailureTick ||
+		!strings.Contains(ev.Message, "2026-11-02T09:00:00Z") || !strings.Contains(ev.Message, "no such host") {
+		t.Errorf("the counted event does not say when the outage began and why: %+v", ev)
+	}
+	for _, h := range []float64{25, 48, 96} {
+		if rec := c.tick(h, disconnected); rec.ConsecutiveFailures != 1 || countedEvents(rec) != 1 {
+			t.Fatalf("%vh into the same outage it was counted again: %+v", h, rec)
+		}
+	}
+}
+
+// A clean tick ends the outage: the next one starts its own 24h, and a recovery inside 24h
+// raises nothing however often it repeats.
+func TestACleanTickEndsTheOutage(t *testing.T) {
+	c := outageClock{t: t, dir: t.TempDir(), t0: time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)}
+	c.tick(0, disconnected)
+	c.tick(30, disconnected)
+	if rec := c.tick(31, nil); rec.ConsecutiveFailures != 0 {
+		t.Fatalf("a clean tick did not reset the streak: %+v", rec)
+	}
+	for _, h := range []float64{40, 50, 63.99} {
+		if rec := c.tick(h, disconnected); rec.ConsecutiveFailures != 0 || countedEvents(rec) != 1 {
+			t.Fatalf("%vh, %vh into a new outage, counted it early: %+v", h, h-40, rec)
+		}
+	}
+	if rec := c.tick(64, disconnected); rec.ConsecutiveFailures != 1 || countedEvents(rec) != 2 {
+		t.Fatalf("24h into the second outage it was not counted: %+v", rec)
+	}
+
+	short := outageClock{t: t, dir: t.TempDir(), t0: c.t0}
+	for day := 0.0; day < 5; day++ {
+		short.tick(day*24, disconnected)
+		short.tick(day*24+20, disconnected)
+		if rec := short.tick(day*24+21, nil); countedEvents(rec) != 0 {
+			t.Fatalf("outages shorter than 24h were counted: %+v", rec)
+		}
 	}
 }
 
@@ -543,5 +633,55 @@ func TestAStallNamesTheStageTheRunIsIn(t *testing.T) {
 	r.noteStep("", "")
 	if r.currentStep() != "" {
 		t.Fatal("the step did not clear between runs")
+	}
+}
+
+// An idle tick whose heartbeat got no answer proves nothing about the outage, so it does not end
+// it; one that shipped a file does.
+func TestAnIdleUnansweredTickDoesNotEndTheOutage(t *testing.T) {
+	c := outageClock{t: t, dir: t.TempDir(), t0: time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)}
+	c.tick(0, disconnected)
+	for h := 1.0; h < 24; h++ {
+		if rec := c.idle(h); rec.OfflineSince != "2026-11-02T09:00:00Z" || countedEvents(rec) != 0 {
+			t.Fatalf("an idle unanswered tick at %vh moved the outage: %+v", h, rec)
+		}
+	}
+	if rec := c.tick(24, disconnected); rec.ConsecutiveFailures != 1 || countedEvents(rec) != 1 {
+		t.Fatalf("24h into an outage of idle ticks it was not counted once: %+v", rec)
+	}
+
+	shipped := outageClock{t: t, dir: t.TempDir(), t0: c.t0}
+	shipped.tick(0, disconnected)
+	if rec := shipped.judge(1, nil, formats.Report{Shipped: 1}, true); rec.OfflineSince != "" {
+		t.Fatalf("a tick that shipped did not end the outage: %+v", rec)
+	}
+}
+
+// A start that cannot be read, or lies in the future after a clock correction, restarts the
+// outage, including a count already raised for it.
+func TestABadOutageStartRestartsTheClock(t *testing.T) {
+	t0 := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	for name, since := range map[string]string{"garbage": "garbage", "future": "2027-11-02T09:00:00Z"} {
+		c := outageClock{t: t, dir: t.TempDir(), t0: t0}
+		if err := writeFailureRecord(c.dir, formats.FailureRecord{OfflineSince: since, OfflineCounted: true}); err != nil {
+			t.Fatal(err)
+		}
+		if rec := c.tick(0, disconnected); rec.OfflineSince != "2026-11-02T09:00:00Z" || rec.OfflineCounted {
+			t.Fatalf("%s: the outage clock did not restart: %+v", name, rec)
+		}
+		if rec := c.tick(24, disconnected); countedEvents(rec) != 1 {
+			t.Fatalf("%s: the restarted outage was not counted at 24h: %+v", name, rec)
+		}
+	}
+}
+
+// The outage clock stays in last-failure.json: the heartbeat carries the record without it.
+func TestTheOutageClockStaysOffTheHeartbeat(t *testing.T) {
+	c := outageClock{t: t, dir: t.TempDir(), t0: time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)}
+	c.tick(0, disconnected)
+	c.tick(24, disconnected)
+	r := &Runtime{eff: &config.Effective{StateDir: c.dir}}
+	if rec := r.failureRecord(); rec.OfflineSince != "" || rec.OfflineCounted || rec.ConsecutiveFailures != 1 {
+		t.Fatalf("the heartbeat's record carries the outage clock: %+v", rec)
 	}
 }

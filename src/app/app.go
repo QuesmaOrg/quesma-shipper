@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -82,6 +83,13 @@ type Runtime struct {
 	// heartbeat still carries the judgement; a successful write drops it.
 	recMu sync.Mutex
 	rec   *formats.FailureRecord
+
+	// now is the judge's clock for outages; nil is the wall clock. A field so a test can move it.
+	now func() time.Time
+
+	// heartbeatUnanswered says this tick's own heartbeat got no answer, so a tick that shipped
+	// nothing did not prove the outage over.
+	heartbeatUnanswered atomic.Bool
 
 	// lastRep is the last completed tick's report, reused by the stall heartbeat so a stalled
 	// install does not blank its own per-source health. Judge writes it, the next tick's watchdog
@@ -264,6 +272,7 @@ func (r *Runtime) Drain(ctx context.Context) (formats.Report, bool, error) {
 }
 
 func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (formats.Report, error) {
+	r.heartbeatUnanswered.Store(false)
 	if err := r.revocation(); err != nil {
 		notifyRevocation(r.eff.StateDir)
 		return formats.Report{}, err
@@ -286,7 +295,11 @@ func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (format
 
 	o := r.options(dryRun)
 	o.Unbounded = unbounded
-	o.Heartbeat = r.WriteHeartbeat
+	o.Heartbeat = func(ctx context.Context, rep formats.Report) error {
+		err := r.WriteHeartbeat(ctx, rep)
+		r.heartbeatUnanswered.Store(errors.Is(err, engine.ErrOffline))
+		return err
+	}
 	rep, err := engine.Run(ctx, store, o)
 	if revoked := r.revocation(); revoked != nil {
 		notifyRevocation(r.eff.StateDir)
@@ -375,7 +388,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 	}
 	// The heartbeat goes down the trajectory path exactly: one authorization, the same validation,
 	// the same PUT. No second way to reach the store, which a revocation would have to learn about.
-	outcomes := r.upload.AuthorizeAndUpload(ctx, []engine.PreparedObject{{
+	outcomes := r.upload.AuthorizeAndUpload(context.WithValue(ctx, singleAttempt{}, true), []engine.PreparedObject{{
 		ObjectID:   "heartbeat",
 		Key:        key,
 		Body:       sealed,

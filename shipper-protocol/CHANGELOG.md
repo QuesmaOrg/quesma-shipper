@@ -8,6 +8,14 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
 
 ### Changed
 
+- The shipper resends an upload authorization or a PUT once, after about one second, when no
+  complete HTTP response arrived (DNS, connect, TLS handshake, reset, timeout, a 2xx body cut
+  short). A second silence stops the run's uploads as offline. HTTP statuses are still never
+  retried, and the heartbeat stays one attempt. A server can see each authorization and PUT twice
+  where it saw it once, so up to four of each naming one object per run when a ticket also
+  expires (was two); PUTs were already unconditional onto a versioned bucket. No schema or fixture
+  bytes change.
+
 - Document the existing `403` body `this install is revoked` as the stable install-revocation
   signal on device-authenticated calls. Other 403s do not revoke an install locally. No response,
   schema or fixture bytes change.

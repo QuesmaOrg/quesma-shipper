@@ -39,7 +39,7 @@ type fileResult struct {
 	pending *pendingPut
 
 	// unavailable stops this run's uploads without outcome.Fatal's permanent-kill meaning; offline
-	// says why: the control plane could not be reached at all.
+	// says why: the control plane or the store did not answer at all.
 	unavailable bool
 	offline     bool
 	loadWarning string

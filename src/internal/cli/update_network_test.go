@@ -1,8 +1,8 @@
 package cli
 
-// Pins what the boot-time self-update records today when the network fails under it (field fault
-// F3). The real path runs from maybeSelfUpdate through go-tuf over real sockets; only
-// http.DefaultTransport is swapped, to reach a local TLS "CDN" posing as updates.quesma.dev.
+// Pins what the boot-time self-update records when the network fails under it (field fault F3): no
+// answer is the machine offline, said on stderr only. The real path runs from maybeSelfUpdate through
+// go-tuf over real sockets; only http.DefaultTransport is swapped, to reach a local TLS "CDN".
 
 import (
 	"context"
@@ -325,8 +325,8 @@ func assertSuppressed(t *testing.T, stateDir, stderr string, want ...string) {
 	}
 }
 
-// F3's classification: a reset under a TUF fetch body (metadata; the target download needs the release keys).
-func TestSelfUpdateConnectionResetMidBodyIsRecorded(t *testing.T) {
+// F3: a reset under a TUF fetch body (metadata; the target download needs the release keys).
+func TestSelfUpdateConnectionResetMidBodyIsSuppressedAsOffline(t *testing.T) {
 	build, stateDir := releaseDaemon(t)
 	cdn := newUpdateCDN(t, resetMidBody(t))
 	useTransport(t, cdn.transport())
@@ -339,11 +339,11 @@ func TestSelfUpdateConnectionResetMidBodyIsRecorded(t *testing.T) {
 	assertMidBody(t, err)
 
 	stderr := runSelfUpdate(context.Background(), build)
-	assertRecorded(t, stateDir, stderr, "refreshing TUF metadata: read tcp ", resetText)
+	assertSuppressed(t, stateDir, stderr, "refreshing TUF metadata: read tcp ", resetText)
 }
 
-// A body that stops arriving holds the update until a deadline, and the deadline is recorded.
-func TestSelfUpdateStalledBodyIsRecordedAtTheDeadline(t *testing.T) {
+// A body that stops arriving holds the update until a deadline, which is no answer: suppressed.
+func TestSelfUpdateStalledBodyIsSuppressedAtTheDeadline(t *testing.T) {
 	build, stateDir := releaseDaemon(t)
 	released := make(chan struct{})
 	cdn := newUpdateCDN(t, stallMidBody(t, released, nil))
@@ -359,14 +359,45 @@ func TestSelfUpdateStalledBodyIsRecordedAtTheDeadline(t *testing.T) {
 	}
 	assertMidBody(t, err)
 	// What the field sees when that internal deadline fires under a live daemon context.
-	if _, record := updateFailure(context.Background(), faultedVersion, err); !record {
-		t.Fatalf("a stalled update under a live context was suppressed: %v", err)
+	if _, record := updateFailure(context.Background(), faultedVersion, err); record {
+		t.Fatalf("a stalled update under a live context was recorded: %v", err)
 	}
 
-	ctx, cancel = context.WithTimeout(context.Background(), 300*time.Millisecond)
-	defer cancel()
-	stderr := runSelfUpdate(ctx, build)
-	assertRecorded(t, stateDir, stderr, "refreshing TUF metadata: context deadline exceeded")
+	// The request's own deadline stands in for the internal one, so the daemon context stays live.
+	useTransport(t, requestDeadline{cdn.transport(), 300 * time.Millisecond})
+	stderr := runSelfUpdate(context.Background(), build)
+	assertSuppressed(t, stateDir, stderr, "refreshing TUF metadata: context deadline exceeded")
+}
+
+// requestDeadline bounds each request, body read included, without touching the caller's context.
+type requestDeadline struct {
+	http.RoundTripper
+	after time.Duration
+}
+
+func (d requestDeadline) RoundTrip(req *http.Request) (*http.Response, error) {
+	ctx, cancel := context.WithTimeout(req.Context(), d.after)
+	resp, err := d.RoundTripper.RoundTrip(req.WithContext(ctx))
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	resp.Body = cancelOnClose{resp.Body, cancel}
+	return resp, nil
+}
+
+func (d requestDeadline) CloseIdleConnections() {
+	d.RoundTripper.(interface{ CloseIdleConnections() }).CloseIdleConnections()
+}
+
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c cancelOnClose) Close() error {
+	defer c.cancel()
+	return c.ReadCloser.Close()
 }
 
 // A CDN answering 503 is a reachable far end: recorded, with go-tuf's status wording.

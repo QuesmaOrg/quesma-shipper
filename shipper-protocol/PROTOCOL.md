@@ -109,9 +109,15 @@ Golden headers, the seed key that produced them, and a set of must-reject cases 
 | 5xx | server-side failure | show the reason; the cached config keeps working |
 
 The client makes one attempt per protocol call with a bounded timeout. Upload authorization
-batches are retried only by a later run. One exception: a clearly expired PUT ticket may be
-reauthorized once for the same prepared object. A backend that never answers costs one timeout,
-not a tick.
+batches are retried only by a later run. Two exceptions. A clearly expired PUT ticket may be
+reauthorized once for the same prepared object. An upload authorization or a PUT for the run's
+objects that got no complete HTTP response (DNS, connect, TLS handshake, reset, timeout, a 2xx
+body cut short) is sent once more after about one second; if that also gets none, the run stops
+its uploads and is recorded as offline, not as a failure, until the outage has lasted 24h, when it
+counts once. Any other HTTP status is final for the run, and the heartbeat stays one attempt.
+Together the two allow at most four authorizations and four PUTs naming one object per run. A
+backend that never answers costs two timeouts, not a tick. (Amended 2026-11-10: was no retry at
+all.)
 
 ## Flows
 
@@ -459,7 +465,7 @@ deployment default.
 | upload ticket | 300s initial policy | server-controlled; URLs are bearer capabilities and are not cached beyond the prepared batch |
 | upload authorization freshness | 5m old, 1m future | checked against request `issued_at` after signature verification |
 | upload authorization batch | 32 objects, 1 GiB each and aggregate | shipper targets 64 MiB normally; server enforces the hard ceilings |
-| HTTP attempts | 1, 30s timeout | shipper constant; no retry, no backoff |
+| HTTP attempts | 1, 30s timeout; an object's authorize and PUT get a 2nd after ~1s when no response arrived | shipper constant; no backoff |
 | request body cap | 1 MiB | server-side read limit |
 | response body cap | 4 MiB | shipper constant |
 | invite TTL | 24h | single use; an identical completed request is idempotent; changed enrollment material is refused |
