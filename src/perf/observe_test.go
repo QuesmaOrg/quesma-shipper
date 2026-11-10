@@ -73,12 +73,13 @@ func (o childObservation) Killed() bool {
 
 // The wall clock covers the whole process, startup included: skipping it would flatter every
 // steady-state result.
-func (w *world) observedSync(t *testing.T) childObservation {
+func (w *world) observedSync(t *testing.T, args ...string) childObservation {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 	defer cancel()
 
 	argv := append(slices.Clone(w.launcher), w.binary, "run", "--once")
+	argv = append(argv, args...)
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = w.childEnv()
 	var out bytes.Buffer

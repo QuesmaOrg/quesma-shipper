@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
@@ -45,6 +46,59 @@ func (o Options) enrichersFor(src sources.Resolved) []transforms.Enricher {
 		out = append(out, e)
 	}
 	return out
+}
+
+// Forced enrichment drains bounded slices, committing each before releasing its raw bytes.
+func (p *sourcePass) runEnriched(ctx context.Context, enrichers []transforms.Enricher) error {
+	remaining := p.disc.Candidates
+	for {
+		batch := *p
+		batch.disc.Candidates = remaining
+		if p.o.ForceResend && p.staging {
+			n, bytes := 0, int64(0)
+			for n < len(remaining) && n < max(1, p.o.Plan.MaxFilesPerRun) {
+				size := sources.LoadBytes(remaining[n], p.src.MaxFileBytes)
+				if n > 0 && size > platform.MaxInFlightBytes()-bytes {
+					break
+				}
+				bytes += size
+				n++
+			}
+			batch.disc.Candidates = remaining[:n]
+		}
+		if p.o.Progress != nil {
+			offset := len(p.disc.Candidates) - len(remaining)
+			batch.o.Progress = func(source string, done, _ int, file FileOutcome) {
+				p.o.Progress(source, offset+done, len(p.disc.Candidates), file)
+			}
+		}
+		p.o.stages.enter("read and seal")
+		if err := batch.run(ctx); err != nil {
+			return err
+		}
+		staged := batch.stagedUnits()
+		for _, enricher := range enrichers {
+			if len(staged) == 0 && enricher.NeedsUnits() {
+				continue
+			}
+			p.o.stages.enter("enrich")
+			if err := p.o.enrichSource(ctx, p.store, p.src, enricher, staged, p.out, p.rep); err != nil {
+				return err
+			}
+		}
+		remaining = remaining[len(batch.disc.Candidates):]
+		if p.out.Remaining > 0 {
+			p.out.Remaining += len(remaining)
+			p.rep.Remaining += len(remaining)
+			return nil
+		}
+		if len(remaining) == 0 {
+			return nil
+		}
+		if err := p.store.Flush(); err != nil {
+			return err
+		}
+	}
 }
 
 // enrichSource runs one enricher and ships whatever it derived. A non-nil error is the run's:
@@ -212,7 +266,7 @@ func (o Options) prepareDerived(
 	fp, seen := store.Get(key)
 
 	// Determinism supplies the change signal: an unchanged output hash means nothing to upload.
-	if seen && fp.OutputHash == d.OutputHash && fp.SourceHash != "" {
+	if o.policySatisfied(fp) && seen && fp.OutputHash == d.OutputHash && fp.SourceHash != "" {
 		fo.Decision = auditlog.DecisionUnchanged
 		fo.Reason = "enricher output hash unchanged"
 		return fo, nil
@@ -285,6 +339,7 @@ func (o Options) prepareDerived(
 		md: sealed.ObjectMetadata(),
 		next: Fingerprint{
 			SourceHash: sourceHash,
+			SealPolicy: o.sealPolicy,
 			OutputHash: d.OutputHash,
 			Enricher:   ref,
 		},

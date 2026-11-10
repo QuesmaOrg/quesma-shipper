@@ -38,6 +38,8 @@ var wireSchemas = []string{
 	"config-document.schema.json",
 	"v2/uploads-authorize-request.schema.json",
 	"v2/uploads-authorize-response.schema.json",
+	"v3/uploads-authorize-request.schema.json",
+	"v3/uploads-authorize-response.schema.json",
 }
 
 func compileWireSchema(t *testing.T, name string) *jsonschema.Schema {
@@ -250,7 +252,7 @@ func fixtureSchema(path string) string {
 	case "config":
 		return "config-" + kind + ".schema.json"
 	case "uploads-authorize":
-		return "v2/uploads-authorize-" + kind + ".schema.json"
+		return pathpkg.Base(pathpkg.Dir(pathpkg.Dir(path))) + "/uploads-authorize-" + kind + ".schema.json"
 	}
 	return ""
 }
@@ -303,6 +305,8 @@ func TestFixturesRoundTripStructs(t *testing.T) {
 
 		"v2/uploads-authorize-request.schema.json":  func() any { return &controlplane.AuthorizeRequest{} },
 		"v2/uploads-authorize-response.schema.json": func() any { return &controlplane.AuthorizeResponse{} },
+		"v3/uploads-authorize-request.schema.json":  func() any { return &controlplane.AuthorizeRequest{} },
+		"v3/uploads-authorize-response.schema.json": func() any { return &controlplane.AuthorizeResponse{} },
 	}
 	for _, path := range wireFixtures(t) {
 		schema := fixtureSchema(path)
