@@ -5,6 +5,7 @@
 package packs
 
 import (
+	"crypto/sha256"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,30 @@ const (
 
 // HeuristicPacks are the low-confidence packs; the engine checks exemptions first.
 var HeuristicPacks = []string{GenericEntropy}
+
+// Digest hashes parsed rules, so checkout formatting cannot invalidate resend progress.
+func Digest(pack string) (string, error) {
+	if slices.Contains(HeuristicPacks, pack) {
+		return pack, nil
+	}
+	raw, err := corpora.ReadFile("data/" + pack + ".json")
+	if err != nil {
+		return "", err
+	}
+	return digestRules(raw)
+}
+
+func digestRules(raw []byte) (string, error) {
+	var c corpus
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return "", err
+	}
+	canonical, err := json.Marshal(c)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(canonical)), nil
+}
 
 // Span is one matched byte range; the engine's transforms.Span is an alias of it.
 type Span struct {

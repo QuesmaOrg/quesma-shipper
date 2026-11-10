@@ -176,6 +176,7 @@ func TestSchemaFixtures(t *testing.T) {
 		{"v1 enroll", "fixtures/v1/enroll/*.json", "schemas/enroll-request.schema.json", "schemas/enroll-response.schema.json"},
 		{"v1 config", "fixtures/v1/config/*.json", "schemas/config-request.schema.json", "schemas/config-response.schema.json"},
 		{"v2 upload authorization", "fixtures/v2/uploads-authorize/*.json", "schemas/v2/uploads-authorize-request.schema.json", "schemas/v2/uploads-authorize-response.schema.json"},
+		{"v3 forced upload authorization", "fixtures/v3/uploads-authorize/*.json", "schemas/v3/uploads-authorize-request.schema.json", "schemas/v3/uploads-authorize-response.schema.json"},
 	}
 
 	for _, tc := range tests {

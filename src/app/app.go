@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -74,6 +75,9 @@ type Runtime struct {
 	// OnLocked runs once a flush holds the store lock. The lock is non-blocking, so a verb resets a
 	// per-run artifact from here, not at startup, where it would reset another's.
 	OnLocked func()
+
+	// ForceResend is local to an explicit one-shot run, never served configuration.
+	ForceResend bool
 
 	// runID and lastCrash come from the CLI's crash journal; audit entries and heartbeats carry them.
 	runID     string
@@ -210,19 +214,20 @@ func recipientsFor(eff *config.Effective, unit *identity.Unit) ([]age.Recipient,
 
 func (r *Runtime) options(dryRun bool) engine.Options {
 	return engine.Options{
-		Plan:       planFor(r.eff),
-		Identity:   r.unit,
-		Upload:     r.upload,
-		Log:        r.log,
-		Registry:   sources.NewRegistry(),
-		Enrichers:  Enrichers(),
-		Env:        r.env,
-		Recipients: r.recipients,
-		DryRun:     dryRun,
-		Client:     clientBlock(),
-		Progress:   r.OnProgress,
-		RunID:      r.runID,
-		Step:       r.noteStep,
+		Plan:        planFor(r.eff),
+		Identity:    r.unit,
+		Upload:      r.upload,
+		Log:         r.log,
+		Registry:    sources.NewRegistry(),
+		Enrichers:   Enrichers(),
+		Env:         r.env,
+		Recipients:  r.recipients,
+		DryRun:      dryRun,
+		ForceResend: r.ForceResend,
+		Client:      clientBlock(),
+		Progress:    r.OnProgress,
+		RunID:       r.runID,
+		Step:        r.noteStep,
 	}
 }
 
@@ -273,6 +278,11 @@ func (r *Runtime) Drain(ctx context.Context) (formats.Report, bool, error) {
 
 func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (formats.Report, error) {
 	r.heartbeatUnanswered.Store(false)
+	if r.ForceResend {
+		if err := r.checkForceResend(); err != nil {
+			return formats.Report{}, err
+		}
+	}
 	if err := r.revocation(); err != nil {
 		notifyRevocation(r.eff.StateDir)
 		return formats.Report{}, err
@@ -315,6 +325,27 @@ func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (format
 		}
 	}
 	return rep, err
+}
+
+func (r *Runtime) checkForceResend() error {
+	if r.remote.Origin != controlplane.OriginFetched || r.remote.Expired {
+		return fmt.Errorf("force resend requires freshly fetched, unexpired served configuration; retry when Fleet Manager is reachable (origin=%s, expired=%t): %v",
+			r.remote.Origin, r.remote.Expired, r.remote.Err)
+	}
+	return nil
+}
+
+// ForceResendRecipients validates the refresh and identifies the actual recipients before any PUT.
+func (r *Runtime) ForceResendRecipients() ([]string, error) {
+	if err := r.checkForceResend(); err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, recipient := range r.recipients {
+		ids = append(ids, fmt.Sprint(recipient))
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids), nil
 }
 
 // WriteHeartbeat publishes discovery health as an install-owned state object: under state/ but

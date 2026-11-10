@@ -240,13 +240,13 @@ jobs:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
 
-      - uses: apple-actions/import-codesign-certs@77ba2a2a8f5cfc8c405ebf3159f767c323e238f9 # v7.1.0
+      - uses: apple-actions/import-codesign-certs@288b8ec97b82c66b6f2a6baaf7acc8dfbcbe331c # v7.2.0
         id: application-certificate
         with:
           p12-file-base64: ${{ secrets.MACOS_APPLICATION_CERT_P12_B64 }}
           p12-password: ${{ secrets.MACOS_APPLICATION_CERT_P12_PASSWORD }}
 
-      - uses: apple-actions/import-codesign-certs@77ba2a2a8f5cfc8c405ebf3159f767c323e238f9 # v7.1.0
+      - uses: apple-actions/import-codesign-certs@288b8ec97b82c66b6f2a6baaf7acc8dfbcbe331c # v7.2.0
         with:
           keychain: signing_temp
           create-keychain: false

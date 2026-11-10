@@ -309,6 +309,9 @@ type Report struct {
 	Parked    int
 	Failed    int
 
+	// ResendOutstanding counts remembered uploads lacking a confirmed PUT under this forced policy.
+	ResendOutstanding int
+
 	// Truncated is true when max_files_per_run cut the run short.
 	Truncated bool
 

@@ -46,6 +46,10 @@ type Options struct {
 	// DryRun reads, scrubs and seals but neither uploads nor commits. This is `preview`.
 	DryRun bool
 
+	// ForceResend requires a PUT unless unchanged content already completed this seal policy.
+	ForceResend bool
+	sealPolicy  string
+
 	// Enrichers is the compiled registry. Nil disables enrichment, and a source declaring one
 	// is then refused rather than silently collected raw-only.
 	Enrichers *transforms.Registry
@@ -199,6 +203,32 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 	// gate: a paused tick must stay cheap. The compiled scrubber is immutable, so every pass's
 	// goroutines share it; a compile failure still parks each candidate.
 	o.scrub, o.scrubErr = o.scrubber()
+	var policies map[string]string
+	if o.ForceResend {
+		base, err := transforms.SealPolicyDigest(o.scrubConfig(), o.Recipients)
+		if err != nil {
+			return rep, err
+		}
+		policies = make(map[string]string, len(o.Plan.Sources))
+		for _, src := range o.Plan.Sources {
+			policies[src.ID] = transforms.Hash([]byte(fmt.Sprintf("%s\n%s\n%s\n%t", base,
+				src.SpecFingerprint, src.Family, src.Scrub == nil || *src.Scrub)))
+		}
+		previous := make([]Key, 0, st.Len())
+		for k, fp := range st.entries {
+			if fp.SourceHash != "" {
+				previous = append(previous, k)
+			}
+		}
+		defer func() {
+			for _, k := range previous {
+				fp, ok := store.Get(k)
+				if !ok || fp.SealPolicy == "" || fp.SealPolicy != policies[k.SourceID] {
+					rep.ResendOutstanding++
+				}
+			}
+		}()
+	}
 
 	budget := o.Plan.MaxFilesPerRun
 	if o.Unbounded {
@@ -207,6 +237,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 	}
 
 	for _, src := range o.Plan.Sources {
+		o.sealPolicy = policies[src.ID]
 		if ctx.Err() != nil {
 			return rep, ctx.Err()
 		}
@@ -309,46 +340,18 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 
 		enrichers := o.enrichersFor(src)
 
-		// Staged raw units live in memory for this source's pass only: there is no spool.
-		pass := &sourcePass{
-			o:       o,
-			store:   store,
-			src:     src,
-			disc:    disc,
-			rep:     &rep,
-			out:     &out,
-			budget:  &budget,
-			staging: len(enrichers) > 0,
-		}
-		o.stages.enter("read and seal")
-		if err := pass.run(ctx); err != nil {
-			// A refusal and an unavailable control plane both carry a source outcome worth
-			// reporting; a cancelled context, the only other way this returns, does not.
+		pass := sourcePass{o: o, store: store, src: src, disc: disc, rep: &rep, out: &out,
+			budget: &budget, staging: len(enrichers) > 0}
+		if err := pass.runEnriched(ctx, enrichers); err != nil {
 			if stopsRun(err) {
 				rep.Sources = append(rep.Sources, out)
 			}
 			return rep, err
 		}
-		staged := pass.stagedUnits()
-
-		// Enrichment runs only after every raw unit has shipped: an enricher cannot abort, park or
-		// delay a raw file. A unit-free one runs every flush, gated only by shipDerived's output hash.
-		for _, enricher := range enrichers {
-			if len(staged) == 0 && enricher.NeedsUnits() {
-				continue
-			}
-			o.stages.enter("enrich")
-			err := o.enrichSource(ctx, store, src, enricher, staged, &out, &rep)
-			if err == nil {
-				continue
-			}
-			rep.Sources = append(rep.Sources, out)
-			return rep, err
-		}
 
 		// Forget files this source no longer has. Only a source that COLLECTED and returned
 		// candidates proves absence, so a run the budget truncated forgets nothing.
-		if !o.DryRun && out.Health == sources.Collected && len(disc.Candidates) > 0 && out.Remaining == 0 {
+		if !o.DryRun && !o.ForceResend && out.Health == sources.Collected && len(disc.Candidates) > 0 && out.Remaining == 0 {
 			live := make(map[string]bool, len(disc.Candidates))
 			for _, c := range disc.Candidates {
 				live[KeyOf(src.ID, c).ID] = true
@@ -499,13 +502,17 @@ func (t *stageTracker) refresh() {
 }
 
 func (o Options) scrubber() (*transforms.Scrubber, error) {
+	return transforms.New(o.scrubConfig())
+}
+
+func (o Options) scrubConfig() transforms.Config {
 	cfg := transforms.DefaultConfig()
 	cfg.RulePacks = o.Plan.RulePacks
 	// Additive: configuration can only lengthen the compiled default list, never replace it.
 	cfg.SecretKeyNames = append(cfg.SecretKeyNames, o.Plan.SecretKeyNames...)
 	cfg.Exemptions = o.Plan.StructuralEx
 	cfg.Username = o.user
-	return transforms.New(cfg)
+	return cfg
 }
 
 // orgOf is the organization= key segment, always the RESOLVED value: a hardcoded "default" splits

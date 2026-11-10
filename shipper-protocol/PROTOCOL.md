@@ -2,7 +2,8 @@
 
 This document is the contract for the machine protocol between Quesma Shipper (the shipper) and
 its control plane. The JSON Schemas in [`schemas/`](schemas/) define every message shape. The
-fixtures in [`fixtures/v1/`](fixtures/v1/) and [`fixtures/v2/`](fixtures/v2/) are golden payloads.
+fixtures in [`fixtures/v1/`](fixtures/v1/), [`fixtures/v2/`](fixtures/v2/) and
+[`fixtures/v3/`](fixtures/v3/) are golden payloads.
 Both peers import this module and run contract tests against these assets; in the
 quesma-shipper repository they build against this directory in place. The schemas, fixtures, and
 tests express this document in executable form. Change them together when the protocol changes.
@@ -41,7 +42,7 @@ in a consumer.
 
 ## Endpoints
 
-The machine protocol is three POST endpoints across two frozen protocol versions. Other routes the
+The machine protocol is four POST endpoints across three protocol versions. Other routes the
 service serves, such as `GET /healthz` and the dashboard, are not part of this contract. The
 shipper binary comes from the shipper's TUF update repository, not from the service.
 
@@ -50,6 +51,7 @@ shipper binary comes from the shipper's TUF update repository, not from the serv
 | `POST /v1/enroll` | invite or grant in the body | [enroll-request](schemas/enroll-request.schema.json) | [enroll-response](schemas/enroll-response.schema.json) |
 | `POST /v1/config` | `Shipper-Device` signature | [config-request](schemas/config-request.schema.json) | [config-response](schemas/config-response.schema.json) |
 | `POST /v2/uploads/authorize` | domain-separated `Shipper-Device` signature | [uploads-authorize-request](schemas/v2/uploads-authorize-request.schema.json) | [uploads-authorize-response](schemas/v2/uploads-authorize-response.schema.json) |
+| `POST /v3/uploads/authorize` | domain-separated `Shipper-Device` signature | [forced uploads request](schemas/v3/uploads-authorize-request.schema.json) | [forced uploads response](schemas/v3/uploads-authorize-response.schema.json) |
 
 All requests and responses are `application/json`. Error responses are plain text. The body is a
 human-readable reason, not JSON.
@@ -424,6 +426,35 @@ configured. When unpinned, the origin must be https, and the exact-key check acc
 addressing spelling. The shipper never follows redirects. HTTP 200 is the only successful PUT
 status in protocol v2. The heartbeat uses the same writer, endpoint, validation, uploader, and
 timeout policy as mirror objects.
+
+## V3 forced upload authorization
+
+`POST /v3/uploads/authorize` is an explicit replacement request, used by a local one-shot
+`run --once --force-resend`. Its request adds the required `force_resend: true` to the v2
+descriptor batch. Missing, false or non-boolean values are rejected. The v2 endpoint still
+rejects this field; its request and response contracts are unchanged.
+
+The signing input is the exact prefix below followed immediately by the request body:
+
+```text
+trajectory-shipper-upload-authorize-v3\nPOST\n/v3/uploads/authorize\n
+```
+
+All v2 authentication, freshness, enrollment, install-root, key, metadata, size, batch and ticket
+validation rules apply. The only decision bypassed is the stored-hash probe: every accepted object
+gets a PUT ticket even when the archive already holds matching hashes. A successful v3 response
+never contains `already_present`. Clients reject that answer rather than committing local progress.
+Data goes directly from shipper to the sink; the control plane keeps no resend job or progress.
+
+Normal runs continue to use v2. An unsupported v3 endpoint is a force-resend failure with an upgrade
+diagnostic; the client never retries the request as v2. Deploy server support before using the flag.
+No configuration field or Fleet Manager UI control is introduced.
+
+Forced runs reread available, enabled sources with current scrub and encryption settings, including
+derived outputs, regardless of local stat/content fingerprints or backoff. They keep pause, exclusions,
+size limits, encryption, ticket validation and local locking. Progress commits only after a confirmed
+PUT. The operation is one bounded pass, not a persistent job: rerunning it repeats successful files as
+well as retrying failures. It does not erase earlier bucket versions or recover deleted source files.
 
 ## Compatibility rules
 
