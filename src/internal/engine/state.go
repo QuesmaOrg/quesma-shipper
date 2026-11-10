@@ -71,6 +71,9 @@ type Fingerprint struct {
 	SourceMTime time.Time
 	SourceHash  string
 
+	// SealPolicy records a confirmed forced PUT; normal deduplication never consults it.
+	SealPolicy string
+
 	// Derived entries only.
 	Enricher   *EnricherRef
 	OutputHash string
@@ -340,6 +343,7 @@ type wireEntry struct {
 	SourceMTime  string       `json:"source_mtime,omitempty"`
 	Attempts     int          `json:"attempts,omitempty"`
 	SourceHash   string       `json:"source_hash,omitempty"`
+	SealPolicy   string       `json:"seal_policy,omitempty"`
 	Enricher     *EnricherRef `json:"enricher,omitempty"`
 	OutputHash   string       `json:"output_hash,omitempty"`
 	Parked       bool         `json:"parked,omitempty"`
@@ -366,6 +370,7 @@ func encode(installID string, updatedAt time.Time, specs map[string]string, entr
 			NativePath: observedPath(k, fp),
 			SourceSize: fp.SourceSize,
 			SourceHash: fp.SourceHash,
+			SealPolicy: fp.SealPolicy,
 			OutputHash: fp.OutputHash,
 			Attempts:   fp.Attempts,
 			Parked:     fp.Parked,
@@ -466,6 +471,7 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 		fp := Fingerprint{
 			SourceSize: e.SourceSize,
 			SourceHash: e.SourceHash,
+			SealPolicy: e.SealPolicy,
 			OutputHash: e.OutputHash,
 			Attempts:   e.Attempts,
 			Parked:     e.Parked,
