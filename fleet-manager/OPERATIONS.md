@@ -28,10 +28,58 @@ a public endpoint. Object storage must resolve to the same hostname for Fleet Ma
 developer machine. This error passes the `doctor` check and only shows when nothing arrives in the
 bucket.
 
-**The age recipients are fixed when the organization is created.** Files are encrypted to the
-recipients registered at the time of upload. Changing the recipients later does not re-encrypt
-existing files, even after a shipper's `state reset`: upload deduplication writes a new version of a
-stored file only when its scrubbed bytes changed, for example after a scrub-rule change.
+**Files are sealed to the recipients in force at upload.** Changing the recipients later does
+not re-encrypt existing files during normal runs, even after a shipper's `state reset`: upload
+deduplication still skips a matching original file and scrubbed payload.
+
+To re-encrypt from source on one enrolled machine **without a custodian decryption identity**,
+first upgrade Fleet Manager to support `/v3/uploads/authorize`, then run locally:
+
+```sh
+quesma-shipper run --once --force-resend
+```
+
+The command requires a successful, unexpired served-config fetch during this invocation. It refuses
+cached or missing configuration even if upload authorization works. Before uploading it prints the
+recipient count and age public keys. Check these against the intended readers. Fleet Manager logs
+each authorized forced batch with the install ID and object count. Forced uploads use v3; an older server returns
+an upgrade error. Normal uploads and heartbeats continue using v2.
+
+A successful forced PUT records a digest of the recipient set and scrub policy in the local
+fingerprint. Retrying the same policy skips unchanged files already completed, including derived
+outputs; a changed policy or changed content uploads again. Missing digests require one forced PUT.
+Ordinary runs keep their existing duplicate detection and do not initiate a policy-driven resend.
+The fleet-wide trigger remains separate work in [#77](https://github.com/QuesmaOrg/quesma-shipper/issues/77).
+There is no remote resend setting, UI action, or stored resend job.
+
+Each attempt drains beyond `max_files_per_run`, bounded by `drain_deadline` (5 minutes by default).
+Sources with enrichment run in slices bounded by `max_files_per_run` and the in-flight byte cap,
+so raw transcript memory does not grow with the entire history. Each slice commits before the next.
+Pause, exclusions, size limits, scrubbing and install isolation still apply. Failures, parked files,
+and deadline expiry return an error. Fix the reported cause and rerun the same command: successful
+files retain their progress, so one unreadable file does not duplicate the readable history.
+For long histories, repeated attempts make progress; an operator may also raise `drain_deadline`.
+A served deadline outranks the local setting, so change it centrally if the served config pins it.
+A hard crash before the buffered fingerprint commit can repeat the most recent uncommitted uploads.
+
+If the background service is flushing, the one-shot command fails with `state: store is locked by
+another flush`. Retry between flushes, or stop the background service using the OS service manager,
+run the command, and start the service again afterward.
+
+Completion covers currently collectable files. A warning counts remembered shipped objects still
+lacking a confirmed resend under this policy, including missing, excluded, oversize, failed and
+unattempted sources. Files already forgotten by state pruning/reset cannot be counted. Files no
+longer collectable require the archive reseal workflow below and a custodian identity.
+
+**A forced resend replaces the current version only.** Removing a reader does not revoke their
+access to older bucket versions. Re-scrubbing does not remove leaked bytes from older versions or
+from downstream data already collected, including append-only ingest history. This command is not
+remediation for a scrub leak; deletion of those copies is a separate operator task.
+
+Keep the local state to retain progress. `state reset`, state loss, or changing the source spec can
+lose progress and cause another forced upload. Existing fingerprint documents remain readable on
+upgrade. After a forced resend writes `seal_policy`, downgrading to an older binary makes its
+checksum check discard the store: ordinary uploads are re-probed, and forced-resend progress is lost.
 
 A custodian can reseal the history to a recipient added later. Resealing is the organization's
 decision; the fleet manager keeps no record of it. Add the recipient to the organization first, so

@@ -150,7 +150,7 @@ func runLogStateDir(paths config.Paths) (string, error) {
 }
 
 func runCmd(build app.Build) *cobra.Command {
-	var once, drain, quiet bool
+	var once, drain, quiet, forceResend bool
 
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -163,6 +163,9 @@ func runCmd(build app.Build) *cobra.Command {
 			"waiting the full interval, so a backlog converges at upload speed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if forceResend && !once {
+				return usage(errors.New("--force-resend requires --once"))
+			}
 			if !once && (drain || quiet) {
 				return fmt.Errorf("--drain and --quiet require --once")
 			}
@@ -235,7 +238,7 @@ func runCmd(build app.Build) *cobra.Command {
 				stateDir, dirErr = app.StateDirWithoutConfig()
 			}
 			fl, runID, lastCrash := startCrashJournal(cmd.ErrOrStderr(), stateDir, dirErr)
-			err = runLoop(cmd, ctx, build, once, drain, quiet, fl, runID, lastCrash)
+			err = runLoop(cmd, ctx, build, once, drain || forceResend, quiet, forceResend, fl, runID, lastCrash)
 			fl.Exit()
 			return err
 		},
@@ -243,13 +246,14 @@ func runCmd(build app.Build) *cobra.Command {
 	cmd.Flags().BoolVar(&once, "once", false, "collect and send once, then exit")
 	cmd.Flags().BoolVar(&drain, "drain", false, "send everything pending and block until done or drain_deadline")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "no progress or summary; warnings, errors and the run log stay")
+	cmd.Flags().BoolVar(&forceResend, "force-resend", false, "resume resending available files under freshly fetched settings, bounded by drain_deadline (requires --once)")
 	return cmd
 }
 
-func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, drain, quiet bool,
+func runLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, drain, quiet, forceResend bool,
 	fl *crashjournal.Log, runID string, lastCrash *formats.LastCrash) error {
 	for {
-		err := runEnrolledLoop(cmd, ctx, build, once, drain, quiet, fl, runID, lastCrash)
+		err := runEnrolledLoop(cmd, ctx, build, once, drain, quiet, forceResend, fl, runID, lastCrash)
 		var revoked *controlplane.Revocation
 		if once || !errors.As(err, &revoked) {
 			return err
@@ -282,7 +286,7 @@ func waitForReenrollment(ctx context.Context, stateDir string, revoked *controlp
 	}
 }
 
-func runEnrolledLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, drain, quiet bool,
+func runEnrolledLoop(cmd *cobra.Command, ctx context.Context, build app.Build, once, drain, quiet, forceResend bool,
 	fl *crashjournal.Log, runID string, lastCrash *formats.LastCrash) error {
 	fl.Phase("init")
 
@@ -297,6 +301,7 @@ func runEnrolledLoop(cmd *cobra.Command, ctx context.Context, build app.Build, o
 		return err
 	}
 	env.SetRunInfo(runID, lastCrash)
+	env.ForceResend = forceResend
 	env.OnCrashShipped = fl.Reported
 
 	out := cmd.OutOrStdout()
@@ -313,6 +318,13 @@ func runEnrolledLoop(cmd *cobra.Command, ctx context.Context, build app.Build, o
 		packaging.RotateLogs(filepath.Join(env.StateDir(), "logs"))
 	}
 	reportRemote(errOut, env)
+	if forceResend {
+		ids, err := env.ForceResendRecipients()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(errOut, "force resend: sealing to %d recipient(s), public keys: %s\n", len(ids), strings.Join(ids, ", "))
+	}
 
 	// Resolved for --once too: the interval doubles as the stall watchdog's threshold.
 	tick, tickWarn := config.TickInterval(env.Effective().Schedule)
@@ -377,8 +389,14 @@ func runEnrolledLoop(cmd *cobra.Command, ctx context.Context, build app.Build, o
 		if stream != nil {
 			stream.Finish()
 		}
+		if forceResend && rep.ResendOutstanding > 0 {
+			fmt.Fprintf(errOut, "force resend: %d previously shipped object(s) still lack a confirmed resend under this policy; this includes unavailable, excluded or oversize sources and failed or unattempted uploads. Use archive reseal for sources no longer collectable.\n", rep.ResendOutstanding)
+		}
 		if ctx.Err() != nil {
 			if once {
+				if forceResend {
+					return ctx.Err()
+				}
 				return err
 			}
 			return flushBeforeExit(cmd, env)
@@ -409,11 +427,22 @@ func runEnrolledLoop(cmd *cobra.Command, ctx context.Context, build app.Build, o
 			fmt.Fprintf(errOut, "flush failed: %v\n", outcome)
 		}
 		if once {
+			if forceResend && !complete {
+				return fmt.Errorf("force resend reached its %s deadline; rerun --once --force-resend to resume from saved progress", env.Effective().DrainDeadline)
+			}
+			if forceResend && (rep.Paused || rep.Failed > 0 || rep.Parked > 0) {
+				return fmt.Errorf("force resend incomplete: paused=%t, failed=%d, parked=%d; rerun with --force-resend after resolving the cause", rep.Paused, rep.Failed, rep.Parked)
+			}
 			if drain && !complete {
 				return fmt.Errorf("drain hit its %s deadline with work left: raise drain_deadline or accept the loss",
 					env.Effective().DrainDeadline)
 			}
-			if drain && !quiet {
+			if forceResend {
+				fmt.Fprintln(errOut, "force resend: use archive reseal for unavailable history; objects forgotten by state pruning or reset cannot be counted.")
+			}
+			if forceResend && !quiet {
+				fmt.Fprintln(out, "force resend complete for currently collectable files")
+			} else if drain && !quiet {
 				fmt.Fprintln(out, "drain complete: nothing pending")
 			}
 			return nil

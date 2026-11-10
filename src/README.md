@@ -187,6 +187,22 @@ quesma-shipper local-dev                    Set up without a control plane
 To look at the pipeline without any control plane, run `quesma-shipper local-dev`, then
 `quesma-shipper preview`: collection and scrubbing work, and upload is disabled.
 
+To re-encrypt from available source files without a custodian decryption identity, run
+`quesma-shipper run --once --force-resend`. Upgrade Fleet Manager to support v3 uploads first.
+The command requires freshly fetched, unexpired settings and prints the recipient count and age
+public keys. It drains beyond the normal file-count limit, up to `drain_deadline`, while
+honoring pause and collection restrictions. A failed or interrupted pass returns an error;
+rerunning the flag resumes the same seal policy and skips unchanged files already resent, including
+derived outputs. Keep local state to preserve that progress. If the background service holds the
+state lock, retry later or stop the service for the one-shot run and start it afterward.
+
+Only the current bucket version is replaced: removing a reader leaves old versions readable, and
+re-scrubbing removes nothing already collected in old versions or downstream ingest history. Missing,
+excluded and oversize source files are not re-sealed; the command warns about outstanding objects
+still remembered in local state. Ordinary runs still skip unchanged files, and the fleet-wide trigger
+remains separate work in [#77](https://github.com/QuesmaOrg/quesma-shipper/issues/77).
+See [operations](../fleet-manager/OPERATIONS.md) for retries, archive resealing and downgrade behavior.
+
 If an operator revokes this install, collection and server retries stop. `status` and `doctor`
 show the organization and when this machine detected the revocation. macOS and Windows attempt
 a desktop notification when an interactive session allows it. A failed notification command or

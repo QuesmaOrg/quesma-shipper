@@ -69,6 +69,10 @@
           "description": "sha256 of the raw pre-redaction bytes last shipped. The authority for change detection and the ETL dedupe identity together with the path.",
           "$ref": "#/$defs/sha256"
         },
+        "seal_policy": {
+          "description": "Policy of the last confirmed forced PUT, used only by forced resends. Absent on older state and ordinary uploads. Older binaries discard a document carrying this field because its checksum covers fields they do not know; a downgrade loses resend progress and re-probes ordinary uploads.",
+          "$ref": "#/$defs/sha256"
+        },
 
         "sink_etag": {
           "description": "Legacy: builds with a conditional write path persisted the last verified PUT's ETag here. Read-tolerated so an existing document still loads, never written -- the upload path is unconditional and the local fingerprint is the only progress authority.",
