@@ -54,8 +54,6 @@ const (
 
 var nextPort atomic.Int32
 
-func init() { nextPort.Store(21000) }
-
 type toxiAttrs = toxiproxy.Attributes
 
 type stage struct {
@@ -90,7 +88,7 @@ func newStage(t *testing.T, slug string) *stage {
 	t.Helper()
 	ctx := context.Background()
 	s := &stage{t: t, cpHost: "cp-" + slug + "." + zone, store: "store-" + slug + "." + zone}
-	last := nextPort.Add(2)
+	last := 21000 + nextPort.Add(2)
 	cpPort, storePort := last-1, last
 
 	var err error

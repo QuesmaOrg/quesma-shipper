@@ -73,7 +73,7 @@ var scenarios = []scenario{
 		want: expectation{kind: formats.FailureOffline, consecutive: 0, faultTelemetry: true, sent: &attempts{1, 2, 0},
 			contains: []string{offlineCause, "upload: PUT object", "write: connection reset by peer"}},
 		check: func(t *testing.T, s *stage) string {
-			return "sealed object " + itoa(s.in.largestObject()) + " bytes; the store reads 64 KiB of it, then resets"
+			return fmt.Sprintf("sealed object %d bytes; the store reads 64 KiB of it, then resets", s.in.largestObject())
 		},
 	},
 	{
@@ -98,23 +98,16 @@ var scenarios = []scenario{
 			sent:     &attempts{4, 0, 0},
 			contains: []string{offlineCause, "Client.Timeout exceeded while awaiting headers"}},
 		check: func(t *testing.T, s *stage) string {
-			stalls := s.in.stalled()
-			var mirror, heartbeat int
-			for _, st := range stalls {
-				if st.mirror {
-					mirror++
-				} else {
-					heartbeat++
-				}
-				if st.waited < 25*time.Second {
-					t.Errorf("an authorize stall ended after %s: the client gave up before its 30s timeout", st.waited)
-				}
+			mirror, heartbeat, shortest, longest := countStalls(s.in.stalled())
+			if mirror+heartbeat > 0 && shortest < 25*time.Second {
+				t.Errorf("an authorize stall ended after %s: the client gave up before its 30s timeout", shortest)
 			}
 			// Each group once and once more after the pause; the stopped tick sends no heartbeat.
 			if mirror != 4 || heartbeat != 0 {
 				t.Errorf("authorize stalled %d times for mirror groups and %d for heartbeats, want 4 and 0", mirror, heartbeat)
 			}
-			return describeStalls(stalls)
+			return fmt.Sprintf("authorize stalled for %d mirror group(s) and %d heartbeat(s), each waited %s-%s",
+				mirror, heartbeat, shortest.Round(time.Second), longest.Round(time.Second))
 		},
 	},
 	{
@@ -408,7 +401,8 @@ func runScenario(t *testing.T, order int, sc scenario) {
 	}
 	s.afterFault = s.in.mirrorObjects()
 	rec := s.record()
-	if latest := rec.Latest(); latest != nil {
+	latest := rec.Latest()
+	if latest != nil {
 		s.faultMessage = latest.Message
 	}
 	s.lift()
@@ -423,7 +417,7 @@ func runScenario(t *testing.T, order int, sc scenario) {
 		Attempts:       attemptsJSON{Authorize: sent.authorize, Put: sent.put, Heartbeat: sent.heartbeat},
 		FaultTelemetry: len(faultHealth) > 0,
 	}
-	if latest := rec.Latest(); latest != nil {
+	if latest != nil {
 		r.Kind, r.Message, r.Counted = latest.Kind, latest.Message, latest.Counted()
 	}
 	if sc.check != nil {
@@ -515,22 +509,17 @@ func checkHealth(t *testing.T, label string, raw json.RawMessage, rec formats.Fa
 	}
 }
 
-func describeStalls(stalls []stalledAuthorize) string {
-	var mirror, other int
-	var shortest, longest time.Duration
+func countStalls(stalls []stalledAuthorize) (mirror, heartbeat int, shortest, longest time.Duration) {
 	for i, s := range stalls {
 		if s.mirror {
 			mirror++
 		} else {
-			other++
+			heartbeat++
 		}
 		if i == 0 || s.waited < shortest {
 			shortest = s.waited
 		}
 		longest = max(longest, s.waited)
 	}
-	return strings.Join([]string{
-		"authorize stalled for " + itoa(mirror) + " mirror group(s) and " + itoa(other) + " heartbeat(s)",
-		"each waited " + shortest.Round(time.Second).String() + "-" + longest.Round(time.Second).String(),
-	}, ", ")
+	return mirror, heartbeat, shortest, longest
 }

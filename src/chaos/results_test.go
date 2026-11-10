@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -117,5 +116,3 @@ func excerpt(message string) string {
 	}
 	return "..." + message[len(message)-keep:]
 }
-
-func itoa(n int) string { return strconv.Itoa(n) }
