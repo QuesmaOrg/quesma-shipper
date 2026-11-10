@@ -91,7 +91,7 @@ var (
 
 	// ErrOffline is an authorization or a PUT that got no answer, twice. Halts the run's uploads
 	// like ErrUploadUnavailable; the judge files the run as the machine offline, not as a failure.
-	ErrOffline = errors.New("engine: the control plane could not be reached")
+	ErrOffline = errors.New("engine: the control plane or the store could not be reached")
 
 	// ErrTicketExpired is the one verdict worth a second authorization inside a single run.
 	ErrTicketExpired = errors.New("engine: upload ticket had expired")

@@ -49,7 +49,7 @@ type scenario struct {
 
 var nxdomain = dnsFault{Rcode: "NXDOMAIN"}
 
-const offlineCause = "engine: the control plane could not be reached"
+const offlineCause = "engine: the control plane or the store could not be reached"
 
 var scenarios = []scenario{
 	{
