@@ -1,8 +1,7 @@
 package controlplane
 
-// V2 upload authorization: POST /v2/uploads/authorize exchanges a bounded batch of prepared object
-// descriptors for one short-lived PUT ticket each. Authorization, not acknowledgment: the local
-// fingerprint document stays the only upload-progress authority, and no ticket URL is ever logged.
+// Upload authorization exchanges prepared objects for PUT tickets; v3 explicitly forces replacement.
+// The local fingerprint document stays the only upload-progress authority. Ticket URLs are never logged.
 
 import (
 	"context"
@@ -23,12 +22,16 @@ const uploadAuthorizePath = "/v2/uploads/authorize"
 // followed immediately by the body, with no canonicalization, byte-identical to the protocol fixture.
 const uploadAuthorizePreamble = "trajectory-shipper-upload-authorize-v2\nPOST\n/v2/uploads/authorize\n"
 
+const forceUploadAuthorizePath = "/v3/uploads/authorize"
+const forceUploadAuthorizePreamble = "trajectory-shipper-upload-authorize-v3\nPOST\n/v3/uploads/authorize\n"
+
 // AuthorizeRequest is one bounded authorization batch. The caller stamps IssuedAt, the freshness
 // the server checks, so the signed bytes and the sent bytes are the same object.
 type AuthorizeRequest struct {
-	WriterID string         `json:"writer_id"`
-	IssuedAt time.Time      `json:"issued_at"`
-	Objects  []UploadObject `json:"objects"`
+	WriterID    string         `json:"writer_id"`
+	IssuedAt    time.Time      `json:"issued_at"`
+	Objects     []UploadObject `json:"objects"`
+	ForceResend bool           `json:"force_resend,omitempty"`
 }
 
 // UploadObject is one prepared object's descriptor. Size is the exact ciphertext byte count, and
@@ -107,7 +110,11 @@ func (c *Client) AuthorizeUploads(ctx context.Context, req AuthorizeRequest) (re
 		return AuthorizeResponse{}, fmt.Errorf("backend: encode authorize request: %w", err)
 	}
 
-	status, raw, err := c.exchange(ctx, uploadAuthorizePath, uploadAuthorizePreamble, payload, true)
+	path, preamble := uploadAuthorizePath, uploadAuthorizePreamble
+	if req.ForceResend {
+		path, preamble = forceUploadAuthorizePath, forceUploadAuthorizePreamble
+	}
+	status, raw, err := c.exchange(ctx, path, preamble, payload, true)
 	if err != nil {
 		return AuthorizeResponse{}, err
 	}
@@ -116,35 +123,40 @@ func (c *Client) AuthorizeUploads(ctx context.Context, req AuthorizeRequest) (re
 
 	switch {
 	case status == http.StatusOK:
+	case req.ForceResend && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed):
+		return AuthorizeResponse{}, errors.New("backend: force resend is not supported; upgrade Fleet Manager before using --force-resend")
 	case status == http.StatusUnauthorized, status == http.StatusForbidden:
 		return AuthorizeResponse{}, fmt.Errorf("backend: %s refused this install's credentials (HTTP %d): %w",
-			uploadAuthorizePath, status, formats.ErrCredentialsRefused)
+			path, status, formats.ErrCredentialsRefused)
 	case status == http.StatusTooManyRequests, status >= 500:
 		return AuthorizeResponse{}, fmt.Errorf("%w (HTTP %d): %s", ErrAuthorizeUnavailable, status, reason())
 	default:
-		return AuthorizeResponse{}, fmt.Errorf("backend: %s returned HTTP %d: %s", uploadAuthorizePath, status, reason())
+		return AuthorizeResponse{}, fmt.Errorf("backend: %s returned HTTP %d: %s", path, status, reason())
 	}
 
 	// Unknown response fields are ignored, so the server may grow the response before the fleet
 	// moves. Every field the client acts on is validated against the prepared object before a byte
 	// leaves, so an unread field cannot widen what is sent.
 	if err = json.Unmarshal(raw, &resp); err != nil {
-		return AuthorizeResponse{}, fmt.Errorf("backend: decode %s response: %w", uploadAuthorizePath, err)
+		return AuthorizeResponse{}, fmt.Errorf("backend: decode %s response: %w", path, err)
 	}
 
 	if len(resp.Tickets) != len(req.Objects) {
 		// The server refuses a batch whole or issues one ticket per object; anything else is a
 		// partial authorization this client will not guess its way through.
 		return AuthorizeResponse{}, fmt.Errorf("backend: %s issued %d tickets for %d objects",
-			uploadAuthorizePath, len(resp.Tickets), len(req.Objects))
+			path, len(resp.Tickets), len(req.Objects))
 	}
 	for _, ticket := range resp.Tickets {
+		if req.ForceResend && ticket.AlreadyPresent {
+			return AuthorizeResponse{}, errors.New("backend: force resend received already_present instead of an upload ticket")
+		}
 		if ticket.AlreadyPresent && (ticket.TicketID == "" || ticket.ObjectID == "" ||
 			ticket.Method != "" || ticket.URL != "" || !ticket.ExpiresAt.IsZero() ||
 			ticket.RequiredHeaders != nil || ticket.ContentLength != 0 || ticket.ContentLengthSigned) {
 			return AuthorizeResponse{}, fmt.Errorf(
 				"backend: %s returned an invalid already-present answer for object %q",
-				uploadAuthorizePath, ticket.ObjectID)
+				path, ticket.ObjectID)
 		}
 	}
 	return resp, nil

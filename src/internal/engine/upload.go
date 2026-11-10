@@ -64,9 +64,10 @@ func (b *batcher) len() int { return len(b.items) }
 // so its length is the size the ticket is signed for.
 type PreparedObject struct {
 	// ObjectID pairs the object with its ticket, unique within the group and meaningless outside.
-	ObjectID string
-	Key      string
-	Body     []byte
+	ObjectID    string
+	Key         string
+	Body        []byte
+	ForceResend bool
 
 	// SourceHash is the manifest's raw pre-redaction digest, never a checksum of Body.
 	SourceHash string
@@ -138,12 +139,22 @@ func preparedFrom(idx int, key string, body []byte, md map[string]string) Prepar
 
 // authorizeAndUpload spends one group, with at most ONE reauthorization for expired tickets: a
 // second expiry means the clock or the lease is wrong, and retrying only stalls everything else.
-func (o Options) authorizeAndUpload(ctx context.Context, items []stagedUpload) []error {
+func (o Options) authorizeAndUpload(ctx context.Context, items []stagedUpload) (outcomes []error) {
+	if o.ForceResend {
+		defer func() {
+			for i, outcome := range outcomes {
+				if errors.Is(outcome, ErrAlreadyPresent) {
+					outcomes[i] = errors.New("force resend requires an upload, not an already-present answer")
+				}
+			}
+		}()
+	}
 	batch := make([]PreparedObject, len(items))
 	for i, it := range items {
 		batch[i] = preparedFrom(i, it.pending.objectKey, it.pending.obj, it.pending.md)
+		batch[i].ForceResend = o.ForceResend
 	}
-	outcomes := o.Upload.AuthorizeAndUpload(ctx, batch)
+	outcomes = o.Upload.AuthorizeAndUpload(ctx, batch)
 	if len(outcomes) != len(batch) {
 		// One verdict for the whole group: a port-contract violation carries no per-object detail.
 		return slices.Repeat([]error{fmt.Errorf(

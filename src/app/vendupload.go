@@ -154,7 +154,11 @@ func (p *vendPort) send(ctx context.Context, obj engine.PreparedObject, issued c
 // request turns prepared objects into one signed authorization batch.
 func (p *vendPort) request(batch []engine.PreparedObject) (controlplane.AuthorizeRequest, error) {
 	objects := make([]controlplane.UploadObject, len(batch))
+	forceResend := len(batch) > 0 && batch[0].ForceResend
 	for i, o := range batch {
+		if o.ForceResend != forceResend {
+			return controlplane.AuthorizeRequest{}, errors.New("upload: mixed normal and forced objects")
+		}
 		md, dropped, err := uploadMetadata(o.Metadata)
 		if err != nil {
 			return controlplane.AuthorizeRequest{}, fmt.Errorf("upload: object %q: %w", o.ObjectID, err)
@@ -171,9 +175,10 @@ func (p *vendPort) request(batch []engine.PreparedObject) (controlplane.Authoriz
 		}
 	}
 	return controlplane.AuthorizeRequest{
-		WriterID: p.writerID,
-		IssuedAt: p.now().UTC(),
-		Objects:  objects,
+		WriterID:    p.writerID,
+		IssuedAt:    p.now().UTC(),
+		Objects:     objects,
+		ForceResend: forceResend,
 	}, nil
 }
 
