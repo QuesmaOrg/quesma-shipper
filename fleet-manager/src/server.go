@@ -23,10 +23,11 @@ import (
 )
 
 const (
-	requestLimit              = 1 << 20
-	stateObjectLimit          = 4 << 20
-	uploadAuthorizePreamble   = "trajectory-shipper-upload-authorize-v2\nPOST\n/v2/uploads/authorize\n"
-	domainSeparationNamespace = "trajectory-shipper-"
+	requestLimit                 = 1 << 20
+	stateObjectLimit             = 4 << 20
+	uploadAuthorizePreamble      = "trajectory-shipper-upload-authorize-v2\nPOST\n/v2/uploads/authorize\n"
+	forceUploadAuthorizePreamble = "trajectory-shipper-upload-authorize-v3\nPOST\n/v3/uploads/authorize\n"
+	domainSeparationNamespace    = "trajectory-shipper-"
 )
 
 type Server struct {
@@ -72,6 +73,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/telemetry", s.telemetryAdmission(s.deviceAuth(telemetryShipperPreamble, s.handleTelemetry)))
 	mux.HandleFunc("POST /v1/config", s.deviceAuth("", s.handleConfig))
 	mux.HandleFunc("POST /v2/uploads/authorize", s.deviceAuth(uploadAuthorizePreamble, s.handleUploadAuthorize))
+	mux.HandleFunc("POST /v3/uploads/authorize", s.deviceAuth(forceUploadAuthorizePreamble, s.handleForceUploadAuthorize))
 	mux.Handle("/v1/admin", admin)
 	mux.Handle("/v1/admin/", admin)
 	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
@@ -355,6 +357,27 @@ func (s *Server) handleUploadAuthorize(w http.ResponseWriter, r *http.Request, r
 		http.Error(w, "malformed upload authorization request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	s.authorizeUploads(w, r, rec, req, false)
+}
+
+func (s *Server) handleForceUploadAuthorize(w http.ResponseWriter, r *http.Request, rec InstallRecord, body []byte) {
+	w.Header().Set("Cache-Control", "no-store")
+	var req struct {
+		uploadAuthorizeRequest
+		ForceResend bool `json:"force_resend"`
+	}
+	if err := strictDecode(body, &req); err != nil {
+		http.Error(w, "malformed upload authorization request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !req.ForceResend {
+		http.Error(w, "v3 upload authorization requires force_resend: true", http.StatusBadRequest)
+		return
+	}
+	s.authorizeUploads(w, r, rec, req.uploadAuthorizeRequest, true)
+}
+
+func (s *Server) authorizeUploads(w http.ResponseWriter, r *http.Request, rec InstallRecord, req uploadAuthorizeRequest, forceResend bool) {
 	now := s.manager.time()
 	objects, err := validateUploadRequest(req, rec, now)
 	if err != nil {
@@ -367,7 +390,9 @@ func (s *Server) handleUploadAuthorize(w http.ResponseWriter, r *http.Request, r
 	}
 	batch := UploadBatch{IssuedAt: now, ExpiresAt: now.Add(uploadTicketLifetime), Objects: objects}
 	var settled []uploadTicket
-	batch.Objects, settled = splitAlreadyStored(r.Context(), s.manager.store, s.logger, rec.InstallID, batch.Objects)
+	if !forceResend {
+		batch.Objects, settled = splitAlreadyStored(r.Context(), s.manager.store, s.logger, rec.InstallID, batch.Objects)
+	}
 	// A batch the store already holds whole leaves nothing to sign.
 	var tickets TicketBatch
 	if len(batch.Objects) > 0 {
@@ -385,6 +410,9 @@ func (s *Server) handleUploadAuthorize(w http.ResponseWriter, r *http.Request, r
 		}
 	}
 	s.touch(r, rec, seenVend, nil)
+	if forceResend {
+		s.logger.Printf("forced upload authorized for install %s: objects=%d", rec.InstallID, len(objects))
+	}
 	writeJSON(w, uploadAuthorizeResponse{Tickets: append(tickets.Tickets, settled...)})
 }
 

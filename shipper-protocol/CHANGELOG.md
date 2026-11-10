@@ -29,6 +29,11 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
 
 ### Added
 
+- `POST /v3/uploads/authorize` accepts an explicit `force_resend: true` and issues PUT tickets
+  without consulting stored hashes. Its signature binds the v3 endpoint. Existing v1/v2 shapes,
+  signatures and behavior are unchanged; normal clients keep using v2. Upgrade Fleet Manager
+  before using the local force-resend option. Unsupported servers cause an error, never a v2 fallback.
+
 - `sources[].exclude_add` unions relative exclusion globs after all replacement layers.
   Globs use forward-slash separators on every platform; backslashes, a leading `~` or `$`, and
   empty, `.` or `..` segments are rejected.
