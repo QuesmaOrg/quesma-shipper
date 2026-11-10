@@ -340,7 +340,9 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 
 		enrichers := o.enrichersFor(src)
 
-		if err := o.runSource(ctx, store, src, disc, enrichers, &budget, &out, &rep); err != nil {
+		pass := sourcePass{o: o, store: store, src: src, disc: disc, rep: &rep, out: &out,
+			budget: &budget, staging: len(enrichers) > 0}
+		if err := pass.runEnriched(ctx, enrichers); err != nil {
 			if stopsRun(err) {
 				rep.Sources = append(rep.Sources, out)
 			}

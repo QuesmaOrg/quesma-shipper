@@ -15,6 +15,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/cursorjoin"
 )
 
 func TestForceResendIncludesUnchangedRawAndDerivedObjects(t *testing.T) {
@@ -237,7 +238,7 @@ func TestForceResendBoundsEnrichmentAndResumesDerivedFailures(t *testing.T) {
 					}
 				})
 			}
-			enricher := &boundedEnricher{fixtureEnricher: &fixtureEnricher{db: db}, t: t, maxUnits: 2}
+			enricher := &boundedEnricher{fixtureEnricher: &fixtureEnricher{Enricher: cursorjoin.New(), db: db}, t: t, maxUnits: 2}
 			o.Enrichers = transforms.NewRegistry(enricher)
 			var failed atomic.Bool
 			f.port.verdict = func(_, _ int, obj engine.PreparedObject) error {
@@ -269,9 +270,6 @@ type boundedEnricher struct {
 	maxUnits, calls int
 }
 
-func (*boundedEnricher) ID() string       { return "cursor-transcript-join" }
-func (*boundedEnricher) Version() int     { return 1 }
-func (*boundedEnricher) NeedsUnits() bool { return true }
 func (e *boundedEnricher) Enrich(in transforms.Input) transforms.EnrichResult {
 	e.calls++
 	if len(in.Units) > e.maxUnits {

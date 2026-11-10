@@ -49,58 +49,53 @@ func (o Options) enrichersFor(src sources.Resolved) []transforms.Enricher {
 }
 
 // Forced enrichment drains bounded slices, committing each before releasing its raw bytes.
-func (o Options) runSource(ctx context.Context, store *commitBuffer, src sources.Resolved, disc sources.Discovery,
-	enrichers []transforms.Enricher, budget *int, out *SourceOutcome, rep *Report) error {
-	remaining := disc.Candidates
+func (p *sourcePass) runEnriched(ctx context.Context, enrichers []transforms.Enricher) error {
+	remaining := p.disc.Candidates
 	for {
-		batch := disc
-		if o.ForceResend && len(enrichers) > 0 {
+		batch := *p
+		batch.disc.Candidates = remaining
+		if p.o.ForceResend && p.staging {
 			n, bytes := 0, int64(0)
-			for n < len(remaining) && n < max(1, o.Plan.MaxFilesPerRun) {
-				size := sources.LoadBytes(remaining[n], src.MaxFileBytes)
+			for n < len(remaining) && n < max(1, p.o.Plan.MaxFilesPerRun) {
+				size := sources.LoadBytes(remaining[n], p.src.MaxFileBytes)
 				if n > 0 && size > platform.MaxInFlightBytes()-bytes {
 					break
 				}
 				bytes += size
 				n++
 			}
-			batch.Candidates = remaining[:n]
-		} else {
-			batch.Candidates = remaining
+			batch.disc.Candidates = remaining[:n]
 		}
-		passOptions := o
-		if o.Progress != nil {
-			offset := len(disc.Candidates) - len(remaining)
-			passOptions.Progress = func(source string, done, _ int, file FileOutcome) {
-				o.Progress(source, offset+done, len(disc.Candidates), file)
+		if p.o.Progress != nil {
+			offset := len(p.disc.Candidates) - len(remaining)
+			batch.o.Progress = func(source string, done, _ int, file FileOutcome) {
+				p.o.Progress(source, offset+done, len(p.disc.Candidates), file)
 			}
 		}
-		pass := &sourcePass{o: passOptions, store: store, src: src, disc: batch, rep: rep, out: out,
-			budget: budget, staging: len(enrichers) > 0}
-		o.stages.enter("read and seal")
-		if err := pass.run(ctx); err != nil {
+		p.o.stages.enter("read and seal")
+		if err := batch.run(ctx); err != nil {
 			return err
 		}
-		staged := pass.stagedUnits()
+		staged := batch.stagedUnits()
 		for _, enricher := range enrichers {
 			if len(staged) == 0 && enricher.NeedsUnits() {
 				continue
 			}
-			o.stages.enter("enrich")
-			if err := o.enrichSource(ctx, store, src, enricher, staged, out, rep); err != nil {
+			p.o.stages.enter("enrich")
+			if err := p.o.enrichSource(ctx, p.store, p.src, enricher, staged, p.out, p.rep); err != nil {
 				return err
 			}
 		}
-		remaining = remaining[len(batch.Candidates):]
-		if out.Remaining > 0 {
-			out.Remaining += len(remaining)
-			rep.Remaining += len(remaining)
+		remaining = remaining[len(batch.disc.Candidates):]
+		if p.out.Remaining > 0 {
+			p.out.Remaining += len(remaining)
+			p.rep.Remaining += len(remaining)
 			return nil
 		}
 		if len(remaining) == 0 {
 			return nil
 		}
-		if err := store.Flush(); err != nil {
+		if err := p.store.Flush(); err != nil {
 			return err
 		}
 	}
