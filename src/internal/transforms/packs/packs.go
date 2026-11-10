@@ -29,7 +29,7 @@ const (
 // HeuristicPacks are the low-confidence packs; the engine checks exemptions first.
 var HeuristicPacks = []string{GenericEntropy}
 
-// Digest includes the embedded rules, so changing a pack under the same name invalidates a resend.
+// Digest hashes parsed rules, so checkout formatting cannot invalidate resend progress.
 func Digest(pack string) (string, error) {
 	if slices.Contains(HeuristicPacks, pack) {
 		return pack, nil
@@ -38,7 +38,19 @@ func Digest(pack string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%x", sha256.Sum256(raw)), nil
+	return digestRules(raw)
+}
+
+func digestRules(raw []byte) (string, error) {
+	var c corpus
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return "", err
+	}
+	canonical, err := json.Marshal(c)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(canonical)), nil
 }
 
 // Span is one matched byte range; the engine's transforms.Span is an alias of it.

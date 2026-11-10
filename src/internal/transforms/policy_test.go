@@ -82,7 +82,7 @@ func TestSealPolicyPinsScrubConformanceOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantPolicy = "723d85b26761d7e8a8a28cb5080f07c4b267a1f592c4fd28bcf0af69234cdc22"
+	const wantPolicy = "41622bf0416e8342bcf30b99246166049615a4c32d1ee4ae5c51550b9c0ec5ca"
 	const wantOutput = "735afc073b37a38ca2dff0660e1e7dc07e1cc72efbbaa8955d72ee09614d27ca"
 	if policy != wantPolicy || transforms.Hash(body) != wantOutput {
 		t.Fatalf("scrub conformance changed: policy=%s output=%s; code-only scrub changes must bump Version in policy.go before recording a reviewed baseline", policy, transforms.Hash(body))
