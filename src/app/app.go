@@ -87,12 +87,6 @@ type Runtime struct {
 	recMu sync.Mutex
 	rec   *formats.FailureRecord
 
-	// now is the judge's clock for outages; nil is the wall clock. A field so a test can move it.
-	now func() time.Time
-
-	// Set when this tick's heartbeat failed: an idle tick then does not end an outage.
-	heartbeatFailed bool
-
 	// lastRep is the last completed tick's report, reused by the stall heartbeat so a stalled
 	// install does not blank its own per-source health. Judge writes it, the next tick's watchdog
 	// reads it; the two never overlap (the watchdog is joined before judging).
@@ -275,7 +269,6 @@ func (r *Runtime) Drain(ctx context.Context) (formats.Report, bool, error) {
 }
 
 func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (formats.Report, error) {
-	r.heartbeatFailed = false
 	if r.ForceResend {
 		if err := r.checkForceResend(); err != nil {
 			return formats.Report{}, err
@@ -303,11 +296,7 @@ func (r *Runtime) flushWith(ctx context.Context, dryRun, unbounded bool) (format
 
 	o := r.options(dryRun)
 	o.Unbounded = unbounded
-	o.Heartbeat = func(ctx context.Context, rep formats.Report) error {
-		err := r.WriteHeartbeat(ctx, rep)
-		r.heartbeatFailed = err != nil
-		return err
-	}
+	o.Heartbeat = r.WriteHeartbeat
 	rep, err := engine.Run(ctx, store, o)
 	if revoked := r.revocation(); revoked != nil {
 		notifyRevocation(r.eff.StateDir)

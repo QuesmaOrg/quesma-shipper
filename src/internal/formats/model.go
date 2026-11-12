@@ -148,10 +148,6 @@ type FailureRecord struct {
 
 	ConsecutiveFailures int `json:"consecutive_failures,omitempty"`
 
-	// The current outage's start and whether its one counted failure was raised; neither leaves the machine.
-	OfflineSince   string `json:"offline_since,omitempty"`
-	OfflineCounted bool   `json:"offline_counted,omitempty"`
-
 	// Overwritten every run, unlike the log above. None of it is a failure; it is what makes one
 	// explicable, and what a machine that is degrading rather than erroring shows first.
 	Facts *RunFacts `json:"facts,omitempty"`

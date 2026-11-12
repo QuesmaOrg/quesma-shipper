@@ -115,8 +115,8 @@ batches are retried only by a later run. Two exceptions. A clearly expired PUT t
 reauthorized once for the same prepared object. An upload authorization or a PUT for the run's
 objects that got no complete HTTP response (DNS, connect, TLS handshake, reset, timeout, a 2xx
 body cut short) is sent once more after about one second; if that also gets none, the run stops
-its uploads and is recorded as offline, not as a failure, until the outage has lasted 24h, when it
-counts once. Any other HTTP status is final for the run, and the heartbeat stays one attempt.
+its uploads and is recorded as offline, not as a failure, however long the outage lasts: the control
+plane sees a long one as silence. Any other HTTP status is final for the run, and the heartbeat stays one attempt.
 Together the two allow at most four authorizations and four PUTs naming one object per run. A
 backend that never answers costs two timeouts, not a tick. (Amended 2026-11-10: was no retry at
 all.)

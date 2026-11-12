@@ -24,9 +24,6 @@ import (
 const (
 	lastFailureFile = "last-failure.json"
 	maxFailureBytes = 1 << 16
-
-	// An outage stays uncounted this long, then counts once until a clean tick ends it.
-	outageCounted = 24 * time.Hour
 )
 
 // JudgeTick decides whether a flush counts as a failure and persists that decision. It RETURNS the
@@ -79,18 +76,14 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 		}
 
 		switch {
-		case err == nil && rec.OfflineSince != "" && rep.Shipped == 0 && r.heartbeatFailed:
-			// Nothing shipped and the heartbeat failed: the tick proved nothing, so the outage goes on untouched.
 		case err == nil:
 			// Persisted on a clean run too, on purpose twice over: a healthy run's cost is the
 			// baseline that makes the next one's readable, and the next heartbeat is built
 			// mid-flush BEFORE judging, so it can only read these facts off disk; an in-memory
 			// shortcut would silently empty the field.
 			rec.ConsecutiveFailures = 0
-			rec.OfflineSince, rec.OfflineCounted = "", false
 		case offline:
 			rec.Stand(newEvent(r.eff.StateDir, r.runID, formats.FailureOffline, "offline: "+err.Error()))
-			r.noteOutage(rec, kind, err)
 		default:
 			ev := newEvent(r.eff.StateDir, r.runID, kind, err.Error())
 			rec.Record(ev)
@@ -110,31 +103,6 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 		r.shipFailureHeartbeat(context.Background(), rep, "failure record", os.Stderr)
 	}
 	return err
-}
-
-// noteOutage starts the outage clock on its first offline tick and raises its one counted failure
-// at the first tick 24h or more later. A start that does not parse or lies ahead restarts the clock.
-func (r *Runtime) noteOutage(rec *formats.FailureRecord, kind string, err error) {
-	now := time.Now()
-	if r.now != nil {
-		now = r.now()
-	}
-	since, perr := time.Parse(time.RFC3339, rec.OfflineSince)
-	if perr != nil || since.After(now) {
-		if rec.OfflineSince != "" {
-			fmt.Fprintf(os.Stderr, "warning: %s offline_since %q is unreadable or in the future; the outage clock restarts now\n",
-				lastFailureFile, rec.OfflineSince)
-		}
-		rec.OfflineSince, rec.OfflineCounted = now.UTC().Format(time.RFC3339), false
-		return
-	}
-	if rec.OfflineCounted || now.Sub(since) < outageCounted {
-		return
-	}
-	rec.OfflineCounted = true
-	ev := newEvent(r.eff.StateDir, r.runID, kind, fmt.Sprintf("offline for %s, since %s: %v",
-		now.Sub(since).Round(time.Minute), rec.OfflineSince, err))
-	rec.Record(ev)
 }
 
 const failureHeartbeatTimeout = 30 * time.Second
@@ -331,8 +299,6 @@ func (r *Runtime) failureRecord() formats.FailureRecord {
 	rec.Recent = append([]formats.FailureEvent(nil), rec.Recent...)
 	r.recMu.Unlock()
 	rec.LastCrash = r.lastCrash
-	// The outage clock is local bookkeeping: the heartbeat's shape does not change for it.
-	rec.OfflineSince, rec.OfflineCounted = "", false
 	return rec
 }
 
