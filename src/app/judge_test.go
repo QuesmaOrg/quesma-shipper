@@ -512,18 +512,17 @@ func TestStandingEventsDoNotEvictCountedFailures(t *testing.T) {
 	}
 }
 
-// A tick that ended offline is offline however many uploads failed before it stopped: the field
-// fault that lost a few PUTs and then the network was counted, and paged, as a broken install.
-func TestAnOfflineTickStaysOfflineWhateverFailedBeforeIt(t *testing.T) {
+// A run that failed a PUT and then lost the network is a failed run: going offline must not hide it.
+func TestAFailureBeforeGoingOfflineStillCounts(t *testing.T) {
 	dir := t.TempDir()
 	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "0123456789abcdef"}
-	mixed := formats.Report{Failed: 4, Sources: []formats.SourceOutcome{{Files: []formats.FileOutcome{
+	mixed := formats.Report{Failed: 2, Sources: []formats.SourceOutcome{{Files: []formats.FileOutcome{
 		{Decision: formats.DecisionFailed, Reason: "upload: HTTP 403 AccessDenied"},
 	}}}}
 	r.JudgeTick(fmt.Errorf("%w: collection stopped after 1 of 6 files", engine.ErrOffline), mixed, false, platform.Delta{})
 	rec := readFailureRecord(dir)
-	if rec.ConsecutiveFailures != 0 || rec.Latest() == nil || rec.Latest().Kind != formats.FailureOffline {
-		t.Fatalf("an offline tick with earlier failures was judged as %+v", rec)
+	if rec.ConsecutiveFailures != 1 || rec.Latest() == nil || rec.Latest().Kind != formats.FailureTick {
+		t.Fatalf("the AccessDenied before the outage was not counted: %+v", rec)
 	}
 }
 
@@ -540,7 +539,7 @@ func (c outageClock) tick(hours float64, err error) formats.FailureRecord {
 	return c.judge(hours, err, formats.Report{}, false)
 }
 
-// idle is a tick with nothing to ship whose own heartbeat got no answer.
+// idle is a tick with nothing to ship whose own heartbeat failed.
 func (c outageClock) idle(hours float64) formats.FailureRecord {
 	c.t.Helper()
 	return c.judge(hours, nil, formats.Report{}, true)
@@ -550,7 +549,7 @@ func (c outageClock) judge(hours float64, err error, rep formats.Report, unanswe
 	c.t.Helper()
 	at := c.t0.Add(time.Duration(hours * float64(time.Hour)))
 	r := &Runtime{eff: &config.Effective{StateDir: c.dir}, runID: "0123456789abcdef", now: func() time.Time { return at }}
-	r.heartbeatUnanswered = unanswered
+	r.heartbeatFailed = unanswered
 	r.JudgeTick(err, rep, false, platform.Delta{})
 	return readFailureRecord(c.dir)
 }
@@ -648,6 +647,9 @@ func TestAnIdleUnansweredTickDoesNotEndTheOutage(t *testing.T) {
 	}
 	if rec := c.tick(24, disconnected); rec.ConsecutiveFailures != 1 || countedEvents(rec) != 1 {
 		t.Fatalf("24h into an outage of idle ticks it was not counted once: %+v", rec)
+	}
+	if rec := c.idle(25); rec.ConsecutiveFailures != 1 || !rec.OfflineCounted || rec.OfflineSince == "" {
+		t.Fatalf("an idle unanswered tick after the count reset it: %+v", rec)
 	}
 
 	shipped := outageClock{t: t, dir: t.TempDir(), t0: c.t0}

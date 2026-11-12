@@ -58,8 +58,9 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 	}
 	// Offline is the machine's state, not the shipper's: nothing counts, one standing event says
 	// so, and the failure heartbeat is skipped because it could not be sent either. The engine
-	// decides it, on a request that got no answer twice, whatever else failed earlier in the run.
-	offline := errors.Is(err, engine.ErrOffline)
+	// decides it, on a request that got no answer twice, and the halt is the one failure it counts:
+	// a run that also failed a PUT or a scrub before going offline is still a failed run.
+	offline := errors.Is(err, engine.ErrOffline) && rep.Failed <= 1
 	if err == nil && rep.Shipped == 0 && rep.Failed > 0 {
 		// One reason travels: the count alone cannot tell a refused PUT from an unreachable
 		// control plane, and identical messages make the log unactionable.
@@ -78,16 +79,15 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 		}
 
 		switch {
+		case err == nil && rec.OfflineSince != "" && rep.Shipped == 0 && r.heartbeatFailed:
+			// Nothing shipped and the heartbeat failed: the tick proved nothing, so the outage goes on untouched.
 		case err == nil:
 			// Persisted on a clean run too, on purpose twice over: a healthy run's cost is the
 			// baseline that makes the next one's readable, and the next heartbeat is built
 			// mid-flush BEFORE judging, so it can only read these facts off disk; an in-memory
 			// shortcut would silently empty the field.
 			rec.ConsecutiveFailures = 0
-			// A tick that shipped nothing and whose heartbeat got no answer is no success: the outage goes on.
-			if rep.Shipped > 0 || !r.heartbeatUnanswered {
-				rec.OfflineSince, rec.OfflineCounted = "", false
-			}
+			rec.OfflineSince, rec.OfflineCounted = "", false
 		case offline:
 			rec.Stand(newEvent(r.eff.StateDir, r.runID, formats.FailureOffline, "offline: "+err.Error()))
 			r.noteOutage(rec, kind, err)
