@@ -125,6 +125,17 @@ perf-smoke: ## Run the CI-sized performance tier (needs Docker)
 		'^(TestSmokeTier|TestTheStoreIsReachableOnlyThroughTheProxy|TestASyncAgainstABogusEndpointFailsWithoutFallingBack|TestTheHarnessObservesAChildRun)$$' \
 		./perf/
 
+# Field network faults replayed against the shipper in a Linux container, through toxiproxy and a
+# controllable DNS server. The scenarios pin today's behaviour.
+.PHONY: chaos
+chaos: ## Run the network chaos suite (needs Docker)
+	@if ! docker info >/dev/null 2>&1; then \
+		echo "docker is not available; skipping the chaos suite"; \
+		exit 0; \
+	fi
+	cd $(MODULE) && go vet -tags chaos ./chaos/ ./chaos/testdata/dnsd/
+	cd $(MODULE) && go test -tags chaos -count=1 -timeout 10m -parallel 32 -v ./chaos/
+
 .PHONY: cover
 cover: ## Write a whole-module coverage report
 	cd $(MODULE) && go test -coverpkg=./... -coverprofile=coverage.out \
