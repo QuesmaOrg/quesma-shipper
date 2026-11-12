@@ -2,11 +2,7 @@
 
 // Each scenario reproduces one field fault: warm up clean, stage new transcripts, arm the fault, run
 // one tick and read what the install recorded, then lift it and prove a clean tick ships everything.
-<<<<<<< HEAD
 // Pinned: a request with no answer is retried once, then stops the tick as offline (PROTOCOL.md).
-=======
-// The expectations pin today's behaviour; a hardening change flips them on purpose.
->>>>>>> origin/main
 package chaos
 
 import (
@@ -31,12 +27,9 @@ type expectation struct {
 	// Whether the fault tick's own install_health reached the control plane.
 	faultTelemetry bool
 
-<<<<<<< HEAD
 	// The requests the fault tick sent, where they show the one retry; nil leaves them unchecked.
 	sent *attempts
 
-=======
->>>>>>> origin/main
 	// Only where the question is whether the tick gets stuck: a loose ceiling, never a timing claim.
 	maxTick time.Duration
 }
@@ -56,11 +49,8 @@ type scenario struct {
 
 var nxdomain = dnsFault{Rcode: "NXDOMAIN"}
 
-<<<<<<< HEAD
 const offlineCause = "engine: the control plane or the store could not be reached"
 
-=======
->>>>>>> origin/main
 var scenarios = []scenario{
 	{
 		slug: "put-reset", field: "F1", files: 3,
@@ -69,13 +59,8 @@ var scenarios = []scenario{
 			s.armResets()
 			s.in.setStore(storeFault{resetAfterBody: true})
 		},
-<<<<<<< HEAD
 		want: expectation{kind: formats.FailureOffline, consecutive: 0, faultTelemetry: true, sent: &attempts{1, 6, 0},
 			contains: []string{offlineCause, "upload: PUT object", "read: connection reset by peer"}},
-=======
-		want: expectation{kind: formats.FailureTick, consecutive: 1, faultTelemetry: true,
-			contains: []string{"the run shipped nothing: all 3 attempted uploads failed", "upload: PUT object", "read: connection reset by peer"}},
->>>>>>> origin/main
 	},
 	{
 		slug: "put-reset-mid-body", field: "F1", files: 1, size: 64 << 20,
@@ -85,13 +70,8 @@ var scenarios = []scenario{
 			s.armResets()
 			s.in.setStore(storeFault{resetMidBody: 64 << 10})
 		},
-<<<<<<< HEAD
 		want: expectation{kind: formats.FailureOffline, consecutive: 0, faultTelemetry: true, sent: &attempts{1, 2, 0},
 			contains: []string{offlineCause, "upload: PUT object", "write: connection reset by peer"}},
-=======
-		want: expectation{kind: formats.FailureTick, consecutive: 1, faultTelemetry: true,
-			contains: []string{"the run shipped nothing: all 1 attempted uploads failed", "upload: PUT object", "write: connection reset by peer"}},
->>>>>>> origin/main
 		check: func(t *testing.T, s *stage) string {
 			return fmt.Sprintf("sealed object %d bytes; the store reads 64 KiB of it, then resets", s.in.largestObject())
 		},
@@ -104,13 +84,8 @@ var scenarios = []scenario{
 				t.Fatal(err)
 			}
 		},
-<<<<<<< HEAD
 		want: expectation{kind: formats.FailureOffline, consecutive: 0, maxTick: 2 * time.Minute,
 			contains: []string{offlineCause, "TLS handshake timeout"}},
-=======
-		want: expectation{kind: formats.FailureTick, consecutive: 1, maxTick: 2 * time.Minute,
-			contains: []string{"TLS handshake timeout"}},
->>>>>>> origin/main
 	},
 	{
 		// Two groups of four in one wave; more files form a second wave whose size depends on scheduling.
@@ -119,27 +94,17 @@ var scenarios = []scenario{
 		arm: func(t *testing.T, s *stage) {
 			s.in.setAuthorize(authorizeFault{stall: true})
 		},
-<<<<<<< HEAD
 		want: expectation{kind: formats.FailureOffline, consecutive: 0, faultTelemetry: true, maxTick: 4 * time.Minute,
 			sent:     &attempts{4, 0, 0},
 			contains: []string{offlineCause, "Client.Timeout exceeded while awaiting headers"}},
-=======
-		want: expectation{kind: formats.FailureTick, consecutive: 1, faultTelemetry: true, maxTick: 4 * time.Minute,
-			contains: []string{"Client.Timeout exceeded while awaiting headers"}},
->>>>>>> origin/main
 		check: func(t *testing.T, s *stage) string {
 			mirror, heartbeat, shortest, longest := countStalls(s.in.stalled())
 			if mirror+heartbeat > 0 && shortest < 25*time.Second {
 				t.Errorf("an authorize stall ended after %s: the client gave up before its 30s timeout", shortest)
 			}
-<<<<<<< HEAD
 			// Each group once and once more after the pause; the stopped tick sends no heartbeat.
 			if mirror != 4 || heartbeat != 0 {
 				t.Errorf("authorize stalled %d times for mirror groups and %d for heartbeats, want 4 and 0", mirror, heartbeat)
-=======
-			if mirror != 2 || heartbeat != 1 {
-				t.Errorf("authorize stalled for %d mirror groups and %d heartbeats, want 2 and 1", mirror, heartbeat)
->>>>>>> origin/main
 			}
 			return fmt.Sprintf("authorize stalled for %d mirror group(s) and %d heartbeat(s), each waited %s-%s",
 				mirror, heartbeat, shortest.Round(time.Second), longest.Round(time.Second))
@@ -151,13 +116,8 @@ var scenarios = []scenario{
 		arm: func(t *testing.T, s *stage) {
 			setDNS(t, s.cpHost, dnsFault{Address: blackholeIP})
 		},
-<<<<<<< HEAD
 		want: expectation{kind: formats.FailureOffline, consecutive: 0, maxTick: 4 * time.Minute,
 			contains: []string{offlineCause, "backend: /v2/uploads/authorize", "(Client.Timeout exceeded while awaiting headers)"}},
-=======
-		want: expectation{kind: formats.FailureTick, consecutive: 1, maxTick: 4 * time.Minute,
-			contains: []string{"backend: /v2/uploads/authorize", "(Client.Timeout exceeded while awaiting headers)"}},
->>>>>>> origin/main
 		// The 30s dial and client deadlines expire together, so net/http picks one of two exact spellings.
 		check: func(t *testing.T, s *stage) string {
 			msg := s.faultMessage
@@ -180,11 +140,7 @@ var scenarios = []scenario{
 			setDNS(t, s.cpHost, nxdomain)
 		},
 		want: expectation{kind: formats.FailureOffline, consecutive: 0,
-<<<<<<< HEAD
 			contains: []string{offlineCause, "no such host"}},
-=======
-			contains: []string{"engine: the control plane could not be reached", "no such host"}},
->>>>>>> origin/main
 	},
 	{
 		slug: "store-nxdomain", field: "F2", files: 3,
@@ -192,13 +148,8 @@ var scenarios = []scenario{
 		arm: func(t *testing.T, s *stage) {
 			setDNS(t, s.store, nxdomain)
 		},
-<<<<<<< HEAD
 		want: expectation{kind: formats.FailureOffline, consecutive: 0, faultTelemetry: true, sent: &attempts{1, 0, 0},
 			contains: []string{offlineCause, "upload: PUT object", "no such host"}},
-=======
-		want: expectation{kind: formats.FailureTick, consecutive: 1, faultTelemetry: true,
-			contains: []string{"the run shipped nothing: all 3 attempted uploads failed", "upload: PUT object", "no such host"}},
->>>>>>> origin/main
 	},
 	{
 		slug: "dns-flap", field: "F2", files: 8,
@@ -211,13 +162,8 @@ var scenarios = []scenario{
 				setDNS(t, s.store, nxdomain)
 			})
 		},
-<<<<<<< HEAD
 		want: expectation{kind: formats.FailureOffline, consecutive: 0, sent: &attempts{1, 0, 0},
 			contains: []string{offlineCause, "no such host"}},
-=======
-		want: expectation{kind: formats.FailureTick, consecutive: 1,
-			contains: []string{"engine: the control plane could not be reached", "no such host"}},
->>>>>>> origin/main
 	},
 	{
 		slug: "cp-servfail", field: "F2", files: 3,
@@ -226,11 +172,7 @@ var scenarios = []scenario{
 			setDNS(t, s.cpHost, dnsFault{Rcode: "SERVFAIL"})
 		},
 		want: expectation{kind: formats.FailureOffline, consecutive: 0,
-<<<<<<< HEAD
 			contains: []string{offlineCause, "server misbehaving"}},
-=======
-			contains: []string{"engine: the control plane could not be reached", "server misbehaving"}},
->>>>>>> origin/main
 	},
 	{
 		slug: "cp-dns-timeout", field: "F2", files: 3,
@@ -239,11 +181,7 @@ var scenarios = []scenario{
 			setDNS(t, s.cpHost, dnsFault{Drop: true})
 		},
 		want: expectation{kind: formats.FailureOffline, consecutive: 0, maxTick: 2 * time.Minute,
-<<<<<<< HEAD
 			contains: []string{offlineCause, "i/o timeout"}},
-=======
-			contains: []string{"engine: the control plane could not be reached", "i/o timeout"}},
->>>>>>> origin/main
 	},
 	{
 		slug: "cp-refused", field: "-", files: 3,
@@ -254,11 +192,7 @@ var scenarios = []scenario{
 			}
 		},
 		want: expectation{kind: formats.FailureOffline, consecutive: 0,
-<<<<<<< HEAD
 			contains: []string{offlineCause, "connection refused"}},
-=======
-			contains: []string{"engine: the control plane could not be reached", "connection refused"}},
->>>>>>> origin/main
 	},
 	{
 		slug: "store-slowdown", field: "-", files: 3,
@@ -266,11 +200,7 @@ var scenarios = []scenario{
 		arm: func(t *testing.T, s *stage) {
 			s.in.setStore(storeFault{status: 503, body: "<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message></Error>"})
 		},
-<<<<<<< HEAD
 		want: expectation{kind: formats.FailureTick, consecutive: 1, faultTelemetry: true, sent: &attempts{1, 3, 1},
-=======
-		want: expectation{kind: formats.FailureTick, consecutive: 1, faultTelemetry: true,
->>>>>>> origin/main
 			contains: []string{"the run shipped nothing: all 3 attempted uploads failed", "HTTP 503", "SlowDown"}},
 	},
 	{
@@ -279,11 +209,7 @@ var scenarios = []scenario{
 		arm: func(t *testing.T, s *stage) {
 			s.in.setAuthorize(authorizeFault{status: 503, body: "upstream unavailable"})
 		},
-<<<<<<< HEAD
 		want: expectation{kind: formats.FailureTick, consecutive: 1, faultTelemetry: true, sent: &attempts{1, 0, 0},
-=======
-		want: expectation{kind: formats.FailureTick, consecutive: 1, faultTelemetry: true,
->>>>>>> origin/main
 			contains: []string{"upload authorization is unavailable", "HTTP 503"}},
 	},
 	{
@@ -292,11 +218,7 @@ var scenarios = []scenario{
 		arm: func(t *testing.T, s *stage) {
 			s.in.setAuthorize(authorizeFault{status: 429, body: "slow down"})
 		},
-<<<<<<< HEAD
 		want: expectation{kind: formats.FailureTick, consecutive: 1, faultTelemetry: true, sent: &attempts{1, 0, 0},
-=======
-		want: expectation{kind: formats.FailureTick, consecutive: 1, faultTelemetry: true,
->>>>>>> origin/main
 			contains: []string{"upload authorization is unavailable", "HTTP 429"}},
 	},
 	{
@@ -305,13 +227,8 @@ var scenarios = []scenario{
 		arm: func(t *testing.T, s *stage) {
 			s.in.setAuthorize(authorizeFault{truncate: true})
 		},
-<<<<<<< HEAD
 		want: expectation{kind: formats.FailureOffline, consecutive: 0, faultTelemetry: true, sent: &attempts{2, 0, 0},
 			contains: []string{offlineCause, "unexpected EOF"}},
-=======
-		want: expectation{kind: formats.FailureTick, consecutive: 1, faultTelemetry: true,
-			contains: []string{"unexpected EOF"}},
->>>>>>> origin/main
 	},
 	{
 		slug: "link-cut", field: "-", files: 4,
@@ -334,15 +251,10 @@ var scenarios = []scenario{
 			}()
 			s.afterFaultTick = func() error { close(stop); return <-result }
 		},
-<<<<<<< HEAD
 		// The record keeps the retry's cause: each PUT first waits out its response headers, then
 		// the retry's fresh connection cannot finish a handshake across the cut.
 		want: expectation{kind: formats.FailureOffline, consecutive: 0, maxTick: 4 * time.Minute, sent: &attempts{1, 4, 0},
 			contains: []string{offlineCause, "upload: PUT object", "TLS handshake timeout"}},
-=======
-		want: expectation{kind: formats.FailureTick, consecutive: 1, maxTick: 4 * time.Minute,
-			contains: []string{"the run shipped nothing: all 4 attempted uploads failed", "upload: PUT object", "timeout awaiting response headers"}},
->>>>>>> origin/main
 	},
 	{
 		slug: "partial", field: "F1 (partial)", files: 4,
@@ -351,17 +263,12 @@ var scenarios = []scenario{
 			s.armResets()
 			s.in.setStore(storeFault{resetAfterBody: true, passFirst: 2})
 		},
-<<<<<<< HEAD
 		want: expectation{kind: formats.FailureOffline, consecutive: 0, faultTelemetry: true, sent: &attempts{1, 6, 0},
 			contains: []string{offlineCause, "read: connection reset by peer"}},
-=======
-		want: expectation{kind: "", consecutive: 0, faultTelemetry: true},
->>>>>>> origin/main
 		check: func(t *testing.T, s *stage) string {
 			if want := 3 * s.perFile; s.afterFault != want {
 				t.Errorf("the fault tick left %d mirror objects in the store, want %d", s.afterFault, want)
 			}
-<<<<<<< HEAD
 			return "the fault tick kept the 2 of 4 new files that landed before it stopped"
 		},
 	},
@@ -457,11 +364,6 @@ func shippedEverything(t *testing.T, s *stage) string {
 		t.Errorf("the fault tick left %d mirror objects in the store, want %d", s.afterFault, want)
 	}
 	return "the retry healed the fault inside the tick"
-=======
-			return "the fault tick shipped 2 of 4 new files and exited 0"
-		},
-	},
->>>>>>> origin/main
 }
 
 func TestChaos(t *testing.T) {
@@ -510,17 +412,11 @@ func runScenario(t *testing.T, order int, sc scenario) {
 	faultHealth := s.in.telemetryBetween(fault.started, recovery.started)
 	recoveryHealth := s.in.telemetryBetween(recovery.started, time.Now().Add(time.Hour))
 
-<<<<<<< HEAD
 	sent := s.in.attemptsBetween(fault.started, recovery.started)
 	r := row{
 		order: order, Scenario: sc.title, Field: sc.field,
 		Consecutive: rec.ConsecutiveFailures, TickSeconds: fault.elapsed.Seconds(), Exit: fault.exit,
 		Attempts:       attemptsJSON{Authorize: sent.authorize, Put: sent.put, Heartbeat: sent.heartbeat},
-=======
-	r := row{
-		order: order, Scenario: sc.title, Field: sc.field,
-		Consecutive: rec.ConsecutiveFailures, TickSeconds: fault.elapsed.Seconds(), Exit: fault.exit,
->>>>>>> origin/main
 		FaultTelemetry: len(faultHealth) > 0,
 	}
 	if latest != nil {
@@ -549,12 +445,9 @@ func runScenario(t *testing.T, order int, sc scenario) {
 			t.Errorf("newest event message lacks %q:\n%s", sub, r.Message)
 		}
 	}
-<<<<<<< HEAD
 	if want.sent != nil && sent != *want.sent {
 		t.Errorf("the fault tick sent %+v, want %+v", sent, *want.sent)
 	}
-=======
->>>>>>> origin/main
 	if want.maxTick > 0 && fault.elapsed > want.maxTick {
 		t.Errorf("the fault tick took %s, past the %s that would mean it is stuck", fault.elapsed, want.maxTick)
 	}

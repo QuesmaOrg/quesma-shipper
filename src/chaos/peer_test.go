@@ -16,10 +16,7 @@ import (
 	"io"
 	"net"
 	"net/http"
-<<<<<<< HEAD
 	"slices"
-=======
->>>>>>> origin/main
 	"strconv"
 	"strings"
 	"sync"
@@ -40,37 +37,25 @@ const (
 var ticketSecret = []byte("chaos-ticket-secret")
 
 // How the control plane answers /v2/uploads/authorize for one install; the zero value is healthy.
-<<<<<<< HEAD
 // times limits the fault to the first that many requests after it is set; zero means every one.
-=======
->>>>>>> origin/main
 type authorizeFault struct {
 	status    int
 	body      string
 	stall     bool
 	truncate  bool
 	closeConn bool
-<<<<<<< HEAD
 	times     int
 }
 
 // How the store answers a mirror-object PUT for one install; heartbeats always land. times limits
 // the fault to that many PUTs after the passFirst ones; zero means every one.
-=======
-}
-
-// How the store answers a mirror-object PUT for one install; heartbeats always land.
->>>>>>> origin/main
 type storeFault struct {
 	resetAfterBody bool
 	resetMidBody   int
 	status         int
 	body           string
 	passFirst      int
-<<<<<<< HEAD
 	times          int
-=======
->>>>>>> origin/main
 	hold           *putHold
 }
 
@@ -80,18 +65,12 @@ type putHold struct {
 	release chan struct{}
 }
 
-<<<<<<< HEAD
 // One authorize the control plane stalled: its group's sorted object keys, when it arrived, and how
 // long the client waited before it gave up.
 type stalledAuthorize struct {
 	mirror bool
 	keys   string
 	at     time.Time
-=======
-// One authorize the control plane stalled, and how long the client waited before it gave up.
-type stalledAuthorize struct {
-	mirror bool
->>>>>>> origin/main
 	waited time.Duration
 }
 
@@ -100,7 +79,6 @@ type telemetryArrival struct {
 	payload json.RawMessage
 }
 
-<<<<<<< HEAD
 // One authorize or PUT request as it reached the far end, before any fault decided its answer.
 type requestArrival struct {
 	at     time.Time
@@ -112,8 +90,6 @@ type attempts struct {
 	authorize, put, heartbeat int
 }
 
-=======
->>>>>>> origin/main
 type install struct {
 	id          string
 	key         ed25519.PublicKey
@@ -123,20 +99,14 @@ type install struct {
 	authorize  authorizeFault
 	store      storeFault
 	onConfig   func()
-<<<<<<< HEAD
 	authorizes int
-=======
->>>>>>> origin/main
 	mirrorPuts int
 	stalls     []stalledAuthorize
 	telemetry  []telemetryArrival
 	stored     map[string]int
-<<<<<<< HEAD
 
 	authorizeLog []requestArrival
 	putLog       []requestArrival
-=======
->>>>>>> origin/main
 }
 
 type peers struct {
@@ -160,7 +130,6 @@ func (p *peers) lookup(id string) *install {
 	return p.installs[id]
 }
 
-<<<<<<< HEAD
 // Restarts the request count times reads, so a fault counts only the requests sent under it.
 func (in *install) setAuthorize(f authorizeFault) {
 	in.mu.Lock()
@@ -169,15 +138,6 @@ func (in *install) setAuthorize(f authorizeFault) {
 }
 
 // Restarts the PUT count passFirst and times read, so a fault counts only the PUTs sent under it.
-=======
-func (in *install) setAuthorize(f authorizeFault) {
-	in.mu.Lock()
-	defer in.mu.Unlock()
-	in.authorize = f
-}
-
-// Restarts the PUT count passFirst reads, so a fault counts only the PUTs sent under it.
->>>>>>> origin/main
 func (in *install) setStore(f storeFault) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
@@ -231,7 +191,6 @@ func (in *install) telemetryBetween(from, to time.Time) []json.RawMessage {
 	return out
 }
 
-<<<<<<< HEAD
 // Every authorize and PUT request that arrived in [from, to), by kind.
 func (in *install) attemptsBetween(from, to time.Time) attempts {
 	in.mu.Lock()
@@ -255,8 +214,6 @@ func (in *install) attemptsBetween(from, to time.Time) attempts {
 	return a
 }
 
-=======
->>>>>>> origin/main
 // --- the control plane ------------------------------------------------------
 
 func (p *peers) serveControlPlane(w http.ResponseWriter, r *http.Request) {
@@ -330,14 +287,11 @@ func (p *peers) authorize(w http.ResponseWriter, r *http.Request, in *install, b
 	mirror := len(req.Objects) > 0 && strings.Contains(req.Objects[0].Key, "/mirror/")
 	in.mu.Lock()
 	fault := in.authorize
-<<<<<<< HEAD
 	in.authorizes++
 	if fault.times > 0 && in.authorizes > fault.times {
 		fault = authorizeFault{}
 	}
 	in.authorizeLog = append(in.authorizeLog, requestArrival{at: time.Now(), mirror: mirror})
-=======
->>>>>>> origin/main
 	in.mu.Unlock()
 
 	switch {
@@ -349,7 +303,6 @@ func (p *peers) authorize(w http.ResponseWriter, r *http.Request, in *install, b
 		case <-time.After(3 * time.Minute):
 		}
 		in.mu.Lock()
-<<<<<<< HEAD
 		keys := make([]string, len(req.Objects))
 		for i, obj := range req.Objects {
 			keys[i] = obj.Key
@@ -357,9 +310,6 @@ func (p *peers) authorize(w http.ResponseWriter, r *http.Request, in *install, b
 		slices.Sort(keys)
 		in.stalls = append(in.stalls, stalledAuthorize{mirror: mirror, keys: strings.Join(keys, " "),
 			at: started, waited: time.Since(started)})
-=======
-		in.stalls = append(in.stalls, stalledAuthorize{mirror: mirror, waited: time.Since(started)})
->>>>>>> origin/main
 		in.mu.Unlock()
 		return
 	case fault.status != 0:
@@ -480,14 +430,9 @@ func (p *peers) serveStore(w http.ResponseWriter, r *http.Request) {
 		in.mirrorPuts++
 		nth = in.mirrorPuts
 	}
-<<<<<<< HEAD
 	in.putLog = append(in.putLog, requestArrival{at: time.Now(), mirror: mirror})
 	in.mu.Unlock()
 	if !mirror || nth <= fault.passFirst || (fault.times > 0 && nth > fault.passFirst+fault.times) {
-=======
-	in.mu.Unlock()
-	if !mirror || (fault.passFirst > 0 && nth <= fault.passFirst) {
->>>>>>> origin/main
 		fault = storeFault{}
 	}
 
