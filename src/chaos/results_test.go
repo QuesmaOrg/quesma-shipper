@@ -27,7 +27,10 @@ type row struct {
 	Consecutive    int             `json:"consecutive_failures"`
 	TickSeconds    float64         `json:"tick_seconds"`
 	Exit           int             `json:"exit"`
+<<<<<<< HEAD
 	Attempts       attemptsJSON    `json:"fault_tick_requests"`
+=======
+>>>>>>> origin/main
 	Message        string          `json:"message"`
 	Notes          string          `json:"notes,omitempty"`
 	NotRecorded    bool            `json:"not_recorded,omitempty"`
@@ -41,12 +44,15 @@ var (
 	rows   []row
 )
 
+<<<<<<< HEAD
 type attemptsJSON struct {
 	Authorize int `json:"mirror_authorize"`
 	Put       int `json:"mirror_put"`
 	Heartbeat int `json:"heartbeat_authorize"`
 }
 
+=======
+>>>>>>> origin/main
 func recordRow(r row) {
 	rowsMu.Lock()
 	defer rowsMu.Unlock()
@@ -66,19 +72,31 @@ func writeMatrix(t *testing.T) {
 
 	var text strings.Builder
 	tw := tabwriter.NewWriter(&text, 0, 0, 2, ' ', 0)
+<<<<<<< HEAD
 	fmt.Fprintln(tw, "SCENARIO\tFIELD\tKIND\tCOUNTED\tCONSECUTIVE\tTICK_S\tEXIT\tAUTH/PUT/HB\tMESSAGE")
 	for _, r := range rows {
 		if r.NotRecorded {
 			fmt.Fprintf(tw, "%s\t%s\tNOT RECORDED\t-\t-\t-\t-\t-\t\n", r.Scenario, r.Field)
+=======
+	fmt.Fprintln(tw, "SCENARIO\tFIELD\tKIND\tCOUNTED\tCONSECUTIVE\tTICK_S\tEXIT\tMESSAGE")
+	for _, r := range rows {
+		if r.NotRecorded {
+			fmt.Fprintf(tw, "%s\t%s\tNOT RECORDED\t-\t-\t-\t-\t\n", r.Scenario, r.Field)
+>>>>>>> origin/main
 			continue
 		}
 		kind := r.Kind
 		if kind == "" {
 			kind = "(none)"
 		}
+<<<<<<< HEAD
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%v\t%d\t%.1f\t%d\t%d/%d/%d\t%s\n",
 			r.Scenario, r.Field, kind, r.Counted, r.Consecutive, r.TickSeconds, r.Exit,
 			r.Attempts.Authorize, r.Attempts.Put, r.Attempts.Heartbeat, excerpt(r.Message))
+=======
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%v\t%d\t%.1f\t%d\t%s\n",
+			r.Scenario, r.Field, kind, r.Counted, r.Consecutive, r.TickSeconds, r.Exit, excerpt(r.Message))
+>>>>>>> origin/main
 	}
 	_ = tw.Flush()
 	for _, r := range rows {
