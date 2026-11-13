@@ -113,6 +113,66 @@ func TestResolveWithNoConfigFilesWorks(t *testing.T) {
 	}
 }
 
+func TestTranscriptDefaultAdmitsLargerFilesAndPreservesRemoteCap(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, ".claude", "projects", "example")
+	mustMkdir(t, root)
+	for name, size := range map[string]int64{
+		"above-old-cap.jsonl": (256 << 20) + 1,
+		"at-new-cap.jsonl":    512 << 20,
+		"above-new-cap.jsonl": (512 << 20) + 1,
+	} {
+		f, err := os.Create(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Keep the sniffed prefix valid JSONL while leaving the large tail sparse.
+		_, writeErr := f.WriteString(strings.Repeat("{}\n", (64<<10)/3+1))
+		truncateErr := f.Truncate(size)
+		if err := errors.Join(writeErr, truncateErr, f.Close()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name       string
+		override   string
+		candidates int
+		oversize   int
+	}{
+		{name: "compiled default", candidates: 2, oversize: 1},
+		{name: "existing remote cap", override: "sources:\n  - id: claude-code-transcripts\n    max_file_bytes: 268435456\n", oversize: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := baseInput(t, home)
+			if tc.override != "" {
+				input.Layers = []config.LayeredDocument{{Layer: config.LayerRemote, Doc: doc(t, tc.override)}}
+			}
+			effective, err := config.Resolve(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, src := range effective.Sources {
+				if src.ID != "claude-code-transcripts" {
+					continue
+				}
+				collector, err := sources.NewRegistry().For(src.Gather)
+				if err != nil {
+					t.Fatal(err)
+				}
+				discovery, err := collector.Discover(sources.Request{Source: src, StateDir: input.StateDir})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(discovery.Candidates) != tc.candidates || len(discovery.Oversize) != tc.oversize {
+					t.Fatalf("candidates=%d oversize=%d, want %d and %d", len(discovery.Candidates), len(discovery.Oversize), tc.candidates, tc.oversize)
+				}
+				return
+			}
+			t.Fatal("Claude transcript source missing")
+		})
+	}
+}
+
 // Every value is attributable to the layer that set it.
 func TestProvenanceAttributesEveryValue(t *testing.T) {
 	home := fakeHome(t)

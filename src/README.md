@@ -147,8 +147,11 @@ so they stay on disk where `/tmp` is a tmpfs. That volume must hold the scrubbed
 encrypted object; plaintext spools contain only scrubbed data and are removed on close or process
 exit, and each run removes any a crashed run left behind.
 
-Collection limits remain unchanged: Claude transcripts default to 256 MiB and Codex rollouts to
-512 MiB. Operators can raise the existing `max_file_bytes` setting for supported transcripts.
+Session and transcript sources for Claude Code, Codex (including Together Link), Cursor and
+GitHub Copilot default to 512 MiB (536,870,912 bytes). Experimental Pi, OpenCode and Hermes
+session sources retain their 64 MiB defaults. Account, context, settings and separately collected
+tool-output sources retain their smaller limits. Explicit control-plane `max_file_bytes` overrides
+continue to take precedence over these defaults.
 The cap bounds the entire decoded snapshot, including every record and line ending. Streaming
 does not remove the existing 1 GiB encrypted-object limit or the container's 8 GiB payload boundary.
 Scrub, read, disk-space, and upload failures commit no successful fingerprint.

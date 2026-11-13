@@ -35,10 +35,8 @@ sources:
     roots:
       - $CURSOR_PROJECTS_DIR
       - ~/.cursor/projects
-    # Cursor writes one transcript per conversation and its own store caps what it keeps.
-    # Same ceiling as the other transcript sources: this bounds what the pipeline can be
-    # asked to hold, not what Cursor is expected to produce.
-    max_file_bytes: 268435456
+    # Enrichment still buffers transcripts, so the cap also bounds its input.
+    max_file_bytes: 536870912
     include:
       - "**/agent-transcripts/**/*.jsonl"
     enrichers:
