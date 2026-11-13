@@ -11,6 +11,6 @@ sources:
       - $HERMES_HOME
       - ~/.hermes
     include: ["state.db", "profiles/*/state.db"]
-    max_file_bytes: 536870912
+    max_file_bytes: 67108864
     sniff:
       kind: jsonl

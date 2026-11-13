@@ -117,7 +117,7 @@ named with `OPENCODE_DB`, add its path relative to the root:
 
 OpenCode and Hermes export selected session records as scrubbed JSONL, including
 committed WAL changes. Database files and credentials are not uploaded. Each
-snapshot is capped at 512 MiB by default; unchanged snapshots are not uploaded again.
+snapshot is capped at 64 MiB by default; unchanged snapshots are not uploaded again.
 
 A repository marked as not tracked is matched through the folder the session ran in. For Copilot Chat this is the folder VS Code opened; in a multi-root workspace a mark on any of its folders applies. Chats from a remote VS Code window (SSH, WSL, dev container) name a folder on another machine, so they ship without a repository and a mark there does not apply.
 
@@ -147,10 +147,11 @@ so they stay on disk where `/tmp` is a tmpfs. That volume must hold the scrubbed
 encrypted object; plaintext spools contain only scrubbed data and are removed on close or process
 exit, and each run removes any a crashed run left behind.
 
-Session and transcript sources default to 512 MiB (536,870,912 bytes) for every agent, including
-Codex Together Link and all Copilot session stores. Account, context, settings and separately
-collected tool-output sources retain their smaller limits. Explicit control-plane `max_file_bytes`
-overrides continue to take precedence over these defaults.
+Session and transcript sources for Claude Code, Codex (including Together Link), Cursor and
+GitHub Copilot default to 512 MiB (536,870,912 bytes). Experimental Pi, OpenCode and Hermes
+session sources retain their 64 MiB defaults. Account, context, settings and separately collected
+tool-output sources retain their smaller limits. Explicit control-plane `max_file_bytes` overrides
+continue to take precedence over these defaults.
 The cap bounds the entire decoded snapshot, including every record and line ending. Streaming
 does not remove the existing 1 GiB encrypted-object limit or the container's 8 GiB payload boundary.
 Scrub, read, disk-space, and upload failures commit no successful fingerprint.

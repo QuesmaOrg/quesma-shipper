@@ -28,7 +28,7 @@ sources:
       - ~/.claude
       - $XDG_CONFIG_HOME/claude
     require_subdir: projects
-    # Large JSONL streams; the input cap still bounds exceptional records and other files.
+    # The cap skips multi-GB transcripts from writer defects and bounds buffered inputs.
     max_file_bytes: 536870912
     include:
       - "projects/**/*.jsonl"
