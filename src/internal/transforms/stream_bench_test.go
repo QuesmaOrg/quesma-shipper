@@ -67,11 +67,11 @@ func BenchmarkLargeJSONLPipeline(b *testing.B) {
 							if err != nil {
 								b.Fatal(err)
 							}
-							plain, err := platform.NewSpool()
+							plain, err := platform.NewSpool("")
 							if err != nil {
 								b.Fatal(err)
 							}
-							cipher, err := platform.NewSpool()
+							cipher, err := platform.NewSpool("")
 							if err != nil {
 								b.Fatal(err)
 							}

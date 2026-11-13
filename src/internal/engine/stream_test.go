@@ -3,6 +3,8 @@ package engine_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"io"
 	"os"
@@ -10,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
@@ -113,9 +117,11 @@ func TestLargeTranscriptFailuresLeaveNoCommittedUploadOrSpool(t *testing.T) {
 					t.Fatal("failed upload leaked spool")
 				}
 			}
-			leftovers, err := filepath.Glob(filepath.Join(tmp, "quesma-spool-*"))
-			if err != nil || len(leftovers) > 0 {
-				t.Fatalf("spools remain: %v, %v", leftovers, err)
+			for _, dir := range []string{tmp, filepath.Join(f.stateDir, "spool")} {
+				leftovers, err := filepath.Glob(filepath.Join(dir, "quesma-spool-*"))
+				if err != nil || len(leftovers) > 0 {
+					t.Fatalf("spools remain in %s: %v, %v", dir, leftovers, err)
+				}
 			}
 			if kind == "upload" {
 				f.port.verdict = nil
@@ -206,5 +212,58 @@ func TestLargeTranscriptTouchAndSameSizeMutation(t *testing.T) {
 	}
 	if stored.Versions != 2 || !bytes.HasPrefix(body, []byte(`{"text":"world"}`)) {
 		t.Fatal("same-size mutation uploaded stale data")
+	}
+}
+
+// A .zst with no max_file_bytes is refused on both paths before anything decodes, as on main:
+// nothing else bounds what a few KB of crafted frame decode to in the spool.
+func TestUncappedZstdIsParkedWithoutSpool(t *testing.T) {
+	f := newFixture(t)
+	f.eff.Sources[0].Include = append(f.eff.Sources[0].Include, "projects/**/*.jsonl.zst")
+	f.eff.Sources[0].MaxFileBytes = 0
+	enc, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer enc.Close()
+	small := enc.EncodeAll([]byte(strings.Repeat(`{"text":"hello"}`+"\n", 100)), nil)
+	// Random text barely compresses, so this one is over the threshold on disk and takes the stream path.
+	var large strings.Builder
+	chunk := make([]byte, 3<<10)
+	for large.Len() < sources.StreamThreshold*3/2 {
+		rand.Read(chunk)
+		large.WriteString(`{"r":"` + base64.StdEncoding.EncodeToString(chunk) + `"}` + "\n")
+	}
+	big := enc.EncodeAll([]byte(large.String()), nil)
+	if len(big) <= sources.StreamThreshold {
+		t.Fatalf("fixture compressed to %d bytes, not over the stream threshold", len(big))
+	}
+	f.writeTranscript("p/small.jsonl.zst", string(small))
+	f.writeTranscript("p/large.jsonl.zst", string(big))
+
+	rep := f.run()
+	if rep.Parked != 2 || len(f.port.keys()) != 0 {
+		t.Fatalf("uncapped zstd not refused: %+v", rep)
+	}
+	for _, file := range rep.Sources[0].Files {
+		if !strings.Contains(file.Reason, "no max_file_bytes") {
+			t.Errorf("%s: %q", file.RelPath, file.Reason)
+		}
+	}
+	if left, _ := filepath.Glob(filepath.Join(f.stateDir, "spool", "quesma-spool-*")); len(left) > 0 {
+		t.Fatalf("spool created for a refused file: %v", left)
+	}
+}
+
+// A crash leaves spool directories behind on Windows; the next run, holding the state lock, removes them.
+func TestRunSweepsStaleSpools(t *testing.T) {
+	f := newFixture(t)
+	stale := filepath.Join(f.stateDir, "spool", "quesma-spool-crashed")
+	if err := os.MkdirAll(stale, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f.run()
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale spool survived a run: %v", err)
 	}
 }

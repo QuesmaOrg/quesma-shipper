@@ -247,8 +247,13 @@ type Spool struct {
 	dir string
 }
 
-func NewSpool() (*Spool, error) {
-	dir, err := os.MkdirTemp("", "quesma-spool-")
+// spoolPrefix names each spool's directory, so SweepSpools removes only what NewSpool made.
+const spoolPrefix = "quesma-spool-"
+
+// NewSpool creates a spool under parent, or under the system temp directory when parent is empty.
+// The engine passes a directory under its state directory: a tmpfs /tmp would hold the spool in RAM.
+func NewSpool(parent string) (*Spool, error) {
+	dir, err := os.MkdirTemp(parent, spoolPrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -276,4 +281,20 @@ func (s *Spool) Close() error {
 		err = errors.Join(err, os.Remove(s.dir))
 	}
 	return err
+}
+
+// SweepSpools removes the spool directories a crashed process left in parent. Where files can be
+// unlinked while open, NewSpool leaves none; on Windows delete-on-close removes the payload but
+// not its directory. Only for a parent no live spool can be using: the engine sweeps its own,
+// under the state lock, before a run opens any.
+func SweepSpools(parent string) error {
+	stale, err := filepath.Glob(filepath.Join(parent, spoolPrefix+"*"))
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, dir := range stale {
+		errs = append(errs, os.RemoveAll(dir))
+	}
+	return errors.Join(errs...)
 }

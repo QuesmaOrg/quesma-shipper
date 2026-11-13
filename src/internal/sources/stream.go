@@ -24,6 +24,10 @@ type Stream struct {
 
 func fileStream(path string, maxBytes int64) func(context.Context) (Stream, error) {
 	return func(ctx context.Context) (Stream, error) {
+		// As readZstd: with no cap nothing bounds what a small crafted frame decodes to.
+		if IsZstd(path) && maxBytes <= 0 {
+			return Stream{}, fmt.Errorf("%s: no max_file_bytes to bound the decoded size", path)
+		}
 		f, info, err := platform.Open(path)
 		if err != nil {
 			return Stream{}, err

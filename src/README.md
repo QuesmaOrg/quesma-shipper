@@ -142,8 +142,10 @@ Large file-backed JSONL transcripts (including compressed Codex rollouts) use bo
 and private temporary files for scrubbing and encryption once they exceed 8 MiB. Smaller files
 keep the in-memory path. This applies to scrubbed sources without enrichers; other formats keep
 their existing collection path. The object format and full-snapshot upload behavior are unchanged.
-Temporary disk space must accommodate the scrubbed payload plus its encrypted object; plaintext
-spools contain only scrubbed data and are removed on close or process exit.
+These temporary files live in `spool/` under the state directory, not the system temp directory,
+so they stay on disk where `/tmp` is a tmpfs. That volume must hold the scrubbed payload plus its
+encrypted object; plaintext spools contain only scrubbed data and are removed on close or process
+exit, and each run removes any a crashed run left behind.
 
 Collection limits remain unchanged: Claude transcripts default to 256 MiB and Codex rollouts to
 512 MiB. Operators can raise the existing `max_file_bytes` setting for supported transcripts.

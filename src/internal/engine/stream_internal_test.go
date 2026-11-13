@@ -15,7 +15,7 @@ import (
 )
 
 func TestAbandonedStreamClosesSpool(t *testing.T) {
-	spool, err := platform.NewSpool()
+	spool, err := platform.NewSpool("")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -42,8 +42,14 @@ func TestFileStreamSnapshotLimitsAndCancellation(t *testing.T) {
 			if !errors.Is(err, platform.ErrTooLarge) {
 				t.Fatalf("cap not enforced: %v", err)
 			}
+			if compressed {
+				// Refused before the file is opened, as readZstd refuses it: nothing bounds the decoded size.
+				if _, err := fileStream(path, 0)(context.Background()); err == nil || !strings.Contains(err.Error(), "no max_file_bytes") {
+					t.Fatalf("uncapped zstd stream opened: %v", err)
+				}
+			}
 			ctx, cancel := context.WithCancel(context.Background())
-			stream, err = fileStream(path, 0)(ctx)
+			stream, err = fileStream(path, int64(len(raw)))(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}

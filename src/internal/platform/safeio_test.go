@@ -220,7 +220,7 @@ func TestWriteAtomicIsNotWedgedByAStrandedTemp(t *testing.T) {
 }
 
 func TestSpoolIsPrivateAndRemovedOnClose(t *testing.T) {
-	spool, err := platform.NewSpool()
+	spool, err := platform.NewSpool("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,9 +246,42 @@ func TestSpoolIsPrivateAndRemovedOnClose(t *testing.T) {
 	}
 }
 
+func TestSpoolUnderParentAndSweep(t *testing.T) {
+	parent := t.TempDir()
+	spool, err := platform.NewSpool(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := filepath.Dir(filepath.Dir(spool.Name())); got != parent {
+		t.Fatalf("spool under %s, want %s", got, parent)
+	}
+	if err := spool.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// What a crash leaves on Windows: the directory, its payload gone with delete-on-close.
+	stale := filepath.Join(parent, "quesma-spool-123")
+	if err := os.MkdirAll(stale, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(parent, "keep")
+	if err := os.WriteFile(other, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := platform.SweepSpools(parent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale spool directory remains: %v", err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatalf("sweep removed a file it does not own: %v", err)
+	}
+}
+
 func TestSpoolPayloadRemovedOnProcessExit(t *testing.T) {
 	if os.Getenv("QUESMA_TEST_SPOOL_CHILD") == "1" {
-		spool, err := platform.NewSpool()
+		spool, err := platform.NewSpool("")
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"path/filepath"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
@@ -42,7 +43,7 @@ func (o Options) prepareStream(ctx context.Context, job fileJob, src sources.Res
 		return fail(err)
 	}
 	defer stream.Close()
-	plain, err := platform.NewSpool()
+	plain, err := platform.NewSpool(o.spoolDir())
 	if err != nil {
 		return fail(fmt.Errorf("create scrub spool: %w", err))
 	}
@@ -65,7 +66,7 @@ func (o Options) prepareStream(ctx context.Context, job fileJob, src sources.Res
 		return fail(err)
 	}
 	out.ObjectKey = objectKey
-	cipher, err := platform.NewSpool()
+	cipher, err := platform.NewSpool(o.spoolDir())
 	if err != nil {
 		return fail(fmt.Errorf("create encrypted spool: %w", err))
 	}
@@ -92,6 +93,15 @@ func (o Options) prepareStream(ctx context.Context, job fileJob, src sources.Res
 	transferred = true
 	return res, &pendingPut{key: key, objectKey: objectKey, spool: cipher, size: limited.size, md: sealed.ObjectMetadata(),
 		next: Fingerprint{NativePath: cand.Path, SourceSize: cand.Size, SourceMTime: cand.MTime, SourceHash: sourceHash, SealPolicy: o.sealPolicy}}
+}
+
+// spoolDir is where large-file spools go: under the state directory, so they take its disk. A plan
+// with no state directory falls back to the system temp directory.
+func (o Options) spoolDir() string {
+	if o.Plan.StateDir == "" {
+		return ""
+	}
+	return filepath.Join(o.Plan.StateDir, "spool")
 }
 
 func hashStream(ctx context.Context, cand sources.Candidate) (string, int64, error) {

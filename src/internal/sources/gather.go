@@ -569,7 +569,8 @@ func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Ove
 		limit := src.MaxFileBytes
 		if len(src.Enrichers) == 0 && src.Sniff != nil && src.Sniff.Kind == "jsonl" && streamablePath(named) && (src.Scrub == nil || *src.Scrub) {
 			open = fileStream(named, limit)
-			if limit <= 0 || limit > StreamThreshold {
+			// A .zst with no cap keeps its 0 on both paths, so readZstd refuses it as it does on main.
+			if limit > StreamThreshold || limit <= 0 && !IsZstd(named) {
 				limit = StreamThreshold
 			}
 		}
