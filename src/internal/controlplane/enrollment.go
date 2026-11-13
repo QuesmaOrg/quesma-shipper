@@ -149,6 +149,21 @@ func (e Enrollment) PrivateKey() (ed25519.PrivateKey, error) {
 	return ed25519.PrivateKey(b), nil
 }
 
+// Client is the signed client this enrollment authorizes.
+func (e Enrollment) Client(stateDir string) (*Client, error) {
+	deviceKey, err := e.PrivateKey()
+	if err != nil {
+		return nil, err
+	}
+	return New(Options{
+		Endpoint:     e.Endpoint,
+		StateDir:     stateDir,
+		InstallID:    e.InstallID,
+		Organization: e.Organization,
+		DeviceKey:    deviceKey,
+	})
+}
+
 // NewDeviceKey generates the request-signing keypair.
 func NewDeviceKey() (ed25519.PublicKey, ed25519.PrivateKey, error) {
 	return ed25519.GenerateKey(nil)
