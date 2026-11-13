@@ -406,7 +406,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 	}
 	// The heartbeat goes down the trajectory path exactly: one authorization, the same validation,
 	// the same PUT. No second way to reach the store, which a revocation would have to learn about.
-	outcomes := r.upload.AuthorizeAndUpload(ctx, []engine.PreparedObject{{
+	outcomes := r.upload.AuthorizeAndUpload(context.WithValue(ctx, singleAttempt{}, true), []engine.PreparedObject{{
 		ObjectID:   "heartbeat",
 		Key:        key,
 		Body:       sealed,

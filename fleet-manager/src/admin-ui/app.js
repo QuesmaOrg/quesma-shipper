@@ -412,8 +412,8 @@ function renderInstalls(records) {
     const os = cell(row, ''), booted = cell(row, '');
     cell(row, stamp(record.created_at));
     const config = cell(row, ''), vend = cell(row, ''), version = cell(row, '');
-    installDetailCells.set(record.install_id, {name, metadata, os, booted, config, vend, version});
-    const revoked = record.status === 'revoked'; emptyCell(row).append(statusPill(record.status, revoked));
+    const revoked = record.status === 'revoked', status = emptyCell(row); status.append(statusPill(record.status, revoked));
+    installDetailCells.set(record.install_id, {name, metadata, os, booted, config, vend, version, status: revoked ? null : status});
     const actions = emptyCell(row);
     // A revoked install keeps its Name button: the objects it already wrote still want a label.
     actions.append(quietButton('Name', () => openRename(record.install_id, name.textContent)));
@@ -435,6 +435,8 @@ async function loadSeen(generation) {
     cells.config.textContent = stamp(record.last_config_at) || '—';
     cells.vend.textContent = stamp(record.last_vend_at) || '—';
     cells.version.textContent = record.client_version || '—';
+    const silent = cells.status && silentFor(record.last_seen_at, Date.now());
+    if (silent) cells.status.append(' ', statusPill(silent, false));
   });
 }
 

@@ -208,7 +208,7 @@ const (
 	// forever never reaches the judge. Uncounted, and the tick may yet complete.
 	FailureStalled = "tick_stalled"
 
-	// The control plane could not be reached, so the run stopped. Uncounted and standing: the
+	// The control plane or the store gave no answer, so the run stopped. Uncounted and standing: the
 	// machine is off the network, not the shipper broken, and the next online tick ships it all.
 	FailureOffline = "offline"
 )
@@ -247,6 +247,14 @@ func (r *FailureRecord) Append(e FailureEvent) {
 	r.Recent = append(r.Recent, e)
 	if n := len(r.Recent); n > MaxRecentFailures {
 		r.Recent = append(r.Recent[:0], r.Recent[n-MaxRecentFailures:]...)
+	}
+}
+
+// Record appends an event and counts it when its kind is counted.
+func (r *FailureRecord) Record(e FailureEvent) {
+	r.Append(e)
+	if e.Counted() {
+		r.ConsecutiveFailures++
 	}
 }
 

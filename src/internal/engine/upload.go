@@ -107,9 +107,9 @@ var (
 	// wrap formats.ErrCredentialsRefused: this install is waiting, not revoked.
 	ErrUploadUnavailable = errors.New("engine: upload authorization is unavailable")
 
-	// ErrOffline is an authorization that never reached the control plane. Halts the run's uploads
+	// ErrOffline is an authorization or a PUT that got no answer, twice. Halts the run's uploads
 	// like ErrUploadUnavailable; the judge files the run as the machine offline, not as a failure.
-	ErrOffline = errors.New("engine: the control plane could not be reached")
+	ErrOffline = errors.New("engine: the control plane or the store could not be reached")
 
 	// ErrTicketExpired is the one verdict worth a second authorization inside a single run.
 	ErrTicketExpired = errors.New("engine: upload ticket had expired")
@@ -187,6 +187,10 @@ func (o Options) authorizeAndUpload(ctx context.Context, items []stagedUpload) (
 			len(batch))
 	}
 
+	// The run is stopping: an expired ticket beside an offline object is not worth another authorization.
+	if slices.ContainsFunc(outcomes, func(oc error) bool { return errors.Is(oc, ErrOffline) }) {
+		return outcomes
+	}
 	var expired []int
 	for i, oc := range outcomes {
 		if errors.Is(oc, ErrTicketExpired) {
