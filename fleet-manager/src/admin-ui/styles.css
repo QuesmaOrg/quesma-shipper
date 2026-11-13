@@ -957,7 +957,8 @@ tbody tr:hover {
 }
 
 .pill--pending,
-.pill--reserved {
+.pill--reserved,
+.pill--silent {
   border-color: color-mix(in srgb, var(--sulphur) 80%, var(--ink));
   background: color-mix(in srgb, var(--sulphur) 22%, transparent);
   color: var(--vermilion-deep);

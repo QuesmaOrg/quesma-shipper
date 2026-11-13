@@ -7,8 +7,8 @@ const {runInNewContext} = require('node:vm');
 // The browser loads this as a classic script before app.js; exercise the same
 // date functions without needing a DOM or a test-only production export.
 const source = readFileSync(join(__dirname, '../src/admin-ui/date-time.js'), 'utf8');
-const {parseLocalDateTime, formatLocalDate, shiftCalendarMonth} = runInNewContext(
-  source + '\n({parseLocalDateTime, formatLocalDate, shiftCalendarMonth})', {Date},
+const {parseLocalDateTime, formatLocalDate, shiftCalendarMonth, silentFor} = runInNewContext(
+  source + '\n({parseLocalDateTime, formatLocalDate, shiftCalendarMonth, silentFor})', {Date},
 );
 process.env.TZ = 'Europe/Warsaw';
 
@@ -33,4 +33,13 @@ test('calendar month navigation clamps month ends and crosses years', () => {
   assert.equal(formatLocalDate(shiftCalendarMonth(new Date(2028, 0, 31), 1)), '29/02/2028');
   assert.equal(formatLocalDate(shiftCalendarMonth(new Date(2026, 0, 31), -1)), '31/12/2025');
   assert.equal(formatLocalDate(shiftCalendarMonth(new Date(2028, 1, 29), 12)), '28/02/2029');
+});
+
+test('an install is silent from 24h without a request, counted in whole days', () => {
+  const now = Date.parse('2026-11-12T12:00:00Z');
+  assert.equal(silentFor('2026-11-11T12:00:01Z', now), '');
+  assert.equal(silentFor('2026-11-11T12:00:00Z', now), 'silent 1d');
+  assert.equal(silentFor('2026-11-09T11:00:00Z', now), 'silent 3d');
+  assert.equal(silentFor('2026-11-13T00:00:00Z', now), '');
+  assert.equal(silentFor(undefined, now), '');
 });

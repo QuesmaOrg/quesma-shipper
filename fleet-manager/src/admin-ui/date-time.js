@@ -19,6 +19,13 @@ function parseLocalDateTime(day, time) {
     && value.getHours() === h && value.getMinutes() === min ? value : null;
 }
 
+// A shipper offline for a day never says so itself: being offline is not a failure it counts.
+function silentFor(lastSeenAt, now) {
+  const hours = Math.floor((now - new Date(lastSeenAt)) / 3600000);
+  if (!(hours >= 24)) return '';
+  return `silent ${Math.floor(hours / 24)}d`;
+}
+
 function shiftCalendarMonth(date, months) {
   const target = new Date(date.getFullYear(), date.getMonth() + months, 1, 12);
   const last = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();

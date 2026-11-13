@@ -466,9 +466,9 @@ func TestAnOfflineTickIsRecordedOnceAndNotCounted(t *testing.T) {
 		t.Errorf("an offline tick moved consecutive_failures to %d", rec.ConsecutiveFailures)
 	}
 
-	// A PUT that failed after the control plane answered reached the network: a failure.
+	// A PUT the store answered with a refusal reached the network: a failure.
 	r.JudgeTick(nil, formats.Report{Failed: 2, Sources: []formats.SourceOutcome{{Files: []formats.FileOutcome{
-		{Decision: formats.DecisionFailed, Reason: "upload: PUT object \"0\": dial tcp: lookup bucket.example: no such host"},
+		{Decision: formats.DecisionFailed, Reason: "upload: PUT object \"0\": object store answered HTTP 403: AccessDenied"},
 	}}}}, false, platform.Delta{})
 	rec = readFailureRecord(dir)
 	if rec.ConsecutiveFailures != 1 || rec.Latest().Kind != formats.FailureTick || len(rec.Recent) != 2 {
@@ -512,10 +512,7 @@ func TestStandingEventsDoNotEvictCountedFailures(t *testing.T) {
 	}
 }
 
-// A run that failed a PUT and then lost the network is a failed run: the earlier failure reached
-
-// the network, and going offline afterwards must not hide it.
-
+// A run that failed a PUT and then lost the network is a failed run: going offline must not hide it.
 func TestAFailureBeforeGoingOfflineStillCounts(t *testing.T) {
 	dir := t.TempDir()
 	r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "0123456789abcdef"}
@@ -526,6 +523,21 @@ func TestAFailureBeforeGoingOfflineStillCounts(t *testing.T) {
 	rec := readFailureRecord(dir)
 	if rec.ConsecutiveFailures != 1 || rec.Latest() == nil || rec.Latest().Kind != formats.FailureTick {
 		t.Fatalf("the AccessDenied before the outage was not counted: %+v", rec)
+	}
+}
+
+// A long outage is never counted on the machine: it stays one standing offline entry, and the
+// control plane sees the silence.
+func TestALongOutageStaysOneUncountedEntry(t *testing.T) {
+	dir := t.TempDir()
+	offline := fmt.Errorf("%w: collection stopped after 0 of 2 files: dial tcp: lookup cp.example: no such host", engine.ErrOffline)
+	for range 200 {
+		r := &Runtime{eff: &config.Effective{StateDir: dir}, runID: "0123456789abcdef"}
+		r.JudgeTick(offline, formats.Report{}, false, platform.Delta{})
+	}
+	rec := readFailureRecord(dir)
+	if rec.ConsecutiveFailures != 0 || len(rec.Recent) != 1 || rec.Recent[0].Kind != formats.FailureOffline {
+		t.Fatalf("200 offline ticks recorded %+v, want one standing offline entry and no count", rec)
 	}
 }
 

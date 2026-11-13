@@ -292,6 +292,32 @@ func TestReauthorizationDoesNotLoop(t *testing.T) {
 	}
 }
 
+// A group that went offline is not reauthorized for a ticket that expired beside it: the run is
+// stopping, and another authorization would only pay another timeout.
+func TestAnOfflineGroupIsNotReauthorized(t *testing.T) {
+	f := newFixture(t)
+	f.writeTranscript("p/x0.jsonl", line1)
+	f.writeTranscript("p/x1.jsonl", line1)
+	port := newPort()
+	port.verdict = func(call, idx int, _ engine.PreparedObject) error {
+		switch {
+		case call > 0:
+			return nil
+		case idx == 0:
+			return fmt.Errorf("%w: upload: PUT object \"0\": read: connection reset by peer", engine.ErrOffline)
+		}
+		return fmt.Errorf("upload: HTTP 403: %w", engine.ErrTicketExpired)
+	}
+
+	_, err := vendRun(f, port, func(o *engine.Options) { o.Workers = 4 })
+	if !errors.Is(err, engine.ErrOffline) {
+		t.Fatalf("want an offline halt, got %v", err)
+	}
+	if got := port.sizes(); len(got) != 1 || got[0] != 2 {
+		t.Errorf("groups %v; want the one group of two and no reauthorization", got)
+	}
+}
+
 // What the race detector is here for: overlapping compute and groups, one PUT and one commit per
 
 // key, with the accumulator on the loop thread alone.
@@ -494,9 +520,8 @@ func TestAnUnreachableControlPlaneHaltsTheRunAsOffline(t *testing.T) {
 	}
 }
 
-// A PUT refused before the control plane went away is a second failure in the report, which is
-
-// how the judge tells a run that failed and then lost the network from one that only lost it.
+// A PUT refused before the control plane went away is a second failure in the report: the halt
+// does not hide it, though the judge files the run as offline either way.
 
 func TestAFailureBeforeAnOfflineHaltStaysInTheReport(t *testing.T) {
 	f := newFixture(t)

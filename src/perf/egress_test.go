@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -64,8 +65,8 @@ func TestTheStoreIsReachableOnlyThroughTheProxy(t *testing.T) {
 // The client must not have a route the harness did not give it: the failure worth a test is a sync
 // that quietly finds somewhere else to put the data, or reports success having put it nowhere. The
 // dead address is configured where a deployment configures one, as a second org's store endpoint.
-// The exit code is logged and not asserted: a plain sync reports per-file failures in its summary
-// and still exits 0 by design.
+// A store that never answers stops the run as offline, so there is no summary: the exit code is
+// the claim, beside the empty bucket and the silent proxy.
 func TestASyncAgainstABogusEndpointFailsWithoutFallingBack(t *testing.T) {
 	bucket, err := createVersionedBucket(context.Background(),
 		fmt.Sprintf("perf-nowhere-%d", time.Now().UnixNano()))
@@ -80,18 +81,16 @@ func TestASyncAgainstABogusEndpointFailsWithoutFallingBack(t *testing.T) {
 
 	before := proxiedBytes(t)
 	obs := w.observedSync(t)
-	counts := summary(t, obs.Output)
-	t.Logf("a sync whose tickets name %s ended %s: shipped %d, failed %d",
-		deadEndpoint, obs.exitStatus(), counts["shipped"], counts["failed"])
+	t.Logf("a sync whose tickets name %s ended %s", deadEndpoint, obs.exitStatus())
 
-	if counts["shipped"] != 0 {
-		t.Errorf("a sync whose tickets name %s reported %d files shipped:\n%s",
-			deadEndpoint, counts["shipped"], obs.Output)
+	if obs.ExitCode == 0 {
+		t.Errorf("a sync whose tickets name %s ended ok, want it stopped as offline:\n%s", deadEndpoint, obs.Output)
 	}
-	if counts["failed"] < files {
-		t.Errorf("a sync whose tickets name %s reported %d files failed, want at least the %d it "+
-			"staged: a file that was neither shipped nor failed went somewhere unaccounted for\n%s",
-			deadEndpoint, counts["failed"], files, obs.Output)
+	for line := range strings.SplitSeq(obs.Output, "\n") {
+		if counts, ok := summaryLine(line); ok && counts["shipped"] != 0 {
+			t.Errorf("a sync whose tickets name %s reported %d files shipped:\n%s",
+				deadEndpoint, counts["shipped"], obs.Output)
+		}
 	}
 	if moved := proxiedBytes(t) - before; moved != 0 {
 		t.Errorf("a sync whose tickets name %s moved %d bytes through the real store's proxy",
