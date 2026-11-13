@@ -91,14 +91,26 @@ func New() *Uploader {
 
 // Upload spends one ticket ValidateTicket accepted, re-deriving no URL and no header of its own.
 func (u *Uploader) Upload(ctx context.Context, ticket Ticket, body []byte) error {
+	return u.UploadReader(ctx, ticket, bytes.NewReader(body))
+}
+
+func (u *Uploader) UploadReader(ctx context.Context, ticket Ticket, body io.Reader) error {
 	// Whole-operation deadline, scaled by body size and capped.
-	d := operationOverhead + time.Duration(len(body)/minThroughput)*time.Second
+	d := operationOverhead + time.Duration(ticket.ContentLength/minThroughput)*time.Second
 	ctx, cancel := context.WithTimeout(ctx, min(d, maxOperation))
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, ticket.URL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, ticket.URL, body)
 	if err != nil {
 		return fmt.Errorf("upload: build PUT for object %q: %w", ticket.ObjectID, sanitizeURLError(err))
+	}
+	if section, ok := body.(*io.SectionReader); ok {
+		reader, start, length := section.Outer()
+		position, _ := section.Seek(0, io.SeekCurrent)
+		// Preserve net/http's safe replay after a reused connection fails before sending the PUT.
+		req.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(io.NewSectionReader(reader, start+position, length-position)), nil
+		}
 	}
 	// Exactly the authorized headers, in a stable order: the signature may cover any of them.
 	for _, name := range slices.Sorted(maps.Keys(ticket.RequiredHeaders)) {

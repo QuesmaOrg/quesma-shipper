@@ -165,10 +165,11 @@ func (p *vendPort) send(ctx context.Context, obj engine.PreparedObject, issued c
 		return err
 	}
 	// Nothing the store said crosses back: the local fingerprint document is the sole progress authority.
-	err := p.uploader.Upload(ctx, ticket, obj.Body)
+	// A fresh reader per attempt: the spooled body replays from its start, as a []byte body would.
+	err := p.uploader.UploadReader(ctx, ticket, obj.Reader())
 	if p.retry(ctx, err) {
 		// The same ticket: a PUT that did land is rewritten onto the same key with the same bytes.
-		err = p.uploader.Upload(ctx, ticket, obj.Body)
+		err = p.uploader.UploadReader(ctx, ticket, obj.Reader())
 	}
 	return p.classifyPut(ctx, err, ticket)
 }
@@ -209,7 +210,7 @@ func (p *vendPort) request(batch []engine.PreparedObject) (controlplane.Authoriz
 		objects[i] = controlplane.UploadObject{
 			ObjectID:   o.ObjectID,
 			Key:        o.Key,
-			Size:       int64(len(o.Body)),
+			Size:       o.Size(),
 			SourceHash: o.SourceHash,
 			Metadata:   md,
 		}
@@ -374,6 +375,7 @@ func toPreparedUpload(obj engine.PreparedObject) upload.PreparedUpload {
 		ObjectID:   obj.ObjectID,
 		Key:        obj.Key,
 		Body:       obj.Body,
+		Size:       obj.Size(),
 		SourceHash: obj.SourceHash,
 		Metadata:   obj.Metadata,
 	}

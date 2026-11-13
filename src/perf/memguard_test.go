@@ -73,14 +73,9 @@ const memoryCapHeadroom = 2
 
 // --- S3: one big file --------------------------------------------------------
 
-// The requirement, skipped because it is not met: the pipeline holds the payload about five times
-// over, so this OOMs by construction. It is the acceptance test for the streaming change, and
-// deleting the skip is what that change has to do; the body stays compiled so it cannot rot.
+// A large session must ship within the fixed memory budget.
 func smokeBigFileAcceptance(t *testing.T) {
 	t.Run("S3-big-file-acceptance", func(t *testing.T) {
-		t.Skipf("the acceptance gate for streaming: %d bytes through a %d byte ceiling needs a "+
-			"pipeline that does not hold the payload five times over. Remove this skip with the "+
-			"streaming change, not before", acceptanceFileBytes, acceptanceBudget)
 
 		requireMemoryCap(t)
 		w := stageCappedWorld(t, acceptanceBudget)

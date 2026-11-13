@@ -1,4 +1,4 @@
-// Package engine is the flush loop: discover, detect change, read whole, scrub, seal,
+// Package engine is the flush loop: discover, detect change, read, scrub, seal,
 // upload, commit. Retry is re-run: with no pending-upload state, a crash before the fingerprint
 // commit re-ships onto the same path-derived key. Nothing is durable until that commit.
 package engine
@@ -203,6 +203,15 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 	// gate: a paused tick must stay cheap. The compiled scrubber is immutable, so every pass's
 	// goroutines share it; a compile failure still parks each candidate.
 	o.scrub, o.scrubErr = o.scrubber()
+
+	// Large-file spools live under the state directory, not $TMPDIR, which is RAM where /tmp is a
+	// tmpfs. This run holds the state lock and has opened no spool yet, so whatever is there was
+	// left by a crashed run. Best effort: a spool that cannot be created parks its own file.
+	if dir := o.spoolDir(); dir != "" {
+		if err := platform.EnsureDir(dir, 0o700); err == nil {
+			_ = platform.SweepSpools(dir)
+		}
+	}
 	var policies map[string]string
 	if o.ForceResend {
 		base, err := transforms.SealPolicyDigest(o.scrubConfig(), o.Recipients)

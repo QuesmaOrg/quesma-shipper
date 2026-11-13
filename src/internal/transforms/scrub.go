@@ -250,7 +250,11 @@ func isASCII(s string) bool {
 // line that does not parse is NOT an error but raw-text scanned and counted in
 // LinesRawScanned, which is what lets a torn tail still ship.
 func (s *Scrubber) Scrub(payload []byte, hint Hint) (Result, error) {
-	if kind := opaqueKind(payload); kind != "" {
+	return s.scrub(payload, hint, true)
+}
+
+func (s *Scrubber) scrub(payload []byte, hint Hint, first bool) (Result, error) {
+	if kind := opaqueKind(payload); first && kind != "" {
 		return Result{}, fmt.Errorf("scrub refused: %s payload", kind)
 	}
 	started := time.Now()

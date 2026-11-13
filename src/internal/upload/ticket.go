@@ -53,6 +53,7 @@ type PreparedUpload struct {
 	ObjectID string
 	Key      string
 	Body     []byte
+	Size     int64
 	// SourceHash is the manifest's pre-redaction source digest, not a checksum of Body.
 	SourceHash string
 	// Metadata holds unprefixed names from the closed request allowlist.
@@ -90,9 +91,13 @@ func ValidateTicket(targets UploadTargetList, prepared PreparedUpload, ticket Ti
 	if ticket.Method != "PUT" {
 		return fmt.Errorf("upload: ticket for object %q authorizes method %q", prepared.ObjectID, ticket.Method)
 	}
-	if ticket.ContentLength != int64(len(prepared.Body)) {
+	size := int64(len(prepared.Body))
+	if prepared.Body == nil {
+		size = prepared.Size
+	}
+	if ticket.ContentLength != size {
 		return fmt.Errorf("upload: ticket for object %q authorizes %d bytes, prepared object is %d",
-			prepared.ObjectID, ticket.ContentLength, len(prepared.Body))
+			prepared.ObjectID, ticket.ContentLength, size)
 	}
 	if !ticket.ContentLengthSigned {
 		return fmt.Errorf("upload: ticket for object %q does not sign its content length", prepared.ObjectID)

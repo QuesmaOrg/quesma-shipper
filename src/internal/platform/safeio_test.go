@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -215,4 +217,89 @@ func TestWriteAtomicIsNotWedgedByAStrandedTemp(t *testing.T) {
 	if _, err := os.Stat(stale); err != nil {
 		t.Errorf("the stranded temp should be left alone (no cleanup, by decision): %v", err)
 	}
+}
+
+func TestSpoolIsPrivateAndRemovedOnClose(t *testing.T) {
+	spool, err := platform.NewSpool("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := spool.Name()
+	if _, err := spool.WriteString("private scrubbed payload"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := spool.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("spool mode %v", info.Mode())
+	}
+	if err := spool.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(name); !os.IsNotExist(err) {
+		t.Fatalf("spool remains: %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(name)); !os.IsNotExist(err) {
+		t.Fatalf("spool directory remains: %v", err)
+	}
+}
+
+func TestSpoolUnderParentAndSweep(t *testing.T) {
+	parent := t.TempDir()
+	spool, err := platform.NewSpool(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := filepath.Dir(filepath.Dir(spool.Name())); got != parent {
+		t.Fatalf("spool under %s, want %s", got, parent)
+	}
+	if err := spool.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// What a crash leaves on Windows: the directory, its payload gone with delete-on-close.
+	stale := filepath.Join(parent, "quesma-spool-123")
+	if err := os.MkdirAll(stale, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(parent, "keep")
+	if err := os.WriteFile(other, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := platform.SweepSpools(parent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale spool directory remains: %v", err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatalf("sweep removed a file it does not own: %v", err)
+	}
+}
+
+func TestSpoolPayloadRemovedOnProcessExit(t *testing.T) {
+	if os.Getenv("QUESMA_TEST_SPOOL_CHILD") == "1" {
+		spool, err := platform.NewSpool("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := spool.WriteString("scrubbed test payload"); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Println(spool.Name())
+		os.Exit(0)
+	}
+	command := exec.Command(os.Args[0], "-test.run=^TestSpoolPayloadRemovedOnProcessExit$")
+	command.Env = append(os.Environ(), "QUESMA_TEST_SPOOL_CHILD=1")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("child: %v: %s", err, output)
+	}
+	path := strings.TrimSpace(string(output))
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("payload survived process exit: %v", err)
+	}
+	_ = os.Remove(filepath.Dir(path))
 }

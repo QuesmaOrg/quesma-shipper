@@ -6,6 +6,7 @@ package engine_test
 
 import (
 	"context"
+	"io"
 	"maps"
 	"regexp"
 	"slices"
@@ -60,7 +61,7 @@ func (p *fakePort) AuthorizeAndUpload(_ context.Context, batch []engine.Prepared
 			p.faults = append(p.faults, "source hash is not 64 lowercase hex for "+o.Key)
 		case o.Metadata["source-hash"] != "":
 			p.faults = append(p.faults, "source-hash left in the metadata of "+o.Key)
-		case int64(len(o.Body)) == 0:
+		case o.Size() == 0:
 			p.faults = append(p.faults, "empty body for "+o.Key)
 		}
 		ids[o.ObjectID] = true
@@ -103,7 +104,14 @@ func (p *fakePort) store(o engine.PreparedObject) int64 {
 		obj = &fakeObject{}
 		p.objects[o.Key] = obj
 	}
-	obj.Body = slices.Clone(o.Body)
+	body, err := io.ReadAll(o.Reader())
+	if err != nil {
+		p.faults = append(p.faults, "read prepared object: "+err.Error())
+	}
+	if int64(len(body)) != o.Size() {
+		p.faults = append(p.faults, "prepared body length differs from signed length")
+	}
+	obj.Body = body
 	obj.Metadata = maps.Clone(o.Metadata)
 	obj.Metadata["source-hash"] = o.SourceHash
 	obj.Versions++
