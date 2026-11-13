@@ -75,7 +75,7 @@ func BenchmarkLargeJSONLPipeline(b *testing.B) {
 							if err != nil {
 								b.Fatal(err)
 							}
-							result, hash, err := scrubber.ScrubTo(context.Background(), plain, source, transforms.Hint{Family: "claude-code", JSONL: true})
+							result, hash, err := scrubber.ScrubTo(context.Background(), plain, source, transforms.Hint{Family: "claude-code", JSONL: true}, size)
 							source.Close()
 							if err != nil {
 								b.Fatal(err)

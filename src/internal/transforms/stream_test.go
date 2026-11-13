@@ -36,7 +36,7 @@ func TestStreamingScrubMatchesWholeFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer spool.Close()
-		got, hash, err := s.ScrubTo(context.Background(), spool, strings.NewReader(raw), Hint{Family: "claude-code", JSONL: true})
+		got, hash, err := s.ScrubTo(context.Background(), spool, strings.NewReader(raw), Hint{Family: "claude-code", JSONL: true}, int64(len(raw)))
 		if err != nil {
 			t.Fatalf("case %d: %v", i, err)
 		}
@@ -66,7 +66,7 @@ func TestStreamingScrubFailsClosed(t *testing.T) {
 		want   string
 	}{
 		{"opaque", strings.NewReader("PK\x03\x04hello"), context.Background(), "zip"},
-		{"record limit", io.LimitReader(repeatByte('a'), MaxStreamRecordBytes+1), context.Background(), "record exceeds"},
+		{"record limit", io.LimitReader(repeatByte('a'), StreamRecordThreshold+1), context.Background(), "positive max_file_bytes"},
 		{"read failure", io.MultiReader(strings.NewReader("{}\n"), brokenReader{}), context.Background(), "read broke"},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,7 +81,7 @@ func TestStreamingScrubFailsClosed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			spool, _ := os.CreateTemp(t.TempDir(), "scrub")
 			defer spool.Close()
-			got, _, err := s.ScrubTo(tc.ctx, spool, tc.reader, Hint{JSONL: true})
+			got, _, err := s.ScrubTo(tc.ctx, spool, tc.reader, Hint{JSONL: true}, 0)
 			if err == nil || !strings.Contains(err.Error(), tc.want) || got.Out.via != "" {
 				t.Fatalf("got %+v, %v", got, err)
 			}
@@ -108,7 +108,7 @@ func TestStreamingSealPreservesTarAndManifest(t *testing.T) {
 	want, _ := s.Scrub(raw, Hint{JSONL: true})
 	spool, _ := os.CreateTemp(t.TempDir(), "scrub")
 	defer spool.Close()
-	got, _, err := s.ScrubTo(context.Background(), spool, bytes.NewReader(raw), Hint{JSONL: true})
+	got, _, err := s.ScrubTo(context.Background(), spool, bytes.NewReader(raw), Hint{JSONL: true}, int64(len(raw)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestStreamingPrivateTranscriptParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer spool.Close()
-	got, hash, err := scrubber.ScrubTo(context.Background(), spool, bytes.NewReader(raw), Hint{Family: "claude-code", JSONL: true})
+	got, hash, err := scrubber.ScrubTo(context.Background(), spool, bytes.NewReader(raw), Hint{Family: "claude-code", JSONL: true}, int64(len(raw)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestStreamingSpoolWriteFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	result, _, err := s.ScrubTo(context.Background(), failedSpool{f}, strings.NewReader("{}\n"), Hint{JSONL: true})
+	result, _, err := s.ScrubTo(context.Background(), failedSpool{f}, strings.NewReader("{}\n"), Hint{JSONL: true}, 3)
 	if err == nil || !strings.Contains(err.Error(), "disk full") || result.Out.via != "" {
 		t.Fatalf("scrub did not fail closed: %v", err)
 	}

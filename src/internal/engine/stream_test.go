@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,68 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
+
+func TestOversizedRecordStreamsWithinConfiguredFileCap(t *testing.T) {
+	prefix := "{\"text\":\"before alice@example.com\"}\r\n"
+	large := `{"message":{"content":[{"type":"image","source":{"data":"` + strings.Repeat("A", transforms.StreamRecordThreshold+1) + `"}}]}}` + "\r\n"
+	raw := prefix + large + `{"tail":"alice@example.com`
+	s, err := transforms.New(transforms.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := s.Scrub([]byte(raw), transforms.Hint{Family: "claude-code", JSONL: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceHash := transforms.Hash([]byte(raw))
+	for _, compressed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "plain", true: "zstd"}[compressed], func(t *testing.T) {
+			f := newFixture(t)
+			f.eff.Sources[0].MaxFileBytes = int64(len(raw))
+			f.eff.Sources[0].Include = []string{"projects/**/*.jsonl*"}
+			name, body := "p/large.jsonl", raw
+			if compressed {
+				name += ".zst"
+				body = string(zstdOf(t, []byte(raw)))
+			}
+			f.writeTranscript(name, body)
+			f.port.verdict = func(_, _ int, obj engine.PreparedObject) error {
+				if obj.BodyReader == nil || obj.Body != nil {
+					t.Error("oversized record fell back to whole-file buffering")
+				}
+				return nil
+			}
+			if compressed {
+				f.eff.Sources[0].MaxFileBytes--
+				rep := f.run()
+				if rep.Parked != 1 || len(f.port.keys()) != 0 {
+					t.Fatalf("decoded whole-file cap was not enforced: %+v", rep)
+				}
+				f.eff.Sources[0].MaxFileBytes++
+			}
+			rep := f.runWith(func(o *engine.Options) {
+				o.Now = func() time.Time { return engineFixedTime().Add(2 * time.Minute) }
+			})
+			if rep.Shipped != 1 {
+				t.Fatalf("record within the configured file cap did not ship: %+v", rep)
+			}
+			stored, _ := f.port.get(f.port.keys()[0])
+			manifest, plain, err := transforms.Open(stored.Body, f.unit.Identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(plain, want.Out.Bytes()) || manifest.SourceHash != sourceHash || manifest.ShippedHash != transforms.Hash(plain) {
+				t.Fatal("exceptional record changed payload or hashes")
+			}
+			if manifest.Redaction == nil || manifest.Redaction.Density != want.Density() || manifest.Redaction.ScanMode != want.ScanMode || !reflect.DeepEqual(manifest.Redaction.RuleHits, want.RuleHits) {
+				t.Fatalf("exceptional record changed redaction accounting: %+v", manifest.Redaction)
+			}
+			if rep := f.run(); rep.Unchanged != 1 {
+				t.Fatalf("successful upload was not committed: %+v", rep)
+			}
+		})
+	}
+}
 
 func TestLargeTranscriptUsesReplayableSpoolAndCommitsAfterUpload(t *testing.T) {
 	f := newFixture(t)
@@ -87,7 +150,7 @@ func TestLargeTranscriptFailuresLeaveNoCommittedUploadOrSpool(t *testing.T) {
 			line := `{"text":"hello"}` + "\n"
 			raw := strings.Repeat(line, sources.StreamThreshold/len(line)+1)
 			if kind == "record" {
-				raw = strings.Repeat("a", transforms.MaxStreamRecordBytes+1)
+				raw = strings.Repeat("a", transforms.StreamRecordThreshold+1)
 			}
 			f.writeTranscript("p/large.jsonl", raw)
 			var saved engine.PreparedObject
@@ -109,7 +172,7 @@ func TestLargeTranscriptFailuresLeaveNoCommittedUploadOrSpool(t *testing.T) {
 			if len(f.port.keys()) != 0 {
 				t.Fatal("failure or preview uploaded an object")
 			}
-			if kind == "record" && (rep.Parked != 1 || !strings.Contains(rep.Sources[0].Files[0].Reason, "record exceeds")) {
+			if kind == "record" && (rep.Parked != 1 || !strings.Contains(rep.Sources[0].Files[0].Reason, "positive max_file_bytes")) {
 				t.Fatalf("record cap not explicit: %+v", rep)
 			}
 			if saved.BodyReader != nil {

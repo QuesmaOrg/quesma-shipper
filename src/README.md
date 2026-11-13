@@ -138,7 +138,7 @@ One more record is produced by the shipper itself:
   `cursor.usage.<account>.YYYYMMDD.jsonl`, for the past 90 days and as they happen. `<account>` is
   a short hash of the account id, never the email. It skips scrubbing too.
 
-Large file-backed JSONL transcripts (including compressed Codex rollouts) use bounded batches
+Large file-backed JSONL transcripts (including compressed Codex rollouts) use record batches
 and private temporary files for scrubbing and encryption once they exceed 8 MiB. Smaller files
 keep the in-memory path. This applies to scrubbed sources without enrichers; other formats keep
 their existing collection path. The object format and full-snapshot upload behavior are unchanged.
@@ -149,9 +149,23 @@ exit, and each run removes any a crashed run left behind.
 
 Collection limits remain unchanged: Claude transcripts default to 256 MiB and Codex rollouts to
 512 MiB. Operators can raise the existing `max_file_bytes` setting for supported transcripts.
-Streaming does not remove the existing 1 GiB encrypted-object limit or the container's 8 GiB
-payload boundary. A single JSONL record above 64 MiB is refused explicitly, without uploading a
-partial session. Scrub, read, disk-space, and upload failures commit no successful fingerprint.
+The cap bounds the entire decoded snapshot, including every record and line ending. Streaming
+does not remove the existing 1 GiB encrypted-object limit or the container's 8 GiB payload boundary.
+Scrub, read, disk-space, and upload failures commit no successful fingerprint.
+
+Records up to 64 MiB stream in batches. A larger record is processed separately: completed records
+are flushed, then a process-wide slot admits only one reader to grow its exceptional record buffer,
+scrub it, and write it to the scrubbed spool. Waiting readers honor cancellation; ordinary records
+can continue on other workers. Processing resumes in normal batches after each exceptional record,
+without falling back to loading the whole file. Both exceptional records and compressed streaming
+require a positive `max_file_bytes` cap.
+
+This is a memory tradeoff, not a fixed memory ceiling. Each waiting worker can retain roughly
+64 MiB of record data plus buffer capacity, and the active exceptional record can approach the
+whole-file cap. Buffer growth, decoded values and scrubbed copies can require several times that
+record's size; garbage collection need not return memory immediately after the slot is released.
+Increasing `max_file_bytes` therefore increases possible peak memory even with serialized
+exceptional processing. Spools also consume memory if the state directory's volume is memory-backed.
 
 All other files above pass through the scrub stage before encryption. The control plane receives no
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.

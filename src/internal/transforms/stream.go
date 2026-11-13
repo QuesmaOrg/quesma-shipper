@@ -10,12 +10,19 @@ import (
 	"io"
 )
 
-// MaxStreamRecordBytes bounds the existing JSON scrubber's working set, independent of session length.
-const MaxStreamRecordBytes = 64 << 20
+// StreamRecordThreshold serializes exceptional records before their buffers grow further.
+const StreamRecordThreshold = 64 << 20
+
+var largeRecordSlot = make(chan struct{}, 1)
+
 const streamBatchBytes = 1 << 20
 
 // ScrubTo spools only scrubbed JSONL, retaining exact line endings and the whole-file ledger.
-func (s *Scrubber) ScrubTo(ctx context.Context, dst io.ReadWriteSeeker, src io.Reader, hint Hint) (Result, string, error) {
+func (s *Scrubber) ScrubTo(ctx context.Context, dst io.ReadWriteSeeker, src io.Reader, hint Hint, maxBytes int64) (Result, string, error) {
+	return s.scrubTo(ctx, dst, src, hint, maxBytes, StreamRecordThreshold, largeRecordSlot)
+}
+
+func (s *Scrubber) scrubTo(ctx context.Context, dst io.ReadWriteSeeker, src io.Reader, hint Hint, maxBytes int64, recordThreshold int, slot chan struct{}) (Result, string, error) {
 	if !hint.JSONL {
 		return Result{}, "", errors.New("stream scrub requires JSONL")
 	}
@@ -25,13 +32,21 @@ func (s *Scrubber) ScrubTo(ctx context.Context, dst io.ReadWriteSeeker, src io.R
 	result := Result{RuleHits: map[string]int{}, ScanMode: ScanModeDecodedJSON}
 	batch := make([]byte, 0, streamBatchBytes)
 	var recordBytes int
-	var size int64
-	first := true
-	flush := func() error {
-		if len(batch) == 0 {
+	var size, bytesRead int64
+	first, exceptional := true, false
+	defer func() {
+		if exceptional {
+			<-slot
+		}
+	}()
+	flush := func(payload []byte) error {
+		if len(payload) == 0 {
 			return nil
 		}
-		r, err := s.scrub(batch, hint, first)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		r, err := s.scrub(payload, hint, first)
 		if err != nil {
 			return err
 		}
@@ -52,7 +67,6 @@ func (s *Scrubber) ScrubTo(ctx context.Context, dst io.ReadWriteSeeker, src io.R
 		result.record(r.BytesRedacted, r.RuleHits)
 		result.LinesParsed += r.LinesParsed
 		result.LinesRawScanned += r.LinesRawScanned
-		batch = batch[:0]
 		return nil
 	}
 	for {
@@ -60,21 +74,49 @@ func (s *Scrubber) ScrubTo(ctx context.Context, dst io.ReadWriteSeeker, src io.R
 			return Result{}, "", err
 		}
 		part, err := reader.ReadSlice('\n')
-		recordBytes += len(part)
-		if recordBytes > MaxStreamRecordBytes {
-			return Result{}, "", fmt.Errorf("JSONL record exceeds the %d-byte streaming limit", MaxStreamRecordBytes)
+		if err != nil && !errors.Is(err, bufio.ErrBufferFull) && !errors.Is(err, io.EOF) {
+			return Result{}, "", err
 		}
+		bytesRead += int64(len(part))
+		if maxBytes > 0 && bytesRead > maxBytes {
+			return Result{}, "", fmt.Errorf("decoded size exceeds max_file_bytes %d", maxBytes)
+		}
+		if !exceptional && recordBytes+len(part) > recordThreshold {
+			if maxBytes <= 0 {
+				return Result{}, "", errors.New("oversized JSONL record requires a positive max_file_bytes cap")
+			}
+			// Completed records must not share the exceptional record's scrub buffer.
+			start := len(batch) - recordBytes
+			if e := flush(batch[:start]); e != nil {
+				return Result{}, "", e
+			}
+			batch = batch[start:]
+			select {
+			case slot <- struct{}{}:
+				exceptional = true
+			case <-ctx.Done():
+				return Result{}, "", ctx.Err()
+			}
+			if e := ctx.Err(); e != nil {
+				return Result{}, "", e
+			}
+		}
+		recordBytes += len(part)
 		batch = append(batch, part...)
 		if errors.Is(err, bufio.ErrBufferFull) {
 			continue
 		}
-		if err != nil && !errors.Is(err, io.EOF) {
-			return Result{}, "", err
-		}
 		recordBytes = 0
-		if len(batch) >= streamBatchBytes || errors.Is(err, io.EOF) {
-			if e := flush(); e != nil {
+		if exceptional || len(batch) >= streamBatchBytes || errors.Is(err, io.EOF) {
+			if e := flush(batch); e != nil {
 				return Result{}, "", e
+			}
+			if exceptional {
+				batch = make([]byte, 0, streamBatchBytes)
+				<-slot
+				exceptional = false
+			} else {
+				batch = batch[:0]
 			}
 		}
 		if errors.Is(err, io.EOF) {

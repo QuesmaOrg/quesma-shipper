@@ -48,7 +48,7 @@ func (o Options) prepareStream(ctx context.Context, job fileJob, src sources.Res
 		return fail(fmt.Errorf("create scrub spool: %w", err))
 	}
 	defer plain.Close()
-	scrubbed, sourceHash, err := o.scrub.ScrubTo(ctx, plain, stream, transforms.Hint{Family: src.Family, JSONL: true})
+	scrubbed, sourceHash, err := o.scrub.ScrubTo(ctx, plain, stream, transforms.Hint{Family: src.Family, JSONL: true}, src.MaxFileBytes)
 	if err != nil {
 		return fail(fmt.Errorf("stream scrub failed closed: %w", err))
 	}
