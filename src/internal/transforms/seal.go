@@ -51,10 +51,12 @@ const maxZstdWindow = 64 << 20
 // caller should double its range rather than treat the object as corrupt.
 var ErrPrefixTooShort = errors.New("seal: object prefix too short to contain the manifest")
 
-// Scrubbed is a payload Seal accepts: only Scrubber.Scrub and Unscrubbed make one, so shipping
-// bytes that skipped the scrubber takes a named, greppable decision.
+// Scrubbed proves the payload passed through the scrubber, or a named Unscrubbed decision.
 type Scrubbed struct {
-	b []byte
+	b      []byte
+	reader io.Reader
+	size   int64
+	hash   string
 	// via is "scrubber" or the Unscrubbed reason; empty marks the zero value, which Seal refuses.
 	via string
 }
@@ -63,26 +65,45 @@ type Scrubbed struct {
 // shipper-authored heartbeat or a source configured scrub: false.
 func Unscrubbed(raw []byte, reason string) Scrubbed { return Scrubbed{b: raw, via: reason} }
 
-// Bytes is the payload. The slice may alias the input, so it must not be modified.
+// Bytes returns an in-memory payload, nil for ScrubTo streams; the slice must not be modified.
 func (s Scrubbed) Bytes() []byte { return s.b }
 
 // Seal builds one mirror object and returns the manifest as sealed: ShippedHash, PayloadSize
 // and, unless the caller set it, Encryption are filled here, so what a caller needs for object
 // metadata is the returned copy and never its own.
 func Seal(m Manifest, scrubbed Scrubbed, recipients []age.Recipient) ([]byte, Manifest, error) {
+	if scrubbed.reader != nil {
+		return nil, Manifest{}, errors.New("seal: stream requires SealTo")
+	}
+	m, err := sealManifest(m, scrubbed, recipients)
+	if err != nil {
+		return nil, Manifest{}, err
+	}
+	manifestJSON, err := m.Encode()
+	if err != nil {
+		return nil, Manifest{}, err
+	}
+	obj, err := writeContainer(manifestJSON, scrubbed.b, m.PayloadMTime, recipients)
+	if err != nil {
+		return nil, Manifest{}, err
+	}
+	return obj, m, nil
+}
+
+func sealManifest(m Manifest, scrubbed Scrubbed, recipients []age.Recipient) (Manifest, error) {
 	if len(recipients) == 0 {
-		// An object with no recipient is either unreadable or unencrypted.
-		return nil, Manifest{}, errors.New("seal: no age recipients: encryption is not optional")
+		return Manifest{}, errors.New("seal: no age recipients: encryption is not optional")
 	}
 	if scrubbed.via == "" {
-		return nil, Manifest{}, errors.New("seal: payload neither scrubbed nor declared Unscrubbed with a reason")
+		return Manifest{}, errors.New("seal: payload neither scrubbed nor declared Unscrubbed with a reason")
 	}
-	payload := scrubbed.b
-
-	m.ShippedHash = Hash(payload)
-	m.PayloadSize = int64(len(payload))
+	m.ShippedHash = Hash(scrubbed.b)
+	m.PayloadSize = int64(len(scrubbed.b))
+	if scrubbed.reader != nil {
+		m.ShippedHash, m.PayloadSize = scrubbed.hash, scrubbed.size
+	}
 	if m.SealedAt == "" {
-		return nil, Manifest{}, errors.New("seal: sealed_at must be set by the caller")
+		return Manifest{}, errors.New("seal: sealed_at must be set by the caller")
 	}
 	if m.Encryption == nil {
 		m.Encryption = &Encryption{Scheme: "age"}
@@ -93,16 +114,7 @@ func Seal(m Manifest, scrubbed Scrubbed, recipients []age.Recipient) ([]byte, Ma
 		}
 	}
 
-	manifestJSON, err := m.Encode()
-	if err != nil {
-		return nil, Manifest{}, err
-	}
-
-	obj, err := writeContainer(manifestJSON, payload, m.PayloadMTime, recipients)
-	if err != nil {
-		return nil, Manifest{}, err
-	}
-	return obj, m, nil
+	return m, nil
 }
 
 // writeContainer streams all three layers into one pre-sized result buffer, so no
@@ -113,9 +125,36 @@ func writeContainer(
 	recipients []age.Recipient,
 ) ([]byte, error) {
 	out := bytes.NewBuffer(make([]byte, 0, ciphertextHint(len(manifestJSON), len(payload), len(recipients))))
-	ageWriter, err := age.Encrypt(out, recipients...)
+	if err := writeContainerTo(out, manifestJSON, bytes.NewReader(payload), int64(len(payload)), payloadMTime, recipients); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+// SealTo preserves the object format while allowing ciphertext to live outside the heap.
+func SealTo(w io.Writer, m Manifest, scrubbed Scrubbed, recipients []age.Recipient) (Manifest, error) {
+	m, err := sealManifest(m, scrubbed, recipients)
 	if err != nil {
-		return nil, fmt.Errorf("seal: age encrypt: %w", err)
+		return Manifest{}, err
+	}
+	manifestJSON, err := m.Encode()
+	if err != nil {
+		return Manifest{}, err
+	}
+	r := scrubbed.reader
+	if r == nil {
+		r = bytes.NewReader(scrubbed.b)
+	}
+	if err := writeContainerTo(w, manifestJSON, r, m.PayloadSize, m.PayloadMTime, recipients); err != nil {
+		return Manifest{}, err
+	}
+	return m, nil
+}
+
+func writeContainerTo(w io.Writer, manifestJSON []byte, payload io.Reader, size int64, payloadMTime *time.Time, recipients []age.Recipient) error {
+	ageWriter, err := age.Encrypt(w, recipients...)
+	if err != nil {
+		return fmt.Errorf("seal: age encrypt: %w", err)
 	}
 	zstdWriter, err := zstd.NewWriter(ageWriter,
 		zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(ZstdLevel)),
@@ -123,18 +162,18 @@ func writeContainer(
 		zstd.WithZeroFrames(true),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("seal: zstd writer: %w", err)
+		return fmt.Errorf("seal: zstd writer: %w", err)
 	}
-	if err := writeTar(zstdWriter, manifestJSON, payload, payloadMTime); err != nil {
-		return nil, err
+	if err := writeTarReader(zstdWriter, manifestJSON, payload, size, payloadMTime); err != nil {
+		return err
 	}
 	if err := zstdWriter.Close(); err != nil {
-		return nil, fmt.Errorf("seal: zstd close: %w", err)
+		return fmt.Errorf("seal: zstd close: %w", err)
 	}
 	if err := ageWriter.Close(); err != nil {
-		return nil, fmt.Errorf("seal: age close: %w", err)
+		return fmt.Errorf("seal: age close: %w", err)
 	}
-	return out.Bytes(), nil
+	return nil
 }
 
 func ciphertextHint(manifestLen, payloadLen, recipients int) int {
@@ -154,10 +193,10 @@ func ciphertextHint(manifestLen, payloadLen, recipients int) int {
 	return zstdLen + 256 + 256*recipients + 16*(zstdLen/ageChunk+1)
 }
 
-// writeTar writes the two entries, manifest first. Headers are normalised so the tar layer
+// writeTarReader writes the two entries, manifest first. Headers are normalised so the tar layer
 // contributes no machine-specific bytes; USTAR rather than PAX, whose extended headers
 // would sit ahead of the manifest and push it deeper into the object.
-func writeTar(w io.Writer, manifestJSON, payload []byte, payloadMTime *time.Time) error {
+func writeTarReader(w io.Writer, manifestJSON []byte, payload io.Reader, size int64, payloadMTime *time.Time) error {
 	tw := tar.NewWriter(w)
 
 	mtime := time.Unix(0, 0).UTC()
@@ -167,24 +206,35 @@ func writeTar(w io.Writer, manifestJSON, payload []byte, payloadMTime *time.Time
 
 	entries := []struct {
 		name  string
-		body  []byte
+		body  io.Reader
+		size  int64
 		mtime time.Time
 	}{
-		{ManifestEntry, manifestJSON, time.Unix(0, 0).UTC()},
-		{PayloadEntry, payload, mtime},
+		{ManifestEntry, bytes.NewReader(manifestJSON), int64(len(manifestJSON)), time.Unix(0, 0).UTC()},
+		{PayloadEntry, payload, size, mtime},
 	}
 	for _, e := range entries {
 		if err := tw.WriteHeader(&tar.Header{
 			Typeflag: tar.TypeReg,
 			Name:     e.name,
-			Size:     int64(len(e.body)),
+			Size:     e.size,
 			Mode:     0o600,
 			ModTime:  e.mtime,
 			Format:   tar.FormatUSTAR,
 		}); err != nil {
 			return fmt.Errorf("seal: tar header %s: %w", e.name, err)
 		}
-		if _, err := tw.Write(e.body); err != nil {
+		var err error
+		if body, ok := e.body.(*bytes.Reader); ok {
+			_, err = body.WriteTo(tw)
+		} else {
+			var written int64
+			written, err = io.CopyBuffer(tw, io.LimitReader(e.body, e.size), make([]byte, 256<<10))
+			if err == nil && written != e.size {
+				err = io.ErrUnexpectedEOF
+			}
+		}
+		if err != nil {
 			return fmt.Errorf("seal: tar write %s: %w", e.name, err)
 		}
 	}

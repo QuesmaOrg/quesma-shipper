@@ -145,7 +145,7 @@ func (p *vendPort) send(ctx context.Context, obj engine.PreparedObject, issued c
 		return err
 	}
 	// Nothing the store said crosses back: the local fingerprint document is the sole progress authority.
-	if err := p.uploader.Upload(ctx, ticket, obj.Body); err != nil {
+	if err := p.uploader.UploadReader(ctx, ticket, obj.Reader()); err != nil {
 		return p.classifyPut(err, ticket)
 	}
 	return nil
@@ -169,7 +169,7 @@ func (p *vendPort) request(batch []engine.PreparedObject) (controlplane.Authoriz
 		objects[i] = controlplane.UploadObject{
 			ObjectID:   o.ObjectID,
 			Key:        o.Key,
-			Size:       int64(len(o.Body)),
+			Size:       o.Size(),
 			SourceHash: o.SourceHash,
 			Metadata:   md,
 		}
@@ -331,6 +331,7 @@ func toPreparedUpload(obj engine.PreparedObject) upload.PreparedUpload {
 		ObjectID:   obj.ObjectID,
 		Key:        obj.Key,
 		Body:       obj.Body,
+		Size:       obj.Size(),
 		SourceHash: obj.SourceHash,
 		Metadata:   obj.Metadata,
 	}

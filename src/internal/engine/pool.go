@@ -419,7 +419,7 @@ func (p *sourcePass) stageUpload(r fileResult) (res fileResult, final bool) {
 	if p.fatal || p.uploadHalted {
 		return p.abandon(it), true
 	}
-	p.staged.add(it, int64(len(pending.obj)))
+	p.staged.add(it, pending.length())
 	return fileResult{}, false
 }
 

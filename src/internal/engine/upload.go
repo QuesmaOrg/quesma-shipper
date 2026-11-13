@@ -5,9 +5,11 @@ package engine
 // exists. Nothing here is conditional: the local fingerprint document alone says what shipped.
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strconv"
 
@@ -15,15 +17,14 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 )
 
-// maxBatchObjects and maxBatchBytes bound one authorization group: the protocol's declared limits
-// and a memory bound at once. The concurrent pass may set a lower object bound (see pool.go).
+// Authorization groups stay small; a single larger object travels in its own group.
 const (
 	maxBatchObjects = 32
 	maxBatchBytes   = 64 << 20
 )
 
 // batcher accumulates sealed objects and sends a group once one more would breach either bound.
-// maxObjects differs per path; the byte bound is the protocol's and is the same for both.
+// maxObjects differs per path; the byte target is the same for both.
 type batcher struct {
 	maxObjects int
 	send       func([]stagedUpload)
@@ -33,7 +34,7 @@ type batcher struct {
 }
 
 func (b *batcher) add(it stagedUpload, size int64) {
-	// Sent BEFORE the append: a group past the declared ciphertext limit is refused whole.
+	// Flush before appending so a large object travels alone.
 	// No object-count check here: the post-append flush keeps the count strictly below the cap.
 	if len(b.items) > 0 && b.bytes+size > maxBatchBytes {
 		b.flush()
@@ -60,13 +61,15 @@ func (b *batcher) take() []stagedUpload {
 
 func (b *batcher) len() int { return len(b.items) }
 
-// PreparedObject is one sealed object offered for authorization. Body is the exact ciphertext PUT,
-// so its length is the size the ticket is signed for.
+// PreparedObject holds ciphertext in Body or a replayable BodyReader; Size is the signed length.
 type PreparedObject struct {
 	// ObjectID pairs the object with its ticket, unique within the group and meaningless outside.
-	ObjectID    string
-	Key         string
-	Body        []byte
+	ObjectID string
+	Key      string
+	Body     []byte
+	// BodyReader stays open until the upload port returns, including reauthorization.
+	BodyReader  io.ReaderAt
+	BodyLength  int64
 	ForceResend bool
 
 	// SourceHash is the manifest's raw pre-redaction digest, never a checksum of Body.
@@ -75,6 +78,20 @@ type PreparedObject struct {
 	// Metadata holds unprefixed plaintext names, source-hash excluded: hashes and versions only,
 	// never the path, which stays inside the ciphertext.
 	Metadata map[string]string
+}
+
+func (o PreparedObject) Size() int64 {
+	if o.BodyReader != nil {
+		return o.BodyLength
+	}
+	return int64(len(o.Body))
+}
+
+func (o PreparedObject) Reader() io.Reader {
+	if o.BodyReader != nil {
+		return io.NewSectionReader(o.BodyReader, 0, o.BodyLength)
+	}
+	return bytes.NewReader(o.Body)
 }
 
 // UploadPort is the write path: one call authorizes a bounded batch and PUTs each member.
@@ -112,6 +129,11 @@ type stagedUpload struct {
 // sendBatch authorizes one bounded group and turns each verdict into a file result, on a batch
 // goroutine: everything it touches arrived by value or by handover.
 func (o Options) sendBatch(ctx context.Context, items []stagedUpload) []fileResult {
+	defer func() {
+		for _, it := range items {
+			it.pending.close()
+		}
+	}()
 	outcomes := o.authorizeAndUpload(ctx, items)
 	res := make([]fileResult, len(items))
 	for i, it := range items {
@@ -153,6 +175,9 @@ func (o Options) authorizeAndUpload(ctx context.Context, items []stagedUpload) (
 	for i, it := range items {
 		batch[i] = preparedFrom(i, it.pending.objectKey, it.pending.obj, it.pending.md)
 		batch[i].ForceResend = o.ForceResend
+		if it.pending.spool != nil {
+			batch[i].BodyReader, batch[i].BodyLength = it.pending.spool, it.pending.size
+		}
 	}
 	outcomes = o.Upload.AuthorizeAndUpload(ctx, batch)
 	if len(outcomes) != len(batch) {
@@ -231,6 +256,7 @@ func (o Options) applyUploadOutcome(it stagedUpload, oc error) (r fileResult) {
 // abandon is a sealed object the pass will not send. Nothing commits, so the next run prepares it
 // again; callers reach here only with one of the two latches set.
 func (p *sourcePass) abandon(it stagedUpload) (r fileResult) {
+	it.pending.close()
 	r = it.res
 	r.outcome.Decision = auditlog.DecisionFailed
 	r.outcome.Fatal = p.fatal

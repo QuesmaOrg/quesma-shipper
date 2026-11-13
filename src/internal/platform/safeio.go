@@ -240,3 +240,40 @@ func syncDir(dir string) {
 	defer d.Close()
 	_ = d.Sync()
 }
+
+// Spool holds a private temporary payload; Close always removes its directory.
+type Spool struct {
+	*os.File
+	dir string
+}
+
+func NewSpool() (*Spool, error) {
+	dir, err := os.MkdirTemp("", "quesma-spool-")
+	if err != nil {
+		return nil, err
+	}
+	f, err := openSpool(filepath.Join(dir, "payload"))
+	if err != nil {
+		_ = os.Remove(dir)
+		return nil, err
+	}
+	if platformSupportsFileModes {
+		if err := os.Remove(f.Name()); err != nil {
+			_ = f.Close()
+			_ = os.Remove(dir)
+			return nil, err
+		}
+		if err := os.Remove(dir); err == nil {
+			dir = ""
+		}
+	}
+	return &Spool{File: f, dir: dir}, nil
+}
+
+func (s *Spool) Close() error {
+	err := s.File.Close()
+	if s.dir != "" {
+		err = errors.Join(err, os.Remove(s.dir))
+	}
+	return err
+}

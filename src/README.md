@@ -138,6 +138,19 @@ One more record is produced by the shipper itself:
   `cursor.usage.<account>.YYYYMMDD.jsonl`, for the past 90 days and as they happen. `<account>` is
   a short hash of the account id, never the email. It skips scrubbing too.
 
+Large file-backed JSONL transcripts (including compressed Codex rollouts) use bounded batches
+and private temporary files for scrubbing and encryption once they exceed 8 MiB. Smaller files
+keep the in-memory path. This applies to scrubbed sources without enrichers; other formats keep
+their existing collection path. The object format and full-snapshot upload behavior are unchanged.
+Temporary disk space must accommodate the scrubbed payload plus its encrypted object; plaintext
+spools contain only scrubbed data and are removed on close or process exit.
+
+Collection limits remain unchanged: Claude transcripts default to 256 MiB and Codex rollouts to
+512 MiB. Operators can raise the existing `max_file_bytes` setting for supported transcripts.
+Streaming does not remove the existing 1 GiB encrypted-object limit or the container's 8 GiB
+payload boundary. A single JSONL record above 64 MiB is refused explicitly, without uploading a
+partial session. Scrub, read, disk-space, and upload failures commit no successful fingerprint.
+
 All other files above pass through the scrub stage before encryption. The control plane receives no
 file content. It receives the install id, hostname, platform, and agent version in each heartbeat.
 

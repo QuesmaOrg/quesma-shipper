@@ -1,4 +1,4 @@
-// Package engine is the flush loop: discover, detect change, read whole, scrub, seal,
+// Package engine is the flush loop: discover, detect change, read, scrub, seal,
 // upload, commit. Retry is re-run: with no pending-upload state, a crash before the fingerprint
 // commit re-ships onto the same path-derived key. Nothing is durable until that commit.
 package engine
