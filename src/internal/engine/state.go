@@ -450,8 +450,7 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 	if out.SourceSpecs == nil {
 		out.SourceSpecs = map[string]string{}
 	}
-	// An absent or malformed time stays zero.
-	out.UpdatedAt, _ = time.Parse(time.RFC3339, doc.UpdatedAt)
+	out.UpdatedAt = parseTime(doc.UpdatedAt)
 	for _, e := range doc.Entries {
 		if e.Attempts < 0 {
 			return Document{}, fmt.Errorf("state: entry %s %s: negative attempts %d",
@@ -467,8 +466,8 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 			LastError:  e.LastError,
 			Enricher:   e.Enricher,
 		}
-		fp.SourceMTime, _ = time.Parse(time.RFC3339, e.SourceMTime)
-		fp.BackoffUntil, _ = time.Parse(time.RFC3339, e.BackoffUntil)
+		fp.SourceMTime = parseTime(e.SourceMTime)
+		fp.BackoffUntil = parseTime(e.BackoffUntil)
 		// A path-keyed entry leaves NativePath empty: its key ID is the path.
 		if e.Identity != "" {
 			fp.NativePath = e.NativePath
@@ -476,4 +475,13 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 		out.Entries[Key{SourceID: e.SourceID, ID: cmp.Or(e.Identity, e.NativePath)}] = fp
 	}
 	return out, nil
+}
+
+// parseTime leaves an absent or malformed time zero; the empty check spares an error allocation per entry.
+func parseTime(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	t, _ := time.Parse(time.RFC3339, s)
+	return t
 }
