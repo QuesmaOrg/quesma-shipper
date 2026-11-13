@@ -26,20 +26,7 @@ sources:
       - $CODEX_HOME
       - ~/.codex
     require_subdir: sessions
-    # A hard ceiling on what will be READ, checked against the stat before the file is
-    # opened. 512 MiB, and the number comes from a user's machine rather than from ours.
-    #
-    # Our corpus had a largest Codex rollout of 0.2 MB, so the first version of this cap was
-    # 256 MiB and looked generous by three orders of magnitude. The first real install it met
-    # had a 146 MB rollout that shipped and a 367 MB one that did not — ordinary work, not a
-    # defect. Codex writes full tool output and file contents into the rollout, so long
-    # sessions get genuinely large.
-    #
-    # This is not headroom, it is a known boundary: at 512 MiB the pipeline holds roughly two
-    # gigabytes in flight, which is why the daemon's soft memory limit moved with it. A family
-    # that can legitimately produce files this size is the argument for streaming the read,
-    # hash, redact and seal path instead of buffering it — the cap is what keeps the daemon
-    # alive until that exists. For a .jsonl.zst rollout the cap applies to the decoded size.
+    # Compressed rollouts share the session cap on decoded bytes.
     max_file_bytes: 536870912
     include:
       - "sessions/**/*.jsonl"

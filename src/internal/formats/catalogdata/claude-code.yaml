@@ -28,15 +28,8 @@ sources:
       - ~/.claude
       - $XDG_CONFIG_HOME/claude
     require_subdir: projects
-    # A hard ceiling on what will be READ, checked against the stat before the file is
-    # opened. Measured on a working machine: p50 34 KB, p95 599 KB, p99 15.4 MB, largest
-    # 60.9 MB. This is four times that largest, and two orders below the failure it exists
-    # to prevent — sessions that reach multi-GB through a writer defect that re-serialises
-    # the whole conversation into every "progress" entry (anthropics/claude-code#18905),
-    # one of which reached 3.8 GB and hangs the agent that wrote it (#22365). The pipeline
-    # holds the payload several times over, so reading one of those needs tens of GB and
-    # takes the daemon with it. A file above the line is skipped, counted and reported.
-    max_file_bytes: 268435456
+    # Large JSONL streams; the input cap still bounds exceptional records and other files.
+    max_file_bytes: 536870912
     include:
       - "projects/**/*.jsonl"
       - "projects/**/*.meta.json"

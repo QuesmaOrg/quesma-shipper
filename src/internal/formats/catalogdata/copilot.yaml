@@ -29,7 +29,7 @@ sources:
     require_subdir: session-state
     # Measured: 0.3 and 0.8 MB, longest line 115 KB (model.messages_snapshot repeats the
     # conversation). Same ceiling as the other transcript sources.
-    max_file_bytes: 268435456
+    max_file_bytes: 536870912
     include:
       - "session-state/*/events.jsonl"
     sniff:
@@ -92,7 +92,7 @@ sources:
       - $APPDATA/Code/User/workspaceStorage
       - $XDG_CONFIG_HOME/Code/User/workspaceStorage
       - ~/.config/Code/User/workspaceStorage
-    max_file_bytes: 268435456
+    max_file_bytes: 536870912
     include:
       - "*/GitHub.copilot-chat/transcripts/*.jsonl"
     sniff:
@@ -115,7 +115,7 @@ sources:
       - $XDG_CONFIG_HOME/Code/User/workspaceStorage
       - ~/.config/Code/User/workspaceStorage
     # Measured 0.7 MB for a one-hour agent session, single lines to 455 KB.
-    max_file_bytes: 268435456
+    max_file_bytes: 536870912
     include:
       - "*/chatSessions/*.jsonl"
       - "*/chatSessions/*.json"
@@ -135,7 +135,7 @@ sources:
       - $APPDATA/Code/User/globalStorage
       - $XDG_CONFIG_HOME/Code/User/globalStorage
       - ~/.config/Code/User/globalStorage
-    max_file_bytes: 268435456
+    max_file_bytes: 536870912
     include:
       - "emptyWindowChatSessions/*.jsonl"
       - "emptyWindowChatSessions/*.json"
