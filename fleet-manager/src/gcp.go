@@ -6,8 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -171,11 +172,7 @@ func (s *gcsSigner) Authorize(ctx context.Context, _ InstallScope, batch UploadB
 		for name, value := range object.Metadata {
 			headers["x-goog-meta-"+strings.ToLower(name)] = value
 		}
-		names := make([]string, 0, len(headers))
-		for name := range headers {
-			names = append(names, name)
-		}
-		sort.Strings(names)
+		names := slices.Sorted(maps.Keys(headers))
 		signedHeaders := make([]string, 0, len(names)+1)
 		for _, name := range names {
 			signedHeaders = append(signedHeaders, name+":"+headers[name])

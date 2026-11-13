@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type Manager struct {
@@ -83,6 +84,28 @@ func replaceRecord(ctx context.Context, store ObjectStore, key, version string, 
 		return err
 	}
 	return store.Replace(ctx, key, version, raw)
+}
+
+// collect loads n items at bounded concurrency and keeps the found ones in input order, never nil.
+func collect[T any](n int, load func(i int) (T, bool)) []T {
+	items := make([]T, n)
+	found := make([]bool, n)
+	var group errgroup.Group
+	group.SetLimit(16)
+	for i := range n {
+		group.Go(func() error {
+			items[i], found[i] = load(i)
+			return nil
+		})
+	}
+	_ = group.Wait()
+	out := make([]T, 0, n)
+	for i, ok := range found {
+		if ok {
+			out = append(out, items[i])
+		}
+	}
+	return out
 }
 
 func (m *Manager) LoadConfig(ctx context.Context) (FleetConfig, string, error) {
@@ -191,20 +214,9 @@ func (m *Manager) CreateInvite(ctx context.Context, expires time.Time) (string, 
 	return token, nil
 }
 
-var uuidParse = func(value string) (string, error) {
-	if len(value) != 36 {
+func uuidParse(value string) (string, error) {
+	if !uploadUUIDRe.MatchString(value) {
 		return "", errors.New("not UUID")
-	}
-	for i, c := range value {
-		if i == 8 || i == 13 || i == 18 || i == 23 {
-			if c != '-' {
-				return "", errors.New("not UUID")
-			}
-			continue
-		}
-		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
-			return "", errors.New("not UUID")
-		}
 	}
 	return strings.ToLower(value), nil
 }
@@ -382,10 +394,6 @@ func (m *Manager) LoadActiveInstall(ctx context.Context, id string) (InstallReco
 		return InstallRecord{}, ErrUnknownInstall
 	}
 	return rec, nil
-}
-
-func decodePublicKey(encoded string) ([]byte, error) {
-	return base64.StdEncoding.DecodeString(encoded)
 }
 
 var (

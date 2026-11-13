@@ -47,16 +47,6 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 
 var serveCommand = runServe
 
-func targetFlags(name string) (*flag.FlagSet, *targetOptions) {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	target := &targetOptions{}
-	fs.StringVar(&target.provider, "provider", os.Getenv("FLEET_MANAGER_PROVIDER"), "aws, gcp, or azure")
-	fs.StringVar(&target.bucket, "bucket", os.Getenv("FLEET_MANAGER_BUCKET"), "bucket or Azure container")
-	fs.StringVar(&target.region, "region", os.Getenv("FLEET_MANAGER_REGION"), "AWS region")
-	fs.StringVar(&target.account, "account", os.Getenv("FLEET_MANAGER_ACCOUNT"), "GCP service account or Azure storage account")
-	return fs, target
-}
-
 func openTarget(ctx context.Context, target *targetOptions) (*Manager, UploadSigner, error) {
 	if target.bucket == "" {
 		return nil, nil, errors.New("--bucket is required")
@@ -99,7 +89,12 @@ func openTarget(ctx context.Context, target *targetOptions) (*Manager, UploadSig
 }
 
 func runServe(ctx context.Context, args []string) error {
-	fs, target := targetFlags("--serve")
+	fs := flag.NewFlagSet("--serve", flag.ContinueOnError)
+	target := &targetOptions{}
+	fs.StringVar(&target.provider, "provider", os.Getenv("FLEET_MANAGER_PROVIDER"), "aws, gcp, or azure")
+	fs.StringVar(&target.bucket, "bucket", os.Getenv("FLEET_MANAGER_BUCKET"), "bucket or Azure container")
+	fs.StringVar(&target.region, "region", os.Getenv("FLEET_MANAGER_REGION"), "AWS region")
+	fs.StringVar(&target.account, "account", os.Getenv("FLEET_MANAGER_ACCOUNT"), "GCP service account or Azure storage account")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
