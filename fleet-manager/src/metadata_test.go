@@ -147,7 +147,7 @@ func TestMetadataImportMatchesWithinOrganizationAndResolvesManually(t *testing.T
 	if results[0].Status != "imported" || results[0].InstallID != ids[0] || results[1].Status != "ambiguous" || len(results[1].Candidates) != 2 || results[2].Status != "unmatched" {
 		t.Fatalf("matching results: %+v", results)
 	}
-	if record, _, err := acmeManager(t, server).LoadTags(context.Background(), ids[0]); err != nil || record.Metadata["email"] != "alice@example.com" {
+	if record, _, err := server.manager.mustOrg(t, "acme").LoadTags(context.Background(), ids[0]); err != nil || record.Metadata["email"] != "alice@example.com" {
 		t.Fatalf("imported metadata: %+v %v", record, err)
 	}
 	// Two rows that fold to one hostname are two rows for one machine, whatever their spelling.
@@ -175,7 +175,7 @@ func TestMetadataImportMatchesWithinOrganizationAndResolvesManually(t *testing.T
 
 func TestMetadataImportRequiresSelectionForRevokedAndNewIdentity(t *testing.T) {
 	server, store := testAdminServer(t)
-	manager := acmeManager(t, server)
+	manager := server.manager.mustOrg(t, "acme")
 	ctx := context.Background()
 	oldID := "11111111-1111-1111-1111-111111111111"
 	newID := "22222222-2222-2222-2222-222222222222"
@@ -226,15 +226,6 @@ func TestMetadataImportRequiresSelectionForRevokedAndNewIdentity(t *testing.T) {
 			t.Fatalf("identity status for %s: %+v, %v", id, record, err)
 		}
 	}
-}
-
-func acmeManager(t *testing.T, server *Server) *Manager {
-	t.Helper()
-	manager, err := server.manager.ForOrganization("acme")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return manager
 }
 
 func TestHostnameMatchKey(t *testing.T) {
@@ -308,7 +299,7 @@ func TestMetadataImportLogsStorageFailures(t *testing.T) {
 	server, store := testAdminServer(t)
 	id := "11111111-1111-1111-1111-111111111111"
 	plantInstall(t, server, store, id)
-	manager := acmeManager(t, server)
+	manager := server.manager.mustOrg(t, "acme")
 	manager.store = failingTagsStore{store}
 	var logged bytes.Buffer
 	results, err := manager.ImportMetadata(context.Background(), []metadataImportRow{{Hostname: "any", InstallID: id, Metadata: map[string]*string{"email": ptr("a@example.com")}}}, log.New(&logged, "", 0))
