@@ -51,7 +51,7 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 		t.Fatalf("history keys %v", keys)
 	}
 	for _, key := range keys {
-		manifest, payload := f.plaintext(key)
+		manifest, payload := f.open(key)
 		if manifest.Derived || manifest.Enricher != nil || manifest.Gather != "account" || manifest.PayloadMTime == nil {
 			t.Fatalf("not a collector: %+v", manifest)
 		}
@@ -173,7 +173,7 @@ func TestSourceScrubSetting(t *testing.T) {
 				t.Fatalf("shipped: %+v", rep)
 			}
 			for _, key := range f.port.keys() {
-				m, payload := f.plaintext(key)
+				m, payload := f.open(key)
 				if tc.wantRaw {
 					if payload != raw || m.Redaction != nil {
 						t.Fatal("disabled scrub changed bytes or reported redaction")

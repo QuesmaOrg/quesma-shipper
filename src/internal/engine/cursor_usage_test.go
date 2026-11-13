@@ -69,7 +69,7 @@ func TestCursorUsageDaysSealAndShip(t *testing.T) {
 	}
 	todayName := "cursor.usage.c518a59a73e6." + today.Format("20060102") + ".jsonl"
 	for _, key := range f.port.keys() {
-		m, payload := f.plaintext(key)
+		m, payload := f.open(key)
 		if m.Gather != "cursor_usage" || m.SourceID != "cursor-usage" {
 			t.Fatalf("%+v", m)
 		}

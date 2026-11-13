@@ -155,7 +155,7 @@ func TestARawAndDerivedPairShipTogether(t *testing.T) {
 
 	var rawManifest, derivedManifest transforms.Manifest
 	for _, k := range f.port.keys() {
-		m, _ := f.plaintext(k)
+		m, _ := f.open(k)
 		if m.Derived {
 			derivedManifest = m
 		} else {
@@ -219,7 +219,7 @@ func TestNoSQLiteRowsReachTheSink(t *testing.T) {
 			}
 		}
 
-		m, payload := f.plaintext(k)
+		m, payload := f.open(k)
 		// The session token shares the database, so this pins the key deny into the shipping path.
 		if containsAny(payload, sessionToken) {
 			t.Errorf("%s: a Cursor session token reached the sink", k)
@@ -279,7 +279,7 @@ func TestTheDerivedObjectReShipsOnlyWhenItsOutputChanges(t *testing.T) {
 
 	found := false
 	for _, k := range f.port.keys() {
-		m, payload := f.plaintext(k)
+		m, payload := f.open(k)
 		if m.Derived && strings.Contains(payload, "A LATE RESULT ARRIVED") {
 			found = true
 		}
@@ -319,7 +319,7 @@ func TestDisablingTheEnricherLeavesAByteIdenticalRawRun(t *testing.T) {
 
 	// And no derived object at all when disabled.
 	for _, k := range without.port.keys() {
-		m, _ := without.plaintext(k)
+		m, _ := without.open(k)
 		if m.Derived {
 			t.Errorf("a disabled enricher still produced %s", k)
 		}
@@ -343,7 +343,7 @@ func TestAMismatchShipsRawOnlyAndRaisesTheAlarm(t *testing.T) {
 		t.Fatalf("shipped %d, want the raw object only: %+v", rep.Shipped, rep.Sources)
 	}
 	for _, k := range f.port.keys() {
-		m, _ := f.plaintext(k)
+		m, _ := f.open(k)
 		if m.Derived {
 			t.Errorf("a mismatched join still shipped a derived object: %s", k)
 		}
@@ -424,7 +424,7 @@ func TestTheDerivedPayloadIsScrubbed(t *testing.T) {
 	runEnrich(t, f, enrichOpts(t, f, db, true))
 
 	for _, k := range f.port.keys() {
-		_, payload := f.plaintext(k)
+		_, payload := f.open(k)
 		if strings.Contains(payload, planted) {
 			t.Errorf("%s: a secret in a tool result shipped unredacted", k)
 		}
@@ -440,7 +440,7 @@ func TestTheDerivedObjectIsFlaggedInMetadata(t *testing.T) {
 	var flagged bool
 	for _, k := range f.port.keys() {
 		obj, _ := f.port.get(k)
-		m, _ := f.plaintext(k)
+		m, _ := f.open(k)
 		if !m.Derived {
 			if obj.Metadata["derived"] != "" {
 				t.Errorf("%s: a raw object is flagged derived", k)
@@ -482,7 +482,7 @@ func rawManifests(t *testing.T, f *fixture) []transforms.Manifest {
 	t.Helper()
 	var out []transforms.Manifest
 	for _, k := range f.port.keys() {
-		m, _ := f.plaintext(k)
+		m, _ := f.open(k)
 		if !m.Derived {
 			out = append(out, m)
 		}

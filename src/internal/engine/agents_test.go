@@ -100,7 +100,7 @@ func TestAgentSessionPipeline(t *testing.T) {
 				t.Fatalf("first run: %+v", first)
 			}
 			key := f.port.keys()[0]
-			manifest, raw := f.plaintext(key)
+			manifest, raw := f.open(key)
 			if manifest.SourceID != spec.ID || manifest.Redaction == nil {
 				t.Fatalf("missing source/redaction: %+v", manifest)
 			}
@@ -168,7 +168,7 @@ func TestLiveAgentSessionStores(t *testing.T) {
 			}
 			t.Logf("%s: %d sessions shipped", item.family, rep.Shipped)
 			for i, key := range f.port.keys() {
-				manifest, raw := f.plaintext(key)
+				manifest, raw := f.open(key)
 				if out != "" {
 					dir := filepath.Join(out, item.family)
 					name := filepath.Join(dir, fmt.Sprintf("%03d", i))

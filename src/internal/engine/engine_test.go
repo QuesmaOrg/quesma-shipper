@@ -287,7 +287,7 @@ func TestAppendTwoLinesOverwritesTheSameKey(t *testing.T) {
 	}
 
 	// Both lines must be present: the whole file ships, not a delta.
-	_, payload := f.plaintext(keysAfterFirst[0])
+	_, payload := f.open(keysAfterFirst[0])
 	if !strings.Contains(payload, `"uuid":"u1"`) || !strings.Contains(payload, `"uuid":"a1"`) {
 		t.Errorf("the re-shipped object is not the whole file: %s", payload)
 	}
@@ -523,7 +523,7 @@ func TestPayloadIsScrubbedAndTheGraphSurvives(t *testing.T) {
 			`"message":{"content":[{"type":"text","text":"key ghp_abcdefghijklmnopqrstuvwxyz0123456789"}]}}`+"\n")
 
 	f.run()
-	m, payload := f.plaintext(f.port.keys()[0])
+	m, payload := f.open(f.port.keys()[0])
 
 	if strings.Contains(payload, "ghp_abcdefghijklmnopqrstuvwxyz0123456789") {
 		t.Error("the secret reached the sink")
@@ -553,7 +553,7 @@ func TestOpaquePayloadsAreDroppedAndCounted(t *testing.T) {
 			`{"type":"user","uuid":"u1","parentUuid":"a1","sessionId":"s1","toolUseResult":{"type":"image","file":{"base64":"`+blob+`","type":"image/png"}}}`+"\n")
 
 	f.run()
-	m, payload := f.plaintext(f.port.keys()[0])
+	m, payload := f.open(f.port.keys()[0])
 	if strings.Contains(payload, blob[:64]) {
 		t.Error("an opaque payload reached the sink")
 	}
@@ -836,7 +836,7 @@ func TestExpiredConfigStillShipsAndStampsEveryManifest(t *testing.T) {
 		t.Fatalf("an expired config stopped collection: %+v", rep)
 	}
 	for _, k := range f.port.keys() {
-		m, _ := f.plaintext(k)
+		m, _ := f.open(k)
 		if !m.ConfigExpired {
 			t.Errorf("%s: manifest does not carry config_expired", k)
 		}
@@ -849,7 +849,7 @@ func TestCurrentConfigLeavesTheStampOff(t *testing.T) {
 	f.writeTranscript("p/s1.jsonl", line1)
 	f.run()
 
-	m, _ := f.plaintext(f.port.keys()[0])
+	m, _ := f.open(f.port.keys()[0])
 	if m.ConfigExpired {
 		t.Error("config_expired is set on a run with a current config")
 	}
@@ -1035,7 +1035,7 @@ func TestObjectMetadataCarriesTheIntegrityHash(t *testing.T) {
 			continue
 		}
 		// It must describe the payload actually sealed, which the manifest inside states too.
-		m, _ := f.plaintext(k)
+		m, _ := f.open(k)
 		if got != m.ShippedHash {
 			t.Errorf("%s: metadata shipped-hash %s disagrees with the sealed manifest's %s",
 				k, got, m.ShippedHash)
