@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
@@ -39,6 +40,19 @@ type scrubVector struct {
 	Note     string         `json:"note,omitempty"`
 }
 
+func loadScrubVectors(t *testing.T) scrubVectors {
+	t.Helper()
+	raw, err := os.ReadFile(scrubVectorPath)
+	if err != nil {
+		t.Fatalf("read vectors: %v", err)
+	}
+	var v scrubVectors
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
 func TestConformanceRedaction(t *testing.T) {
 	if *update {
 		if err := os.MkdirAll(filepath.Dir(scrubVectorPath), 0o755); err != nil {
@@ -50,14 +64,7 @@ func TestConformanceRedaction(t *testing.T) {
 		t.Logf("regenerated %s", scrubVectorPath)
 	}
 
-	raw, err := os.ReadFile(scrubVectorPath)
-	if err != nil {
-		t.Fatalf("read vectors: %v", err)
-	}
-	var v scrubVectors
-	if err := json.Unmarshal(raw, &v); err != nil {
-		t.Fatal(err)
-	}
+	v := loadScrubVectors(t)
 	if v.Sentinel != transforms.Sentinel("{rule_id}") {
 		t.Errorf("sentinel form drifted: vector %q, code %q", v.Sentinel, transforms.Sentinel("{rule_id}"))
 	}
@@ -93,33 +100,14 @@ func TestConformanceRedaction(t *testing.T) {
 
 // The vector file is committed, so it must not become a place secrets live.
 func TestConformanceVectorsCarryNoSecrets(t *testing.T) {
-	raw, err := os.ReadFile(scrubVectorPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var v scrubVectors
-	if err := json.Unmarshal(raw, &v); err != nil {
-		t.Fatal(err)
-	}
+	v := loadScrubVectors(t)
 	for _, c := range v.Vectors {
 		for _, planted := range plantedValues() {
-			if contains(c.After, planted) {
+			if strings.Contains(c.After, planted) {
 				t.Errorf("vector %q records a secret in its AFTER value: %q", c.Name, planted)
 			}
 		}
 	}
-}
-
-func contains(haystack, needle string) bool {
-	return len(needle) > 0 && len(haystack) >= len(needle) &&
-		func() bool {
-			for i := 0; i+len(needle) <= len(haystack); i++ {
-				if haystack[i:i+len(needle)] == needle {
-					return true
-				}
-			}
-			return false
-		}()
 }
 
 func plantedValues() []string {
@@ -142,7 +130,6 @@ func generateScrubVectors(t *testing.T) []byte {
 	t.Helper()
 
 	cfg := transforms.DefaultConfig()
-	cfg.Exemptions = exemptions()
 	cfg.Username = "jane"
 	s, err := transforms.New(cfg)
 	if err != nil {
@@ -351,7 +338,7 @@ func generateScrubVectors(t *testing.T) []byte {
 			"test asserts no planted secret is recorded in this file.",
 		Sentinel:   transforms.Sentinel("{rule_id}"),
 		Username:   "jane",
-		Exemptions: exemptions(),
+		Exemptions: transforms.CompiledExemptions(),
 	}
 
 	for _, c := range cases {

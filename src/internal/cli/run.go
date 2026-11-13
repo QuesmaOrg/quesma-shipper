@@ -26,13 +26,6 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
 
-func flushRecovered(ctx context.Context, env *app.Runtime, errOut io.Writer) (
-	formats.Report, error, bool,
-) {
-	return recoverFlush(errOut, env.AuditLog(), func() (formats.Report, error) {
-		return env.Flush(ctx, false)
-	})
-}
 func recoverFlush(errOut io.Writer, log *auditlog.Log, flush func() (formats.Report, error)) (
 	rep formats.Report, err error, panicked bool,
 ) {
@@ -376,7 +369,9 @@ func runEnrolledLoop(cmd *cobra.Command, ctx context.Context, build app.Build, o
 				env.WatchStalledTick(wctx, n, tick, stderr)
 				close(watchdogDone)
 			}()
-			rep, err, panicked = flushRecovered(ctx, env, errOut)
+			rep, err, panicked = recoverFlush(errOut, env.AuditLog(), func() (formats.Report, error) {
+				return env.Flush(ctx, false)
+			})
 			// Joined, not just signalled: the judge is about to write the report the watchdog reads.
 			stopWatch()
 			<-watchdogDone

@@ -146,8 +146,8 @@ func (f *codexFixture) keyFor(logical string) string {
 	return k
 }
 
-// plaintext opens a stored object; a zstd payload is decoded so a leak inside it is still seen.
-func (f *fixture) plaintext(key string) (transforms.Manifest, string) {
+// open returns a stored object's payload exactly as shipped.
+func (f *fixture) open(key string) (transforms.Manifest, string) {
 	f.t.Helper()
 	obj, ok := f.port.get(key)
 	if !ok {
@@ -157,6 +157,14 @@ func (f *fixture) plaintext(key string) (transforms.Manifest, string) {
 	if err != nil {
 		f.t.Fatalf("open %s: %v", key, err)
 	}
+	return m, string(payload)
+}
+
+// plaintext opens a stored object; a zstd payload is decoded so a leak inside it is still seen.
+func (f *fixture) plaintext(key string) (transforms.Manifest, string) {
+	f.t.Helper()
+	m, shipped := f.open(key)
+	payload := []byte(shipped)
 	if bytes.HasPrefix(payload, []byte{0x28, 0xb5, 0x2f, 0xfd}) {
 		dec, err := zstd.NewReader(nil)
 		if err != nil {

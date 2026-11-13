@@ -30,10 +30,11 @@ const (
 	domainSeparationNamespace    = "trajectory-shipper-"
 )
 
+const configTTL = 24 * time.Hour
+
 type Server struct {
 	manager   *Manager
 	signer    UploadSigner
-	configTTL time.Duration
 	logger    *log.Logger
 	telemetry *telemetryProxy
 	// defaults fills the settings an organization never stated, wherever one is used.
@@ -55,7 +56,7 @@ func NewServer(manager *Manager, signer UploadSigner, logger *log.Logger) (*Serv
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Server{manager: manager, signer: signer, configTTL: 24 * time.Hour, logger: logger, defaults: defaultOrganizationDefaults()}, nil
+	return &Server{manager: manager, signer: signer, logger: logger, defaults: defaultOrganizationDefaults()}, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -292,7 +293,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request, rec Instal
 	s.logServedNotes(rec, append(notes, rendered...))
 	cfg.Collection = collection
 	doc := renderConfig(cfg)
-	writeJSON(w, configResponse{Config: []byte(doc), ExpiresAt: s.manager.time().Add(s.configTTL)})
+	writeJSON(w, configResponse{Config: []byte(doc), ExpiresAt: s.manager.time().Add(configTTL)})
 }
 
 func (s *Server) logCollectionError(org, message string) {

@@ -2,7 +2,6 @@ package transforms_test
 
 import (
 	"encoding/json"
-	"os"
 	"slices"
 	"testing"
 
@@ -52,14 +51,7 @@ func TestSealPolicyTracksEffectiveScrubbingAndRecipientSets(t *testing.T) {
 
 // A scrub-output change under the same policy would incorrectly reuse forced progress.
 func TestSealPolicyPinsScrubConformanceOutputs(t *testing.T) {
-	raw, err := os.ReadFile(scrubVectorPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var vectors scrubVectors
-	if err := json.Unmarshal(raw, &vectors); err != nil {
-		t.Fatal(err)
-	}
+	vectors := loadScrubVectors(t)
 	cfg := transforms.DefaultConfig()
 	cfg.Username, cfg.Exemptions = vectors.Username, vectors.Exemptions
 	scrubber, err := transforms.New(cfg)

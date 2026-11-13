@@ -5,15 +5,11 @@ import (
 	"errors"
 	"log"
 	"maps"
-
-	"golang.org/x/sync/errgroup"
 )
 
 // Install names and metadata, written to each install's own root. Reads fan out over the installs list rather
 // than listing the payload prefix: on S3 the runtime identity is granted a listing of control/ and of
 // the organization roots, never of an install's objects (GCS can only grant listing bucket-wide).
-
-const tagsReadConcurrency = 16
 
 func (m *Manager) LoadTags(ctx context.Context, installID string) (TagsRecord, string, error) {
 	if _, err := uuidParse(installID); err != nil {
@@ -98,32 +94,16 @@ func (m *Manager) ListTags(ctx context.Context, logger *log.Logger) ([]TagsRecor
 	if err != nil {
 		return nil, err
 	}
-	records := make([]TagsRecord, len(installs))
-	found := make([]bool, len(installs))
-	var group errgroup.Group
-	group.SetLimit(tagsReadConcurrency)
-	for i, install := range installs {
-		group.Go(func() error {
-			rec, _, err := getRecord[TagsRecord](ctx, m.store, tagsKey(m.org, install.InstallID))
-			if err != nil || rec.InstallID != install.InstallID || rec.Schema != schemaVersion {
-				return nil
-			}
-			if err := validateMetadata(rec.Metadata); err != nil {
-				logger.Printf("tags for install %s carry unusable metadata, listed without it: %v", install.InstallID, err)
-				rec.Metadata = nil
-			}
-			records[i], found[i] = rec, true
-			return nil
-		})
-	}
-	if err := group.Wait(); err != nil {
-		return nil, err
-	}
-	out := make([]TagsRecord, 0, len(installs))
-	for i, ok := range found {
-		if ok {
-			out = append(out, records[i])
+	return collect(len(installs), func(i int) (TagsRecord, bool) {
+		installID := installs[i].InstallID
+		rec, _, err := getRecord[TagsRecord](ctx, m.store, tagsKey(m.org, installID))
+		if err != nil || rec.InstallID != installID || rec.Schema != schemaVersion {
+			return rec, false
 		}
-	}
-	return out, nil
+		if err := validateMetadata(rec.Metadata); err != nil {
+			logger.Printf("tags for install %s carry unusable metadata, listed without it: %v", installID, err)
+			rec.Metadata = nil
+		}
+		return rec, true
+	}), nil
 }

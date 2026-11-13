@@ -65,63 +65,53 @@ func (m *Manager) ListOrganizations(ctx context.Context) ([]OrganizationSummary,
 	return summaries, nil
 }
 
-func (m *Manager) ListGrants(ctx context.Context) ([]GrantRecord, error) {
-	objects, err := m.store.List(ctx, controlPrefix(m.org)+"grants/")
+// listRecords fails on the first record it cannot read or check: these lists are authoritative.
+func listRecords[T any](ctx context.Context, m *Manager, kind string, check func(*T) error) ([]T, error) {
+	objects, err := m.store.List(ctx, controlPrefix(m.org)+kind+"/")
 	if err != nil {
 		return nil, err
 	}
-	out := make([]GrantRecord, 0, len(objects))
+	out := make([]T, 0, len(objects))
 	for _, object := range objects {
-		rec, _, err := getRecord[GrantRecord](ctx, m.store, object.Key)
+		rec, _, err := getRecord[T](ctx, m.store, object.Key)
 		if err != nil {
 			return nil, err
 		}
-		if rec.Schema != schemaVersion {
-			return nil, fmt.Errorf("grant %s has unsupported schema", rec.ID)
+		if err := check(&rec); err != nil {
+			return nil, err
 		}
-		rec.SecretDigest = ""
 		out = append(out, rec)
 	}
 	return out, nil
+}
+
+func (m *Manager) ListGrants(ctx context.Context) ([]GrantRecord, error) {
+	return listRecords(ctx, m, "grants", func(rec *GrantRecord) error {
+		if rec.Schema != schemaVersion {
+			return fmt.Errorf("grant %s has unsupported schema", rec.ID)
+		}
+		rec.SecretDigest = ""
+		return nil
+	})
 }
 
 func (m *Manager) ListInvites(ctx context.Context) ([]InviteRecord, error) {
-	objects, err := m.store.List(ctx, controlPrefix(m.org)+"invites/")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]InviteRecord, 0, len(objects))
-	for _, object := range objects {
-		rec, _, err := getRecord[InviteRecord](ctx, m.store, object.Key)
-		if err != nil {
-			return nil, err
-		}
+	return listRecords(ctx, m, "invites", func(rec *InviteRecord) error {
 		if rec.Schema != schemaVersion {
-			return nil, fmt.Errorf("invite %s has unsupported schema", rec.ID)
+			return fmt.Errorf("invite %s has unsupported schema", rec.ID)
 		}
 		rec.SecretDigest = ""
-		out = append(out, rec)
-	}
-	return out, nil
+		return nil
+	})
 }
 
 func (m *Manager) ListInstalls(ctx context.Context) ([]InstallRecord, error) {
-	objects, err := m.store.List(ctx, controlPrefix(m.org)+"installs/")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]InstallRecord, 0, len(objects))
-	for _, object := range objects {
-		rec, _, err := getRecord[InstallRecord](ctx, m.store, object.Key)
-		if err != nil {
-			return nil, err
-		}
+	return listRecords(ctx, m, "installs", func(rec *InstallRecord) error {
 		if rec.Schema != schemaVersion {
-			return nil, fmt.Errorf("install %s has unsupported schema", rec.InstallID)
+			return fmt.Errorf("install %s has unsupported schema", rec.InstallID)
 		}
-		out = append(out, rec)
-	}
-	return out, nil
+		return nil
+	})
 }
 
 func (m *Manager) RevokeGrant(ctx context.Context, id string) error {

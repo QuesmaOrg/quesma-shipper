@@ -71,6 +71,15 @@ func writeFile(t *testing.T, path string, body []byte) {
 	}
 }
 
+func readFile(t *testing.T, path string) []byte {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
 // canaryFixtures writes each source's native shapes under home.
 var canaryFixtures = map[string]func(t *testing.T, home string){
 	"claude-code-transcripts": func(t *testing.T, home string) {

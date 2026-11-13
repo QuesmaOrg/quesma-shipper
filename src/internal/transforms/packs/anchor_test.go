@@ -92,7 +92,7 @@ func TestAnchorLiterals(t *testing.T) {
 	}
 
 	seen := map[string]bool{}
-	for _, pack := range []string{GitleaksCore, QuesmaExtra, CloudKeys, PIICore} {
+	for _, pack := range PatternPacks {
 		rules, err := Load(pack)
 		if err != nil {
 			t.Fatal(err)
@@ -180,7 +180,7 @@ func TestAnchorMatchesSweep(t *testing.T) {
 		rounds = 2000
 	}
 	total := 0
-	for _, pack := range []string{GitleaksCore, QuesmaExtra, CloudKeys, PIICore} {
+	for _, pack := range PatternPacks {
 		rules, err := Load(pack)
 		if err != nil {
 			t.Fatal(err)
@@ -248,16 +248,7 @@ func buildFuzzValue(rng *rand.Rand, pool []string) string {
 // The hand-written half of the fuzz: a candidate the pattern rejects sitting in front of, or
 // inside, a real match. Getting the resume position wrong loses exactly these.
 func TestAnchorOverlapTraps(t *testing.T) {
-	rules := map[string]*Rule{}
-	for _, pack := range []string{GitleaksCore, QuesmaExtra, CloudKeys, PIICore} {
-		loaded, err := Load(pack)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, r := range loaded {
-			rules[r.id] = r
-		}
-	}
+	rules := rulesByID(t, PatternPacks...)
 
 	values := []string{
 		// A rejected candidate in front of a live one, sharing a prefix.
@@ -307,14 +298,7 @@ func TestAnchorOverlapTraps(t *testing.T) {
 // whole value. Both assertions are needed, the rule unanchored and doubled input not blowing the
 // time up. The bound is loose on purpose: a shape test, not a throughput budget.
 func TestHeaderFloodsStayLinear(t *testing.T) {
-	rules, err := Load(CloudKeys)
-	if err != nil {
-		t.Fatal(err)
-	}
-	byID := map[string]*Rule{}
-	for _, r := range rules {
-		byID[r.id] = r
-	}
+	byID := rulesByID(t, CloudKeys)
 	floods := map[string]func(i int) string{
 		"private-key-block": func(i int) string {
 			return fmt.Sprintf("src/testdata/key%d.pem:1:-----BEGIN PRIVATE KEY-----\n", i)

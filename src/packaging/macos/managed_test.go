@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/QuesmaOrg/quesma-shipper/packaging/common"
 )
 
 func TestSystemLaunchAgentContainsExpectedSettings(t *testing.T) {
@@ -26,18 +28,14 @@ func TestSystemLaunchAgentContainsExpectedSettings(t *testing.T) {
 }
 
 func TestSystemProgramRemovalRefusesBeforeTouchingFiles(t *testing.T) {
-	if _, err := RemoveProgram(installedExecutable("/")); !errors.Is(err, errSystemManaged) {
+	if _, err := RemoveProgram(installedExecutable("/")); !errors.Is(err, common.ErrSystemManaged) {
 		t.Fatalf("system bundle removal: %v", err)
 	}
 }
 
 func TestPersonalUninstallRemainsAvailableWhenSystemAgentExists(t *testing.T) {
-	previous := systemAgentPath
-	systemAgentPath = filepath.Join(t.TempDir(), "system-agent.plist")
-	t.Cleanup(func() { systemAgentPath = previous })
-	if err := os.WriteFile(systemAgentPath, []byte("system agent"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	stubSystemAgentPath(t)
+	writeUninstallFixture(t, systemAgentPath, "system agent", 0o600)
 	if !SystemManaged() {
 		t.Fatal("test did not detect the system agent")
 	}

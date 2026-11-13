@@ -23,28 +23,20 @@ type sessionReader interface {
 	Read(context.Context, string, string, string, int64) ([]byte, error)
 }
 
-func sessionCollector(emit string) (Primitive, bool) {
-	switch emit {
-	case "opencode_sessions":
-		return opencodeSessions{}, true
-	case "opencode_tool_outputs":
-		return opencodeToolOutputs{}, true
-	case "hermes_sessions":
-		return hermesSessions{}, true
-	default:
-		return nil, false
-	}
-}
-
 // Keep the existing manifest gather name; session-specific collectors own the reads.
 type sessionDispatch struct{}
 
 func (sessionDispatch) Discover(req Request) (Discovery, error) {
-	collector, ok := sessionCollector(req.Source.Emit)
-	if !ok {
+	switch req.Source.Emit {
+	case "opencode_sessions":
+		return discoverSessions(req, sqliteread.OpenCodeSessions{})
+	case "opencode_tool_outputs":
+		return opencodeToolOutputs{}.Discover(req)
+	case "hermes_sessions":
+		return discoverSessions(req, sqliteread.HermesSessions{})
+	default:
 		return Discovery{}, fmt.Errorf("unknown session collector %q", req.Source.Emit)
 	}
-	return collector.Discover(req)
 }
 
 func discoverSessions(req Request, reader sessionReader) (Discovery, error) {
@@ -128,20 +120,14 @@ func discoverSessions(req Request, reader sessionReader) (Discovery, error) {
 func sessionDatabases(src Resolved, deny *List) ([]sessionDatabase, unreadable, error) {
 	var out []sessionDatabase
 	var bad unreadable
-	note := func(path string, err error) {
-		bad.count++
-		if bad.err == nil {
-			bad.example, bad.err = path, err
-		}
-	}
 	root, err := filepath.EvalSymlinks(src.Root)
 	if err != nil {
-		note(src.Root, err)
+		bad.note(src.Root, err)
 		return out, bad, nil
 	}
 	if deny != nil {
 		if denied, pattern := deny.MatchPair(src.Root, root); denied {
-			note(src.Root, fmt.Errorf("root resolves to %s, which the deny list refuses (%s)", root, pattern))
+			bad.note(src.Root, fmt.Errorf("root resolves to %s, which the deny list refuses (%s)", root, pattern))
 			return out, bad, nil
 		}
 	}
@@ -150,7 +136,7 @@ func sessionDatabases(src Resolved, deny *List) ([]sessionDatabase, unreadable, 
 	for _, pattern := range normalizeGlobs(src.Include) {
 		matches, err := doublestar.Glob(os.DirFS(root), pattern, doublestar.WithNoFollow(), doublestar.WithFailOnIOErrors())
 		if err != nil {
-			note(root, err)
+			bad.note(root, err)
 			continue
 		}
 		for _, name := range matches {
@@ -167,7 +153,7 @@ func sessionDatabases(src Resolved, deny *List) ([]sessionDatabase, unreadable, 
 		db := sessionDatabase{Path: filepath.Join(src.Root, rel), RelPath: filepath.ToSlash(rel), root: root}
 		if _, err := db.checkedPath(deny); err != nil {
 			if !errors.Is(err, errSessionPathRejected) && !os.IsNotExist(err) {
-				note(db.Path, err)
+				bad.note(db.Path, err)
 			}
 			continue
 		}

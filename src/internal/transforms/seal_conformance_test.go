@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"filippo.io/age"
@@ -187,7 +188,7 @@ func generateContainerVectors(t *testing.T) []byte {
 		{"derived enricher output", func(m *transforms.Manifest) {
 			m.Derived = true
 			m.Enricher = &transforms.EnricherRef{ID: "cursor-transcript-join", Version: 1}
-			m.DerivedFrom = []string{hexRepeat("a")}
+			m.DerivedFrom = []string{strings.Repeat("a", 64)}
 			m.EnrichStatus = "ok"
 			m.NativePath = "/c8cbeb0b/c8cbeb0b.jsonl.enriched.jsonl"
 		}, []byte("{\"_enrich\":{}}\n")},
@@ -243,12 +244,4 @@ func generateContainerVectors(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return append(b, '\n')
-}
-
-func hexRepeat(c string) string {
-	out := ""
-	for range 64 {
-		out += c
-	}
-	return out
 }

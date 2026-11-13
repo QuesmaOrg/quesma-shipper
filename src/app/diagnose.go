@@ -53,9 +53,8 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 		updCh <- checkUpdate(ctx, build, eff.AutoupdateEnabled, packaging.SystemManaged(), os.Getenv, packaging.CheckUpdate)
 	}()
 
-	username, installID := "", ""
+	installID := ""
 	if unitErr == nil {
-		username = engine.UsernameFromStateDir(paths.StateDir)
 		installID = unit.InstallID.String()
 	}
 	doc, docErr := engine.Peek(paths.StateDir)
@@ -70,7 +69,7 @@ func Diagnose(ctx context.Context, build Build, verbose bool) *Report {
 			} else {
 				pr.d, pr.err = prim.Discover(sources.Request{
 					Source: src, All: eff.Sources, Deny: eff.Deny, Ignore: trackFilter,
-					StateDir: paths.StateDir, Username: username,
+					StateDir: paths.StateDir,
 				})
 			}
 			if pr.err == nil && docErr == nil {

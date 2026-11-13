@@ -16,8 +16,6 @@ import (
 
 const macPackageTarget = "darwin/pkg"
 
-func appUpdateTarget(release common.Release) string { return release.Targets[macPackageTarget] }
-
 func currentAppBundle() (string, bool) {
 	exe, err := common.CurrentExecutable()
 	if err != nil {

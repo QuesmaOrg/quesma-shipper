@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -217,10 +218,7 @@ func (s *azureSigner) Authorize(ctx context.Context, _ InstallScope, batch Uploa
 		if object.Tagging != "" {
 			headers["x-ms-tags"] = object.Tagging
 		}
-		signedHeaders := make(map[string]string, len(headers)+1)
-		for name, value := range headers {
-			signedHeaders[name] = value
-		}
+		signedHeaders := maps.Clone(headers)
 		signedHeaders["content-length"] = strconv.FormatInt(object.Size, 10)
 		permissions := (&sas.BlobPermissions{Create: true, Write: true, Tag: object.Tagging != ""}).String()
 		query, err := s.signSAS(sas.BlobSignatureValues{Protocol: sas.ProtocolHTTPS, StartTime: now.Add(-time.Minute), ExpiryTime: batch.ExpiresAt,

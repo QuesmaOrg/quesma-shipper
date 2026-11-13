@@ -1,5 +1,3 @@
-//go:build windows
-
 package windows
 
 import (
@@ -53,8 +51,8 @@ func directoryACEs(dir string) ([]ace, error) {
 		aces = append(aces, ace{
 			SID:         sid.String(),
 			Mask:        uint32(entry.Mask),
-			Allow:       entry.Header.AceType == accessAllowedACEType,
-			InheritOnly: entry.Header.AceFlags&inheritOnlyACE != 0,
+			Allow:       entry.Header.AceType == windows.ACCESS_ALLOWED_ACE_TYPE,
+			InheritOnly: entry.Header.AceFlags&windows.INHERIT_ONLY_ACE != 0,
 		})
 	}
 	return aces, nil

@@ -63,16 +63,10 @@ sources:
 			if err != nil {
 				t.Fatal(err)
 			}
-			found := false
-			for _, src := range eff.Sources {
-				if src.ID == id {
-					found = true
-					if src.Root != root {
-						t.Fatalf("root=%q, want %q", src.Root, root)
-					}
-				}
+			if src := sourceByID(t, eff, id); src.Root != root {
+				t.Fatalf("root=%q, want %q", src.Root, root)
 			}
-			if !found || eff.Provenance["sources."+id+".roots"].Layer != config.LayerRemote {
+			if eff.Provenance["sources."+id+".roots"].Layer != config.LayerRemote {
 				t.Fatal("remote roots were not applied")
 			}
 			denied := config.LayeredDocument{Layer: config.LayerRemote, Doc: doc(t, fmt.Sprintf("sources:\n  - id: %s\n    roots: [\"~/.ssh\"]\n", id))}
@@ -99,10 +93,8 @@ sources:
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, src := range eff.Sources {
-		if src.ID == "opencode-sessions" && strings.Join(src.Include, ",") == "work.db" && eff.Provenance["sources.opencode-sessions.include"].Layer == config.LayerRemote {
-			return
-		}
+	src := sourceByID(t, eff, "opencode-sessions")
+	if strings.Join(src.Include, ",") != "work.db" || eff.Provenance["sources.opencode-sessions.include"].Layer != config.LayerRemote {
+		t.Fatal("served include was not applied")
 	}
-	t.Fatal("served include was not applied")
 }

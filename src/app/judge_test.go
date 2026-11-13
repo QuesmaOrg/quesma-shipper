@@ -140,17 +140,22 @@ func TestTheFailureLogIsBoundedAndKeepsTheNewest(t *testing.T) {
 	}
 }
 
+func isolatedStateDir(t *testing.T) string {
+	t.Helper()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	stateDir, err := StateDirWithoutConfig()
+	if err != nil {
+		t.Skipf("no resolvable state directory here: %v", err)
+	}
+	return stateDir
+}
+
 // A panic in any verb has to outlive the terminal it printed to. The state dir is resolved without
 
 // the configuration on purpose, so this works on an install whose config is what broke.
 
 func TestRecordPanicPersistsWithoutAResolvedConfig(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
-	stateDir, err := StateDirWithoutConfig()
-	if err != nil {
-		t.Skipf("no resolvable state directory here: %v", err)
-	}
+	stateDir := isolatedStateDir(t)
 
 	RecordPanic("enroll", "runtime error: index out of range [3] with length 0")
 
@@ -234,11 +239,7 @@ func TestEventsAreAttributedToTheRunThatRecordedThem(t *testing.T) {
 // caller hands it over instead, and this is the only thing proving it does.
 
 func TestAStartupFailureIsAttributedToItsRun(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	stateDir, err := StateDirWithoutConfig()
-	if err != nil {
-		t.Skipf("no resolvable state directory here: %v", err)
-	}
+	stateDir := isolatedStateDir(t)
 
 	RecordStartupFailure("sync", "cccccccccccccccc", errors.New("unparseable"))
 
@@ -259,11 +260,7 @@ func TestAStartupFailureIsAttributedToItsRun(t *testing.T) {
 // collection around it succeeded.
 
 func TestAnUpdateFailureIsRecordedButNotCounted(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	stateDir, err := StateDirWithoutConfig()
-	if err != nil {
-		t.Skipf("no resolvable state directory here: %v", err)
-	}
+	stateDir := isolatedStateDir(t)
 
 	RecordUpdateFailure("self-update from 1.2.3 did not happen: tuf: no such target")
 
@@ -286,11 +283,7 @@ func TestAnUpdateFailureIsRecordedButNotCounted(t *testing.T) {
 // The crash used to reach only the heartbeat; the persisted event is what survives the process.
 
 func TestACrashIsPersistedLocally(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	stateDir, err := StateDirWithoutConfig()
-	if err != nil {
-		t.Skipf("no resolvable state directory here: %v", err)
-	}
+	stateDir := isolatedStateDir(t)
 
 	RecordCrash(&formats.LastCrash{RunID: "dddddddddddddddd", Phase: "tick 3", Consecutive: 2})
 

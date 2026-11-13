@@ -10,7 +10,7 @@ import (
 )
 
 func testProbe() *CWDProbe {
-	return &CWDProbe{From: []string{"claude-code-transcripts", "codex-rollouts"}, Fields: []string{"cwd", "payload.cwd"}, ScanBytes: 64 << 10}
+	return &CWDProbe{From: []string{"claude-code-transcripts", "codex-rollouts"}, Fields: []string{"cwd", "payload.cwd"}}
 }
 
 func writeSession(t *testing.T, path, cwd string) {
@@ -19,12 +19,7 @@ func writeSession(t *testing.T, path, cwd string) {
 	if cwd != "" {
 		body = `{"type":"summary"}` + "\n" + `{"type":"user","cwd":` + strconv.Quote(cwd) + `}` + "\n"
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, path, body)
 }
 
 func candidateFor(root, rel string) Candidate {
@@ -69,7 +64,7 @@ func TestMarkerDropsARepositorysSessions(t *testing.T) {
 	writeSession(t, filepath.Join(root, "projects/p-keeper/c.jsonl"), keeper)
 	writeSession(t, filepath.Join(root, "projects/p-orphan/d.jsonl"), "")
 	src := Resolved{Source: Source{ID: "claude-code-transcripts"}, Root: root}
-	f := newRepoFilter(testProbe(), nil, home)
+	f := newRepoFilter(testProbe(), false, home)
 
 	for _, tc := range []struct {
 		rel  string
@@ -98,7 +93,7 @@ func TestMarkerCoversDescendantsAndStopsAtHome(t *testing.T) {
 	inside := repoDir(t, home, "work/acme/sub", false)
 	unmarked := repoDir(t, home, "other/repo", false)
 
-	f := newRepoFilter(testProbe(), nil, home)
+	f := newRepoFilter(testProbe(), false, home)
 	if _, ok := f.Marker(inside); !ok {
 		t.Error("an ancestor's marker must cover a nested working directory")
 	}
@@ -117,7 +112,7 @@ func TestMarkersDoNotLeakAcrossADateDirectory(t *testing.T) {
 	writeSession(t, filepath.Join(root, "sessions/2026/07/20/rollout-a.jsonl"), acme)
 	writeSession(t, filepath.Join(root, "sessions/2026/07/20/rollout-b.jsonl"), keeper)
 	src := Resolved{Source: Source{ID: "codex-rollouts"}, Root: root}
-	f := newRepoFilter(testProbe(), nil, home)
+	f := newRepoFilter(testProbe(), false, home)
 	if !f.Match(src, candidateFor(root, "sessions/2026/07/20/rollout-a.jsonl")) {
 		t.Error("the marked repository's rollout must match")
 	}
@@ -158,8 +153,8 @@ func TestRepoFilterScope(t *testing.T) {
 	root := t.TempDir()
 	writeSession(t, filepath.Join(root, "a.jsonl"), acme)
 	c := candidateFor(root, "a.jsonl")
-	if newRepoFilter(nil, nil, home).Match(Resolved{}, c) ||
-		newRepoFilter(testProbe(), nil, home).Match(Resolved{Source: Source{ID: "cursor-transcripts"}, Root: root}, c) {
+	if newRepoFilter(nil, false, home).Match(Resolved{}, c) ||
+		newRepoFilter(testProbe(), false, home).Match(Resolved{Source: Source{ID: "cursor-transcripts"}, Root: root}, c) {
 		t.Fatal("matched with nothing to match on")
 	}
 }
@@ -172,7 +167,7 @@ func TestAMarkerCreatedLaterIsSeen(t *testing.T) {
 	root := t.TempDir()
 	writeSession(t, filepath.Join(root, "projects/p-acme/a.jsonl"), acme)
 	src := Resolved{Source: Source{ID: "claude-code-transcripts"}, Root: root}
-	f := newRepoFilter(testProbe(), nil, home)
+	f := newRepoFilter(testProbe(), false, home)
 	c := candidateFor(root, "projects/p-acme/a.jsonl")
 
 	if f.Match(src, c) {
@@ -195,11 +190,7 @@ func TestAMarkerCreatedLaterIsSeen(t *testing.T) {
 	}
 }
 
-func testGitRead() *GitRead {
-	return &GitRead{WalkUp: true, FollowGitdirFile: true}
-}
-
-func writeFile(t *testing.T, path, body string) {
+func writeFile(t testing.TB, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
@@ -242,7 +233,7 @@ func TestRepoDirIsTheMainWorktree(t *testing.T) {
 
 	root := t.TempDir()
 	src := Resolved{Source: Source{ID: "claude-code-transcripts"}, Root: root}
-	f := newRepoFilter(testProbe(), testGitRead(), home)
+	f := newRepoFilter(testProbe(), true, home)
 	for i, tc := range []struct{ cwd, want string }{
 		{repo, repo},
 		{nested, repo},
@@ -258,7 +249,7 @@ func TestRepoDirIsTheMainWorktree(t *testing.T) {
 		}
 	}
 
-	if got := newRepoFilter(testProbe(), nil, home).RepoDir(src, candidateFor(root, "projects/p-1/s.jsonl")); got != nested {
+	if got := newRepoFilter(testProbe(), false, home).RepoDir(src, candidateFor(root, "projects/p-1/s.jsonl")); got != nested {
 		t.Errorf("without git rules the worktree keeps its own directory, got %q", got)
 	}
 }
@@ -273,7 +264,7 @@ func TestMarkerInTheRepositoryDropsWorktreeSessions(t *testing.T) {
 
 	root := t.TempDir()
 	src := Resolved{Source: Source{ID: "claude-code-transcripts"}, Root: root}
-	f := newRepoFilter(testProbe(), testGitRead(), home)
+	f := newRepoFilter(testProbe(), true, home)
 	for i, tc := range []struct {
 		cwd  string
 		want bool
@@ -301,7 +292,7 @@ func TestMarkerInAWorktreeDropsOnlyThatWorktree(t *testing.T) {
 
 	root := t.TempDir()
 	src := Resolved{Source: Source{ID: "claude-code-transcripts"}, Root: root}
-	f := newRepoFilter(testProbe(), testGitRead(), home)
+	f := newRepoFilter(testProbe(), true, home)
 	for i, tc := range []struct {
 		cwd  string
 		want bool
@@ -325,7 +316,7 @@ func TestMarkerAboveAGitCheckoutDoesNotCount(t *testing.T) {
 
 	root := t.TempDir()
 	src := Resolved{Source: Source{ID: "claude-code-transcripts"}, Root: root}
-	f := newRepoFilter(testProbe(), testGitRead(), home)
+	f := newRepoFilter(testProbe(), true, home)
 	for i, tc := range []struct {
 		cwd  string
 		want bool
@@ -357,7 +348,7 @@ func TestDiscoveryDropsAMarkedRepositorysWorktree(t *testing.T) {
 	d, err := discoverByGlob(Request{
 		Source: Resolved{Source: Source{ID: "claude-code-transcripts", Include: []string{"projects/**/*.jsonl"}}, Root: root, Enabled: true},
 		Deny:   New(t.TempDir()),
-		Ignore: newRepoFilter(testProbe(), testGitRead(), home),
+		Ignore: newRepoFilter(testProbe(), true, home),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -397,7 +388,7 @@ func TestDiscoveryDistinguishesIgnoredFromDrift(t *testing.T) {
 	d, err := discoverByGlob(Request{
 		Source: Resolved{Source: Source{ID: "claude-code-transcripts", Include: []string{"projects/**/*.jsonl"}, MaxFileBytes: 4}, Root: root, Enabled: true},
 		Deny:   New(t.TempDir()),
-		Ignore: newRepoFilter(testProbe(), nil, home),
+		Ignore: newRepoFilter(testProbe(), false, home),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -418,7 +409,7 @@ func TestACheckoutAtHomeDoesNotClaimEverything(t *testing.T) {
 
 	root := t.TempDir()
 	src := Resolved{Source: Source{ID: "claude-code-transcripts"}, Root: root}
-	f := newRepoFilter(testProbe(), testGitRead(), home)
+	f := newRepoFilter(testProbe(), true, home)
 	for i, tc := range []struct{ cwd, want string }{{notes, notes}, {home, home}, {acme, acme}} {
 		rel := fmt.Sprintf("projects/p-%d/s.jsonl", i)
 		writeSession(t, filepath.Join(root, rel), tc.cwd)
@@ -439,7 +430,7 @@ func TestMarkerOnAWorktreeIsTheRepositorys(t *testing.T) {
 	home := t.TempDir()
 	repo := gitRepo(t, home, "work/acme")
 	wt := writeWorktree(t, repo, filepath.Join(home, "wt"), "stray")
-	f := newRepoFilter(testProbe(), testGitRead(), home)
+	f := newRepoFilter(testProbe(), true, home)
 	if got, ok := f.Marker(wt); ok || got != "" {
 		t.Fatalf("no marker yet, got %q", got)
 	}

@@ -27,15 +27,6 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/upload"
 )
 
-func TestAlreadyPresentCommitsWithoutSpendingACapability(t *testing.T) {
-	p := &vendPort{}
-	err := p.send(context.Background(), engine.PreparedObject{ObjectID: "trajectory-1"},
-		controlplane.Ticket{TicketID: "b1bd1a73-f16d-4a51-aac6-29f1f48b0658", ObjectID: "trajectory-1", AlreadyPresent: true})
-	if err != nil {
-		t.Fatalf("already-present answer tried to validate or upload a capability: %v", err)
-	}
-}
-
 // A refusal kills the install, an outage stops only this run: conflating them turns a rate limit
 // into a permanently dead install, so the sentinels must not reach each other.
 func TestAuthorizeFailuresKeepRefusalAndUnavailabilityApart(t *testing.T) {

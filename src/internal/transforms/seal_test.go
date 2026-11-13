@@ -401,10 +401,7 @@ func sha256Hex(b []byte) string {
 // modified and go_version make "which objects came from that build" a comparison. go_version
 // is there because a runtime-level defect is a property of the toolchain alone.
 func TestTheManifestRecordsWhichBuildSealedTheObject(t *testing.T) {
-	id, err := age.GenerateX25519Identity()
-	if err != nil {
-		t.Fatal(err)
-	}
+	id := identity(t)
 	m := manifest()
 	m.Client = transforms.Client{
 		Version:   "0.0.0-d5f735643cbd+dirty",
@@ -438,10 +435,7 @@ func TestTheManifestRecordsWhichBuildSealedTheObject(t *testing.T) {
 // A build with no VCS stamping must not invent one, and the schema refuses unknown fields, so
 // an empty commit has to be OMITTED rather than sent as "".
 func TestABuildWithNoStampSealsWithoutTheOptionalFields(t *testing.T) {
-	id, err := age.GenerateX25519Identity()
-	if err != nil {
-		t.Fatal(err)
-	}
+	id := identity(t)
 	m := manifest()
 	m.Client = transforms.Client{Version: "unknown"}
 

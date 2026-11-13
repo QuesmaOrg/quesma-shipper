@@ -60,10 +60,7 @@ func newEntropyMatcher(cfg EntropyConfig, username string) *entropyMatcher {
 		// the alphabet path-shaped.
 		skip = append(skip, username)
 	}
-	minRun := cfg.MinLength
-	if minRun < 1 {
-		minRun = 1
-	}
+	minRun := max(cfg.MinLength, 1)
 	return &entropyMatcher{
 		cfg:            cfg,
 		minRun:         minRun,

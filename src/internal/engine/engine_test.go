@@ -174,11 +174,7 @@ func (f *fixture) wipeState() {
 
 func (f *fixture) run() engine.Report {
 	f.t.Helper()
-	rep, err := engine.Run(context.Background(), f.store, f.opts())
-	if err != nil {
-		f.t.Fatalf("run: %v", err)
-	}
-	return rep
+	return f.runWith(func(*engine.Options) {})
 }
 
 // runDry is preview: read, scrub and seal, but neither upload nor commit.
@@ -291,11 +287,8 @@ func TestAppendTwoLinesOverwritesTheSameKey(t *testing.T) {
 	}
 
 	// Both lines must be present: the whole file ships, not a delta.
-	_, payload, err := transforms.Open(obj.Body, f.unit.Identity)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(payload), `"uuid":"u1"`) || !strings.Contains(string(payload), `"uuid":"a1"`) {
+	_, payload := f.open(keysAfterFirst[0])
+	if !strings.Contains(payload, `"uuid":"u1"`) || !strings.Contains(payload, `"uuid":"a1"`) {
 		t.Errorf("the re-shipped object is not the whole file: %s", payload)
 	}
 }
@@ -318,12 +311,8 @@ func TestMTimeTouchDoesNotReship(t *testing.T) {
 	later := time.Now().Add(time.Hour)
 	for _, p := range paths {
 		full := filepath.Join(f.home, ".claude", "projects", p)
-		if err := os.WriteFile(full, []byte(line1), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chtimes(full, later, later); err != nil {
-			t.Fatal(err)
-		}
+		writeFile(t, full, []byte(line1))
+		setMTime(t, full, later)
 	}
 
 	second := f.run()
@@ -346,9 +335,7 @@ func TestAnUnchangedFileIsNotReadTwice(t *testing.T) {
 
 	full := filepath.Join(f.home, ".claude", "projects", "p/a.jsonl")
 	stamp := time.Now().Add(-time.Hour).Truncate(time.Second).Add(123456789 * time.Nanosecond)
-	if err := os.Chtimes(full, stamp, stamp); err != nil {
-		t.Fatal(err)
-	}
+	setMTime(t, full, stamp)
 	if got := statMTime(t, full); got.Nanosecond() == 0 {
 		t.Skipf("this filesystem stores whole-second mtimes (%s); the pre-filter cannot be "+
 			"distinguished from the hash path here", got)
@@ -436,9 +423,7 @@ func TestAReadButUnchangedFileKeepsItsPerFileAuditEntry(t *testing.T) {
 
 	// A new mtime under identical bytes: the pre-filter cannot clear it, so the run reads it.
 	later := time.Now().Add(time.Hour)
-	if err := os.Chtimes(path, later, later); err != nil {
-		t.Fatal(err)
-	}
+	setMTime(t, path, later)
 	f.reopen()
 	if second := f.run(); second.Unchanged != 2 {
 		t.Fatalf("expected 2 unchanged, got %+v", second)
@@ -470,6 +455,18 @@ func TestAReadButUnchangedFileKeepsItsPerFileAuditEntry(t *testing.T) {
 	}
 	if aggregates != 1 {
 		t.Errorf("%d aggregate entries, want 1: the file the pre-filter passed over", aggregates)
+	}
+}
+
+// makeUnreadable sets path to mode 000 for the test, skipping where that does not stop a read.
+func makeUnreadable(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+	if _, err := os.ReadFile(path); err == nil {
+		t.Skip("this user can read a mode-000 file")
 	}
 }
 
@@ -526,16 +523,12 @@ func TestPayloadIsScrubbedAndTheGraphSurvives(t *testing.T) {
 			`"message":{"content":[{"type":"text","text":"key ghp_abcdefghijklmnopqrstuvwxyz0123456789"}]}}`+"\n")
 
 	f.run()
-	obj, _ := f.port.get(f.port.keys()[0])
-	m, payload, err := transforms.Open(obj.Body, f.unit.Identity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	m, payload := f.open(f.port.keys()[0])
 
-	if strings.Contains(string(payload), "ghp_abcdefghijklmnopqrstuvwxyz0123456789") {
+	if strings.Contains(payload, "ghp_abcdefghijklmnopqrstuvwxyz0123456789") {
 		t.Error("the secret reached the sink")
 	}
-	if !strings.Contains(string(payload), `"uuid":"u1"`) {
+	if !strings.Contains(payload, `"uuid":"u1"`) {
 		t.Error("an exempt identifier was redacted; the graph would not reassemble")
 	}
 	if m.Redaction == nil || m.Redaction.RuleHits["github-pat"] != 1 {
@@ -560,12 +553,8 @@ func TestOpaquePayloadsAreDroppedAndCounted(t *testing.T) {
 			`{"type":"user","uuid":"u1","parentUuid":"a1","sessionId":"s1","toolUseResult":{"type":"image","file":{"base64":"`+blob+`","type":"image/png"}}}`+"\n")
 
 	f.run()
-	obj, _ := f.port.get(f.port.keys()[0])
-	m, payload, err := transforms.Open(obj.Body, f.unit.Identity)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(payload), blob[:64]) {
+	m, payload := f.open(f.port.keys()[0])
+	if strings.Contains(payload, blob[:64]) {
 		t.Error("an opaque payload reached the sink")
 	}
 	if m.Redaction == nil || m.Redaction.RuleHits[transforms.Dropped] != 2 {
@@ -847,11 +836,7 @@ func TestExpiredConfigStillShipsAndStampsEveryManifest(t *testing.T) {
 		t.Fatalf("an expired config stopped collection: %+v", rep)
 	}
 	for _, k := range f.port.keys() {
-		obj, _ := f.port.get(k)
-		m, _, err := transforms.Open(obj.Body, f.unit.Identity)
-		if err != nil {
-			t.Fatal(err)
-		}
+		m, _ := f.open(k)
 		if !m.ConfigExpired {
 			t.Errorf("%s: manifest does not carry config_expired", k)
 		}
@@ -864,11 +849,7 @@ func TestCurrentConfigLeavesTheStampOff(t *testing.T) {
 	f.writeTranscript("p/s1.jsonl", line1)
 	f.run()
 
-	obj, _ := f.port.get(f.port.keys()[0])
-	m, _, err := transforms.Open(obj.Body, f.unit.Identity)
-	if err != nil {
-		t.Fatal(err)
-	}
+	m, _ := f.open(f.port.keys()[0])
 	if m.ConfigExpired {
 		t.Error("config_expired is set on a run with a current config")
 	}
@@ -1054,10 +1035,7 @@ func TestObjectMetadataCarriesTheIntegrityHash(t *testing.T) {
 			continue
 		}
 		// It must describe the payload actually sealed, which the manifest inside states too.
-		m, _, err := transforms.Open(obj.Body, f.unit.Identity)
-		if err != nil {
-			t.Fatal(err)
-		}
+		m, _ := f.open(k)
 		if got != m.ShippedHash {
 			t.Errorf("%s: metadata shipped-hash %s disagrees with the sealed manifest's %s",
 				k, got, m.ShippedHash)
@@ -1113,13 +1091,7 @@ func TestAnUnreadableFileBacksOffInsteadOfBurningTheBudgetForever(t *testing.T) 
 	f.writeTranscript("p/good.jsonl", line1)
 	bad := filepath.Join(f.home, ".claude", "projects", "p", "bad.jsonl")
 	f.writeTranscript("p/bad.jsonl", line1)
-	if err := os.Chmod(bad, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(bad, 0o600) })
-	if _, err := os.ReadFile(bad); err == nil {
-		t.Skip("this user can read a mode-000 file")
-	}
+	makeUnreadable(t, bad)
 
 	first := f.run()
 	// Parked, not failed: the entry is held off with a backoff, which the fingerprint records.
@@ -1145,13 +1117,7 @@ func TestABackedOffFileIsRetriedOnceTheDelayPasses(t *testing.T) {
 	f.writeTranscript("p/good.jsonl", line1)
 	bad := filepath.Join(f.home, ".claude", "projects", "p", "bad.jsonl")
 	f.writeTranscript("p/bad.jsonl", line1)
-	if err := os.Chmod(bad, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(bad, 0o600) })
-	if _, err := os.ReadFile(bad); err == nil {
-		t.Skip("this user can read a mode-000 file")
-	}
+	makeUnreadable(t, bad)
 
 	if rep := f.run(); rep.Parked != 1 {
 		t.Fatalf("expected one parked entry, got %+v", rep)
@@ -1187,13 +1153,7 @@ func TestAParkedFileStopsBeingParkedOnceItReadsCleanAgain(t *testing.T) {
 	// It changes, so the size-and-mtime pre-filter no longer short-circuits, and it cannot be
 	// read: that is what parks it.
 	f.writeTranscript("p/bad.jsonl", line1+line2)
-	if err := os.Chmod(bad, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(bad, 0o600) })
-	if _, err := os.ReadFile(bad); err == nil {
-		t.Skip("this user can read a mode-000 file")
-	}
+	makeUnreadable(t, bad)
 	f.reopen()
 	if rep := f.run(); rep.Parked != 1 {
 		t.Fatalf("expected the unreadable file to park, got %+v", rep)
@@ -1238,14 +1198,9 @@ func TestARunReportsThatItDiscardedTheStore(t *testing.T) {
 
 	// A flipped hex digit: still valid JSON, still schema-clean, only the checksum catches it.
 	path := filepath.Join(f.stateDir, engine.FileName)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := readFile(t, path)
 	tampered := strings.Replace(string(raw), `"source_hash": "`, `"source_hash": "f`, 1)
-	if err := os.WriteFile(path, []byte(tampered[:len(tampered)-1]), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, path, []byte(tampered[:len(tampered)-1]))
 
 	f.reopen()
 	if rep := f.run(); !rep.StoreCorrupt {

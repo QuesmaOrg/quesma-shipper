@@ -243,8 +243,6 @@ type fakePlane struct {
 	config       string
 	configStatus int
 	configExpiry time.Time
-	// ttl is how long an issued ticket lives.
-	ttl time.Duration
 	// How many of the next authorizations issue already-expired tickets, so the client's single
 	// reauthorization can be driven from the server side.
 	staleBatches int
@@ -265,7 +263,7 @@ type fakePlane struct {
 
 func startFakePlane(t *testing.T, store *fakeStore, pub ed25519.PublicKey) *fakePlane {
 	t.Helper()
-	p := &fakePlane{store: store, pub: pub, status: http.StatusOK, ttl: 10 * time.Minute,
+	p := &fakePlane{store: store, pub: pub, status: http.StatusOK,
 		writers: map[string]bool{}}
 	p.server = httptest.NewServer(http.HandlerFunc(p.serve))
 	t.Cleanup(p.server.Close)
@@ -315,7 +313,7 @@ func (p *fakePlane) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.mu.Lock()
-	status, ttl := p.status, p.ttl
+	status, ttl := p.status, 10*time.Minute
 	stale := p.staleBatches > 0
 	if stale {
 		p.staleBatches--
@@ -509,7 +507,7 @@ func canonicalKeyPath(key string) string {
 
 // stageWorld points the client at the machine through the environment, not flags, because the
 // catalog resolves its roots through HOME. It is the enrolled shape, the only one that can upload.
-func stageWorld(t *testing.T, opts ...func(*world)) *world {
+func stageWorld(t *testing.T) *world {
 	t.Helper()
 	w := stageBareWorld(t)
 	seedIdentity(t, w)
@@ -523,9 +521,6 @@ func stageWorld(t *testing.T, opts ...func(*world)) *world {
 	seedEnrollment(t, w, w.plane.server.URL, priv)
 
 	writeConfig(t, w, "")
-	for _, opt := range opts {
-		opt(w)
-	}
 	return w
 }
 
@@ -651,13 +646,19 @@ func writeConfigWithoutUploadTargets(t *testing.T, w *world) {
 // run executes one command through the real command tree and returns its output.
 func run(t *testing.T, args ...string) string {
 	t.Helper()
+	out, err := execute(context.Background(), args...)
+	if err != nil {
+		t.Fatalf("shipper %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return out
+}
+
+func execute(ctx context.Context, args ...string) (string, error) {
 	var out bytes.Buffer
 	root := cli.Root(app.Build{Version: "e2e"}, &out, &out)
 	root.SetArgs(args)
-	if err := root.Execute(); err != nil {
-		t.Fatalf("shipper %s: %v\n%s", strings.Join(args, " "), err, out.String())
-	}
-	return out.String()
+	err := root.ExecuteContext(ctx)
+	return out.String(), err
 }
 
 func runOneShot(t *testing.T, flags ...string) string {
@@ -668,22 +669,14 @@ func runOneShot(t *testing.T, flags ...string) string {
 // runExpectingFailure is for the paths whose whole point is a non-zero exit.
 func runExpectingFailure(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	var out bytes.Buffer
-	root := cli.Root(app.Build{Version: "e2e"}, &out, &out)
-	root.SetArgs(args)
-	err := root.Execute()
-	return out.String(), err
+	return execute(context.Background(), args...)
 }
 
 func runUntilCancelled(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	var out bytes.Buffer
-	root := cli.Root(app.Build{Version: "e2e"}, &out, &out)
-	root.SetArgs(args)
-	err := root.ExecuteContext(ctx)
-	return out.String(), err
+	return execute(ctx, args...)
 }
 
 func runOneShotExpectingFailure(t *testing.T, flags ...string) (string, error) {
@@ -815,13 +808,7 @@ func bySourceID(objs []object, id string) []object {
 func stageFile(t *testing.T, w *world, rel, content string) string {
 	t.Helper()
 	full := filepath.Join(w.Home, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(full, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	touch(t, full)
+	stageAbs(t, full, content)
 	return full
 }
 

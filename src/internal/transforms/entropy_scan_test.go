@@ -3,6 +3,7 @@ package transforms
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -73,13 +74,8 @@ func TestEntropyGridScanFindsTheSameRunsAsTheByteWalk(t *testing.T) {
 			}
 			v := b.String()
 			got, want := m.Match(v), refMatch(m, v)
-			if len(got) != len(want) {
-				t.Fatalf("MinLength %d, %q: got %v spans, want %v", cfg.MinLength, v, got, want)
-			}
-			for k := range got {
-				if got[k] != want[k] {
-					t.Fatalf("MinLength %d, %q: span %d = %v, want %v", cfg.MinLength, v, k, got[k], want[k])
-				}
+			if !slices.Equal(got, want) {
+				t.Fatalf("MinLength %d, %q: got spans %v, want %v", cfg.MinLength, v, got, want)
 			}
 		}
 	}
@@ -90,12 +86,7 @@ func TestEntropyGridScanFindsTheSameRunsAsTheByteWalk(t *testing.T) {
 // swallowing the corpus, since a candidate inside it is paid for twice.
 func TestEntropyEstimateTracksTheExactScore(t *testing.T) {
 	rng := rand.New(rand.NewSource(37))
-	alphabet := make([]byte, 0, entropySymbols)
-	for c := 0; c < 256; c++ {
-		if isCandidateByte(byte(c)) {
-			alphabet = append(alphabet, byte(c))
-		}
-	}
+	alphabet := candidateAlphabet()
 	worst := 0.0
 	for i := 0; i < 200000; i++ {
 		n := 1 + rng.Intn(400)

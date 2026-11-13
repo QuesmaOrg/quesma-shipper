@@ -78,7 +78,11 @@ func Open(stateDir string) (*Log, error) {
 func (l *Log) Path() string { return l.path }
 
 // Append writes one entry, the one place in the shipper that appends rather than replacing: a rewritable audit log is not one.
+// A nil log (preview) records nothing.
 func (l *Log) Append(e Entry) error {
+	if l == nil {
+		return nil
+	}
 	if e.At.IsZero() {
 		e.At = time.Now().UTC()
 	}

@@ -82,11 +82,7 @@ func Refresh(ctx context.Context, o RefreshOptions) Remote {
 		if err == nil {
 			return fetched
 		}
-		var revoked *Revocation
-		if errors.As(err, &revoked) {
-			return Remote{Origin: OriginNone, Err: err}
-		}
-		if localRejection(err) {
+		if errors.As(err, new(*Revocation)) || localRejection(err) {
 			return Remote{Origin: OriginNone, Err: err}
 		}
 		fetchErr = err
@@ -151,18 +147,7 @@ func localRejection(err error) bool {
 
 // fetch caches only a candidate the caller can resolve.
 func fetch(ctx context.Context, o RefreshOptions) (Remote, error) {
-	deviceKey, err := o.Enrollment.PrivateKey()
-	if err != nil {
-		return Remote{}, err
-	}
-
-	c, err := New(Options{
-		Endpoint:     o.Enrollment.Endpoint,
-		StateDir:     o.StateDir,
-		InstallID:    o.Enrollment.InstallID,
-		Organization: o.Enrollment.Organization,
-		DeviceKey:    deviceKey,
-	})
+	c, err := o.Enrollment.Client(o.StateDir)
 	if err != nil {
 		return Remote{}, err
 	}

@@ -3,6 +3,7 @@ package packs
 import (
 	"math/rand"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -11,7 +12,7 @@ import (
 // scanner returns whole spans and would redact a different span than the pattern.
 func TestHandScannersEngage(t *testing.T) {
 	found := false
-	for _, pack := range []string{GitleaksCore, QuesmaExtra, CloudKeys, PIICore} {
+	for _, pack := range PatternPacks {
 		rules, err := Load(pack)
 		if err != nil {
 			t.Fatalf("Load(%s): %v", pack, err)
@@ -54,13 +55,8 @@ func TestScanEmailMatchesRegex(t *testing.T) {
 		checked++
 		got := scanEmail(v)
 		w := want(v)
-		if len(got) != len(w) {
+		if !slices.Equal(got, w) {
 			t.Fatalf("scanEmail(%q) = %v, regex = %v", v, got, w)
-		}
-		for i := range got {
-			if got[i] != w[i] {
-				t.Fatalf("scanEmail(%q) = %v, regex = %v", v, got, w)
-			}
 		}
 	}
 

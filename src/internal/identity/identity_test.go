@@ -1,6 +1,7 @@
 package identity_test
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -185,22 +186,13 @@ func TestUnitRedactsWhenFormatted(t *testing.T) {
 		if strings.Contains(rendered, secret) {
 			t.Errorf("formatted unit leaked the private age identity: %s", rendered)
 		}
-		if strings.Contains(rendered, hexOf(u.NameKey)) {
+		if strings.Contains(rendered, hex.EncodeToString(u.NameKey)) {
 			t.Errorf("formatted unit leaked the name_key: %s", rendered)
 		}
 		if !strings.Contains(rendered, "REDACTED") {
 			t.Errorf("formatted unit should say REDACTED, got: %s", rendered)
 		}
 	}
-}
-
-func hexOf(b []byte) string {
-	const d = "0123456789abcdef"
-	out := make([]byte, 0, len(b)*2)
-	for _, c := range b {
-		out = append(out, d[c>>4], d[c&0x0f])
-	}
-	return string(out)
 }
 
 // Two installs must not collide on either the naming secret or the identity.

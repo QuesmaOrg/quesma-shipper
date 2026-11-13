@@ -19,6 +19,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
+	"github.com/QuesmaOrg/quesma-shipper/internal/identity"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
 
@@ -47,6 +48,23 @@ func enrolledConfigServer(t *testing.T, serve http.HandlerFunc) config.Paths {
 		t.Fatal(err)
 	}
 	return paths
+}
+
+func enrolledIdentity(t *testing.T, stateDir string) (*identity.Unit, *controlplane.Enrollment) {
+	t.Helper()
+	unit, err := identity.Mint(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrollment, err := controlplane.LoadEnrollment(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrollment.InstallID = unit.InstallID.String()
+	if err := enrollment.Save(stateDir); err != nil {
+		t.Fatal(err)
+	}
+	return unit, enrollment
 }
 
 func TestRejectedRemoteKeepsWorkingCacheAndRecovers(t *testing.T) {
