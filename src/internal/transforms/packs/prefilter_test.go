@@ -9,6 +9,21 @@ import (
 // PatternPacks are the high-confidence packs. They scan every field, exempt or not.
 var PatternPacks = []string{GitleaksCore, QuesmaExtra, CloudKeys, PIICore}
 
+func rulesByID(t testing.TB, packs ...string) map[string]*Rule {
+	t.Helper()
+	byID := map[string]*Rule{}
+	for _, pack := range packs {
+		rules, err := Load(pack)
+		if err != nil {
+			t.Fatalf("Load(%s): %v", pack, err)
+		}
+		for _, r := range rules {
+			byID[r.id] = r
+		}
+	}
+	return byID
+}
+
 // containsAny is the executable spec the automaton is held to: does any keyword occur in the
 // value, folding ASCII letter bytes and nothing else.
 func containsAny(value string, keywords []string) bool {

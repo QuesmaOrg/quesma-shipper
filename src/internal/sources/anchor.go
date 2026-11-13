@@ -63,11 +63,7 @@ func (f *RepoFilter) anchoredDirs(src Resolved, c Candidate, a sessionAnchor) []
 // other: once that line is complete, a missing cwd stays missing.
 func sessionStartCWD(probe *CWDProbe) func(string) ([]string, bool) {
 	return func(path string) ([]string, bool) {
-		budget := probe.ScanBytes
-		if budget <= 0 {
-			budget = 64 << 10
-		}
-		head, _, err := readHead(path, budget)
+		head, _, err := readHead(path, cwdScanBytes)
 		if err != nil {
 			return nil, false
 		}

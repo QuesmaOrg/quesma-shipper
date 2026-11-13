@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/controlplane"
-	"github.com/QuesmaOrg/quesma-shipper/internal/identity"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
@@ -56,18 +55,7 @@ func TestProbeSinkUsesEnrollmentWithoutUsableConfigCache(t *testing.T) {
 					},
 				}}})
 			})
-			unit, err := identity.Mint(paths.StateDir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			enrollment, err := controlplane.LoadEnrollment(paths.StateDir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			enrollment.InstallID = unit.InstallID.String()
-			if err := enrollment.Save(paths.StateDir); err != nil {
-				t.Fatal(err)
-			}
+			_, enrollment := enrolledIdentity(t, paths.StateDir)
 			wantKey = "v1/organization=acme/install=" + enrollment.InstallID + "/state/heartbeat.json.age"
 			if cached != "" {
 				if err := controlplane.SaveCache(paths.StateDir, controlplane.Cached{Config: []byte(cached)}); err != nil {

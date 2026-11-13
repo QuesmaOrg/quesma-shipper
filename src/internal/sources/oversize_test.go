@@ -13,14 +13,9 @@ import (
 func TestAnOversizedFileIsSkippedAndCounted(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude", "projects", "-Users-dev-work-demo")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
 	small := filepath.Join(dir, "11111111-1111-4111-8111-111111111111.jsonl")
 	big := filepath.Join(dir, "22222222-2222-4222-8222-222222222222.jsonl")
-	if err := os.WriteFile(small, []byte(`{"type":"user"}`+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	write(t, small, `{"type":"user"}`+"\n")
 	// Sparse: the cap is checked against the stat, so a file this size must never be read.
 	f, err := os.Create(big)
 	if err != nil {

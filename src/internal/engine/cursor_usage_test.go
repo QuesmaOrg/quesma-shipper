@@ -15,7 +15,6 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
-	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
 type roundTrip func(*http.Request) (*http.Response, error)
@@ -70,15 +69,11 @@ func TestCursorUsageDaysSealAndShip(t *testing.T) {
 	}
 	todayName := "cursor.usage.c518a59a73e6." + today.Format("20060102") + ".jsonl"
 	for _, key := range f.port.keys() {
-		obj, _ := f.port.get(key)
-		m, payload, err := transforms.Open(obj.Body, f.unit.Identity)
-		if err != nil {
-			t.Fatal(err)
-		}
+		m, payload := f.plaintext(key)
 		if m.Gather != "cursor_usage" || m.SourceID != "cursor-usage" {
 			t.Fatalf("%+v", m)
 		}
-		if strings.HasSuffix(m.NativePath, todayName) && string(payload) != "{\"timestamp\":\"1\",\"model\":\"m\"}\n{\"timestamp\":\"2\",\"model\":\"m\"}\n" {
+		if strings.HasSuffix(m.NativePath, todayName) && payload != "{\"timestamp\":\"1\",\"model\":\"m\"}\n{\"timestamp\":\"2\",\"model\":\"m\"}\n" {
 			t.Fatalf("today: %q", payload)
 		}
 	}

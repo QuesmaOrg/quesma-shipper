@@ -202,7 +202,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 	// Redaction compiles once per run, not once per file or object, and only after the pause
 	// gate: a paused tick must stay cheap. The compiled scrubber is immutable, so every pass's
 	// goroutines share it; a compile failure still parks each candidate.
-	o.scrub, o.scrubErr = o.scrubber()
+	o.scrub, o.scrubErr = transforms.New(o.scrubConfig())
 	var policies map[string]string
 	if o.ForceResend {
 		base, err := transforms.SealPolicyDigest(o.scrubConfig(), o.Recipients)
@@ -271,7 +271,6 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			Deny:     o.Plan.Deny,
 			Ignore:   o.Plan.Ignore,
 			StateDir: o.Plan.StateDir,
-			Username: o.user,
 			Now:      o.Now,
 			Interval: o.Plan.Interval,
 			Context:  ctx,
@@ -387,7 +386,9 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 
 	o.stages = nil
 	if !o.DryRun && o.Heartbeat != nil {
-		o.step("heartbeat", "")
+		if o.Step != nil {
+			o.Step("heartbeat", "")
+		}
 		// Health reporting fails open; only redaction fails closed.
 		err := o.Heartbeat(ctx, rep)
 		if err != nil && o.Log != nil {
@@ -419,21 +420,9 @@ func summarize(rep *Report) {
 			}
 		}
 	}
-	rep.MedianFileBytes = median(shippedIn)
-}
-
-func median(v []int64) int64 {
-	if len(v) == 0 {
-		return 0
-	}
-	sorted := slices.Clone(v)
-	slices.Sort(sorted)
-	return sorted[len(sorted)/2]
-}
-
-func (o Options) step(stage, source string) {
-	if o.Step != nil {
-		o.Step(stage, source)
+	if len(shippedIn) > 0 {
+		slices.Sort(shippedIn)
+		rep.MedianFileBytes = shippedIn[len(shippedIn)/2]
 	}
 }
 
@@ -501,10 +490,6 @@ func (t *stageTracker) refresh() {
 	t.step(label, t.source)
 }
 
-func (o Options) scrubber() (*transforms.Scrubber, error) {
-	return transforms.New(o.scrubConfig())
-}
-
 func (o Options) scrubConfig() transforms.Config {
 	cfg := transforms.DefaultConfig()
 	cfg.RulePacks = o.Plan.RulePacks
@@ -518,10 +503,7 @@ func (o Options) scrubConfig() transforms.Config {
 // orgOf is the organization= key segment, always the RESOLVED value: a hardcoded "default" splits
 // one enrolled install across two organization subtrees. The fallback keeps key depth constant.
 func orgOf(p Plan) string {
-	if p.OrganizationID == "" {
-		return "default"
-	}
-	return p.OrganizationID
+	return cmp.Or(p.OrganizationID, "default")
 }
 
 // backoffFor computes the next attempt delay: a minute, doubling, capped at an hour, with up to

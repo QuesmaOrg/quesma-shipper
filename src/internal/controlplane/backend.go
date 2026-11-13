@@ -191,8 +191,12 @@ type Fetched struct {
 // FetchConfig posts the config request and returns the served config. A document that does not
 // parse is refused here rather than downstream: a config that partly applied is worse than none.
 func (c *Client) FetchConfig(ctx context.Context, req ConfigRequest) (Fetched, error) {
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return Fetched{}, fmt.Errorf("backend: encode request: %w", err)
+	}
 	var out ConfigResponse
-	if err := c.post(ctx, "/v1/config", req, &out, true); err != nil {
+	if err := c.postJSON(ctx, "/v1/config", payload, &out, true); err != nil {
 		return Fetched{}, err
 	}
 
@@ -206,15 +210,6 @@ func (c *Client) FetchConfig(ctx context.Context, req ConfigRequest) (Fetched, e
 		Raw:       out.Config,
 		ExpiresAt: out.ExpiresAt,
 	}, nil
-}
-
-// post sends a signed JSON request.
-func (c *Client) post(ctx context.Context, path string, body, out any, signed bool) (err error) {
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("backend: encode request: %w", err)
-	}
-	return c.postJSON(ctx, path, payload, out, signed)
 }
 
 func (c *Client) postJSON(ctx context.Context, path string, payload []byte, out any, signed bool) error {

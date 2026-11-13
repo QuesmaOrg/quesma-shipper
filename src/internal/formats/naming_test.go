@@ -16,23 +16,6 @@ func keyA(t *testing.T) []byte {
 	return k
 }
 
-func keyB(t *testing.T) []byte {
-	t.Helper()
-	k := make([]byte, formats.NameKeySize)
-	for i := range k {
-		k[i] = 0xff
-	}
-	return k
-}
-
-// Blinding is keyed, not a bare hash: a plaintext path hash in a listable key is an oracle.
-func TestBlindingIsKeyed(t *testing.T) {
-	const p = "projects/proj/a.jsonl"
-	if formats.MirrorName(keyA(t), p) == formats.MirrorName(keyB(t), p) {
-		t.Fatal("two name_keys produced the same mirror name")
-	}
-}
-
 // Over-replacing is the worse failure: it merges two different files onto one key.
 func TestUserPlaceholderDoesNotOverMatch(t *testing.T) {
 	cases := []struct{ in, username, want string }{

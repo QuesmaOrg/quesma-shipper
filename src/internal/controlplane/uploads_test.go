@@ -2,7 +2,6 @@ package controlplane_test
 
 import (
 	"context"
-	"crypto/ed25519"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -21,20 +20,8 @@ func authorizeAgainst(t *testing.T, handler http.HandlerFunc) (controlplane.Auth
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	_, key, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client, err := controlplane.New(controlplane.Options{
-		Endpoint:     srv.URL,
-		InstallID:    fixtureInstallID,
-		Organization: "acme",
-		DeviceKey:    key,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return client.AuthorizeUploads(context.Background(), sampleAuthorizeRequest())
+	c, _ := client(t, srv.URL)
+	return c.AuthorizeUploads(context.Background(), sampleAuthorizeRequest())
 }
 
 func alreadyPresentTicketJSON() string {
@@ -169,22 +156,10 @@ func TestAuthorizeUploadsRefusesIncompleteRequest(t *testing.T) {
 	}
 	for field, blank := range cases {
 		t.Run(field, func(t *testing.T) {
-			_, key, err := ed25519.GenerateKey(nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			client, err := controlplane.New(controlplane.Options{
-				Endpoint:     "https://control.example.invalid",
-				InstallID:    fixtureInstallID,
-				Organization: "acme",
-				DeviceKey:    key,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
+			c, _ := client(t, "https://control.example.invalid")
 			req := sampleAuthorizeRequest()
 			blank(&req)
-			_, err = client.AuthorizeUploads(context.Background(), req)
+			_, err := c.AuthorizeUploads(context.Background(), req)
 			if err == nil || !strings.Contains(err.Error(), field) {
 				t.Fatalf("a batch missing %s must be refused by name, got %v", field, err)
 			}

@@ -7,7 +7,7 @@ import (
 )
 
 func TestDigestIgnoresCheckoutFormatting(t *testing.T) {
-	for _, pack := range []string{GitleaksCore, QuesmaExtra, CloudKeys, PIICore} {
+	for _, pack := range PatternPacks {
 		t.Run(pack, func(t *testing.T) {
 			raw, err := corpora.ReadFile("data/" + pack + ".json")
 			if err != nil {

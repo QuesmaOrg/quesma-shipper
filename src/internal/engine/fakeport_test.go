@@ -151,6 +151,16 @@ func (p *fakePort) sizes() []int {
 	return n
 }
 
+// versions fails unless every key the port holds was stored exactly n times.
+func (p *fakePort) versions(t *testing.T, n int) {
+	t.Helper()
+	for _, key := range p.keys() {
+		if obj, _ := p.get(key); obj.Versions != n {
+			t.Errorf("%s has %d versions, want %d", key, obj.Versions, n)
+		}
+	}
+}
+
 // storedOnce fails unless every key the port holds was stored exactly once.
 func (p *fakePort) storedOnce(t *testing.T) {
 	t.Helper()

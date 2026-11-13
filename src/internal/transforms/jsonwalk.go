@@ -247,10 +247,7 @@ func (w *jsonWalker) walkEmbedded(depth int, path, text string) (out string, wal
 		return "", false, fmt.Errorf("%w at %s: %w", errEmbeddedEdit, path, err)
 	}
 	in.rewritten = rewritten
-	w.redacted += in.redacted
-	for id, count := range in.hits {
-		w.hits[id] += count
-	}
+	w.addLedger(valuePlan{redacted: in.redacted, hits: in.hits})
 	return string(rewritten), true, nil
 }
 

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
 
@@ -96,12 +95,7 @@ func managedTaskAction(action, dir, recoveryFile string) error {
 	script := "& {\n" + managedTasksScript + "\n} -Operation " + psQuote(action) +
 		" -InstallDir " + psQuote(dir) + " -RecoveryFile " + psQuote(recoveryFile)
 	// A single encoded argument preserves paths containing quotes without invoking a command shell.
-	units := utf16.Encode([]rune(script))
-	raw := make([]byte, 2*len(units))
-	for i, unit := range units {
-		raw[2*i], raw[2*i+1] = byte(unit), byte(unit>>8)
-	}
-	encoded := base64.StdEncoding.EncodeToString(raw)
+	encoded := base64.StdEncoding.EncodeToString(utf16LE(script))
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, filepath.Join(systemDir, `WindowsPowerShell\v1.0\powershell.exe`),

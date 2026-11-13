@@ -1,29 +1,23 @@
 package engine_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
-	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
 func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	f := newFixture(t)
 	home := filepath.Join(f.home, ".codex")
-	if err := os.MkdirAll(home, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(`{"auth_mode":"apikey"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(home, "auth.json"), []byte(`{"auth_mode":"apikey"}`))
 	catalog, err := sources.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -42,9 +36,7 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.stateDir, "snapshots")); !os.IsNotExist(err) {
 		t.Fatal("account collection staged files")
 	}
-	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(`{"auth_mode":"fresh","tokens":{"id_token":"x.eyJlbWFpbCI6ImRldkBleGFtcGxlLm9yZyJ9.x"}}`), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(home, "auth.json"), []byte(`{"auth_mode":"fresh","tokens":{"id_token":"x.eyJlbWFpbCI6ImRldkBleGFtcGxlLm9yZyJ9.x"}}`))
 	f.reopen()
 	f.port.FailAll = nil
 	rep := runEnrich(t, f, o)
@@ -59,24 +51,20 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 		t.Fatalf("history keys %v", keys)
 	}
 	for _, key := range keys {
-		obj, _ := f.port.get(key)
-		manifest, payload, err := transforms.Open(obj.Body, f.unit.Identity)
-		if err != nil {
-			t.Fatal(err)
-		}
+		manifest, payload := f.plaintext(key)
 		if manifest.Derived || manifest.Enricher != nil || manifest.Gather != "account" || manifest.PayloadMTime == nil {
 			t.Fatalf("not a collector: %+v", manifest)
 		}
-		lines := bytes.Split(payload, []byte("\n"))
+		lines := strings.Split(payload, "\n")
 		if len(lines) != 4 || len(lines[3]) != 0 {
 			t.Fatalf("expected three newline-terminated records: %s", payload)
 		}
 		for _, line := range lines[:3] {
-			if !json.Valid(line) || !bytes.Contains(line, []byte(`"bucket_start":`)) {
+			if !json.Valid([]byte(line)) || !strings.Contains(line, `"bucket_start":`) {
 				t.Fatalf("invalid account record: %s", line)
 			}
 		}
-		if !bytes.Contains(payload, []byte(`"auth_mode":"fresh"`)) || !bytes.Contains(payload, []byte("dev@example.org")) || manifest.Redaction != nil {
+		if !strings.Contains(payload, `"auth_mode":"fresh"`) || !strings.Contains(payload, "dev@example.org") || manifest.Redaction != nil {
 			t.Fatalf("fresh account payload altered: %s", payload)
 		}
 	}
@@ -91,9 +79,7 @@ func TestAccountHistoryUploadsFromMemoryAndRetriesCurrentUsage(t *testing.T) {
 	if rep.Shipped != 0 || rep.Unchanged != 1 || len(f.port.keys()) != 1 {
 		t.Fatalf("unchanged account in a new bucket should not upload: %+v", rep)
 	}
-	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(`{"auth_mode":"changed"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(home, "auth.json"), []byte(`{"auth_mode":"changed"}`))
 	now = now.Add(5 * time.Minute)
 	rep = runEnrich(t, f, o)
 	if rep.Shipped != 1 {
@@ -141,9 +127,7 @@ func TestAccountNewBucketRetriesDespiteBackoff(t *testing.T) {
 		f.reopen()
 		now = now.Add(time.Minute)
 	}
-	if err := os.WriteFile(filepath.Join(root, "state.vscdb"), nil, 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(root, "state.vscdb"), nil)
 	now = now.Truncate(5 * time.Minute).Add(5 * time.Minute)
 	if rep := runEnrich(t, f, o); rep.Shipped != 1 {
 		t.Fatalf("a new bucket must not wait out the previous bucket's backoff: %+v", rep)
@@ -160,12 +144,7 @@ func TestAccountDisabledAndPreviewDoNotCapture(t *testing.T) {
 	}
 	spec, _ := catalog.Source("codex-account")
 	home := filepath.Join(f.home, ".codex")
-	if err := os.MkdirAll(home, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(`{"auth_mode":"apikey"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(home, "auth.json"), []byte(`{"auth_mode":"apikey"}`))
 	o.Plan.Sources = []sources.Resolved{{Source: spec, Root: home, Enabled: false}}
 	runEnrich(t, f, o)
 	o.Plan.Sources[0].Enabled = true
@@ -194,16 +173,12 @@ func TestSourceScrubSetting(t *testing.T) {
 				t.Fatalf("shipped: %+v", rep)
 			}
 			for _, key := range f.port.keys() {
-				obj, _ := f.port.get(key)
-				m, payload, err := transforms.Open(obj.Body, f.unit.Identity)
-				if err != nil {
-					t.Fatal(err)
-				}
+				m, payload := f.plaintext(key)
 				if tc.wantRaw {
-					if string(payload) != raw || m.Redaction != nil {
+					if payload != raw || m.Redaction != nil {
 						t.Fatal("disabled scrub changed bytes or reported redaction")
 					}
-				} else if bytes.Contains(payload, []byte("dev@example.org")) || bytes.Contains(payload, []byte("fixture-secret")) || m.Redaction == nil {
+				} else if strings.Contains(payload, "dev@example.org") || strings.Contains(payload, "fixture-secret") || m.Redaction == nil {
 					t.Fatalf("scrubbing was not applied: %s", payload)
 				}
 			}

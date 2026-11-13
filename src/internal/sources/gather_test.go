@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
@@ -119,19 +118,10 @@ func TestHealthIsEmittedAtZeroCandidates(t *testing.T) {
 // Retention-aware ordering: a bounded run must take the files closest to deletion first.
 func TestCandidatesAreOldestFirst(t *testing.T) {
 	root := t.TempDir()
-	older := filepath.Join(root, "projects", "p", "older.jsonl")
-	newer := filepath.Join(root, "projects", "p", "newer.jsonl")
-	write(t, older, `{"a":1}`+"\n")
-	write(t, newer, `{"a":2}`+"\n")
-
-	old := mustParse(t, "2026-01-01T00:00:00Z")
-	recent := mustParse(t, "2026-07-30T00:00:00Z")
-	if err := os.Chtimes(older, old, old); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(newer, recent, recent); err != nil {
-		t.Fatal(err)
-	}
+	oldFile := filepath.Join(root, "projects", "p", "older.jsonl")
+	write(t, oldFile, `{"a":1}`+"\n")
+	write(t, filepath.Join(root, "projects", "p", "newer.jsonl"), `{"a":2}`+"\n")
+	older(t, oldFile)
 
 	d := discover(t, source(root, []string{"projects/**/*.jsonl"}), nil)
 	if len(d.Candidates) != 2 {
@@ -423,13 +413,4 @@ func TestRegistryHasNoReservedPrimitives(t *testing.T) {
 			t.Errorf("%q should be compiled in: %v", expected, err)
 		}
 	}
-}
-
-func mustParse(t *testing.T, s string) time.Time {
-	t.Helper()
-	p, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return p
 }

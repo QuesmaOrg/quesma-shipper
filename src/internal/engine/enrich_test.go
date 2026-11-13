@@ -43,12 +43,7 @@ func cursorFixture(t *testing.T, f *fixture) (dbPath string) {
 
 	// The transcript, where the catalog's globs will find it.
 	dir := filepath.Join(f.home, ".cursor", "projects", "api", "agent-transcripts")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, enrichConv+".jsonl"), []byte(cursorTranscript), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(dir, enrichConv+".jsonl"), []byte(cursorTranscript))
 
 	// The store, with auth material and unused fields planted in it.
 	dbPath = filepath.Join(f.home, "globalStorage", "state.vscdb")
@@ -160,11 +155,7 @@ func TestARawAndDerivedPairShipTogether(t *testing.T) {
 
 	var rawManifest, derivedManifest transforms.Manifest
 	for _, k := range f.port.keys() {
-		obj, _ := f.port.get(k)
-		m, _, err := transforms.Open(obj.Body, f.unit.Identity)
-		if err != nil {
-			t.Fatal(err)
-		}
+		m, _ := f.plaintext(k)
 		if m.Derived {
 			derivedManifest = m
 		} else {
@@ -219,7 +210,7 @@ func TestNoSQLiteRowsReachTheSink(t *testing.T) {
 		obj, _ := f.port.get(k)
 
 		// The ciphertext itself first: the decrypted payload alone would miss a metadata leak.
-		if bytesContain(obj.Body, sessionToken, blobKey, unusedRowMarker) {
+		if containsAny(string(obj.Body), sessionToken, blobKey, unusedRowMarker) {
 			t.Errorf("%s: a store secret or unused row field is in the ciphertext", k)
 		}
 		for mk, mv := range obj.Metadata {
@@ -228,19 +219,16 @@ func TestNoSQLiteRowsReachTheSink(t *testing.T) {
 			}
 		}
 
-		m, payload, err := transforms.Open(obj.Body, f.unit.Identity)
-		if err != nil {
-			t.Fatal(err)
-		}
+		m, payload := f.plaintext(k)
 		// The session token shares the database, so this pins the key deny into the shipping path.
-		if containsAny(string(payload), sessionToken) {
+		if containsAny(payload, sessionToken) {
 			t.Errorf("%s: a Cursor session token reached the sink", k)
 		}
-		if containsAny(string(payload), blobKey) {
+		if containsAny(payload, blobKey) {
 			t.Errorf("%s: a blob encryption key reached the sink", k)
 		}
 		// The derived object is a join of named fields, never a dump of rows.
-		if containsAny(string(payload), unusedRowMarker) {
+		if containsAny(payload, unusedRowMarker) {
 			t.Errorf("%s: an unused store row field reached the sink", k)
 		}
 		// And nothing may claim to be a database row.
@@ -291,12 +279,8 @@ func TestTheDerivedObjectReShipsOnlyWhenItsOutputChanges(t *testing.T) {
 
 	found := false
 	for _, k := range f.port.keys() {
-		obj, _ := f.port.get(k)
-		m, payload, err := transforms.Open(obj.Body, f.unit.Identity)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if m.Derived && strings.Contains(string(payload), "A LATE RESULT ARRIVED") {
+		m, payload := f.plaintext(k)
+		if m.Derived && strings.Contains(payload, "A LATE RESULT ARRIVED") {
 			found = true
 		}
 	}
@@ -335,11 +319,7 @@ func TestDisablingTheEnricherLeavesAByteIdenticalRawRun(t *testing.T) {
 
 	// And no derived object at all when disabled.
 	for _, k := range without.port.keys() {
-		obj, _ := without.port.get(k)
-		m, _, err := transforms.Open(obj.Body, without.unit.Identity)
-		if err != nil {
-			t.Fatal(err)
-		}
+		m, _ := without.plaintext(k)
 		if m.Derived {
 			t.Errorf("a disabled enricher still produced %s", k)
 		}
@@ -363,11 +343,7 @@ func TestAMismatchShipsRawOnlyAndRaisesTheAlarm(t *testing.T) {
 		t.Fatalf("shipped %d, want the raw object only: %+v", rep.Shipped, rep.Sources)
 	}
 	for _, k := range f.port.keys() {
-		obj, _ := f.port.get(k)
-		m, _, err := transforms.Open(obj.Body, f.unit.Identity)
-		if err != nil {
-			t.Fatal(err)
-		}
+		m, _ := f.plaintext(k)
 		if m.Derived {
 			t.Errorf("a mismatched join still shipped a derived object: %s", k)
 		}
@@ -448,12 +424,8 @@ func TestTheDerivedPayloadIsScrubbed(t *testing.T) {
 	runEnrich(t, f, enrichOpts(t, f, db, true))
 
 	for _, k := range f.port.keys() {
-		obj, _ := f.port.get(k)
-		_, payload, err := transforms.Open(obj.Body, f.unit.Identity)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(payload), planted) {
+		_, payload := f.plaintext(k)
+		if strings.Contains(payload, planted) {
 			t.Errorf("%s: a secret in a tool result shipped unredacted", k)
 		}
 	}
@@ -468,10 +440,7 @@ func TestTheDerivedObjectIsFlaggedInMetadata(t *testing.T) {
 	var flagged bool
 	for _, k := range f.port.keys() {
 		obj, _ := f.port.get(k)
-		m, _, err := transforms.Open(obj.Body, f.unit.Identity)
-		if err != nil {
-			t.Fatal(err)
-		}
+		m, _ := f.plaintext(k)
 		if !m.Derived {
 			if obj.Metadata["derived"] != "" {
 				t.Errorf("%s: a raw object is flagged derived", k)
@@ -513,20 +482,12 @@ func rawManifests(t *testing.T, f *fixture) []transforms.Manifest {
 	t.Helper()
 	var out []transforms.Manifest
 	for _, k := range f.port.keys() {
-		obj, _ := f.port.get(k)
-		m, _, err := transforms.Open(obj.Body, f.unit.Identity)
-		if err != nil {
-			t.Fatal(err)
-		}
+		m, _ := f.plaintext(k)
 		if !m.Derived {
 			out = append(out, m)
 		}
 	}
 	return out
-}
-
-func bytesContain(b []byte, needles ...string) bool {
-	return containsAny(string(b), needles...)
 }
 
 func containsAny(s string, needles ...string) bool {

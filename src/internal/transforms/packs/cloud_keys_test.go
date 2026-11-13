@@ -45,14 +45,7 @@ func TestCloudKeysBareNameShapes(t *testing.T) {
 		},
 	}
 
-	rules, err := Load(CloudKeys)
-	if err != nil {
-		t.Fatal(err)
-	}
-	byID := map[string]*Rule{}
-	for _, r := range rules {
-		byID[r.id] = r
-	}
+	byID := rulesByID(t, CloudKeys)
 	for id, probes := range cases {
 		r := byID[id]
 		if r == nil {

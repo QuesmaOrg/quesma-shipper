@@ -265,9 +265,6 @@ type Request struct {
 	// StateDir is the ONLY place a primitive may write its derived artifacts, never inside an agent's store.
 	StateDir string
 
-	// Username feeds the path placeholder, so an inventory record carries a pseudonymised path.
-	Username string
-
 	Now      func() time.Time
 	Interval time.Duration
 
@@ -352,12 +349,7 @@ func discoverByGlob(req Request) (Discovery, error) {
 	}
 
 	// Oldest first: for a source with a known reaper these are the ones closest to deletion.
-	slices.SortFunc(matched, func(a, b Candidate) int {
-		if c := a.MTime.Compare(b.MTime); c != 0 {
-			return c
-		}
-		return strings.Compare(a.RelPath, b.RelPath)
-	})
+	slices.SortFunc(matched, oldestFirst)
 
 	d.Candidates = matched
 	d.Health = Collected
@@ -421,6 +413,14 @@ type unreadable struct {
 	err     error
 }
 
+// note counts a failure and keeps the first as the example.
+func (u *unreadable) note(path string, err error) {
+	u.count++
+	if u.err == nil {
+		u.example, u.err = path, err
+	}
+}
+
 func (u unreadable) reason() string {
 	if u.count == 0 {
 		return ""
@@ -468,13 +468,6 @@ func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Ove
 		return filepath.Join(rdir, filepath.Base(p))
 	}
 
-	note := func(path string, err error) {
-		bad.count++
-		if bad.err == nil {
-			bad.example, bad.err = path, err
-		}
-	}
-
 	// The ROOT may be a symlink, and only the root: ~/.claude -> ~/dotfiles/claude is what stow and chezmoi
 	// produce, and WalkDir would lstat it and descend into nothing. Entries inside are still not followed, and
 	// the resolved root is re-checked against the deny list.
@@ -482,7 +475,7 @@ func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Ove
 	if resolved, rerr := filepath.EvalSymlinks(root); rerr == nil && resolved != root {
 		if deny != nil {
 			if denied, pattern := deny.Match(resolved); denied {
-				note(root, fmt.Errorf("root resolves to %s, which the deny list refuses (%s)",
+				bad.note(root, fmt.Errorf("root resolves to %s, which the deny list refuses (%s)",
 					resolved, pattern))
 				return out, oversize, bad, ignored
 			}
@@ -493,7 +486,7 @@ func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Ove
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// A permission denial deep in a store must not abort the walk; what could not be read is counted.
-			note(path, err)
+			bad.note(path, err)
 			if d != nil && d.IsDir() {
 				return fs.SkipDir
 			}
@@ -550,7 +543,7 @@ func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Ove
 
 		info, infoErr := d.Info()
 		if infoErr != nil {
-			note(path, infoErr)
+			bad.note(path, infoErr)
 			return nil
 		}
 		if src.MaxFileBytes > 0 && info.Size() > src.MaxFileBytes {
@@ -574,8 +567,7 @@ func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Ove
 	})
 	// A walk that failed at the root: WalkDir's own error, which the callback never saw.
 	if err != nil && bad.err == nil {
-		bad.count++
-		bad.example, bad.err = src.Root, err
+		bad.note(src.Root, err)
 	}
 	return out, oversize, bad, ignored
 }
@@ -725,4 +717,11 @@ func sampleIndexes(length, n int) []int {
 		out = append(out, i*(length-1)/(n-1))
 	}
 	return out
+}
+
+func oldestFirst(a, b Candidate) int {
+	if c := a.MTime.Compare(b.MTime); c != 0 {
+		return c
+	}
+	return strings.Compare(a.RelPath, b.RelPath)
 }

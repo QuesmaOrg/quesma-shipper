@@ -415,7 +415,6 @@ func TestALiveDatabaseIsNotCopiedRaw(t *testing.T) {
 		ScratchDir:  filepath.Join(t.TempDir(), "scratch"),
 		Table:       "cursorDiskKV",
 		KeyPrefixes: []string{"composerData:"},
-		Now:         func() time.Time { return time.Now() },
 	})
 	if err == nil {
 		t.Fatal("a live database was read by raw copy")

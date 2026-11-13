@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -98,15 +97,7 @@ func TestResolveWithNoConfigFilesWorks(t *testing.T) {
 		t.Fatalf("a clone-and-run install with no config files must resolve: %v", err)
 	}
 
-	var claude *config.ResolvedSource
-	for i := range eff.Sources {
-		if eff.Sources[i].ID == "claude-code-transcripts" {
-			claude = &eff.Sources[i]
-		}
-	}
-	if claude == nil {
-		t.Fatal("claude-code-transcripts missing from the resolved set")
-	}
+	claude := sourceByID(t, eff, "claude-code-transcripts")
 	if claude.Root != filepath.Join(home, ".claude") {
 		t.Errorf("root should resolve to the fake home store, got %q (%s)",
 			claude.Root, claude.RootUnresolvedReason)
@@ -173,10 +164,8 @@ sources:
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range eff.Sources {
-		if s.ID == "claude-code-transcripts" && s.Enabled {
-			t.Fatal("a remote enable must not undo a local disable")
-		}
+	if sourceByID(t, eff, "claude-code-transcripts").Enabled {
+		t.Fatal("a remote enable must not undo a local disable")
 	}
 }
 
@@ -195,10 +184,8 @@ sources:
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range eff.Sources {
-		if s.ID == "claude-code-transcripts" && s.Root != filepath.Dir(root) {
-			t.Fatalf("root = %q", s.Root)
-		}
+	if s := sourceByID(t, eff, "claude-code-transcripts"); s.Root != filepath.Dir(root) {
+		t.Fatalf("root = %q", s.Root)
 	}
 }
 
@@ -215,12 +202,8 @@ sources:
 	if err != nil {
 		t.Fatalf("narrowing includes within a compiled root must be allowed: %v", err)
 	}
-	for _, s := range eff.Sources {
-		if s.ID == "claude-code-transcripts" {
-			if len(s.Include) != 1 || s.Include[0] != "projects/**/*.jsonl" {
-				t.Errorf("include not applied: %v", s.Include)
-			}
-		}
+	if s := sourceByID(t, eff, "claude-code-transcripts"); len(s.Include) != 1 || s.Include[0] != "projects/**/*.jsonl" {
+		t.Errorf("include not applied: %v", s.Include)
 	}
 }
 
@@ -253,6 +236,9 @@ max_files_per_run: 200
 	))
 	if err != nil {
 		t.Fatalf("the served document must resolve: %v", err)
+	}
+	if eff.OrganizationID != "acme" {
+		t.Errorf("organization_id = %q, want the served org beside a send block", eff.OrganizationID)
 	}
 	if eff.Schedule != "30m" {
 		t.Errorf("mode.schedule = %q: the org's schedule did not take effect", eff.Schedule)
@@ -297,10 +283,8 @@ func TestACompiledIncludeReachingADeniedNameIsNotRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a denied name under a compiled glob rejected the config: %v", err)
 	}
-	for _, s := range eff.Sources {
-		if s.ID == "claude-code-context" && s.Root == "" {
-			t.Errorf("claude-code-context did not resolve: %s", s.RootUnresolvedReason)
-		}
+	if s := sourceByID(t, eff, "claude-code-context"); s.Root == "" {
+		t.Errorf("claude-code-context did not resolve: %s", s.RootUnresolvedReason)
 	}
 }
 
@@ -321,61 +305,6 @@ sources:
 	}
 }
 
-func TestDenyListMatchesCredentialShapes(t *testing.T) {
-	home := t.TempDir()
-	d := sources.New(home)
-
-	denied := []string{
-		filepath.Join(home, ".aws", "credentials"),
-		filepath.Join(home, ".ssh", "id_rsa"),
-		filepath.Join(home, ".ssh", "nested", "deeper", "key"),
-		filepath.Join(home, ".claude", ".credentials.json"),
-		filepath.Join(home, ".claude.json"),
-		filepath.Join(home, ".codex", "auth.json"),
-		filepath.Join(home, ".netrc"),
-		filepath.Join(home, "work", "project", ".env"),
-		filepath.Join(home, "work", "project", ".env.local"),
-		filepath.Join(home, "work", "certs", "server.pem"),
-		filepath.Join(home, "Library", "Keychains", "login.keychain-db"),
-		filepath.Join(home, ".config", "gh", "hosts.yml"),
-	}
-	for _, p := range denied {
-		if ok, _ := d.Match(p); !ok {
-			t.Errorf("must be denied: %s", p)
-		}
-	}
-
-	allowed := []string{
-		filepath.Join(home, ".claude", "projects", "proj", "s.jsonl"),
-		filepath.Join(home, ".claude", "CLAUDE.md"),
-		filepath.Join(home, ".codex", "sessions", "2026", "r.jsonl"),
-		filepath.Join(home, "work", "project", "src", "db.go"),
-	}
-	for _, p := range allowed {
-		if ok, pat := d.Match(p); ok {
-			t.Errorf("must not be denied: %s (matched %q)", p, pat)
-		}
-	}
-}
-
-// The deny list applies to the resolved path, so a symlink under an allowed root cannot launder a denied target.
-func TestDenyFollowsSymlinksToTheirTarget(t *testing.T) {
-	home := t.TempDir()
-	secret := filepath.Join(home, ".ssh", "id_ed25519")
-	mustWrite(t, secret, "PRIVATE KEY")
-
-	link := filepath.Join(home, ".claude", "projects", "innocent.jsonl")
-	mustMkdir(t, filepath.Dir(link))
-	if err := os.Symlink(secret, link); err != nil {
-		t.Skipf("cannot create symlinks here: %v", err)
-	}
-
-	d := sources.New(home)
-	if ok, _ := d.Match(link); !ok {
-		t.Fatal("a symlink whose target is denied must itself be denied")
-	}
-}
-
 // --- require_subdir ---------------------------------------------------------
 
 // A root that does not look like the store it claims to be is not that store.
@@ -388,15 +317,12 @@ func TestRequireSubdirRefusesAWrongShapedRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range eff.Sources {
-		if s.ID == "claude-code-transcripts" {
-			if s.Root != "" {
-				t.Errorf("a root with no projects/ dir must not resolve, got %q", s.Root)
-			}
-			if !strings.Contains(s.RootUnresolvedReason, "projects") {
-				t.Errorf("the reason should name the missing subdir, got %q", s.RootUnresolvedReason)
-			}
-		}
+	s := sourceByID(t, eff, "claude-code-transcripts")
+	if s.Root != "" {
+		t.Errorf("a root with no projects/ dir must not resolve, got %q", s.Root)
+	}
+	if !strings.Contains(s.RootUnresolvedReason, "projects") {
+		t.Errorf("the reason should name the missing subdir, got %q", s.RootUnresolvedReason)
 	}
 }
 
@@ -541,26 +467,6 @@ func TestCompiledExemptionBaselineIsSeededByDefault(t *testing.T) {
 	}
 }
 
-// The served config names the organization; it cannot name the write path, so the send block it serves is ignored.
-func TestServedRemoteConfigSetsOrgAndIgnoresTheSendBlock(t *testing.T) {
-	home := fakeHome(t)
-	eff, err := config.Resolve(baseInput(t, home,
-		config.LayeredDocument{Layer: config.LayerRemote, Doc: servedDoc(t, `
-org: acme
-send:
-  sink: s3
-  bucket: acme-archive
-  region: eu-central-1
-`)},
-	))
-	if err != nil {
-		t.Fatalf("the served config must resolve: %v", err)
-	}
-	if eff.OrganizationID != "acme" {
-		t.Errorf("served config not applied: %s", eff.OrganizationID)
-	}
-}
-
 // Envelope fields are refused from any layer but the remote one: a local org would relabel where this machine writes.
 func TestEnvelopeFieldsAreRefusedFromLocalLayers(t *testing.T) {
 	home := fakeHome(t)
@@ -568,10 +474,7 @@ func TestEnvelopeFieldsAreRefusedFromLocalLayers(t *testing.T) {
 		_, err := config.Resolve(baseInput(t, home,
 			config.LayeredDocument{Layer: config.LayerUser, Doc: doc(t, y)},
 		))
-		var rej *config.RejectionError
-		if !errors.As(err, &rej) {
-			t.Errorf("a user layer set %q and it was accepted: %v", strings.TrimSpace(y), err)
-		}
+		mustReject(t, err, "a user layer setting "+strings.TrimSpace(y))
 	}
 }
 
@@ -767,10 +670,7 @@ func TestANonPositiveDrainDeadlineIsRejected(t *testing.T) {
 			config.LayeredDocument{Layer: config.LayerUser,
 				Doc: doc(t, "drain_deadline: "+spelling+"\n")},
 		))
-		var rej *config.RejectionError
-		if !errors.As(err, &rej) {
-			t.Errorf("drain_deadline %s was accepted: %v", spelling, err)
-		}
+		mustReject(t, err, "drain_deadline "+spelling)
 	}
 }
 
@@ -780,10 +680,7 @@ func TestAnUnparseableDrainDeadlineIsRejected(t *testing.T) {
 		config.LayeredDocument{Layer: config.LayerUser, Doc: doc(t, "drain_deadline: 60\n")},
 	))
 	// Bare "60" is the plausible mistake, and guessing at seconds would mean a config that means something else.
-	var rej *config.RejectionError
-	if !errors.As(err, &rej) {
-		t.Fatalf("drain_deadline: 60 was accepted: %v", err)
-	}
+	mustReject(t, err, "drain_deadline: 60")
 }
 
 // --- the enricher setting ---------------------------------------------------
@@ -802,7 +699,7 @@ sources:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if enrichersOf(off, "cursor-transcripts")["cursor-transcript-join"] {
+	if sourceByID(t, off, "cursor-transcripts").Enrichers["cursor-transcript-join"] {
 		t.Error("a local disable did not take effect")
 	}
 
@@ -818,7 +715,7 @@ sources:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !enrichersOf(on, "cursor-transcripts")["cursor-transcript-join"] {
+	if !sourceByID(t, on, "cursor-transcripts").Enrichers["cursor-transcript-join"] {
 		t.Error("a local enable did not take effect")
 	}
 }
@@ -853,7 +750,7 @@ sources:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !enrichersOf(clean, "cursor-transcripts")["cursor-transcript-join"] {
+	if !sourceByID(t, clean, "cursor-transcripts").Enrichers["cursor-transcript-join"] {
 		t.Error("a previous resolution's override leaked into the compiled catalog")
 	}
 }
@@ -869,19 +766,7 @@ sources:
 `)},
 	))
 	// Attaching an enricher the catalog never gave this source would let config decide which code reads which store.
-	var rej *config.RejectionError
-	if !errors.As(err, &rej) {
-		t.Fatalf("a layer attached an enricher the catalog did not: %v", err)
-	}
-}
-
-func enrichersOf(eff *config.Effective, id string) map[string]bool {
-	for _, s := range eff.Sources {
-		if s.ID == id {
-			return s.Enrichers
-		}
-	}
-	return nil
+	mustReject(t, err, "a layer attaching an enricher the catalog did not")
 }
 
 func TestTranscriptDisableDoesNotDisableAccountSource(t *testing.T) {

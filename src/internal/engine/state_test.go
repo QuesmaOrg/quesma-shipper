@@ -149,17 +149,12 @@ func TestAnInPlaceCorruptionIsCaughtByTheChecksum(t *testing.T) {
 	s.Close()
 
 	path := filepath.Join(dir, engine.FileName)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := readFile(t, path)
 	tampered := strings.Replace(string(raw), sha, otherSha, 1)
 	if tampered == string(raw) {
 		t.Fatal("could not tamper with the source hash; document shape changed")
 	}
-	if err := os.WriteFile(path, []byte(tampered), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, path, []byte(tampered))
 
 	if _, err := engine.Peek(dir); err == nil || !strings.Contains(err.Error(), "checksum") {
 		t.Fatalf("the tampered document was trusted: %v", err)
@@ -171,9 +166,7 @@ func TestAnInPlaceCorruptionIsCaughtByTheChecksum(t *testing.T) {
 func TestADocumentWithoutAChecksumStillLoads(t *testing.T) {
 	dir := t.TempDir()
 	doc := `{"state_schema": 1, "entries": []}`
-	if err := os.WriteFile(filepath.Join(dir, engine.FileName), []byte(doc), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(dir, engine.FileName), []byte(doc))
 	if _, err := engine.Peek(dir); err != nil {
 		t.Fatalf("a pre-checksum document must load: %v", err)
 	}
@@ -183,10 +176,7 @@ func TestADocumentWithoutAChecksumStillLoads(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Close()
-	raw, err := os.ReadFile(filepath.Join(dir, engine.FileName))
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := readFile(t, filepath.Join(dir, engine.FileName))
 	if !strings.Contains(string(raw), `"checksum"`) {
 		t.Error("the rewrite should have stamped a checksum")
 	}
@@ -196,9 +186,7 @@ func TestADocumentWithoutAChecksumStillLoads(t *testing.T) {
 func TestUnknownFieldIsIgnored(t *testing.T) {
 	dir := t.TempDir()
 	doc := `{"state_schema": 1, "entries": [], "pending_uploads": []}`
-	if err := os.WriteFile(filepath.Join(dir, engine.FileName), []byte(doc), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(dir, engine.FileName), []byte(doc))
 	s, err := engine.Open(dir, installID)
 	if err != nil {
 		t.Fatalf("a document with an unknown field must still load: %v", err)
@@ -211,9 +199,7 @@ func TestUnknownFieldIsIgnored(t *testing.T) {
 func TestNegativeAttemptsIsRejectedOnLoad(t *testing.T) {
 	dir := t.TempDir()
 	doc := `{"state_schema": 1, "entries": [{"source_id": "claude-code-transcripts", "native_path": "/x/a.jsonl", "attempts": -5}]}`
-	if err := os.WriteFile(filepath.Join(dir, engine.FileName), []byte(doc), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(dir, engine.FileName), []byte(doc))
 	_, err := engine.Peek(dir)
 	if err == nil {
 		t.Fatal("a negative attempts count must be rejected")
@@ -228,9 +214,7 @@ func TestNegativeAttemptsIsRejectedOnLoad(t *testing.T) {
 func TestMissingFieldsLoadAsZeroValues(t *testing.T) {
 	dir := t.TempDir()
 	doc := `{"state_schema": 1, "entries": [{"source_id": "claude-code-transcripts", "native_path": "/x/a.jsonl"}]}`
-	if err := os.WriteFile(filepath.Join(dir, engine.FileName), []byte(doc), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(dir, engine.FileName), []byte(doc))
 
 	loaded, err := engine.Peek(dir)
 	if err != nil {
@@ -252,9 +236,7 @@ func TestALegacySinkETagLoadsAndIsDropped(t *testing.T) {
 	dir := t.TempDir()
 	doc := `{"state_schema": 1, "entries": [{"source_id": "claude-code-transcripts", ` +
 		`"native_path": "/x/a.jsonl", "source_hash": "` + sha + `", "sink_etag": "abc123"}]}`
-	if err := os.WriteFile(filepath.Join(dir, engine.FileName), []byte(doc), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(dir, engine.FileName), []byte(doc))
 
 	loaded, err := engine.Peek(dir)
 	if err != nil {
@@ -274,10 +256,7 @@ func TestALegacySinkETagLoadsAndIsDropped(t *testing.T) {
 	if err := commit(s, k, fingerprint()); err != nil {
 		t.Fatalf("rewriting a document that carried sink_etag: %v", err)
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, engine.FileName))
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := readFile(t, filepath.Join(dir, engine.FileName))
 	if strings.Contains(string(raw), "sink_etag") {
 		t.Errorf("sink_etag survived a rewrite:\n%s", raw)
 	}
@@ -292,9 +271,7 @@ func TestAPreIdentityDocumentLoadsKeyedByPath(t *testing.T) {
   "checksum": "438d9b39765294da524980b655a90f70d63d63407fc32b1fe2a883212b35410c",
   "entries": [{"source_id": "claude-code-transcripts", "native_path": "/x/a.jsonl", "source_size": 4096,
     "source_mtime": "2026-07-30T10:00:00.987654321Z", "source_hash": "` + sha + `"}]}`
-	if err := os.WriteFile(filepath.Join(dir, engine.FileName), []byte(doc), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(dir, engine.FileName), []byte(doc))
 	loaded, err := engine.Peek(dir)
 	if err != nil {
 		t.Fatalf("a pre-identity document must load: %v", err)
@@ -318,10 +295,7 @@ func TestAPathKeyedEntryWritesNoIdentity(t *testing.T) {
 	if err := commit(s, key("/x/a.jsonl"), fp); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, engine.FileName))
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := readFile(t, filepath.Join(dir, engine.FileName))
 	if strings.Contains(string(raw), `"identity"`) {
 		t.Errorf("a path-keyed entry carries an identity:\n%s", raw)
 	}
@@ -341,10 +315,7 @@ func TestAnIdentityEntryRoundTripsWithItsObservedPath(t *testing.T) {
 	}
 	s.Close()
 
-	raw, err := os.ReadFile(filepath.Join(dir, engine.FileName))
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := readFile(t, filepath.Join(dir, engine.FileName))
 	for _, want := range []string{`"native_path": "` + path + `"`, `"identity": "` + k.ID + `"`} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("document lacks %s:\n%s", want, raw)
@@ -364,9 +335,7 @@ func TestAnIdentityEntryRoundTripsWithItsObservedPath(t *testing.T) {
 func TestPruneTestsTheObservedPathOfAnIdentityEntry(t *testing.T) {
 	dir := t.TempDir()
 	present := filepath.Join(t.TempDir(), "rollout-a.jsonl.zst")
-	if err := os.WriteFile(present, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, present, []byte("x"))
 	alive := engine.Key{SourceID: "codex-rollouts", ID: "codex-session/a"}
 	gone := engine.Key{SourceID: "codex-rollouts", ID: "codex-session/b"}
 	aliveFP, goneFP := fingerprint(), fingerprint()
@@ -399,19 +368,13 @@ func TestCommitOfAnUnserializableEntryFails(t *testing.T) {
 	if err := commit(s, key("/x/a.jsonl"), fingerprint()); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.ReadFile(filepath.Join(dir, engine.FileName))
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := readFile(t, filepath.Join(dir, engine.FileName))
 
 	if err := commit(s, key(""), fingerprint()); err == nil {
 		t.Fatal("a document that would not satisfy its own schema must not be written")
 	}
 
-	after, err := os.ReadFile(filepath.Join(dir, engine.FileName))
-	if err != nil {
-		t.Fatal(err)
-	}
+	after := readFile(t, filepath.Join(dir, engine.FileName))
 	if string(before) != string(after) {
 		t.Error("the rejected commit reached the disk")
 	}
@@ -430,10 +393,7 @@ func TestDocumentIsDeterministic(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		raw, err := os.ReadFile(filepath.Join(dir, engine.FileName))
-		if err != nil {
-			t.Fatal(err)
-		}
+		raw := readFile(t, filepath.Join(dir, engine.FileName))
 		// updated_at moves per flush, and checksum covers it; strip both so the comparison is
 		// about ordering.
 		var out []string
@@ -598,9 +558,7 @@ func TestResetOnAnEmptyStoreIsANoOp(t *testing.T) {
 // though the discarded store forgot nothing.
 func TestResetReplacesAnUnloadableDocument(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, engine.FileName), []byte("not a document\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(dir, engine.FileName), []byte("not a document\n"))
 	if _, err := engine.Reset(dir, installID, false); err != nil {
 		t.Fatal(err)
 	}
@@ -694,9 +652,7 @@ func TestADryRunLeavesAnUnloadableDocumentOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, engine.FileName)
 	original := []byte("not a document\n")
-	if err := os.WriteFile(path, original, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, path, original)
 
 	for _, run := range []struct {
 		name string
@@ -708,10 +664,7 @@ func TestADryRunLeavesAnUnloadableDocumentOnDisk(t *testing.T) {
 		if err := run.fn(); err != nil {
 			t.Fatalf("%s dry run: %v", run.name, err)
 		}
-		got, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
+		got := readFile(t, path)
 		if string(got) != string(original) {
 			t.Errorf("%s dry run rewrote the document: %q", run.name, got)
 		}
@@ -735,9 +688,7 @@ func TestResetIsRefusedWhileLocked(t *testing.T) {
 func TestAStrandedOwnPidTempDoesNotWedgeTheCommit(t *testing.T) {
 	dir := t.TempDir()
 	tmp := filepath.Join(dir, engine.FileName+fmt.Sprintf(".tmp-%d", os.Getpid()))
-	if err := os.WriteFile(tmp, []byte(`{"half":"written`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, tmp, []byte(`{"half":"written`))
 
 	s := open(t, dir)
 	if err := commit(s, key("/x/a.jsonl"), fingerprint()); err != nil {

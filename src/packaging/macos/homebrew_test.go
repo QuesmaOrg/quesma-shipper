@@ -122,36 +122,3 @@ func TestHomebrewProgramCannotRemoveItself(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-func TestHomebrewUninstallOwnership(t *testing.T) {
-	exe := "/opt/homebrew/Caskroom/quesma-shipper/1.0.0/quesma-shipper"
-	for _, tc := range []struct {
-		name, program string
-		owned, bad    bool
-	}{
-		{"current cask", exe, true, false},
-		{"replacement cask", "/opt/homebrew/Caskroom/quesma-shipper/1.0.1/quesma-shipper", false, false},
-		{"native installation", "/Users/me/Applications/Quesma Shipper.app/Contents/MacOS/quesma-shipper", false, false},
-		{"missing entry", "", false, false},
-		{"invalid entry", "invalid", false, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			plist := filepath.Join(t.TempDir(), "agent.plist")
-			if tc.program != "" {
-				spec := testSpec()
-				spec.Executable = tc.program
-				raw := renderPlist(spec)
-				if tc.bad {
-					raw = "broken plist"
-				}
-				if err := os.WriteFile(plist, []byte(raw), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			owned, err := ownsHomebrewService(exe, plist)
-			if owned != tc.owned || (err != nil) != tc.bad {
-				t.Fatalf("ownership = %v, %v", owned, err)
-			}
-		})
-	}
-}

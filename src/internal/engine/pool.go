@@ -316,12 +316,11 @@ func (p *sourcePass) charge(i int) int64 {
 func (p *sourcePass) fold(r fileResult) {
 	// Only the first refusal or unavailable verdict is counted, or rep.Failed becomes a function
 	// of GOMAXPROCS. The duplicates' intents still apply: one may have shipped before the refusal.
-	if (r.outcome.Fatal && p.fatal) || (r.unavailable && p.uploadHalted) {
-		p.applyIntent(&r)
+	duplicate := (r.outcome.Fatal && p.fatal) || (r.unavailable && p.uploadHalted)
+	p.applyIntent(&r)
+	if duplicate {
 		return
 	}
-
-	p.applyIntent(&r)
 	if r.loadWarning != "" {
 		p.out.Unreadable++
 		p.out.UnreadableReason = r.loadWarning

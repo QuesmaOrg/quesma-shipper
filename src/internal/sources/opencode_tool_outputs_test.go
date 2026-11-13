@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/QuesmaOrg/quesma-shipper/internal/sources/sqliteread"
 )
 
 func spillRequest(t testing.TB, root string) Request {
@@ -26,13 +28,7 @@ func spillRequest(t testing.TB, root string) Request {
 
 func writeSpill(t testing.TB, root, rel, text string) {
 	t.Helper()
-	p := filepath.Join(root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(p, []byte(text), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(root, filepath.FromSlash(rel)), text)
 }
 
 func spillStore(t testing.TB, root, dbName, layout, cwd string, refs []string) {
@@ -319,12 +315,12 @@ func TestOpenCodeJSONOnlyHistoryUnsupported(t *testing.T) {
 	if err != nil || len(d.Candidates) != 0 || d.Health != RootPresentNoMatch {
 		t.Fatalf("JSON-only store: %+v %v", d, err)
 	}
-	d, err = (opencodeSessions{}).Discover(Request{Source: req.All[0]})
+	d, err = discoverSessions(Request{Source: req.All[0]}, sqliteread.OpenCodeSessions{})
 	if err != nil || len(d.Candidates) != 0 || d.Health != RootPresentNoMatch {
 		t.Fatalf("JSON-only transcripts: %+v %v", d, err)
 	}
 	spillStore(t, root, "opencode.db", "v1", "/work/api", nil)
-	d, err = (opencodeSessions{}).Discover(Request{Source: req.All[0]})
+	d, err = discoverSessions(Request{Source: req.All[0]}, sqliteread.OpenCodeSessions{})
 	if err != nil || len(d.Candidates) != 1 {
 		t.Fatalf("migrated store: %+v %v", d, err)
 	}

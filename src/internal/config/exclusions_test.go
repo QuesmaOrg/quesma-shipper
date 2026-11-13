@@ -59,11 +59,6 @@ func TestSourceAdditionsFollowAllReplacementLayers(t *testing.T) {
 	}
 }
 
-func TestAdditionsCannotCreateAnUnknownSource(t *testing.T) {
-	_, err := resolveLayers(t, served(t, "sources: [{id: unreported-custom, exclude_add: ['private/**']} ]"))
-	mustReject(t, err, "unknown source with additions")
-}
-
 func TestAdditionsSurviveRemoteEnableOverLocalDisable(t *testing.T) {
 	eff, err := resolveLayers(t,
 		config.LayeredDocument{Layer: config.LayerUser, Doc: doc(t, "sources: [{id: claude-code-transcripts, enabled: false, exclude_add: ['local/**']}]")},

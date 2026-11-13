@@ -82,11 +82,7 @@ func Refresh(ctx context.Context, o RefreshOptions) Remote {
 		if err == nil {
 			return fetched
 		}
-		var revoked *Revocation
-		if errors.As(err, &revoked) {
-			return Remote{Origin: OriginNone, Err: err}
-		}
-		if localRejection(err) {
+		if errors.As(err, new(*Revocation)) || localRejection(err) {
 			return Remote{Origin: OriginNone, Err: err}
 		}
 		fetchErr = err

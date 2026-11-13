@@ -127,7 +127,7 @@ func installService(spec Spec) error {
 	_ = exec.Command(launchctl, "bootout", guiService()).Run()
 
 	// The label lingers after bootout; bootstrapping in that window fails with "5: Input/output error".
-	if err := waitForLabelGone(common.ExitTimeout(spec)); err != nil {
+	if err := waitForServiceGone(guiService(), common.ExitTimeout(spec)); err != nil {
 		return fmt.Errorf("supervise: %w", err)
 	}
 
@@ -179,7 +179,7 @@ func checkInstallOwner(exe, plist string) error {
 	}
 	previous := common.ServiceProgram(Status{Path: plist})
 	oldRoot, newRoot := common.HomebrewCaskRoot(previous), common.HomebrewCaskRoot(exe)
-	if (oldRoot != "" || newRoot != "") && (oldRoot != newRoot || previous == "") {
+	if oldRoot != newRoot {
 		return fmt.Errorf("another installation owns the background service (%s); uninstall it without purging local state before changing installation methods", previous)
 	}
 	return nil
@@ -197,10 +197,6 @@ func supervise(exe, home string) error {
 		return err
 	}
 	return installService(spec)
-}
-
-func waitForLabelGone(within time.Duration) error {
-	return waitForServiceGone(guiService(), within)
 }
 
 func waitForServiceGone(target string, within time.Duration) error {
@@ -240,7 +236,7 @@ func UninstallService() error {
 		return err
 	}
 	if systemExecutable(exe) {
-		return errSystemManaged
+		return common.ErrSystemManaged
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -272,7 +268,7 @@ func uninstallPersonalService(exe, home string) error {
 				return fmt.Errorf("supervise: launchctl bootout: %w: %s", err, strings.TrimSpace(string(out)))
 			}
 		}
-	} else if !strings.Contains(string(out), "Could not find service") && !strings.Contains(string(out), "not find") {
+	} else if !strings.Contains(string(out), "not find") {
 		return fmt.Errorf("supervise: launchctl print: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -316,20 +312,6 @@ func launchdSubmittedPath(value string) bool {
 	pid, suffix := strings.CutSuffix(pid, "])")
 	n, err := strconv.Atoi(pid)
 	return prefix && suffix && err == nil && n > 0 && strconv.Itoa(n) == pid
-}
-
-// An old cask must not stop a replacement installation during cleanup or rollback.
-func ownsHomebrewService(exe, plist string) (bool, error) {
-	if _, err := os.Stat(plist); os.IsNotExist(err) {
-		return false, nil
-	} else if err != nil {
-		return false, err
-	}
-	previous := common.ServiceProgram(Status{Path: plist})
-	if previous == "" {
-		return false, fmt.Errorf("cannot determine which executable owns %s; service left untouched", plist)
-	}
-	return previous == exe, nil
 }
 
 func ServiceState(ctx context.Context) Status {

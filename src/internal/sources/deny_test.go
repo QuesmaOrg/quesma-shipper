@@ -183,6 +183,9 @@ func TestMatchReportsTheFirstPatternInListOrder(t *testing.T) {
 		{"~/proj/keyfile", ""},
 		// Ordinary files that must stay collectable.
 		{"~/.claude/projects/p/session.jsonl", ""},
+		{"~/.claude/CLAUDE.md", ""},
+		{"~/.codex/sessions/2026/r.jsonl", ""},
+		{"~/work/project/src/db.go", ""},
 		{"/var/log/app.log", ""},
 		{"/", ""},
 	}

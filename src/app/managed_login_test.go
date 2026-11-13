@@ -20,10 +20,7 @@ import (
 )
 
 func TestManagedEnrollmentRetriesTheSameIdentityAfterALostResponse(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "state"))
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	stateDir := managedEnrollmentTestState(t)
 	var requests [][]byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
@@ -46,23 +43,20 @@ func TestManagedEnrollmentRetriesTheSameIdentityAfterALostResponse(t *testing.T)
 		_ = json.NewEncoder(w).Encode(controlplane.EnrollResponse{Organization: "example"})
 	}))
 	defer srv.Close()
-	loginManaged := func(grant string) (LoginResult, error) {
-		return loginWithRunCheck(context.Background(), srv.URL, grant, true, func() error { return nil })
-	}
 
-	if _, err := loginManaged("managed-grant"); err == nil {
+	if _, err := testLogin(srv.URL, "managed-grant", true); err == nil {
 		t.Fatal("first enrollment should fail locally")
 	}
 	if _, ok := LoggedIn(); ok {
 		t.Fatal("a lost response was persisted as successful enrollment")
 	}
-	if _, err := loginManaged("managed-grant"); err != nil {
+	if _, err := testLogin(srv.URL, "managed-grant", true); err != nil {
 		t.Fatal(err)
 	}
 	if len(requests) != 2 || !bytes.Equal(requests[0], requests[1]) {
 		t.Fatalf("managed retry changed its enrollment identity: %d requests", len(requests))
 	}
-	if _, err := os.Stat(filepath.Join(home, "state", "trajectory-shipper", "managed-enrollment-attempt.json")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(stateDir, "managed-enrollment-attempt.json")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("pending enrollment key survived successful enrollment: %v", err)
 	}
 	var second controlplane.EnrollRequest
@@ -72,7 +66,7 @@ func TestManagedEnrollmentRetriesTheSameIdentityAfterALostResponse(t *testing.T)
 	if second.Invite != "" || second.Grant != "managed-grant" {
 		t.Fatal("managed enrollment did not use the grant request")
 	}
-	if _, err := loginManaged("replacement-grant"); err != ErrAlreadyLoggedIn {
+	if _, err := testLogin(srv.URL, "replacement-grant", true); err != ErrAlreadyLoggedIn {
 		t.Fatalf("profile rotation replaced enrollment: %v", err)
 	}
 }
@@ -153,7 +147,7 @@ func TestManagedEnrollmentRotatesGrantAndReplaysSavedReplacement(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-			} else if _, err := testManagedLogin(srv.URL, oldGrant); err == nil {
+			} else if _, err := testLogin(srv.URL, oldGrant, true); err == nil {
 				t.Fatal("initial response should fail locally")
 			}
 			identityBefore, err := os.ReadFile(filepath.Join(stateDir, identity.FileName))
@@ -172,14 +166,14 @@ func TestManagedEnrollmentRotatesGrantAndReplaysSavedReplacement(t *testing.T) {
 				t.Fatal(err)
 			}
 			for i := 0; i < 2; i++ {
-				if _, err := testManagedLogin(srv.URL, newGrant); err == nil {
+				if _, err := testLogin(srv.URL, newGrant, true); err == nil {
 					t.Fatal("lost response accepted")
 				}
 				if _, ok := LoggedIn(); ok {
 					t.Fatal("lost response committed enrollment")
 				}
 			}
-			if _, err := testManagedLogin(srv.URL, newGrant); err != nil {
+			if _, err := testLogin(srv.URL, newGrant, true); err != nil {
 				t.Fatal(err)
 			}
 			rotated := requests[len(requests)-3:]
@@ -229,11 +223,11 @@ func TestManagedEnrollmentRefusedReplacementRemainsPending(t *testing.T) {
 				w.WriteHeader(status)
 			}))
 			defer srv.Close()
-			if _, err := testManagedLogin(srv.URL, "fmi2.example.old.secret"); err == nil {
+			if _, err := testLogin(srv.URL, "fmi2.example.old.secret", true); err == nil {
 				t.Fatal("initial refusal accepted")
 			}
 			for i := 0; i < 2; i++ {
-				_, err := testManagedLogin(srv.URL, "fmi2.example.new.secret")
+				_, err := testLogin(srv.URL, "fmi2.example.new.secret", true)
 				want := formats.ErrCredentialsRefused
 				if status == http.StatusConflict {
 					want = controlplane.ErrEnrollmentConflict
@@ -272,6 +266,6 @@ func managedEnrollmentTestState(t *testing.T) string {
 	return filepath.Join(home, "state", "trajectory-shipper")
 }
 
-func testManagedLogin(endpoint, grant string) (LoginResult, error) {
-	return loginWithRunCheck(context.Background(), endpoint, grant, true, func() error { return nil })
+func testLogin(endpoint, token string, managed bool) (LoginResult, error) {
+	return loginWithRunCheck(context.Background(), endpoint, token, managed, func() error { return nil })
 }
