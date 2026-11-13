@@ -240,3 +240,61 @@ func syncDir(dir string) {
 	defer d.Close()
 	_ = d.Sync()
 }
+
+// Spool holds a private temporary payload; Close always removes its directory.
+type Spool struct {
+	*os.File
+	dir string
+}
+
+// spoolPrefix names each spool's directory, so SweepSpools removes only what NewSpool made.
+const spoolPrefix = "quesma-spool-"
+
+// NewSpool creates a spool under parent, or under the system temp directory when parent is empty.
+// The engine passes a directory under its state directory: a tmpfs /tmp would hold the spool in RAM.
+func NewSpool(parent string) (*Spool, error) {
+	dir, err := os.MkdirTemp(parent, spoolPrefix)
+	if err != nil {
+		return nil, err
+	}
+	f, err := openSpool(filepath.Join(dir, "payload"))
+	if err != nil {
+		_ = os.Remove(dir)
+		return nil, err
+	}
+	if platformSupportsFileModes {
+		if err := os.Remove(f.Name()); err != nil {
+			_ = f.Close()
+			_ = os.Remove(dir)
+			return nil, err
+		}
+		if err := os.Remove(dir); err == nil {
+			dir = ""
+		}
+	}
+	return &Spool{File: f, dir: dir}, nil
+}
+
+func (s *Spool) Close() error {
+	err := s.File.Close()
+	if s.dir != "" {
+		err = errors.Join(err, os.Remove(s.dir))
+	}
+	return err
+}
+
+// SweepSpools removes the spool directories a crashed process left in parent. Where files can be
+// unlinked while open, NewSpool leaves none; on Windows delete-on-close removes the payload but
+// not its directory. Only for a parent no live spool can be using: the engine sweeps its own,
+// under the state lock, before a run opens any.
+func SweepSpools(parent string) error {
+	stale, err := filepath.Glob(filepath.Join(parent, spoolPrefix+"*"))
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, dir := range stale {
+		errs = append(errs, os.RemoveAll(dir))
+	}
+	return errors.Join(errs...)
+}

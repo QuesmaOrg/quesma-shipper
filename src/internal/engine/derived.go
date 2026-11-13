@@ -192,7 +192,7 @@ func (o Options) shipDerivedGroups(
 				if fos[idx].Decision == auditlog.DecisionFailed && (!stopsRun(outcomes[i]) || halted == nil) {
 					failed++
 				}
-				// A refusal or an unavailable plane stops this enricher; a failed PUT does not.
+				// A refusal, an unavailable plane or no answer stops this enricher; a refused PUT does not.
 				if stopsRun(outcomes[i]) && halted == nil {
 					halted = outcomes[i]
 				}

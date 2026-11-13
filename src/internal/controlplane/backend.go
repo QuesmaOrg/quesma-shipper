@@ -294,7 +294,8 @@ func (c *Client) exchange(ctx context.Context, path, preamble string, payload []
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if err != nil {
+	// A failure status is the answer even with its body cut short: that body is only a diagnostic.
+	if err != nil && resp.StatusCode/100 == 2 {
 		return resp.StatusCode, nil, fmt.Errorf("backend: read %s response: %w", path, err)
 	}
 	if signed && resp.StatusCode == http.StatusForbidden && strings.TrimSpace(string(raw)) == "this install is revoked" {

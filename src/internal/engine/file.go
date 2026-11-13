@@ -3,9 +3,11 @@ package engine
 import (
 	"cmp"
 	"context"
+	"errors"
 	"hash/fnv"
 	"time"
 
+	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
@@ -20,10 +22,24 @@ type pendingPut struct {
 	key       Key
 	objectKey string
 	obj       []byte
+	spool     *platform.Spool
+	size      int64
 	md        map[string]string
 
 	// next is the fingerprint a successful PUT commits; fresh rather than copied, so Attempts resets.
 	next Fingerprint
+}
+
+func (p *pendingPut) close() {
+	if p.spool != nil {
+		_ = p.spool.Close()
+	}
+}
+func (p *pendingPut) length() int64 {
+	if p.spool != nil {
+		return p.size
+	}
+	return int64(len(p.obj))
 }
 
 // prepareFile is the compute leg: change detection, read, scrub, seal. A non-nil pendingPut
@@ -63,7 +79,13 @@ func (o Options) prepareFile(
 		return res, nil
 	}
 
+	if cand.Open != nil && !staging && cand.Size > sources.StreamThreshold {
+		return o.prepareStream(ctx, job, src, disc, res)
+	}
 	payload, err := cand.Load(ctx)
+	if errors.Is(err, platform.ErrTooLarge) && cand.Open != nil && !staging {
+		return o.prepareStream(ctx, job, src, disc, res)
+	}
 	if err != nil {
 		failAndBackOff(o, &res, key, fp, err.Error())
 		return res, nil

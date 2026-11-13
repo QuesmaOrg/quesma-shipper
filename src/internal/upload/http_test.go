@@ -172,3 +172,72 @@ func TestUploadNonOKStatusIsAFailure(t *testing.T) {
 	}
 	assertNoURLLeak(t, err, ticket.URL)
 }
+
+func TestUploadReaderUsesSignedLengthAndRejectsShortBody(t *testing.T) {
+	server, puts, _ := objectStore(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	prepared, ticket := testTicket(server.URL)
+	body := string(prepared.Body)
+	prepared.Size = int64(len(body))
+	prepared.Body = nil
+	if err := ValidateTicket(UploadTargetList{loopbackTarget(t, server.URL)}, prepared, ticket); err != nil {
+		t.Fatal(err)
+	}
+	if err := New().UploadReader(context.Background(), ticket, io.LimitReader(strings.NewReader(body), int64(len(body)))); err != nil {
+		t.Fatal(err)
+	}
+	if len(*puts) != 1 || (*puts)[0].length != int64(len(body)) || string((*puts)[0].body) != body {
+		t.Fatal("streamed request changed body or length")
+	}
+	ticket.ContentLength++
+	if err := ValidateTicket(UploadTargetList{loopbackTarget(t, server.URL)}, prepared, ticket); err == nil {
+		t.Fatal("accepted mismatched streamed length")
+	}
+	if err := New().UploadReader(context.Background(), ticket, strings.NewReader(body)); err == nil {
+		t.Fatal("short streamed body reported success")
+	}
+}
+
+func TestStreamedUploadHasIndependentHTTPReplayReaders(t *testing.T) {
+	const body = "sealed-object-for-replay"
+	section := io.NewSectionReader(strings.NewReader("prefix"+body+"suffix"), 6, int64(len(body)))
+	uploader := New()
+	uploader.client.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.GetBody == nil {
+			t.Fatal("streamed PUT lost HTTP replay support")
+		}
+		prefix := make([]byte, 5)
+		if _, err := io.ReadFull(request.Body, prefix); err != nil {
+			t.Fatal(err)
+		}
+		first, err := request.GetBody()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer first.Close()
+		if _, err := io.ReadFull(first, make([]byte, 3)); err != nil {
+			t.Fatal(err)
+		}
+		second, err := request.GetBody()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer second.Close()
+		replay, err := io.ReadAll(second)
+		if err != nil || string(replay) != body {
+			t.Fatalf("HTTP replay was incomplete: %v", err)
+		}
+		remainder, err := io.ReadAll(request.Body)
+		if err != nil || string(prefix)+string(remainder) != body {
+			t.Fatalf("HTTP replay moved original offset: %v", err)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header), Request: request}, nil
+	})
+	ticket := Ticket{URL: "https://example.invalid/object", ContentLength: int64(len(body))}
+	if err := uploader.UploadReader(context.Background(), ticket, section); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }

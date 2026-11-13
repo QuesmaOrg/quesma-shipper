@@ -55,9 +55,8 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 	}
 	// Offline is the machine's state, not the shipper's: nothing counts, one standing event says
 	// so, and the failure heartbeat is skipped because it could not be sent either. The engine
-	// decides it, on the authorization that never reached the control plane, and the halt is the
-	// one failure it counts; any failure beside it reached the network or never needed to, so a
-	// run that also failed a PUT or a scrub before going offline is still a failed run.
+	// decides it, on a request that got no answer twice, and the halt is the one failure it counts:
+	// a run that also failed a PUT or a scrub before going offline is still a failed run.
 	offline := errors.Is(err, engine.ErrOffline) && rep.Failed <= 1
 	if err == nil && rep.Shipped == 0 && rep.Failed > 0 {
 		// One reason travels: the count alone cannot tell a refused PUT from an unreachable
@@ -87,10 +86,7 @@ func (r *Runtime) judge(err error, rep formats.Report, kind string, mem platform
 			rec.Stand(newEvent(r.eff.StateDir, r.runID, formats.FailureOffline, "offline: "+err.Error()))
 		default:
 			ev := newEvent(r.eff.StateDir, r.runID, kind, err.Error())
-			rec.Append(ev)
-			if ev.Counted() {
-				rec.ConsecutiveFailures++
-			}
+			rec.Record(ev)
 		}
 	})
 
@@ -259,10 +255,7 @@ func RecordUpdateFailure(message string) {
 func recordWithoutRuntime(runID, kind, message string) {
 	appendWithoutRuntime("failure", func(dir string, rec *formats.FailureRecord) bool {
 		ev := newEvent(dir, runID, kind, message)
-		rec.Append(ev)
-		if ev.Counted() {
-			rec.ConsecutiveFailures++
-		}
+		rec.Record(ev)
 		return true
 	})
 }

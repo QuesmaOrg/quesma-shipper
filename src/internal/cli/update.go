@@ -203,8 +203,8 @@ func maybeSelfUpdate(ctx context.Context, build app.Build, autoupdate bool, errO
 }
 
 // updateFailure words a skipped update for the failure record, and says whether to record it at
-// all: an update channel that could not be reached is the machine offline, retried next tick,
-// not an install that cannot replace itself.
+// all: an update channel that gave no answer is the machine offline, retried next tick, not an
+// install that cannot replace itself. Any HTTP answer is recorded.
 func updateFailure(ctx context.Context, version string, err error) (string, bool) {
 	if ctx.Err() == nil && platform.Offline(err) {
 		return "", false

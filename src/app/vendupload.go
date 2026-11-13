@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
@@ -39,6 +40,9 @@ type vendPort struct {
 
 	// now is the signing clock and the ticket-expiry clock. A field so a test can pin it.
 	now func() time.Time
+
+	// retryPause is the one wait before resending a request that got no answer.
+	retryPause time.Duration
 }
 
 // newControlPlaneClient builds the authenticated client from the enrollment record alone.
@@ -76,11 +80,12 @@ func newUploadPort(client *controlplane.Client, eff *config.Effective) (*vendPor
 		return nil, err
 	}
 	return &vendPort{
-		client:   client,
-		uploader: upload.New(),
-		targets:  targets,
-		writerID: controlplane.NewWriterID(),
-		now:      time.Now,
+		client:     client,
+		uploader:   upload.New(),
+		targets:    targets,
+		writerID:   controlplane.NewWriterID(),
+		now:        time.Now,
+		retryPause: time.Second,
 	}, nil
 }
 
@@ -93,6 +98,11 @@ func (p *vendPort) AuthorizeAndUpload(ctx context.Context, batch []engine.Prepar
 		return sameOutcome(out, err)
 	}
 	resp, err := p.client.AuthorizeUploads(ctx, req)
+	if p.retry(ctx, err) {
+		// Restamped: the freshness window counts from issued_at, and a new signature costs nothing.
+		req.IssuedAt = p.now().UTC()
+		resp, err = p.client.AuthorizeUploads(ctx, req)
+	}
 	if err != nil {
 		return sameOutcome(out, classifyAuthorize(ctx, err))
 	}
@@ -109,6 +119,7 @@ func (p *vendPort) AuthorizeAndUpload(ctx context.Context, batch []engine.Prepar
 	// Bounds the PUTs one authorization group has in flight; without it a group of 32 sends 32 at once.
 	slots := make(chan struct{}, 4*runtime.GOMAXPROCS(0))
 	var wg sync.WaitGroup
+	var stopped atomic.Pointer[error]
 	for i, obj := range batch {
 		issued, ok := tickets[obj.ObjectID]
 		if !ok {
@@ -127,7 +138,16 @@ func (p *vendPort) AuthorizeAndUpload(ctx context.Context, batch []engine.Prepar
 			defer wg.Done()
 			slots <- struct{}{}
 			defer func() { <-slots }()
-			out[i] = p.send(ctx, obj, issued)
+			// Once a sibling got no answer twice the run is stopping: the queued rest are not sent.
+			if first := stopped.Load(); first != nil {
+				out[i] = *first
+				return
+			}
+			err := p.send(ctx, obj, issued)
+			if errors.Is(err, engine.ErrOffline) {
+				stopped.CompareAndSwap(nil, &err)
+			}
+			out[i] = err
 		}()
 	}
 	wg.Wait()
@@ -142,11 +162,32 @@ func (p *vendPort) send(ctx context.Context, obj engine.PreparedObject, issued c
 		return err
 	}
 	// Nothing the store said crosses back: the local fingerprint document is the sole progress authority.
-	if err := p.uploader.Upload(ctx, ticket, obj.Body); err != nil {
-		return p.classifyPut(err, ticket)
+	// A fresh reader per attempt: the spooled body replays from its start, as a []byte body would.
+	err := p.uploader.UploadReader(ctx, ticket, obj.Reader())
+	if p.retry(ctx, err) {
+		// The same ticket: a PUT that did land is rewritten onto the same key with the same bytes.
+		err = p.uploader.UploadReader(ctx, ticket, obj.Reader())
 	}
-	return nil
+	return p.classifyPut(ctx, err, ticket)
 }
+
+// retry says whether a request that got no answer goes once more, after a pause that shutdown cuts short.
+func (p *vendPort) retry(ctx context.Context, err error) bool {
+	if ctx.Err() != nil || ctx.Value(singleAttempt{}) != nil || !platform.Offline(err) {
+		return false
+	}
+	t := time.NewTimer(p.retryPause)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// singleAttempt marks a context whose requests are never resent: the heartbeat, which fails open.
+type singleAttempt struct{}
 
 // request turns prepared objects into one signed authorization batch.
 func (p *vendPort) request(batch []engine.PreparedObject) (controlplane.AuthorizeRequest, error) {
@@ -166,7 +207,7 @@ func (p *vendPort) request(batch []engine.PreparedObject) (controlplane.Authoriz
 		objects[i] = controlplane.UploadObject{
 			ObjectID:   o.ObjectID,
 			Key:        o.Key,
-			Size:       int64(len(o.Body)),
+			Size:       o.Size(),
 			SourceHash: o.SourceHash,
 			Metadata:   md,
 		}
@@ -238,7 +279,7 @@ func classifyAuthorize(ctx context.Context, err error) error {
 	case errors.Is(err, controlplane.ErrAuthorizeUnavailable):
 		return fmt.Errorf("%w: %v", engine.ErrUploadUnavailable, err)
 	case ctx.Err() == nil && platform.Offline(err):
-		// With a live context the dial ran out of its own time, not the caller's.
+		// With a live context the request ran out of its own time, not the caller's.
 		return fmt.Errorf("%w: %w", engine.ErrOffline, err)
 	}
 	return err
@@ -246,7 +287,10 @@ func classifyAuthorize(ctx context.Context, err error) error {
 
 // classifyPut names the one PUT failure worth a second authorization inside a run: a store refusal
 // on a ticket whose own expiry has passed. Every other refusal waits for the next run.
-func (p *vendPort) classifyPut(err error, ticket upload.Ticket) error {
+func (p *vendPort) classifyPut(ctx context.Context, err error, ticket upload.Ticket) error {
+	if ctx.Err() == nil && platform.Offline(err) {
+		return fmt.Errorf("%w: %w", engine.ErrOffline, err)
+	}
 	var status *upload.StatusError
 	if !errors.As(err, &status) {
 		return err
@@ -328,6 +372,7 @@ func toPreparedUpload(obj engine.PreparedObject) upload.PreparedUpload {
 		ObjectID:   obj.ObjectID,
 		Key:        obj.Key,
 		Body:       obj.Body,
+		Size:       obj.Size(),
 		SourceHash: obj.SourceHash,
 		Metadata:   obj.Metadata,
 	}

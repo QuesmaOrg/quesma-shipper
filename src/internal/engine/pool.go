@@ -39,7 +39,7 @@ type fileResult struct {
 	pending *pendingPut
 
 	// unavailable stops this run's uploads without outcome.Fatal's permanent-kill meaning; offline
-	// says why: the control plane could not be reached at all.
+	// says why: the control plane or the store did not answer at all.
 	unavailable bool
 	offline     bool
 	loadWarning string
@@ -418,7 +418,7 @@ func (p *sourcePass) stageUpload(r fileResult) (res fileResult, final bool) {
 	if p.fatal || p.uploadHalted {
 		return p.abandon(it), true
 	}
-	p.staged.add(it, int64(len(pending.obj)))
+	p.staged.add(it, pending.length())
 	return fileResult{}, false
 }
 

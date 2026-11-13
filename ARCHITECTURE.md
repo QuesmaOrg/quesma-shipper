@@ -102,6 +102,19 @@ Two edges deserve prose because they look like mistakes and are the design:
   alternative is a second implementation of the same document. The catalog report the config request
   carries is config's too: only the resolver knows which sources, packs and features a document may name.
 
+## Large JSONL records
+
+For eligible file-backed JSONL above 8 MiB decoded, `engine` owns scrubbed and encrypted temporary
+spools under the state directory's `spool/`, with system temp as a fallback only for plans without a
+state directory. Each run cleans up abandoned spools. `sources` bounds the decoded snapshot by
+`max_file_bytes`. `transforms` batches complete
+records. A record crossing 64 MiB acquires a process-wide, cancellation-aware slot before its buffer
+grows further, then is scrubbed and written alone. The slot is released on success or failure;
+ordinary batches on other workers continue. This never switches to whole-file loading or writes
+raw records to disk. A positive whole-file cap is required for exceptional records and compressed
+streaming. The cap bounds input bytes, not memory: one exceptional record's buffers and scrubber
+copies coexist with other workers' ordinary buffers and can use multiples of the record size.
+
 ## The invariants that outrank the tree
 
 These are checked by tests or held in review, because no directory layout can express them:

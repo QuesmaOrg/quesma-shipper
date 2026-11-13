@@ -67,6 +67,8 @@ type Candidate struct {
 	Series string
 
 	Load func(context.Context) (Payload, error)
+	// Open is available only when the engine can scrub this source incrementally.
+	Open func(context.Context) (Stream, error)
 
 	Size  int64
 	MTime time.Time
@@ -556,8 +558,18 @@ func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Ove
 
 		// Reported under the CONFIGURED root, not the resolved one: native_path, the audit log and the state key must
 		// keep the operator's spelling, or resolving a symlink orphans every fingerprint in the archive.
+		var open func(context.Context) (Stream, error)
+		limit := src.MaxFileBytes
+		if len(src.Enrichers) == 0 && src.Sniff != nil && src.Sniff.Kind == "jsonl" && streamablePath(named) && (src.Scrub == nil || *src.Scrub) {
+			open = fileStream(named, limit)
+			// A .zst with no cap keeps its 0 on both paths, so readZstd refuses it as it does on main.
+			if limit > StreamThreshold || limit <= 0 && !IsZstd(named) {
+				limit = StreamThreshold
+			}
+		}
 		out = append(out, Candidate{
-			Load:    fileLoader(named, src.MaxFileBytes),
+			Open:    open,
+			Load:    fileLoader(named, limit),
 			Path:    named,
 			RelPath: rel,
 			Size:    info.Size(),
