@@ -316,7 +316,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 		out.Unreadable = disc.Unreadable
 		out.UnreadableExample = disc.UnreadableExample
 		out.UnreadableReason = disc.UnreadableReason
-		if out.Unreadable > 0 && o.Log != nil {
+		if out.Unreadable > 0 {
 			_ = o.Log.Append(auditlog.Entry{
 				Decision:      auditlog.DecisionSkipped,
 				SourceID:      src.ID,
@@ -371,15 +371,13 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 			if n, derr := store.DropVanished(src.ID, live); derr != nil {
 				return rep, derr
 			} else if n > 0 {
-				if o.Log != nil {
-					_ = o.Log.Append(auditlog.Entry{
-						Decision:      auditlog.DecisionSkipped,
-						SourceID:      src.ID,
-						ConfigVersion: o.Plan.ConfigVersion,
-						Reason: fmt.Sprintf(
-							"forgot %d fingerprint(s) for files this source no longer has", n),
-					})
-				}
+				_ = o.Log.Append(auditlog.Entry{
+					Decision:      auditlog.DecisionSkipped,
+					SourceID:      src.ID,
+					ConfigVersion: o.Plan.ConfigVersion,
+					Reason: fmt.Sprintf(
+						"forgot %d fingerprint(s) for files this source no longer has", n),
+				})
 			}
 		}
 
@@ -400,7 +398,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 		}
 		// Health reporting fails open; only redaction fails closed.
 		err := o.Heartbeat(ctx, rep)
-		if err != nil && o.Log != nil {
+		if err != nil {
 			_ = o.Log.Append(auditlog.Entry{
 				Decision: auditlog.DecisionFailed,
 				Reason:   "heartbeat write failed: " + err.Error(),
