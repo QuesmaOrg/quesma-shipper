@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"regexp"
 	"slices"
 	"sync"
@@ -113,41 +114,63 @@ type Compiled struct {
 
 // Load parses and validates every embedded catalog file at process start, so a build whose catalog does not satisfy its own schema fails loudly.
 func Load() (*Compiled, error) {
-	names, err := catalogdata.Files()
+	return load(catalogdata.FS, "*.yaml")
+}
+
+// LoadHosted is the machine catalog plus the gateway's own sources: a superset, so a served config naming a machine source still resolves.
+func LoadHosted() (*Compiled, error) {
+	c, err := Load()
 	if err != nil {
 		return nil, err
 	}
+	if err := c.add(catalogdata.Hosted, "hosted/*.yaml"); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
 
+func load(fsys fs.FS, pattern string) (*Compiled, error) {
 	c := &Compiled{byID: map[string]Source{}}
+	if err := c.add(fsys, pattern); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func (c *Compiled) add(fsys fs.FS, pattern string) error {
+	names, err := fs.Glob(fsys, pattern)
+	if err != nil {
+		return fmt.Errorf("catalog: read embedded dir: %w", err)
+	}
 	for _, name := range names {
-		raw, err := catalogdata.Read(name)
+		raw, err := fs.ReadFile(fsys, name)
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("catalog: read %s: %w", name, err)
 		}
 
 		var asAny any
 		if err := yaml.Unmarshal(raw, &asAny); err != nil {
-			return nil, fmt.Errorf("catalog: %s: %w", name, err)
+			return fmt.Errorf("catalog: %s: %w", name, err)
 		}
 		if err := formats.Validate(formats.SourceSpec, asAny); err != nil {
-			return nil, fmt.Errorf("catalog: %s: %w", name, err)
+			return fmt.Errorf("catalog: %s: %w", name, err)
 		}
 
 		var spec Spec
 		dec := yaml.NewDecoder(bytes.NewReader(raw))
 		dec.KnownFields(true)
 		if err := dec.Decode(&spec); err != nil {
-			return nil, fmt.Errorf("catalog: %s: %w", name, err)
+			return fmt.Errorf("catalog: %s: %w", name, err)
 		}
 
 		for i := range spec.Sources {
 			spec.Sources[i].Family = spec.Family
 			s := spec.Sources[i]
 			if _, err := s.Identity.compile(); err != nil {
-				return nil, fmt.Errorf("catalog: %s: source %s: %w", name, s.ID, err)
+				return fmt.Errorf("catalog: %s: source %s: %w", name, s.ID, err)
 			}
 			if prev, dup := c.byID[s.ID]; dup {
-				return nil, fmt.Errorf("catalog: source id %q declared twice (family %s and %s)",
+				return fmt.Errorf("catalog: source id %q declared twice (family %s and %s)",
 					s.ID, prev.Family, s.Family)
 			}
 			c.byID[s.ID] = s
@@ -157,7 +180,7 @@ func Load() (*Compiled, error) {
 	}
 
 	slices.SortFunc(c.sources, func(a, b Source) int { return cmp.Compare(a.ID, b.ID) })
-	return c, nil
+	return nil
 }
 
 // Sources returns every compiled source, ordered by id.

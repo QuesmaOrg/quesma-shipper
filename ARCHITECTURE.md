@@ -17,6 +17,8 @@ quesma-shipper/
   src/                    Go module root
     cmd/quesma-shipper/   main
     cmd/quesma-unseal/    a custodian's tool, released beside the shipper: open or reseal a local copy of the bucket
+    cmd/quesma-otel-gateway/  the daemonless path: receives the agents' OpenTelemetry and ships it
+                          through this pipeline, one hosted install per person (src/OTEL-GATEWAY.md)
     app/                  the facade: resolve config into a run, flush it — the one public package
     packaging/            install, update, service lifecycle; thin current-OS dispatch
       common/             TUF verification, re-exec, shared service types and run markers
@@ -42,9 +44,13 @@ quesma-shipper/
       platform/           the inert floor, one stated invariant each: atomic writes (safeio),
                           the kill switch (pause), memstat, buildinfo
       legal/              the embedded LICENSE, NOTICE and third-party license texts
+      otlp/               an OTLP/HTTP export, protobuf or JSON, as archive lines; no generated code
+      gateway/            the OTLP receiver: ingest tokens, the per-person spool, the ship loop.
+                          It never uploads; app hands it the pipeline
       formats/            the shared vocabulary: local-contract schemas, the model types,
                           the object-key naming grammar (+ its conformance vectors)
-        catalogdata/      the embedded source-catalog YAML
+        catalogdata/      the embedded source-catalog YAML; hosted/ is the gateway's own sources,
+                          which a machine's shipper does not compile in
   fleet-manager/          the control plane: a separate Go module, one package under src/,
                           with its own Makefile, ARCHITECTURE.md and release line
 ```
@@ -58,15 +64,18 @@ would compile, so the table is the reference for what direction is intended.
 
 | Package | May import |
 | --- | --- |
-| `src/app` | `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/identity`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/sources`, `src/internal/transforms`, `src/internal/transforms/cursorjoin`, `src/internal/upload`, `src/packaging` |
+| `src/app` | `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/gateway`, `src/internal/identity`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/sources`, `src/internal/transforms`, `src/internal/transforms/cursorjoin`, `src/internal/upload`, `src/packaging` |
 | `src/cmd/quesma-shipper` | `src/app`, `src/internal/cli`, `src/internal/platform` |
 | `src/cmd/quesma-unseal` | `src/internal/legal`, `src/internal/transforms` |
+| `src/cmd/quesma-otel-gateway` | `src/app`, `src/internal/gateway` |
 | `src/e2e` | — |
 | `src/internal/cli` | `src/app`, `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/identity`, `src/internal/legal`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/platform/crashjournal`, `src/internal/sources`, `src/packaging` |
 | `src/internal/config` | `src/internal/platform`, `src/internal/sources`, `src/internal/transforms`, `src/internal/transforms/packs` |
 | `src/internal/controlplane` | `src/internal/config`, `src/internal/formats`, `src/internal/platform` |
 | `src/internal/engine` | `src/internal/formats`, `src/internal/identity`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/sources`, `src/internal/transforms` |
 | `src/internal/formats` | — |
+| `src/internal/gateway` | `src/internal/otlp`, `src/internal/platform` |
+| `src/internal/otlp` | — |
 | `src/internal/legal` | — |
 | `src/internal/formats/catalogdata` | — |
 | `src/internal/identity` | `src/internal/formats`, `src/internal/platform` |
@@ -124,12 +133,13 @@ These are checked by tests or held in review, because no directory layout can ex
 - **Write-path lint** (`src/internal/platform/writepath_lint_test.go`): only the packages (and,
   inside merged packages, the specific *files*) that own a durable artifact may call the
   os-level write functions; everything else routes through safeio. The shipper never writes
-  inside an agent's store. `cmd/quesma-unseal` is not the shipper and runs on a custodian's
+  inside an agent's store. `internal/gateway/spool.go` owns the gateway's telemetry spool, under
+  its own data directory. `cmd/quesma-unseal` is not the shipper and runs on a custodian's
   machine: it writes only under the output directory it is given, through `os.Root`, which the
   lint does not see.
 - **Third-party confinement**: an SDK stops in the package that owns it — sqlite never
   past sqliteread, zstd only in transforms (seal) and sources (2026-09-23: the loader decodes
-  cold `.zst` files so they are scrubbed like plaintext). No AWS, Azure or Google client is
+  cold `.zst` files so they are scrubbed like plaintext), protobuf's wire decoder only in otlp. No AWS, Azure or Google client is
   linked into the shipped binary (the `-tags perf` harness in `src/perf` is the sole importer of the S3 SDK, as a test
   peer): the only route to object storage is a presigned ticket spent over `net/http`,
   and a credential this binary never holds cannot be misdirected. `go list -deps

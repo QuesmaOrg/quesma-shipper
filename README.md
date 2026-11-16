@@ -189,6 +189,9 @@ no cloud account: [On one machine](fleet-manager/README.md#on-one-machine).
 Uninstalling, MDM and Intune deployment, what is collected, and how to pause or configure it:
 [src/README.md](src/README.md).
 
+A machine that cannot take a shipper can send Claude Code's and Codex's OpenTelemetry to
+`quesma-otel-gateway` instead, with less in it: [src/OTEL-GATEWAY.md](src/OTEL-GATEWAY.md).
+
 ## Learn more
 
 [fleet-manager/WALKTHROUGH.md](fleet-manager/WALKTHROUGH.md) rehearses everything above on a

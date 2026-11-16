@@ -12,6 +12,11 @@ import (
 //go:embed *.yaml
 var FS embed.FS
 
+// Hosted is the catalog only the OTLP gateway adds: sources a machine's shipper must not compile in.
+//
+//go:embed hosted/*.yaml
+var Hosted embed.FS
+
 // Files returns the embedded catalog file names, sorted.
 func Files() ([]string, error) {
 	names, err := fs.Glob(FS, "*.yaml")

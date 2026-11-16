@@ -105,6 +105,7 @@ var writeCapablePackages = []string{
 //	packaging/common/service.go  service state
 //	packaging/common/remove.go  the installed standalone executable
 //	packaging/common/selfupdate.go  the cross-supervisor self-update hop guard
+//	internal/gateway/spool.go  the OTLP gateway's telemetry spool, under its own data directory
 var writeCapableFiles = []string{
 	"internal/platform/safeio.go",
 	"internal/engine/state.go",
@@ -113,6 +114,7 @@ var writeCapableFiles = []string{
 	"packaging/common/selfupdate.go",
 	"internal/platform/pause.go",
 	"internal/sources/ignore.go",
+	"internal/gateway/spool.go",
 }
 
 // bannedWrites are the os-level calls that create or truncate a file.

@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"

@@ -1,0 +1,53 @@
+# OpenTelemetry received by quesma-otel-gateway: the daemonless path. Claude Code and Codex export
+# OTLP to the gateway, which spools it per person and ships it through the ordinary pipeline.
+#
+# Hosted only: this file is outside the catalog a shipper on a machine compiles in, and its one
+# root is the spool the gateway names, so no install on a developer's machine can resolve it.
+spec_version: 1
+family: otel
+display_name: OpenTelemetry
+
+sources:
+  - id: otel-claude-code
+    description: >-
+      Claude Code log events and metric points, one JSON object per line. The gateway cuts a new
+      file per ship and never appends to one, so each is one immutable object.
+    gather: file_glob
+    artifact_class: trajectory
+    roots:
+      - $QUESMA_OTEL_SPOOL
+    max_file_bytes: 536870912
+    include:
+      - "claude-code/*.jsonl"
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 65536
+
+  - id: otel-codex
+    description: Codex log events, one JSON object per line, one immutable file per ship.
+    gather: file_glob
+    artifact_class: trajectory
+    roots:
+      - $QUESMA_OTEL_SPOOL
+    max_file_bytes: 536870912
+    include:
+      - "codex/*.jsonl"
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 65536
+
+  - id: otel-identity
+    description: >-
+      Who the telemetry says sent it: the account, email and plan attributes, lifted out of the
+      events so the scrubber's PII rules do not erase the only name this path has. One line per
+      distinct claim.
+    gather: file_glob
+    scrub: false
+    artifact_class: context
+    roots:
+      - $QUESMA_OTEL_SPOOL
+    max_file_bytes: 8388608
+    include:
+      - "identity.jsonl"
+    sniff:
+      kind: jsonl
