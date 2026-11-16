@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,15 +18,7 @@ const testReporterCredential = "fmr1.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 
 func storeReporterCredential(t *testing.T, store *memoryStore) {
 	t.Helper()
-	digest := sha256.Sum256([]byte(testReporterCredential))
-	rec := AdminCredentialRecord{Schema: schemaVersion, SecretDigest: hex.EncodeToString(digest[:])}
-	raw, err := encodeRecord(rec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Create(context.Background(), deploymentReporterCredentialKey(), raw); err != nil {
-		t.Fatal(err)
-	}
+	storeCredential(t, store, deploymentReporterCredentialKey(), testReporterCredential)
 }
 
 // initialisedManager is an organization ready to enrol into: testManager alone has no config, and

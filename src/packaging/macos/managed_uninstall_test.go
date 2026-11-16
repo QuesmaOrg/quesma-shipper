@@ -61,10 +61,8 @@ func TestSystemRemovalPreservesPersonalInstallation(t *testing.T) {
 			if err := installCLILink(personalLink, exe); err != nil {
 				t.Fatal(err)
 			}
-			previousPath, previousLaunchctl := systemAgentPath, launchctl
-			systemAgentPath = filepath.Join(t.TempDir(), "system-agent.plist")
-			launchctl = filepath.Join(t.TempDir(), "launchctl")
-			t.Cleanup(func() { systemAgentPath, launchctl = previousPath, previousLaunchctl })
+			stubSystemAgentPath(t)
+			fakeLaunchctl(t)
 			if !tc.missingPlist {
 				writeUninstallFixture(t, systemAgentPath, renderSystemPlist(), 0o644)
 			}
@@ -143,9 +141,7 @@ func TestWaitForServiceGoneFailsClosed(t *testing.T) {
 		{"inspection failed", 1, true}, {"still loaded", 0, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			previous := launchctl
-			launchctl = filepath.Join(t.TempDir(), "launchctl")
-			t.Cleanup(func() { launchctl = previous })
+			fakeLaunchctl(t)
 			writeUninstallFixture(t, launchctl, fmt.Sprintf("#!/bin/sh\nexit %d\n", tc.exit), 0o700)
 			err := waitForServiceGone("gui/501/com.quesma.shipper", 0)
 			if (err != nil) != tc.wantError {
@@ -156,10 +152,8 @@ func TestWaitForServiceGoneFailsClosed(t *testing.T) {
 }
 
 func TestSystemRemovalChecksEachDistinctAccount(t *testing.T) {
-	previousPath, previousLaunchctl := systemAgentPath, launchctl
-	systemAgentPath = filepath.Join(t.TempDir(), "system-agent.plist")
-	launchctl = filepath.Join(t.TempDir(), "launchctl")
-	t.Cleanup(func() { systemAgentPath, launchctl = previousPath, previousLaunchctl })
+	stubSystemAgentPath(t)
+	fakeLaunchctl(t)
 	writeUninstallFixture(t, systemAgentPath, renderSystemPlist(), 0o644)
 	marker := filepath.Join(t.TempDir(), "bootout")
 	fake := fmt.Sprintf(`#!/bin/sh
@@ -206,6 +200,21 @@ func TestSystemRemovalRequiresRoot(t *testing.T) {
 	if err := PreUninstallSystem(); err == nil || !strings.Contains(err.Error(), "requires root") {
 		t.Fatalf("PreUninstallSystem = %v", err)
 	}
+}
+
+// The stubs only redirect the package variable; each test writes its own file there.
+func stubSystemAgentPath(t *testing.T) {
+	t.Helper()
+	previous := systemAgentPath
+	systemAgentPath = filepath.Join(t.TempDir(), "system-agent.plist")
+	t.Cleanup(func() { systemAgentPath = previous })
+}
+
+func fakeLaunchctl(t *testing.T) {
+	t.Helper()
+	previous := launchctl
+	launchctl = filepath.Join(t.TempDir(), "launchctl")
+	t.Cleanup(func() { launchctl = previous })
 }
 
 func writeUninstallFixture(t *testing.T, path, contents string, mode os.FileMode) {

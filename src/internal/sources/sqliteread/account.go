@@ -5,19 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"path/filepath"
-	"strings"
 )
 
 // Credentials are returned separately and never pass through the collection row reader.
 func CursorAccount(ctx context.Context, path string) (map[string]json.RawMessage, string, error) {
-	dbPath := filepath.ToSlash(path)
-	if !strings.HasPrefix(dbPath, "/") {
-		dbPath = "/" + dbPath
-	}
-	u := url.URL{Scheme: "file", Path: dbPath, RawQuery: "mode=ro&_pragma=query_only(1)&_pragma=busy_timeout(2000)"}
-	db, err := sql.Open("sqlite", u.String())
+	db, err := sql.Open("sqlite", sessionFileURI(filepath.ToSlash(path))+"?mode=ro&_pragma=query_only(1)&_pragma=busy_timeout(2000)")
 	if err != nil {
 		return nil, "", fmt.Errorf("Cursor account store unavailable")
 	}

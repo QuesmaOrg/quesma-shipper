@@ -82,7 +82,7 @@ func (p *sourcePass) runEnriched(ctx context.Context, enrichers []transforms.Enr
 				continue
 			}
 			p.o.stages.enter("enrich")
-			if err := p.o.enrichSource(ctx, p.store, p.src, enricher, staged, p.out, p.rep); err != nil {
+			if err := p.enrichSource(ctx, enricher, staged); err != nil {
 				return err
 			}
 		}
@@ -103,15 +103,8 @@ func (p *sourcePass) runEnriched(ctx context.Context, enrichers []transforms.Enr
 
 // enrichSource runs one enricher and ships whatever it derived. A non-nil error is the run's:
 // the install was refused, or the control plane could not authorize.
-func (o Options) enrichSource(
-	ctx context.Context,
-	store *commitBuffer,
-	src sources.Resolved,
-	e transforms.Enricher,
-	staged []transforms.RawUnit,
-	out *SourceOutcome,
-	rep *Report,
-) error {
+func (p *sourcePass) enrichSource(ctx context.Context, e transforms.Enricher, staged []transforms.RawUnit) error {
+	o, src, out, rep := p.o, p.src, p.out, p.rep
 	out.EnricherID = e.ID()
 	out.EnricherVersion = e.Version()
 
@@ -133,32 +126,28 @@ func (o Options) enrichSource(
 	// A mismatch gets its own audit entry: a lost window must appear there, not only in a
 	// counter. Notes only — an info describes an object that ships, so stamping it "skipped"
 	// would record loss that did not happen.
-	if o.Log != nil {
-		for _, note := range res.Notes {
-			_ = o.Log.Append(auditlog.Entry{
-				Decision:      auditlog.DecisionSkipped,
-				SourceID:      src.ID,
-				ConfigVersion: o.Plan.ConfigVersion,
-				Reason:        "enrich: " + note,
-			})
-		}
+	for _, note := range res.Notes {
+		_ = o.Log.Append(auditlog.Entry{
+			Decision:      auditlog.DecisionSkipped,
+			SourceID:      src.ID,
+			ConfigVersion: o.Plan.ConfigVersion,
+			Reason:        "enrich: " + note,
+		})
 	}
 
-	shipped, failed, halted := o.shipDerivedGroups(ctx, store, src, e, dbPath, res.Objects, out)
+	shipped, failed, halted := p.shipDerivedGroups(ctx, e, dbPath, res.Objects)
 	out.Enriched += shipped
 	rep.Shipped += shipped
 	rep.Failed += failed
 	if halted != nil {
 		// The same line the raw pass records, so the outcome itself says why the run stopped.
 		out.Reason = "uploads stopped: " + halted.Error()
-		if o.Log != nil {
-			_ = o.Log.Append(auditlog.Entry{
-				Decision:      auditlog.DecisionFailed,
-				SourceID:      src.ID,
-				ConfigVersion: o.Plan.ConfigVersion,
-				Reason:        out.Reason,
-			})
-		}
+		_ = o.Log.Append(auditlog.Entry{
+			Decision:      auditlog.DecisionFailed,
+			SourceID:      src.ID,
+			ConfigVersion: o.Plan.ConfigVersion,
+			Reason:        out.Reason,
+		})
 		return fmt.Errorf("enricher %s stopped: %w", e.ID(), halted)
 	}
 	return nil
@@ -166,15 +155,10 @@ func (o Options) enrichSource(
 
 // shipDerivedGroups ships everything one enricher derived. Outcomes are index-addressed so the
 // report keeps enricher order; a non-nil halted means this enricher stopped uploading.
-func (o Options) shipDerivedGroups(
-	ctx context.Context,
-	store *commitBuffer,
-	src sources.Resolved,
-	e transforms.Enricher,
-	dbPath string,
-	objects []transforms.Derived,
-	out *SourceOutcome,
+func (p *sourcePass) shipDerivedGroups(
+	ctx context.Context, e transforms.Enricher, dbPath string, objects []transforms.Derived,
 ) (shipped, failed int, halted error) {
+	o, src := p.o, p.src
 	fos := make([]FileOutcome, len(objects))
 	group := &batcher{
 		maxObjects: maxBatchObjects,
@@ -184,7 +168,7 @@ func (o Options) shipDerivedGroups(
 			o.stages.add(0, -1)
 			for i, g := range items {
 				idx := g.res.idx
-				fos[idx] = o.commitDerived(store, g.res.outcome, g.pending, outcomes[i])
+				fos[idx] = p.commitDerived(g.res.outcome, g.pending, outcomes[i])
 				if fos[idx].Decision == auditlog.DecisionShipped {
 					shipped++
 				}
@@ -208,7 +192,7 @@ func (o Options) shipDerivedGroups(
 			}
 			continue
 		}
-		fo, pending := o.prepareDerived(store, src, e, dbPath, d)
+		fo, pending := p.prepareDerived(e, dbPath, d)
 		if pending == nil {
 			fos[i] = fo
 			if fo.Decision == auditlog.DecisionFailed {
@@ -220,21 +204,19 @@ func (o Options) shipDerivedGroups(
 	}
 	group.flush()
 
-	out.Files = append(out.Files, fos...)
+	p.out.Files = append(p.out.Files, fos...)
 	return shipped, failed, halted
 }
 
 // commitDerived turns one object's verdict into its outcome, committing only after the PUT.
-func (o Options) commitDerived(
-	store *commitBuffer, fo FileOutcome, pending *pendingPut, oc error,
-) FileOutcome {
+func (p *sourcePass) commitDerived(fo FileOutcome, pending *pendingPut, oc error) FileOutcome {
 	present := errors.Is(oc, ErrAlreadyPresent)
 	if oc != nil && !present {
 		fo.Decision = auditlog.DecisionFailed
 		fo.Reason = oc.Error()
 		return fo
 	}
-	if err := store.Commit(pending.key, pending.next); err != nil {
+	if err := p.store.Commit(pending.key, pending.next); err != nil {
 		fo.Decision = auditlog.DecisionFailed
 		fo.Reason = "derived upload succeeded but commit failed: " + err.Error()
 		return fo
@@ -248,13 +230,10 @@ func (o Options) commitDerived(
 
 // prepareDerived is the derived object's compute leg: change detection, scrub, key, manifest, seal.
 // A non-nil pending means the object wants the network.
-func (o Options) prepareDerived(
-	store *commitBuffer,
-	src sources.Resolved,
-	e transforms.Enricher,
-	dbPath string,
-	d transforms.Derived,
+func (p *sourcePass) prepareDerived(
+	e transforms.Enricher, dbPath string, d transforms.Derived,
 ) (fo FileOutcome, pending *pendingPut) {
+	o, src := p.o, p.src
 	fo = FileOutcome{SourceID: src.ID, NativePath: d.NativePath, BytesIn: int64(len(d.Payload)), Derived: true}
 	fail := func(reason string) (FileOutcome, *pendingPut) {
 		fo.Decision = auditlog.DecisionFailed
@@ -263,7 +242,7 @@ func (o Options) prepareDerived(
 	}
 
 	key := Key{SourceID: src.ID, ID: d.NativePath}
-	fp, seen := store.Get(key)
+	fp, seen := p.store.Get(key)
 
 	// Determinism supplies the change signal: an unchanged output hash means nothing to upload.
 	if o.policySatisfied(fp) && seen && fp.OutputHash == d.OutputHash && fp.SourceHash != "" {

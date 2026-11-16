@@ -13,22 +13,15 @@ import (
 func TestOneUnreadableFileDoesNotSilenceTheSource(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude", "projects", "p")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
 
 	// The oldest file is the broken one.
 	bad := filepath.Join(dir, "00000000-0000-4000-8000-000000000000.jsonl")
-	if err := os.WriteFile(bad, []byte("\x00\x00\x00 not json at all\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	write(t, bad, "\x00\x00\x00 not json at all\n")
 	older(t, bad)
 
 	for _, name := range []string{"11111111", "22222222", "33333333"} {
 		good := filepath.Join(dir, name+"-1111-4111-8111-111111111111.jsonl")
-		if err := os.WriteFile(good, []byte(`{"type":"user","uuid":"u1"}`+"\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		write(t, good, `{"type":"user","uuid":"u1"}`+"\n")
 	}
 
 	d := discover(t, source(filepath.Join(home, ".claude"), []string{"projects/**/*.jsonl"}), nil)
@@ -49,14 +42,9 @@ func TestOneUnreadableFileDoesNotSilenceTheSource(t *testing.T) {
 func TestASourceWhereEveryFileIsUnreadableIsStillCondemned(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude", "projects", "p")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
 	for _, name := range []string{"11111111", "22222222", "33333333"} {
 		p := filepath.Join(dir, name+"-1111-4111-8111-111111111111.jsonl")
-		if err := os.WriteFile(p, []byte("\x00\x00\x00 encrypted now\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		write(t, p, "\x00\x00\x00 encrypted now\n")
 	}
 
 	d := discover(t, source(filepath.Join(home, ".claude"), []string{"projects/**/*.jsonl"}), nil)

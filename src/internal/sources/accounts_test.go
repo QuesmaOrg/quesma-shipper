@@ -33,20 +33,10 @@ func accountFixture(t *testing.T) Request {
 	}
 }
 
-func accountFile(t *testing.T, path, body string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestAccountSnapshotsPreserveProviderJSONInMemory(t *testing.T) {
 	req := accountFixture(t)
 	claims := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"dev@example.org","https://api.openai.com/auth":{"chatgpt_plan_type":"pro"}}`))
-	accountFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture-access","refresh_token":"fixture-refresh","account_id":"workspace-1","id_token":"x.`+claims+`.x"}}`)
+	writeFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture-access","refresh_token":"fixture-refresh","account_id":"workspace-1","id_token":"x.`+claims+`.x"}}`)
 	calls := 0
 	p := Accounts{client: &http.Client{Transport: accountTransport(func(r *http.Request) (*http.Response, error) {
 		calls++
@@ -95,7 +85,7 @@ func TestAccountSnapshotsPreserveProviderJSONInMemory(t *testing.T) {
 
 func TestAccountDiscoveryDoesNotFetchOrWrite(t *testing.T) {
 	req := accountFixture(t)
-	accountFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture"}}`)
+	writeFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture"}}`)
 	p := Accounts{client: &http.Client{Transport: accountTransport(func(*http.Request) (*http.Response, error) {
 		t.Fatal("discovery fetched account data")
 		return nil, nil
@@ -162,8 +152,8 @@ func TestClaudeUsesActiveCredentialsAndPreservesLocalAccount(t *testing.T) {
 	home := filepath.Join(req.Env.Home, "other-claude")
 	req.Source.Root = home
 	req.Env.Lookup = func(k string) (string, bool) { return home, k == "CLAUDE_CONFIG_DIR" }
-	accountFile(t, filepath.Join(home, ".claude.json"), `{"oauthAccount":{"organizationType":"max","future":42},"unrelated":"not collected"}`)
-	accountFile(t, filepath.Join(home, ".credentials.json"), `{"claudeAiOauth":{"accessToken":"correct","scopes":["user:profile"]}}`)
+	writeFile(t, filepath.Join(home, ".claude.json"), `{"oauthAccount":{"organizationType":"max","future":42},"unrelated":"not collected"}`)
+	writeFile(t, filepath.Join(home, ".credentials.json"), `{"claudeAiOauth":{"accessToken":"correct","scopes":["user:profile"]}}`)
 	calls := 0
 	p := Accounts{keychain: func(context.Context, string) ([]byte, error) { return nil, errors.New("locked") }, client: &http.Client{Transport: accountTransport(func(r *http.Request) (*http.Response, error) {
 		calls++
@@ -210,7 +200,7 @@ func TestAccountBucketUsesCollectionInterval(t *testing.T) {
 		t.Run(interval.String(), func(t *testing.T) {
 			req := accountFixture(t)
 			req.Interval = interval
-			accountFile(t, filepath.Join(req.Source.Root, "auth.json"), `{}`)
+			writeFile(t, filepath.Join(req.Source.Root, "auth.json"), `{}`)
 			d, err := (&Accounts{}).Discover(req)
 			if interval <= 0 {
 				if err == nil {
@@ -246,7 +236,7 @@ func TestCandidateLoadLimitsAndCancellation(t *testing.T) {
 	req := accountFixture(t)
 	req.Source.MaxFileBytes = 1
 	path := filepath.Join(req.Source.Root, "auth.json")
-	accountFile(t, path, `{}`)
+	writeFile(t, path, `{}`)
 	d, err := (&Accounts{}).Discover(req)
 	if err != nil {
 		t.Fatal(err)
@@ -265,7 +255,7 @@ func TestCandidateLoadLimitsAndCancellation(t *testing.T) {
 
 func TestAccountCompareIgnoresReadTimeAndCountdowns(t *testing.T) {
 	req := accountFixture(t)
-	accountFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture-access"}}`)
+	writeFile(t, filepath.Join(req.Env.Home, ".codex", "auth.json"), `{"tokens":{"access_token":"fixture-access"}}`)
 	var body string
 	p := Accounts{client: &http.Client{Transport: accountTransport(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}}, nil
@@ -344,9 +334,9 @@ func TestAccountConfigShipsStoredValuesWithoutCredentials(t *testing.T) {
 		req := accountFixture(t)
 		req.Source.ID, req.Source.Family = "claude-account", "claude-code"
 		req.Source.Root = filepath.Join(req.Env.Home, ".claude")
-		accountFile(t, filepath.Join(req.Env.Home, ".claude.json"), `{"oauthAccount":{"billingType":"stripe_subscription"},"primaryApiKey":"sk-ant-secret","customApiKeyResponses":{"approved":["secret1"],"rejected":["secret2","secret3"]}}`)
-		accountFile(t, filepath.Join(req.Source.Root, ".credentials.json"), `{"claudeAiOauth":{"accessToken":"secret","refreshToken":"secret","subscriptionType":"max","rateLimitTier":"default_claude_max_20x","scopes":["user:profile"]}}`)
-		accountFile(t, filepath.Join(req.Source.Root, "settings.json"), `{"apiKeyHelper":"echo secret","model":"opus","env":{"CLAUDE_CODE_USE_BEDROCK":"1","ANTHROPIC_API_KEY":"secret","ANTHROPIC_BASE_URL":"https://openrouter.ai/api","OTHER":"secret"}}`)
+		writeFile(t, filepath.Join(req.Env.Home, ".claude.json"), `{"oauthAccount":{"billingType":"stripe_subscription"},"primaryApiKey":"sk-ant-secret","customApiKeyResponses":{"approved":["secret1"],"rejected":["secret2","secret3"]}}`)
+		writeFile(t, filepath.Join(req.Source.Root, ".credentials.json"), `{"claudeAiOauth":{"accessToken":"secret","refreshToken":"secret","subscriptionType":"max","rateLimitTier":"default_claude_max_20x","scopes":["user:profile"]}}`)
+		writeFile(t, filepath.Join(req.Source.Root, "settings.json"), `{"apiKeyHelper":"echo secret","model":"opus","env":{"CLAUDE_CODE_USE_BEDROCK":"1","ANTHROPIC_API_KEY":"secret","ANTHROPIC_BASE_URL":"https://openrouter.ai/api","OTHER":"secret"}}`)
 		want := `{".claude.json":{"customApiKeyResponses":{"approved":1,"rejected":2},"primaryApiKey":true},"credentials":{"claudeAiOauth":{"rateLimitTier":"default_claude_max_20x","scopes":["user:profile"],"subscriptionType":"max"}},"settings.json":{"apiKeyHelper":true,"env":{"ANTHROPIC_API_KEY":true,"ANTHROPIC_BASE_URL":"https://openrouter.ai/api","CLAUDE_CODE_USE_BEDROCK":"1"}}}`
 		if got := string(load(t, req)["claude.local.config"]); got != want {
 			t.Fatalf("got  %s\nwant %s", got, want)
@@ -356,7 +346,7 @@ func TestAccountConfigShipsStoredValuesWithoutCredentials(t *testing.T) {
 		req := accountFixture(t)
 		req.Source.ID, req.Source.Family = "claude-account", "claude-code"
 		req.Source.Root = filepath.Join(req.Env.Home, ".claude")
-		accountFile(t, filepath.Join(req.Env.Home, ".claude.json"), `{}`)
+		writeFile(t, filepath.Join(req.Env.Home, ".claude.json"), `{}`)
 		want := `{".claude.json":{},"credentials":{"claudeAiOauth":{}},"settings.json":{}}`
 		if got := string(load(t, req)["claude.local.config"]); got != want {
 			t.Fatalf("got  %s\nwant %s", got, want)
@@ -366,9 +356,9 @@ func TestAccountConfigShipsStoredValuesWithoutCredentials(t *testing.T) {
 		req := accountFixture(t)
 		req.Source.ID, req.Source.Family = "claude-account", "claude-code"
 		req.Source.Root = filepath.Join(req.Env.Home, ".claude")
-		accountFile(t, filepath.Join(req.Env.Home, ".claude.json"), `{"primaryApiKey":"secret"}`)
-		accountFile(t, filepath.Join(req.Source.Root, ".credentials.json"), `{"claudeAiOauth":{"subscriptionType":"pro"}}`)
-		accountFile(t, filepath.Join(req.Source.Root, "settings.json"), `{"apiKeyHelper":"secret",}`)
+		writeFile(t, filepath.Join(req.Env.Home, ".claude.json"), `{"primaryApiKey":"secret"}`)
+		writeFile(t, filepath.Join(req.Source.Root, ".credentials.json"), `{"claudeAiOauth":{"subscriptionType":"pro"}}`)
+		writeFile(t, filepath.Join(req.Source.Root, "settings.json"), `{"apiKeyHelper":"secret",}`)
 		want := `{".claude.json":{"primaryApiKey":true},"credentials":{"claudeAiOauth":{"subscriptionType":"pro"}},"settings.json":{"error":"store_unreadable"}}`
 		if got := string(load(t, req)["claude.local.config"]); got != want {
 			t.Fatalf("got  %s\nwant %s", got, want)
@@ -376,8 +366,8 @@ func TestAccountConfigShipsStoredValuesWithoutCredentials(t *testing.T) {
 	})
 	t.Run("codex", func(t *testing.T) {
 		req := accountFixture(t)
-		accountFile(t, filepath.Join(req.Source.Root, "auth.json"), `{"auth_mode":"apikey","OPENAI_API_KEY":"sk-secret"}`)
-		accountFile(t, filepath.Join(req.Source.Root, "config.toml"), "model = \"gpt-5\"\nmodel_provider = \"openrouter\" # comment\n[model_providers.openrouter]\nenv_key = \"secret\"\n")
+		writeFile(t, filepath.Join(req.Source.Root, "auth.json"), `{"auth_mode":"apikey","OPENAI_API_KEY":"sk-secret"}`)
+		writeFile(t, filepath.Join(req.Source.Root, "config.toml"), "model = \"gpt-5\"\nmodel_provider = \"openrouter\" # comment\n[model_providers.openrouter]\nenv_key = \"secret\"\n")
 		bodies := load(t, req)
 		if got := string(bodies["codex.local.config"]); got != `{"model_provider":"openrouter"}` {
 			t.Fatal(got)
@@ -388,7 +378,7 @@ func TestAccountConfigShipsStoredValuesWithoutCredentials(t *testing.T) {
 	})
 	t.Run("codex without config", func(t *testing.T) {
 		req := accountFixture(t)
-		accountFile(t, filepath.Join(req.Source.Root, "auth.json"), `{"auth_mode":"chatgpt"}`)
+		writeFile(t, filepath.Join(req.Source.Root, "auth.json"), `{"auth_mode":"chatgpt"}`)
 		if got := string(load(t, req)["codex.local.config"]); got != `{}` {
 			t.Fatal(got)
 		}

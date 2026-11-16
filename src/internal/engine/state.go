@@ -5,8 +5,6 @@ package engine
 
 import (
 	"cmp"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,13 +33,8 @@ const (
 // maxDocumentBytes bounds the document: roughly a hundred thousand entries at 400 bytes each.
 const maxDocumentBytes = 64 << 20
 
-var (
-	// ErrLocked means another flush holds the store; the caller should try later rather than wait.
-	ErrLocked = errors.New("state: store is locked by another flush")
-
-	// ErrSchemaMismatch means the document was written by a different version.
-	ErrSchemaMismatch = errors.New("state: document schema mismatch")
-)
+// ErrLocked means another flush holds the store; the caller should try later rather than wait.
+var ErrLocked = errors.New("state: store is locked by another flush")
 
 // Key identifies one fingerprint. ID is the candidate's logical identity when its source declares
 // one, else its absolute native path, so every path-keyed entry stays valid.
@@ -331,8 +324,7 @@ func checksumOf(doc wireDoc) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("state: checksum: %w", err)
 	}
-	sum := sha256.Sum256(body)
-	return hex.EncodeToString(sum[:]), nil
+	return transforms.Hash(body), nil
 }
 
 type wireEntry struct {
@@ -407,8 +399,8 @@ func encode(installID string, updatedAt time.Time, specs map[string]string, entr
 	body = append(body, '\n')
 
 	// Validate on the way out: a state file that fails its own schema is a bug to catch here.
-	if err := validate(body); err != nil {
-		return nil, err
+	if err := formats.ValidateRaw(formats.FingerprintState, body); err != nil {
+		return nil, fmt.Errorf("state: document does not satisfy its schema: %w", err)
 	}
 	return body, nil
 }
@@ -435,8 +427,8 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 	}
 	// The only schema guard on the load path: rejecting costs one re-upload, guessing costs more.
 	if doc.StateSchema != StateSchema {
-		return Document{}, fmt.Errorf("%w: document says %d, this client speaks %d",
-			ErrSchemaMismatch, doc.StateSchema, StateSchema)
+		return Document{}, fmt.Errorf("state: document schema mismatch: document says %d, this client speaks %d",
+			doc.StateSchema, StateSchema)
 	}
 	// Absent means written before the field existed; it earns one on the next rewrite. A wrong one
 	// fails the whole load, because a partly-trusted store is the failure this catches.
@@ -458,11 +450,7 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 	if out.SourceSpecs == nil {
 		out.SourceSpecs = map[string]string{}
 	}
-	if doc.UpdatedAt != "" {
-		if t, err := time.Parse(time.RFC3339, doc.UpdatedAt); err == nil {
-			out.UpdatedAt = t
-		}
-	}
+	out.UpdatedAt = parseTime(doc.UpdatedAt)
 	for _, e := range doc.Entries {
 		if e.Attempts < 0 {
 			return Document{}, fmt.Errorf("state: entry %s %s: negative attempts %d",
@@ -478,16 +466,8 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 			LastError:  e.LastError,
 			Enricher:   e.Enricher,
 		}
-		if e.SourceMTime != "" {
-			if t, err := time.Parse(time.RFC3339, e.SourceMTime); err == nil {
-				fp.SourceMTime = t
-			}
-		}
-		if e.BackoffUntil != "" {
-			if t, err := time.Parse(time.RFC3339, e.BackoffUntil); err == nil {
-				fp.BackoffUntil = t
-			}
-		}
+		fp.SourceMTime = parseTime(e.SourceMTime)
+		fp.BackoffUntil = parseTime(e.BackoffUntil)
 		// A path-keyed entry leaves NativePath empty: its key ID is the path.
 		if e.Identity != "" {
 			fp.NativePath = e.NativePath
@@ -497,13 +477,11 @@ func load(stateDir string, maxBytes int64) (Document, error) {
 	return out, nil
 }
 
-func validate(raw []byte) error {
-	err := formats.ValidateRaw(formats.FingerprintState, raw)
-	switch {
-	case err == nil:
-		return nil
-	case errors.Is(err, formats.ErrNotJSON):
-		return fmt.Errorf("state: document is %w", err)
+// parseTime leaves an absent or malformed time zero; the empty check spares an error allocation per entry.
+func parseTime(s string) time.Time {
+	if s == "" {
+		return time.Time{}
 	}
-	return fmt.Errorf("state: document does not satisfy its schema: %w", err)
+	t, _ := time.Parse(time.RFC3339, s)
+	return t
 }

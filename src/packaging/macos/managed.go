@@ -21,7 +21,6 @@ import (
 
 var systemAgentPath = "/Library/LaunchAgents/" + bundleIdentifier + ".plist"
 
-var errSystemManaged = common.ErrSystemManaged
 var errRootRun = errors.New("refusing to run as root: this agent reads the current user's files")
 
 func systemExecutable(exe string) bool { return exe == installedExecutable("/") }
@@ -41,7 +40,7 @@ func ValidateUserUninstall() error {
 		return err
 	}
 	if systemExecutable(exe) {
-		return errSystemManaged
+		return common.ErrSystemManaged
 	}
 	return nil
 }
@@ -190,7 +189,7 @@ func parseLocalUsers(out []byte) ([]localUser, error) {
 
 func postInstallSystem() error {
 	if os.Geteuid() != 0 {
-		return errSystemManaged
+		return common.ErrSystemManaged
 	}
 	users, err := localUsers()
 	if err != nil {

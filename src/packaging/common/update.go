@@ -105,7 +105,9 @@ func download(repo *tufupdater.Updater, release Release, selectTarget func(Relea
 	if err != nil {
 		return nil, fmt.Errorf("finding %s: %w", target, err)
 	}
-	progress(out, "downloading shipper %s", release.Version)
+	if out != nil {
+		fmt.Fprintf(out, "downloading shipper %s\n", release.Version)
+	}
 	_, binary, err := repo.DownloadTarget(info, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("downloading %s: %w", target, err)
@@ -173,10 +175,4 @@ func timeoutOr(d, fallback time.Duration) time.Duration {
 		return d
 	}
 	return fallback
-}
-
-func progress(w io.Writer, format string, args ...any) {
-	if w != nil {
-		fmt.Fprintf(w, format+"\n", args...)
-	}
 }

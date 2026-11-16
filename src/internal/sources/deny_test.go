@@ -103,6 +103,44 @@ func TestMatchPairChecksBothForms(t *testing.T) {
 	}
 }
 
+// Public Match on a real home: the only run of these shapes with the host OS path form.
+func TestDenyListMatchesCredentialShapes(t *testing.T) {
+	home := t.TempDir()
+	d := New(home)
+
+	denied := []string{
+		filepath.Join(home, ".aws", "credentials"),
+		filepath.Join(home, ".ssh", "id_rsa"),
+		filepath.Join(home, ".ssh", "nested", "deeper", "key"),
+		filepath.Join(home, ".claude", ".credentials.json"),
+		filepath.Join(home, ".claude.json"),
+		filepath.Join(home, ".codex", "auth.json"),
+		filepath.Join(home, ".netrc"),
+		filepath.Join(home, "work", "project", ".env"),
+		filepath.Join(home, "work", "project", ".env.local"),
+		filepath.Join(home, "work", "certs", "server.pem"),
+		filepath.Join(home, "Library", "Keychains", "login.keychain-db"),
+		filepath.Join(home, ".config", "gh", "hosts.yml"),
+	}
+	for _, p := range denied {
+		if ok, _ := d.Match(p); !ok {
+			t.Errorf("must be denied: %s", p)
+		}
+	}
+
+	allowed := []string{
+		filepath.Join(home, ".claude", "projects", "proj", "s.jsonl"),
+		filepath.Join(home, ".claude", "CLAUDE.md"),
+		filepath.Join(home, ".codex", "sessions", "2026", "r.jsonl"),
+		filepath.Join(home, "work", "project", "src", "db.go"),
+	}
+	for _, p := range allowed {
+		if ok, pat := d.Match(p); ok {
+			t.Errorf("must not be denied: %s (matched %q)", p, pat)
+		}
+	}
+}
+
 // Each row states the pattern the path must be reported against, or "" for one that stays collectable; "~" expands to testHome.
 func TestMatchReportsTheFirstPatternInListOrder(t *testing.T) {
 	type row struct{ path, want string }

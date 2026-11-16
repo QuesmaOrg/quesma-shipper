@@ -1,5 +1,3 @@
-//go:build windows
-
 package windows
 
 import (
@@ -117,7 +115,7 @@ func validateManagedACL(sd *windows.SECURITY_DESCRIPTOR, mask uint32) error {
 		if err := windows.GetAce(acl, i, &entry); err != nil {
 			return fmt.Errorf("read managed installation ACL: %w", err)
 		}
-		inheritOnly := entry.Header.AceFlags&inheritOnlyACE != 0
+		inheritOnly := entry.Header.AceFlags&windows.INHERIT_ONLY_ACE != 0
 		if entry.Header.AceType == windows.ACCESS_DENIED_ACE_TYPE ||
 			(inheritOnly && entry.Header.AceFlags&(windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE) == 0) {
 			continue

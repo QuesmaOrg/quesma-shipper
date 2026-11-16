@@ -77,16 +77,21 @@ func TestEntropyClassTableMatchesTheByteTests(t *testing.T) {
 	}
 }
 
-// The score must be bit-identical, not merely close: a last-ulp difference at the threshold is
-// a redaction that appears or disappears.
-func TestEntropyScoreIsBitIdenticalToTheWideHistogram(t *testing.T) {
-	rng := rand.New(rand.NewSource(7))
+func candidateAlphabet() []byte {
 	alphabet := make([]byte, 0, entropySymbols)
 	for c := 0; c < 256; c++ {
 		if isCandidateByte(byte(c)) {
 			alphabet = append(alphabet, byte(c))
 		}
 	}
+	return alphabet
+}
+
+// The score must be bit-identical, not merely close: a last-ulp difference at the threshold is
+// a redaction that appears or disappears.
+func TestEntropyScoreIsBitIdenticalToTheWideHistogram(t *testing.T) {
+	rng := rand.New(rand.NewSource(7))
+	alphabet := candidateAlphabet()
 	m := newEntropyMatcher(DefaultEntropyConfig(), "")
 	for i := 0; i < 200000; i++ {
 		n := 1 + rng.Intn(200)
@@ -106,13 +111,8 @@ func TestEntropyScoreIsBitIdenticalToTheWideHistogram(t *testing.T) {
 // on a log2(d) boundary, where the shortcut has least room.
 func TestEntropyFloorHoldsAtBoundaryThresholds(t *testing.T) {
 	rng := rand.New(rand.NewSource(11))
-	alphabet := make([]byte, 0, entropySymbols)
+	alphabet := candidateAlphabet()
 	hex := []byte("0123456789abcdefABCDEF")
-	for c := 0; c < 256; c++ {
-		if isCandidateByte(byte(c)) {
-			alphabet = append(alphabet, byte(c))
-		}
-	}
 	var thresholds []float64
 	for d := 1; d <= entropySymbols; d++ {
 		v := math.Log2(float64(d))

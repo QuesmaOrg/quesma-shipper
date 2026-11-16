@@ -16,13 +16,11 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"filippo.io/age"
 )
 
 const testAdminCredential = "fma1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
-func storeAdminCredential(t *testing.T, store *memoryStore, credential string) {
+func storeCredential(t *testing.T, store *memoryStore, key, credential string) {
 	t.Helper()
 	digest := sha256.Sum256([]byte(credential))
 	rec := AdminCredentialRecord{Schema: schemaVersion, SecretDigest: hex.EncodeToString(digest[:])}
@@ -30,9 +28,14 @@ func storeAdminCredential(t *testing.T, store *memoryStore, credential string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Create(context.Background(), deploymentAdminCredentialKey(), raw); err != nil {
+	if err := store.Create(context.Background(), key, raw); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func storeAdminCredential(t *testing.T, store *memoryStore, credential string) {
+	t.Helper()
+	storeCredential(t, store, deploymentAdminCredentialKey(), credential)
 }
 
 func testAdminServer(t *testing.T) (*Server, *memoryStore) {
@@ -228,18 +231,7 @@ func TestAdminDoesNotExposeBackendErrors(t *testing.T) {
 	}
 }
 
-func twoRecipients(t *testing.T) []string {
-	t.Helper()
-	one, err := age.GenerateX25519Identity()
-	if err != nil {
-		t.Fatal(err)
-	}
-	two, err := age.GenerateX25519Identity()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return []string{one.Recipient().String(), two.Recipient().String()}
-}
+func twoRecipients(t *testing.T) []string { return testAgeRecipients(t, 2) }
 
 func configJSON(t *testing.T, recipients []string) string {
 	t.Helper()

@@ -16,13 +16,7 @@ import (
 func TestSessionDatabaseDiscoveryScope(t *testing.T) {
 	root := t.TempDir()
 	for _, rel := range []string{"state.db", "profiles/work/state.db", "cache/state.db", "lazy-packages/a/state.db", "profiles/work/auth.json"} {
-		path := filepath.Join(root, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte("fixture"), 0600); err != nil {
-			t.Fatal(err)
-		}
+		writeFile(t, filepath.Join(root, rel), "fixture")
 	}
 	outside := t.TempDir()
 	if err := os.WriteFile(filepath.Join(outside, "state.db"), []byte("outside"), 0600); err != nil {
@@ -93,12 +87,7 @@ func TestSessionDatabasePatternsAndDeniedRoots(t *testing.T) {
 
 func TestSessionDatabaseLiteralSymlinkPrefix(t *testing.T) {
 	root, outside := t.TempDir(), t.TempDir()
-	if err := os.MkdirAll(filepath.Join(outside, "work"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(outside, "work", "state.db"), []byte("outside"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(outside, "work", "state.db"), "outside")
 	if err := os.Symlink(outside, filepath.Join(root, "profiles")); err != nil {
 		t.Fatal(err)
 	}

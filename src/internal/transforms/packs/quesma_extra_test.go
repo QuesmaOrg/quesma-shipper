@@ -19,13 +19,6 @@ func TestQuesmaExtraAdversarial(t *testing.T) {
 	letters := func(n int) string { return rep("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", n) }
 	bech := func(n int) string { return rep("QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L", n) }
 
-	type probe struct {
-		in   string // the scanned value
-		want string // exact span the rule must produce; "" means it must find nothing
-	}
-	tok := func(s string) probe { return probe{in: "out: " + s + " done", want: s} }
-	not := func(s string) probe { return probe{in: "out: " + s + " done"} }
-
 	const s40 = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 	azTail := alnum(31) + "~_."
 
@@ -238,24 +231,7 @@ func TestQuesmaExtraAdversarial(t *testing.T) {
 			t.Errorf("%s: in the table, not in the pack", id)
 			continue
 		}
-		for _, p := range probes {
-			spans := r.MatchScanned(p.in)
-			if p.want == "" {
-				if len(spans) != 0 {
-					t.Errorf("%s: near-miss %q matched: %v", id, p.in, spans)
-				}
-				continue
-			}
-			found := false
-			for _, s := range spans {
-				if p.in[s.Start:s.End] == p.want {
-					found = true
-				}
-			}
-			if !found {
-				t.Errorf("%s: %q: want exact span %q, got %v", id, p.in, p.want, spans)
-			}
-		}
+		checkProbes(t, id, r, probes)
 	}
 	for _, r := range rules {
 		if _, ok := cases[r.id]; !ok {

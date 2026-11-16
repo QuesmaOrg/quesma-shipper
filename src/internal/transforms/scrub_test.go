@@ -9,22 +9,9 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
-// exemptions is the COMPILED baseline, not a test fixture: testing the same list the
-// binary runs is the point.
-func exemptions() map[string][]string {
-	return transforms.CompiledExemptions()
-}
-
 func newScrubber(t *testing.T) *transforms.Scrubber {
 	t.Helper()
-	cfg := transforms.DefaultConfig()
-	cfg.Exemptions = exemptions()
-	cfg.Username = "jane"
-	s, err := transforms.New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
+	return scrubberWith(t, func(*transforms.Config) {})
 }
 
 func scrubJSONL(t *testing.T, s *transforms.Scrubber, family, payload string) transforms.Result {
@@ -184,7 +171,7 @@ func TestPlantedSecretInEveryExemptFieldIsStillCaught(t *testing.T) {
 	s := newScrubber(t)
 	const planted = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
 
-	for family, paths := range exemptions() {
+	for family, paths := range transforms.CompiledExemptions() {
 		for _, path := range paths {
 			t.Run(family+"/"+path, func(t *testing.T) {
 				line := buildRecordWithValueAt(t, path, planted)
@@ -286,7 +273,7 @@ func TestDeclaredOpaqueBinaryPayloadSurvivesTheEntropyBackstop(t *testing.T) {
 
 	// Generated rather than repeated: repeating hex has LOW Shannon entropy and would
 	// never reach the backstop, so the test would pass for the wrong reason.
-	imageHex := pseudoRandomHex(t, 6000)
+	imageHex := randomHex(&xorshift{state: 0x2545F4914F6CDD1D}, 6000)
 	line := `{"composerId":"c8cbeb0b","content":[{"type":"image","image":{"hex":"` + imageHex + `"}}]}`
 
 	res := scrubJSONL(t, s, "cursor", line+"\n")
@@ -313,21 +300,6 @@ func TestEntropyBackstopIsBlindToRepeatingStructure(t *testing.T) {
 	if !strings.Contains(string(res.Out.Bytes()), repeating) {
 		t.Error("thresholds were retuned; update this note with the new behaviour")
 	}
-}
-
-// pseudoRandomHex builds deterministic high-entropy hex from a fixed seed.
-func pseudoRandomHex(t *testing.T, n int) string {
-	t.Helper()
-	const digits = "0123456789abcdef"
-	out := make([]byte, n)
-	state := uint64(0x2545F4914F6CDD1D)
-	for i := range out {
-		state ^= state << 13
-		state ^= state >> 7
-		state ^= state << 17
-		out[i] = digits[state%16]
-	}
-	return string(out)
 }
 
 // --- path_user --------------------------------------------------------------

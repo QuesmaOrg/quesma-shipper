@@ -24,7 +24,7 @@ type LoginResult struct {
 var ErrAlreadyLoggedIn = errors.New("already logged in")
 
 func Login(ctx context.Context, server, token string) (LoginResult, error) {
-	return login(ctx, server, token, false)
+	return loginWithRunCheck(ctx, server, token, false, packaging.ValidateRun)
 }
 
 // ManagedLogin only enrolls an unconfigured user; profile rotation never replaces device identity.
@@ -39,7 +39,7 @@ func ManagedLogin(ctx context.Context) (bool, error) {
 	if err != nil || server == "" {
 		return false, err
 	}
-	_, err = login(ctx, server, grant, true)
+	_, err = loginWithRunCheck(ctx, server, grant, true, packaging.ValidateRun)
 	if errors.Is(err, ErrAlreadyLoggedIn) {
 		return true, nil
 	}
@@ -78,10 +78,6 @@ func managedEnrollmentError(err error) error {
 		return fmt.Errorf("managed enrollment failed: connection timed out")
 	}
 	return fmt.Errorf("managed enrollment did not complete; check server reachability and the Server/Grant policy")
-}
-
-func login(ctx context.Context, server, token string, managed bool) (LoginResult, error) {
-	return loginWithRunCheck(ctx, server, token, managed, packaging.ValidateRun)
 }
 
 func loginWithRunCheck(ctx context.Context, server, token string, managed bool, validateRun func() error) (LoginResult, error) {

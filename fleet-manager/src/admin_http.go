@@ -347,8 +347,6 @@ func partnerRoute(r *http.Request) bool {
 	return false
 }
 
-// scopedAdmin is administrative authority. A reporter credential authenticates but is refused here,
-// so adding a route without thinking about it denies the reporter rather than admitting it.
 // reporterRoute is POST /v1/admin/orgs/{slug}/installs/{id}/health and nothing else.
 func reporterRoute(r *http.Request) bool {
 	if r.Method != http.MethodPost {
@@ -372,6 +370,7 @@ func (s *Server) adminOnly(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// scopedAdmin refuses a reporter, so a route added without thought denies it rather than admitting it.
 func (s *Server) scopedAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return s.scoped(s.adminOnly(next))
 }

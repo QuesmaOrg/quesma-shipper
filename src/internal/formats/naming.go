@@ -139,18 +139,6 @@ func checkSegment(kind, v string) error {
 	return nil
 }
 
-// UsernameFromPath pulls the OS user name out of a home-shaped path: /Users/<name> on macOS,
-// /home/<name> on Linux. It lives here so engine and doctor cannot disagree about it.
-func UsernameFromPath(p string) string {
-	segments := strings.Split(strings.ReplaceAll(p, `\`, "/"), "/")
-	for i, seg := range segments {
-		if (seg == "Users" || seg == "home") && i+1 < len(segments) {
-			return segments[i+1]
-		}
-	}
-	return ""
-}
-
 // InstallRoot is the key prefix an install owns, composed from the same segments MirrorKey and
 // StateKey use so the server-side key scope cannot drift from the keys actually written.
 func InstallRoot(org, installID string) (string, error) {

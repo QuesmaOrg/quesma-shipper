@@ -41,12 +41,7 @@ func TestForceResendIncludesUnchangedRawAndDerivedObjects(t *testing.T) {
 	if rep := runEnrich(t, f, o); rep.Shipped != 0 {
 		t.Fatalf("completed raw/derived pair repeated: %d", rep.Shipped)
 	}
-	for _, key := range f.port.keys() {
-		object, _ := f.port.get(key)
-		if object.Versions != 2 {
-			t.Fatalf("%s has %d versions", key, object.Versions)
-		}
-	}
+	f.port.versions(t, 2)
 }
 
 func TestForceResendParkedFileDoesNotRepeatSuccessfulFiles(t *testing.T) {
@@ -54,9 +49,7 @@ func TestForceResendParkedFileDoesNotRepeatSuccessfulFiles(t *testing.T) {
 	bad := f.writeTranscript("p/bad.jsonl", line1)
 	f.writeTranscript("p/good.jsonl", line1)
 	f.run()
-	if err := os.WriteFile(bad, []byte("SQLite format 3\x00opaque"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, bad, []byte("SQLite format 3\x00opaque"))
 	for attempt := range 2 {
 		f.reopen()
 		rep := f.runWith(func(o *engine.Options) { o.ForceResend = true })
@@ -70,12 +63,7 @@ func TestForceResendParkedFileDoesNotRepeatSuccessfulFiles(t *testing.T) {
 	if rep.Shipped != 1 || rep.Parked != 0 || rep.ResendOutstanding != 0 {
 		t.Fatalf("repaired file: %+v", rep)
 	}
-	for _, key := range f.port.keys() {
-		object, _ := f.port.get(key)
-		if object.Versions != 2 {
-			t.Fatalf("%s has %d versions", key, object.Versions)
-		}
-	}
+	f.port.versions(t, 2)
 }
 
 func TestForceResendResumesAfterDeadline(t *testing.T) {
@@ -107,12 +95,7 @@ func TestForceResendResumesAfterDeadline(t *testing.T) {
 	if rep.Shipped != 3 || rep.ResendOutstanding != 0 {
 		t.Fatalf("retry did not finish the remaining files: %+v", rep)
 	}
-	for _, key := range f.port.keys() {
-		object, _ := f.port.get(key)
-		if object.Versions != 2 {
-			t.Fatalf("%s has %d versions", key, object.Versions)
-		}
-	}
+	f.port.versions(t, 2)
 }
 
 func TestForceResendReportsExcludedAndOversizeHistory(t *testing.T) {
@@ -218,9 +201,7 @@ func TestForceResendBoundsEnrichmentAndResumesDerivedFailures(t *testing.T) {
 			db := cursorFixture(t, f)
 			for i := range 6 {
 				path := filepath.Join(f.home, ".cursor", "projects", "api", "agent-transcripts", fmt.Sprintf("%d.jsonl", i))
-				if err := os.WriteFile(path, []byte(cursorTranscript), 0o600); err != nil {
-					t.Fatal(err)
-				}
+				writeFile(t, path, []byte(cursorTranscript))
 			}
 			o := enrichOpts(t, f, db, true)
 			o.ForceResend, o.Unbounded = true, true
@@ -289,12 +270,7 @@ func TestForceResendSlicesPreserveCursorEnrichment(t *testing.T) {
 	db := cursorFixture(t, f)
 	for i := range 2 {
 		dir := filepath.Join(f.home, ".cursor", "projects", "api", "agent-transcripts", fmt.Sprint(i))
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, enrichConv+".jsonl"), []byte(cursorTranscript), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		writeFile(t, filepath.Join(dir, enrichConv+".jsonl"), []byte(cursorTranscript))
 	}
 	o := enrichOpts(t, f, db, true)
 	if rep := runEnrich(t, f, o); rep.Shipped != 6 {
@@ -309,10 +285,5 @@ func TestForceResendSlicesPreserveCursorEnrichment(t *testing.T) {
 			t.Fatalf("sliced Cursor attempt %d: %+v", attempt, rep)
 		}
 	}
-	for _, key := range f.port.keys() {
-		obj, _ := f.port.get(key)
-		if obj.Versions != 2 {
-			t.Errorf("%s: %d versions", key, obj.Versions)
-		}
-	}
+	f.port.versions(t, 2)
 }

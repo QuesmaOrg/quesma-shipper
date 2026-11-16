@@ -90,10 +90,8 @@ type Input struct {
 	Catalog *sources.Compiled
 	Layers  []LayeredDocument
 
-	// ConfigExpired is set by the caller when the remote layer came from a stale cache; Resolve has no clock.
-	ConfigExpired bool
-	Env           sources.Env
-	StateDir      string
+	Env      sources.Env
+	StateDir string
 }
 
 // RejectionError is a config refusal. A rejected config is never partially applied: collection continues under the last valid one.
@@ -119,13 +117,11 @@ func Resolve(in Input) (*Effective, error) {
 	}
 
 	eff := &Effective{
-		ConfigVersion:  0,
 		OrganizationID: "default",
 		Schedule:       "15m",
 		MaxFilesPerRun: 512,
 		DrainDeadline:  5 * time.Minute,
 		StateDir:       in.StateDir,
-		ConfigExpired:  in.ConfigExpired,
 		Catalog:        in.Catalog,
 		RulePacks:      []string{"gitleaks-core", "quesma-extra", "cloud-keys", "generic-entropy", "pii-core"},
 		// Without the compiled exemption baseline the entropy backstop shreds the join keys that make a trajectory a graph.
@@ -387,12 +383,7 @@ func applySourceOverrides(eff *Effective, overrides map[string][]layeredOverride
 		}
 
 		if len(additions) > 0 {
-			src.Exclude = slices.Clone(src.Exclude)
-			for _, pattern := range additions {
-				if !slices.Contains(src.Exclude, pattern) {
-					src.Exclude = append(src.Exclude, pattern)
-				}
-			}
+			src.Exclude = unionStrings(src.Exclude, additions)
 		}
 
 		// Recomputed from the effective read-affecting fields, so a changed glob resets exactly this source's state.

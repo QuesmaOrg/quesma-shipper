@@ -11,26 +11,29 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 )
 
+// homeWithConfig points HOME and the XDG dirs into home and writes body as its config.yaml.
+func homeWithConfig(t *testing.T, home, body string) {
+	t.Helper()
+	configDir := filepath.Join(home, ".config", "trajectory-shipper")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".state"))
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Pausing must not depend on configuration parsing: a user must be able to resume even when
 // the configuration needs repair.
 func TestPauseWorksUnderABrokenConfig(t *testing.T) {
 	home := t.TempDir()
-	configHome := filepath.Join(home, ".config")
-	stateHome := filepath.Join(home, ".state")
-	stateDir := filepath.Join(stateHome, "trajectory-shipper")
-
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", configHome)
-	t.Setenv("XDG_STATE_HOME", stateHome)
+	stateDir := filepath.Join(home, ".state", "trajectory-shipper")
 
 	// A config file that does not parse.
-	if err := os.MkdirAll(filepath.Join(configHome, "trajectory-shipper"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	broken := filepath.Join(configHome, "trajectory-shipper", "config.yaml")
-	if err := os.WriteFile(broken, []byte("config_version: 1\n bad: indent: here\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	homeWithConfig(t, home, "config_version: 1\n bad: indent: here\n")
 	if _, _, err := app.ResolveEffective(); err == nil {
 		t.Fatal("the fixture config parses; this test proves nothing")
 	}
@@ -64,21 +67,9 @@ func TestPauseWorksUnderABrokenConfig(t *testing.T) {
 // With valid configuration, pause and resume use its state directory rather than the default.
 func TestPauseHonoursAResolvedStateDir(t *testing.T) {
 	home := t.TempDir()
-	configHome := filepath.Join(home, ".config")
 	moved := filepath.Join(home, "elsewhere")
 
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", configHome)
-	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".state"))
-
-	if err := os.MkdirAll(filepath.Join(configHome, "trajectory-shipper"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	body := "config_version: 1\nstate_dir: " + moved + "\n"
-	if err := os.WriteFile(filepath.Join(configHome, "trajectory-shipper", "config.yaml"),
-		[]byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	homeWithConfig(t, home, "config_version: 1\nstate_dir: "+moved+"\n")
 
 	warning, err := app.Pause(time.Now().Add(time.Hour))
 	if err != nil {
@@ -110,21 +101,9 @@ func TestPauseHonoursAResolvedStateDir(t *testing.T) {
 // together or not at all, which is what makes a rebuilt ephemeral host the SAME install.
 func TestOneResolvedStateDirectoryForEveryArtifact(t *testing.T) {
 	home := t.TempDir()
-	configHome := filepath.Join(home, ".config")
 	moved := filepath.Join(home, "moved-state")
 
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", configHome)
-	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".state"))
-
-	if err := os.MkdirAll(filepath.Join(configHome, "trajectory-shipper"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	body := "config_version: 1\nstate_dir: " + moved + "\n"
-	if err := os.WriteFile(filepath.Join(configHome, "trajectory-shipper", "config.yaml"),
-		[]byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	homeWithConfig(t, home, "config_version: 1\nstate_dir: "+moved+"\n")
 
 	eff, paths, err := app.ResolveEffective()
 	if err != nil {

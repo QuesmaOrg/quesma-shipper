@@ -65,18 +65,12 @@ type Options struct {
 	Table       string
 	KeyPrefixes []string
 
-	// MaxRows bounds a read; the cap is reported rather than silently applied.
-	MaxRows int
-
-	// Now is injectable for the coldness check.
-	Now func() time.Time
-
 	// StartAt skips the methods before it, so doctor and the tests can exercise a fallback before the day it is needed. Empty starts at the top.
 	StartAt ReadMethod
 }
 
-// ErrTruncated means MaxRows cut the read short.
-var ErrTruncated = errors.New("sqliteread: row cap reached")
+// maxRows bounds a read; the cap is reported as Result.Truncated rather than silently applied.
+const maxRows = 200_000
 
 // errSkipped reports a method StartAt skipped, so a failure message cannot imply it was tried.
 var errSkipped = errors.New("skipped by StartAt")
@@ -88,12 +82,6 @@ func Read(o Options) (Result, error) {
 	}
 	if o.Table == "" {
 		return Result{}, errors.New("sqliteread: no table declared: an enricher's scope is declared, not discovered")
-	}
-	if o.Now == nil {
-		o.Now = time.Now
-	}
-	if o.MaxRows <= 0 {
-		o.MaxRows = 200_000
 	}
 
 	inPlaceErr, snapshotErr := errSkipped, errSkipped
@@ -127,10 +115,9 @@ func Read(o Options) (Result, error) {
 
 func finish(db *sql.DB, o Options, method ReadMethod) (Result, error) {
 	res, err := query(db, o)
-	if err != nil && !errors.Is(err, ErrTruncated) {
+	if err != nil {
 		return Result{}, err
 	}
-	res.Truncated = errors.Is(err, ErrTruncated)
 	res.Method = method
 	return res, nil
 }
@@ -202,7 +189,7 @@ func readColdCopy(o Options) (result Result, err error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if age := o.Now().Sub(info.ModTime()); age < coldAfter {
+	if age := time.Since(info.ModTime()); age < coldAfter {
 		return Result{}, fmt.Errorf("database was modified %s ago, which is not cold enough for a raw copy "+
 			"(a raw copy of a live database is not consistent)", age.Round(time.Second))
 	}
@@ -303,8 +290,9 @@ func query(db *sql.DB, o Options) (Result, error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		if len(res.Rows) >= o.MaxRows {
-			return res, ErrTruncated
+		if len(res.Rows) >= maxRows {
+			res.Truncated = true
+			return res, nil
 		}
 		var key string
 		var value []byte

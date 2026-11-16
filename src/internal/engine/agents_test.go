@@ -13,7 +13,6 @@ import (
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
-	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 )
 
 func TestAgentSessionPipeline(t *testing.T) {
@@ -34,13 +33,9 @@ func TestAgentSessionPipeline(t *testing.T) {
 			if family == "pi" {
 				path := filepath.Join(root, "test.jsonl")
 				body := `{"type":"session","id":"custom-pi-session","cwd":"/work/test","version":3}` + "\n" + `{"type":"message","id":"1","message":{"role":"user","content":"test@example.com"}}` + "\n"
-				if err := os.WriteFile(path, []byte(body), 0600); err != nil {
-					t.Fatal(err)
-				}
+				writeFile(t, path, []byte(body))
 				update = func() {
-					if err := os.WriteFile(path, []byte(body+`{"type":"message","id":"2","message":{"role":"user","content":"next"}}`+"\n"), 0600); err != nil {
-						t.Fatal(err)
-					}
+					writeFile(t, path, []byte(body+`{"type":"message","id":"2","message":{"role":"user","content":"next"}}`+"\n"))
 				}
 			} else {
 				name := "opencode.db"
@@ -105,18 +100,14 @@ func TestAgentSessionPipeline(t *testing.T) {
 				t.Fatalf("first run: %+v", first)
 			}
 			key := f.port.keys()[0]
-			obj, _ := f.port.get(key)
-			manifest, raw, err := transforms.Open(obj.Body, f.unit.Identity)
-			if err != nil {
-				t.Fatal(err)
-			}
+			manifest, raw := f.open(key)
 			if manifest.SourceID != spec.ID || manifest.Redaction == nil {
 				t.Fatalf("missing source/redaction: %+v", manifest)
 			}
-			if strings.Contains(string(raw), "test@example.com") || !strings.Contains(string(raw), "__REDACTED:email__") {
+			if strings.Contains(raw, "test@example.com") || !strings.Contains(raw, "__REDACTED:email__") {
 				t.Fatalf("payload not scrubbed: %s", raw)
 			}
-			for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+			for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
 				if !json.Valid([]byte(line)) {
 					t.Fatalf("invalid JSON: %s", line)
 				}
@@ -177,24 +168,13 @@ func TestLiveAgentSessionStores(t *testing.T) {
 			}
 			t.Logf("%s: %d sessions shipped", item.family, rep.Shipped)
 			for i, key := range f.port.keys() {
-				obj, _ := f.port.get(key)
-				manifest, raw, err := transforms.Open(obj.Body, f.unit.Identity)
-				if err != nil {
-					t.Fatal(err)
-				}
+				manifest, raw := f.open(key)
 				if out != "" {
 					dir := filepath.Join(out, item.family)
-					if err := os.MkdirAll(dir, 0700); err != nil {
-						t.Fatal(err)
-					}
 					name := filepath.Join(dir, fmt.Sprintf("%03d", i))
-					if err := os.WriteFile(name+".jsonl", raw, 0600); err != nil {
-						t.Fatal(err)
-					}
+					writeFile(t, name+".jsonl", []byte(raw))
 					b, _ := json.Marshal(manifest)
-					if err := os.WriteFile(name+".manifest.json", b, 0600); err != nil {
-						t.Fatal(err)
-					}
+					writeFile(t, name+".manifest.json", b)
 				}
 			}
 		})

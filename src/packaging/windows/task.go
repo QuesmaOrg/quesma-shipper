@@ -152,14 +152,16 @@ func parseTask(raw []byte) (taskDocument, error) {
 // taskXMLForSchtasks emits the Unicode file format expected by schtasks /Create /XML.
 func taskXMLForSchtasks(raw string) []byte {
 	raw = strings.Replace(raw, `encoding="UTF-8"`, `encoding="UTF-16"`, 1)
-	units := utf16.Encode([]rune(raw))
-	encoded := make([]byte, 2+2*len(units))
-	encoded[0], encoded[1] = 0xff, 0xfe
+	return append([]byte{0xff, 0xfe}, utf16LE(raw)...)
+}
+
+func utf16LE(s string) []byte {
+	units := utf16.Encode([]rune(s))
+	raw := make([]byte, 2*len(units))
 	for i, unit := range units {
-		encoded[2+i*2] = byte(unit)
-		encoded[3+i*2] = byte(unit >> 8)
+		raw[2*i], raw[2*i+1] = byte(unit), byte(unit>>8)
 	}
-	return encoded
+	return raw
 }
 
 // taskXMLUTF8 normalizes what schtasks actually writes when stdout is redirected: UTF-16 with a

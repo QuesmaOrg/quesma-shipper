@@ -49,10 +49,7 @@ func Clear(stateDir string) error {
 // Read fails closed: a flag that exists but cannot be parsed reads as paused. A flag past its
 // end reads as not paused; the file stays until the next Set or Clear.
 func Read(stateDir string) State {
-	return ReadAt(stateDir, time.Now())
-}
-
-func ReadAt(stateDir string, now time.Time) State {
+	now := time.Now()
 	raw, _, err := ReadWhole(filepath.Join(stateDir, File), 64<<10)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

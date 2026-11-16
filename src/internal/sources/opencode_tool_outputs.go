@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strings"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
+	"github.com/QuesmaOrg/quesma-shipper/internal/sources/sqliteread"
 )
 
 type opencodeToolOutputs struct{}
@@ -55,7 +55,7 @@ func (opencodeToolOutputs) Discover(req Request) (Discovery, error) {
 		r.Source = transcripts
 		// Ignored sessions still veto shared spills; none of their transcript bytes are emitted here.
 		r.Ignore = nil
-		sessions, err := (opencodeSessions{}).Discover(r)
+		sessions, err := discoverSessions(r, sqliteread.OpenCodeSessions{})
 		if err != nil {
 			return d, err
 		}
@@ -166,12 +166,7 @@ func (opencodeToolOutputs) Discover(req Request) (Discovery, error) {
 		}
 		d.Candidates = append(d.Candidates, c)
 	}
-	slices.SortFunc(d.Candidates, func(a, b Candidate) int {
-		if c := a.MTime.Compare(b.MTime); c != 0 {
-			return c
-		}
-		return strings.Compare(a.RelPath, b.RelPath)
-	})
+	slices.SortFunc(d.Candidates, oldestFirst)
 	switch {
 	case len(d.Candidates) > 0:
 		d.Health, d.Reason = Collected, ""

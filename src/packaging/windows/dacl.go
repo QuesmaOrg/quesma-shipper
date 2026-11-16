@@ -26,11 +26,6 @@ const writeMask = fileWriteData | fileAppendData | fileWriteEA | fileDeleteChild
 	fileWriteAttributes | standardDelete | standardWriteDAC | standardWriteOwner |
 	genericAll | genericWrite
 
-const (
-	accessAllowedACEType = 0x00 // ACE_HEADER.AceType
-	inheritOnlyACE       = 0x08 // ACE_HEADER.AceFlags: describes children, not this object
-)
-
 // Trustees whose write access is not a finding: the platform's own identities, and CREATOR OWNER,
 // which is not a fixed principal but resolves to whoever created the object.
 const (

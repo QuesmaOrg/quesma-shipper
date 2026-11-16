@@ -199,9 +199,7 @@ func (m *Manager) ImportMetadata(ctx context.Context, rows []metadataImportRow, 
 			return nil
 		})
 	}
-	if err := group.Wait(); err != nil {
-		return nil, err
-	}
+	_ = group.Wait()
 	return results, nil
 }
 

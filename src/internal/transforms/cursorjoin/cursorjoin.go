@@ -175,17 +175,6 @@ func (e *Enricher) joinOne(u transforms.RawUnit, conv string, ix *indexed, read 
 
 	// A conversation with no headers, no inline array and no bubble rows is a draft, not a
 	// mismatch. Most composerData rows on a real machine are drafts.
-	inline := 0
-	headers := 0
-	if c != nil {
-		inline = len(c.Conversation)
-		headers = len(c.FullConversationHeadersOnly)
-	}
-	if max(headers, inline, len(bubbles)) == 0 {
-		d.Status = transforms.StatusSkipped
-		return d, ""
-	}
-
 	ordered := orderBubbles(c, bubbles, ix.order[conv])
 	if len(ordered) == 0 {
 		d.Status = transforms.StatusSkipped

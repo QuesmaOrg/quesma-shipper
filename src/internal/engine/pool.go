@@ -210,7 +210,7 @@ func (p *sourcePass) run(ctx context.Context) error {
 	p.assemble()
 
 	// The aggregate for the unchanged entries fold elided, written even if a refusal ended the pass.
-	if p.unchangedElided > 0 && p.o.Log != nil {
+	if p.unchangedElided > 0 {
 		noun := "files"
 		if p.unchangedElided == 1 {
 			noun = "file"
@@ -225,13 +225,11 @@ func (p *sourcePass) run(ctx context.Context) error {
 
 	// Stop the whole run on a refusal: it has nowhere to put anything more it collects.
 	if p.fatal {
-		if p.o.Log != nil {
-			_ = p.o.Log.Append(auditlog.Entry{
-				Decision: auditlog.DecisionFailed,
-				SourceID: p.src.ID,
-				Reason:   "run abandoned: " + p.fatalReason,
-			})
-		}
+		_ = p.o.Log.Append(auditlog.Entry{
+			Decision: auditlog.DecisionFailed,
+			SourceID: p.src.ID,
+			Reason:   "run abandoned: " + p.fatalReason,
+		})
 		return fmt.Errorf("%w: collection stopped after %d of %d files; "+
 			"this install may have been revoked or re-enrolled elsewhere. "+
 			"`quesma-shipper doctor` reports what the control plane says",
@@ -240,13 +238,11 @@ func (p *sourcePass) run(ctx context.Context) error {
 	// Not a kill: nothing new was committed, and the next tick tries again.
 	if p.uploadHalted {
 		p.out.Reason = "uploads stopped: " + p.haltReason
-		if p.o.Log != nil {
-			_ = p.o.Log.Append(auditlog.Entry{
-				Decision: auditlog.DecisionFailed,
-				SourceID: p.src.ID,
-				Reason:   p.out.Reason,
-			})
-		}
+		_ = p.o.Log.Append(auditlog.Entry{
+			Decision: auditlog.DecisionFailed,
+			SourceID: p.src.ID,
+			Reason:   p.out.Reason,
+		})
 		why := ErrUploadUnavailable
 		if p.offline {
 			why = ErrOffline
@@ -316,12 +312,11 @@ func (p *sourcePass) charge(i int) int64 {
 func (p *sourcePass) fold(r fileResult) {
 	// Only the first refusal or unavailable verdict is counted, or rep.Failed becomes a function
 	// of GOMAXPROCS. The duplicates' intents still apply: one may have shipped before the refusal.
-	if (r.outcome.Fatal && p.fatal) || (r.unavailable && p.uploadHalted) {
-		p.applyIntent(&r)
+	duplicate := (r.outcome.Fatal && p.fatal) || (r.unavailable && p.uploadHalted)
+	p.applyIntent(&r)
+	if duplicate {
 		return
 	}
-
-	p.applyIntent(&r)
 	if r.loadWarning != "" {
 		p.out.Unreadable++
 		p.out.UnreadableReason = r.loadWarning

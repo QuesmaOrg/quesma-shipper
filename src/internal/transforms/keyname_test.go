@@ -1,6 +1,9 @@
 package transforms
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // The key-name rule is the only backstop for a credential with no recognisable shape: letters
 // and digits, in a field whose name says what it is.
@@ -64,15 +67,8 @@ func TestKeyNamesSplitOnSeparatorsAndCamelHumps(t *testing.T) {
 		{"", nil},
 	} {
 		got := splitKeyWords(tc.in)
-		if len(got) != len(tc.want) {
+		if !slices.Equal(got, tc.want) {
 			t.Errorf("%q -> %v, want %v", tc.in, got, tc.want)
-			continue
-		}
-		for i := range got {
-			if got[i] != tc.want[i] {
-				t.Errorf("%q -> %v, want %v", tc.in, got, tc.want)
-				break
-			}
 		}
 	}
 }

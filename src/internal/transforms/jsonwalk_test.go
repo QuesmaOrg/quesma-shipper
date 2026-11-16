@@ -13,7 +13,6 @@ import (
 func sourcePatchScrubber(t *testing.T) *Scrubber {
 	t.Helper()
 	cfg := DefaultConfig()
-	cfg.Exemptions = CompiledExemptions()
 	cfg.Username = "jane"
 	s, err := New(cfg)
 	if err != nil {

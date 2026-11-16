@@ -78,29 +78,16 @@ func TestMixedInstallRemovesOnlyPersonalFiles(t *testing.T) {
 	app := installedApp(home)
 	exe := writeTestApp(t, app, bundleIdentifier, executableName)
 	personalPlist := launchdPath(home)
-	if err := os.MkdirAll(filepath.Dir(personalPlist), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	personalSpec := testSpec()
 	personalSpec.Executable = exe
-	if err := os.WriteFile(personalPlist, []byte(renderPlist(personalSpec)), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	previousSystemPath := systemAgentPath
-	systemAgentPath = filepath.Join(t.TempDir(), "system-agent.plist")
-	t.Cleanup(func() { systemAgentPath = previousSystemPath })
-	systemPlist := []byte(renderSystemPlist())
-	if err := os.WriteFile(systemAgentPath, systemPlist, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	previousLaunchctl := launchctl
-	launchctl = filepath.Join(t.TempDir(), "launchctl")
-	t.Cleanup(func() { launchctl = previousLaunchctl })
+	writeUninstallFixture(t, personalPlist, renderPlist(personalSpec), 0o600)
+	stubSystemAgentPath(t)
+	systemPlist := renderSystemPlist()
+	writeUninstallFixture(t, systemAgentPath, systemPlist, 0o600)
+	fakeLaunchctl(t)
 	bootoutMarker := filepath.Join(t.TempDir(), "bootout")
 	fake := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = print ]; then printf 'path = %%s\\n' %q; else touch %q; fi\n", systemAgentPath, bootoutMarker)
-	if err := os.WriteFile(launchctl, []byte(fake), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeUninstallFixture(t, launchctl, fake, 0o700)
 	if err := uninstallPersonalService(exe, home); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +99,7 @@ func TestMixedInstallRemovesOnlyPersonalFiles(t *testing.T) {
 			t.Errorf("personal cleanup left %s or stopped the system agent: %v", path, err)
 		}
 	}
-	if got, err := os.ReadFile(systemAgentPath); err != nil || string(got) != string(systemPlist) {
+	if got, err := os.ReadFile(systemAgentPath); err != nil || string(got) != systemPlist {
 		t.Errorf("system LaunchAgent changed: %v", err)
 	}
 }
@@ -121,20 +108,11 @@ func TestPersonalUninstallStopsOnlyItsLoadedAgent(t *testing.T) {
 	home := t.TempDir()
 	exe := filepath.Join(home, "quesma-shipper")
 	path := launchdPath(home)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(renderPlist(Spec{Executable: exe})), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	previousLaunchctl := launchctl
-	launchctl = filepath.Join(t.TempDir(), "launchctl")
-	t.Cleanup(func() { launchctl = previousLaunchctl })
+	writeUninstallFixture(t, path, renderPlist(Spec{Executable: exe}), 0o600)
+	fakeLaunchctl(t)
 	marker := filepath.Join(t.TempDir(), "bootout")
 	fake := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = print ]; then printf 'path = %%s\\n' %q; else touch %q; fi\n", path, marker)
-	if err := os.WriteFile(launchctl, []byte(fake), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeUninstallFixture(t, launchctl, fake, 0o700)
 	if err := uninstallPersonalService(exe, home); err != nil {
 		t.Fatal(err)
 	}

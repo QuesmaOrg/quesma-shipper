@@ -30,7 +30,7 @@ func EnrollInteractive(ctx context.Context, stateDir, endpoint, token string, re
 	}
 	if strings.TrimRight(savedEndpoint, "/") != strings.TrimRight(endpoint, "/") {
 		// A corrected server cannot have consumed the request sent to the previous one.
-		if err := ClearInteractiveEnrollmentAttempt(stateDir); err != nil {
+		if err := platform.RemoveFile(path); err != nil {
 			return nil, "", nil, err
 		}
 		savedEndpoint, body, priv, err = enrollmentAttempt(path, endpoint, req)
@@ -66,8 +66,4 @@ func EnrollInteractive(ctx context.Context, stateDir, endpoint, token string, re
 			return nil, "", nil, err
 		}
 	}
-}
-
-func ClearInteractiveEnrollmentAttempt(stateDir string) error {
-	return platform.RemoveFile(filepath.Join(stateDir, interactiveAttemptFile))
 }

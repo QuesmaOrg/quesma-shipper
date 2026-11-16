@@ -8,14 +8,14 @@ import (
 
 func UpdateTarget(release common.Release) string {
 	if _, ok := currentAppBundle(); ok {
-		return appUpdateTarget(release)
+		return release.Targets[macPackageTarget]
 	}
 	return common.BinaryTarget(release)
 }
 
 func ApplyTarget(raw []byte, version string) error {
 	if SystemManaged() {
-		return errSystemManaged
+		return common.ErrSystemManaged
 	}
 	app, ok := currentAppBundle()
 	if !ok {

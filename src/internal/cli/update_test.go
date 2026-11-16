@@ -14,33 +14,31 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
 )
 
+func assertRestartText(t *testing.T, got string, want ...string) {
+	t.Helper()
+	for _, w := range want {
+		if !strings.Contains(got, w) {
+			t.Errorf("%q does not contain %q", got, w)
+		}
+	}
+	if cmd := packaging.RestartCommand(); cmd != "" && !strings.Contains(got, cmd) {
+		t.Errorf("%q does not offer %q", got, cmd)
+	}
+}
+
 func TestServiceStateTimeoutSaysNoRestartWasRequested(t *testing.T) {
 	err := serviceStateTimeoutError(context.DeadlineExceeded)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("service-state timeout = %v, want deadline exceeded", err)
 	}
-	for _, want := range []string{"5s", "update is installed", "restart was not requested"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("service-state timeout %q does not contain %q", err, want)
-		}
-	}
-	if cmd := packaging.RestartCommand(); cmd != "" && !strings.Contains(err.Error(), cmd) {
-		t.Errorf("service-state timeout %q does not offer %q", err, cmd)
-	}
+	assertRestartText(t, err.Error(), "5s", "update is installed", "restart was not requested")
 }
 
 // A restart that outlives the wait is still a successful update: the text has to say so, name
 // the window it waited, and hand over the manual restart.
 func TestRestartTimeoutKeepsTheSuccessfulUpdateClear(t *testing.T) {
 	got := restartTimeoutWarning(5*time.Minute + 30*time.Second)
-	for _, want := range []string{"5m30s", "update is installed", "new version"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("restart timeout warning %q does not contain %q", got, want)
-		}
-	}
-	if cmd := packaging.RestartCommand(); cmd != "" && !strings.Contains(got, cmd) {
-		t.Errorf("restart timeout warning %q does not offer %q", got, cmd)
-	}
+	assertRestartText(t, got, "5m30s", "update is installed", "new version")
 }
 
 // Loaded is a detection result, and detection is what goes wrong. Gating the restart on it meant
@@ -70,14 +68,7 @@ func TestRestartWantedIgnoresWhetherTheServiceReportsItselfLoaded(t *testing.T) 
 // running the old binary, and hand over the manual restart.
 func TestConfigUnreadableWarningKeepsTheStaleDaemonVisible(t *testing.T) {
 	got := configUnreadableWarning(errors.New("state_dir is not absolute"))
-	for _, want := range []string{"state_dir is not absolute", "not restarted", "previous version"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("config-unreadable warning %q does not contain %q", got, want)
-		}
-	}
-	if cmd := packaging.RestartCommand(); cmd != "" && !strings.Contains(got, cmd) {
-		t.Errorf("config-unreadable warning %q does not offer %q", got, cmd)
-	}
+	assertRestartText(t, got, "state_dir is not absolute", "not restarted", "previous version")
 }
 
 // Every branch of the boot-time gate is a promise: dev builds never self-update,

@@ -81,15 +81,7 @@ func TestReenrollmentRetainsOldStateAndRetriesExactRequest(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(controlplane.EnrollResponse{Organization: "new-org"})
 	})
-	oldUnit, err := identity.Mint(paths.StateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	oldEnrollment, _ := controlplane.LoadEnrollment(paths.StateDir)
-	oldEnrollment.InstallID = oldUnit.InstallID.String()
-	if err := oldEnrollment.Save(paths.StateDir); err != nil {
-		t.Fatal(err)
-	}
+	oldUnit, oldEnrollment := enrolledIdentity(t, paths.StateDir)
 	store, err := engine.Open(paths.StateDir, oldEnrollment.InstallID)
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +106,7 @@ func TestReenrollmentRetainsOldStateAndRetriesExactRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	login := func() (LoginResult, error) {
-		return loginWithRunCheck(context.Background(), oldEnrollment.Endpoint, "new-token", false, func() error { return nil })
+		return testLogin(oldEnrollment.Endpoint, "new-token", false)
 	}
 	if _, err := login(); err == nil {
 		t.Fatal("expected response loss")
@@ -181,15 +173,7 @@ func TestCorruptRevocationCanRecoverWithoutResumingOldEnrollment(t *testing.T) {
 				}
 				_ = json.NewEncoder(w).Encode(controlplane.EnrollResponse{Organization: "acme"})
 			})
-			unit, err := identity.Mint(paths.StateDir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			enr, _ := controlplane.LoadEnrollment(paths.StateDir)
-			enr.InstallID = unit.InstallID.String()
-			if err := enr.Save(paths.StateDir); err != nil {
-				t.Fatal(err)
-			}
+			_, enr := enrolledIdentity(t, paths.StateDir)
 			path := filepath.Join(paths.StateDir, controlplane.RevocationFile)
 			if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
 				t.Fatal(err)
@@ -203,7 +187,7 @@ func TestCorruptRevocationCanRecoverWithoutResumingOldEnrollment(t *testing.T) {
 				t.Fatalf("doctor omitted recovery: %+v", row)
 			}
 			login := func(managed bool) error {
-				_, err := loginWithRunCheck(context.Background(), enr.Endpoint, "new-token", managed, func() error { return nil })
+				_, err := testLogin(enr.Endpoint, "new-token", managed)
 				return err
 			}
 			if err := login(true); !errors.Is(err, controlplane.ErrInvalidRevocation) || calls != 0 {
@@ -280,7 +264,7 @@ func TestReenrollmentDoesNotBypassRevocationFileSafety(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			_, err = loginWithRunCheck(context.Background(), enr.Endpoint, "new-token", false, func() error { return nil })
+			_, err = testLogin(enr.Endpoint, "new-token", false)
 			if err == nil || errors.Is(err, controlplane.ErrInvalidRevocation) || !strings.Contains(err.Error(), path) {
 				t.Fatalf("unsafe file not refused with its path: %v", err)
 			}
@@ -342,22 +326,14 @@ func TestInterruptedReenrollmentKeepsOriginalArchive(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(controlplane.EnrollResponse{Organization: "acme"})
 	})
-	old, err := identity.Mint(paths.StateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	enr, _ := controlplane.LoadEnrollment(paths.StateDir)
-	enr.InstallID = old.InstallID.String()
-	if err := enr.Save(paths.StateDir); err != nil {
-		t.Fatal(err)
-	}
+	old, enr := enrolledIdentity(t, paths.StateDir)
 	original, _ := os.ReadFile(filepath.Join(paths.StateDir, identity.FileName))
 	revoked := &controlplane.Revocation{InstallID: enr.InstallID, Organization: enr.Organization, Endpoint: enr.Endpoint, DetectedAt: time.Now(), Notified: true}
 	if err := revoked.Save(paths.StateDir); err != nil {
 		t.Fatal(err)
 	}
 	login := func() (LoginResult, error) {
-		return loginWithRunCheck(context.Background(), enr.Endpoint, "token", false, func() error { return nil })
+		return testLogin(enr.Endpoint, "token", false)
 	}
 	if _, err := login(); err == nil {
 		t.Fatal("cache removal should fail")
@@ -411,21 +387,13 @@ func TestReenrollmentConflictMintsFreshPendingIdentity(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(controlplane.EnrollResponse{Organization: "new-org"})
 		}
 	})
-	old, err := identity.Mint(paths.StateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	enr, _ := controlplane.LoadEnrollment(paths.StateDir)
-	enr.InstallID = old.InstallID.String()
-	if err := enr.Save(paths.StateDir); err != nil {
-		t.Fatal(err)
-	}
+	old, enr := enrolledIdentity(t, paths.StateDir)
 	revoked := &controlplane.Revocation{InstallID: enr.InstallID, Organization: enr.Organization, Endpoint: enr.Endpoint, DetectedAt: time.Now(), Notified: true}
 	if err := revoked.Save(paths.StateDir); err != nil {
 		t.Fatal(err)
 	}
 	login := func(token string) (LoginResult, error) {
-		return loginWithRunCheck(context.Background(), enr.Endpoint, token, false, func() error { return nil })
+		return testLogin(enr.Endpoint, token, false)
 	}
 	if _, err := login("old-token"); err == nil {
 		t.Fatal("expected lost response")

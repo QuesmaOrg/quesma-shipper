@@ -4,14 +4,12 @@ package packaging
 
 import "errors"
 
-func PrepareUserInstall(string) error {
-	return errors.New("this setup helper is only available on Windows")
-}
+var errWindowsOnly = errors.New("this setup helper is only available on Windows")
 
-func PrepareSystemInstall(string, string) error {
-	return errors.New("this setup helper is only available on Windows")
-}
+func PrepareUserInstall(string) error           { return errWindowsOnly }
+func PrepareSystemInstall(string, string) error { return errWindowsOnly }
+func ResumeSystemInstall(string, string) error  { return errWindowsOnly }
 
-func ResumeSystemInstall(string, string) error {
-	return errors.New("this setup helper is only available on Windows")
-}
+func SameProgram(a, b string) bool { return a == b }
+func ProgramRemovalDeferred() bool { return false }
+func RemovalUnverified(error) bool { return false }

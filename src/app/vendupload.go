@@ -59,17 +59,7 @@ func newControlPlaneClient(stateDir string) (*controlplane.Client, error) {
 		return nil, errors.New("uploading needs an enrolled control plane to authorize every object; " +
 			"`quesma-shipper login` first (`quesma-shipper preview` works without it)")
 	}
-	deviceKey, err := enrollment.PrivateKey()
-	if err != nil {
-		return nil, err
-	}
-	return controlplane.New(controlplane.Options{
-		Endpoint:     enrollment.Endpoint,
-		StateDir:     stateDir,
-		InstallID:    enrollment.InstallID,
-		Organization: enrollment.Organization,
-		DeviceKey:    deviceKey,
-	})
+	return enrollment.Client(stateDir)
 }
 
 // newUploadPort assembles the write path. The enrollment record is mandatory, the allowlist is not:
@@ -157,9 +147,6 @@ func (p *vendPort) AuthorizeAndUpload(ctx context.Context, batch []engine.Prepar
 // send validates one ticket against the object this machine actually prepared, then spends it.
 // Both checks come before any byte leaves: origin, then exact key, then the closed header set.
 func (p *vendPort) send(ctx context.Context, obj engine.PreparedObject, issued controlplane.Ticket) error {
-	if issued.AlreadyPresent {
-		return nil
-	}
 	ticket := toUploadTicket(issued)
 	if err := upload.ValidateTicket(p.targets, toPreparedUpload(obj), ticket); err != nil {
 		return err

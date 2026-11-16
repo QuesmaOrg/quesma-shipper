@@ -184,12 +184,11 @@ func maybeSelfUpdate(ctx context.Context, build app.Build, autoupdate bool, errO
 		return
 	}
 	fmt.Fprintf(errOut, "self-update: %s -> %s, restarting\n", res.From, res.To)
-	if stateErr != nil {
-		fmt.Fprintf(errOut, "self-update: cannot persist the restart guard (%v); the new version runs from the next supervised restart\n", stateErr)
-		app.RecordUpdateFailure(fmt.Sprintf("updated to %s but could not persist the restart guard: %v", res.To, stateErr))
-		return
+	err = stateErr
+	if err == nil {
+		err = packaging.WriteSelfUpdateHop(stateDir, res.To)
 	}
-	if err := packaging.WriteSelfUpdateHop(stateDir, res.To); err != nil {
+	if err != nil {
 		fmt.Fprintf(errOut, "self-update: cannot persist the restart guard (%v); the new version runs from the next supervised restart\n", err)
 		app.RecordUpdateFailure(fmt.Sprintf("updated to %s but could not persist the restart guard: %v", res.To, err))
 		return
