@@ -40,7 +40,12 @@ func resolve(ctx context.Context, offline bool) (*config.Effective, config.Paths
 	if err != nil {
 		return nil, paths, controlplane.Remote{}, err
 	}
+	return resolveLayers(ctx, env, paths, layers, compiled, offline)
+}
 
+// resolveLayers is resolve with the machine taken as arguments, so a hosted install resolves without the process environment.
+func resolveLayers(ctx context.Context, env sources.Env, paths config.Paths, layers []config.LayeredDocument,
+	compiled *sources.Compiled, offline bool) (*config.Effective, config.Paths, controlplane.Remote, error) {
 	// Known BEFORE the remote layer is fetched, because the enrollment record and the config cache
 	// live in it; only local layers may set state_dir, so the remote layer cannot move it after.
 	paths.StateDir = stateDirFrom(layers, paths.StateDir)
@@ -72,7 +77,7 @@ func resolve(ctx context.Context, offline bool) (*config.Effective, config.Paths
 	if errors.As(remote.Err, &rejection) && rejection.Layer != config.LayerRemote {
 		return nil, paths, remote, rejection
 	}
-	eff := remote.Effective
+	eff, err := remote.Effective, error(nil)
 	if eff == nil {
 		eff, err = config.Resolve(config.Input{
 			Catalog: compiled, Layers: layers, Env: env, StateDir: paths.StateDir,

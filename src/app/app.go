@@ -135,6 +135,14 @@ func NewFrom(
 	paths config.Paths,
 	remote controlplane.Remote,
 ) (*Runtime, error) {
+	env, err := sources.OSEnv()
+	if err != nil {
+		return nil, err
+	}
+	return newFrom(build, eff, paths, remote, env)
+}
+
+func newFrom(build Build, eff *config.Effective, paths config.Paths, remote controlplane.Remote, env sources.Env) (*Runtime, error) {
 	var revoked *controlplane.Revocation
 	if errors.As(remote.Err, &revoked) {
 		notifyRevocation(paths.StateDir)
@@ -174,10 +182,6 @@ func NewFrom(
 		}
 	}
 
-	env, err := sources.OSEnv()
-	if err != nil {
-		return nil, err
-	}
 	hostname, _ := os.Hostname()
 	return &Runtime{eff: eff, unit: unit, upload: up, uploadErr: upErr, telemetry: telemetry, client: client,
 		hostname: hostname, log: log, build: build,
