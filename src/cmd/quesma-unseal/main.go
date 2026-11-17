@@ -30,6 +30,7 @@ import (
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/legal"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 const usage = `usage: quesma-unseal open -i IDENTITY_FILE [-i IDENTITY_FILE]... ENC_DIR PLAIN_DIR
@@ -500,7 +501,7 @@ func (u *unsealer) reseal(o object) (bool, error) {
 		return false, err
 	}
 	m.Encryption.RecipientKeyIDs = ids
-	sealed, _, err := transforms.Seal(m, transforms.Unscrubbed(payload.Bytes(), "reseal of a shipped payload"), recipients)
+	sealed, _, err := transforms.Seal(m, scrub.Unscrubbed(payload.Bytes(), "reseal of a shipped payload"), recipients)
 	if err != nil {
 		return false, err
 	}

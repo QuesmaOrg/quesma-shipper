@@ -21,6 +21,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 // backoffCap bounds retry backoff. There is no max-retry: giving up is silent data loss.
@@ -97,7 +98,7 @@ type Options struct {
 	user string
 
 	// The run's compiled scrubber, shared by the raw and derived paths.
-	scrub    *transforms.Scrubber
+	scrub    *scrub.Scrubber
 	scrubErr error
 }
 
@@ -202,7 +203,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 	// Redaction compiles once per run, not once per file or object, and only after the pause
 	// gate: a paused tick must stay cheap. The compiled scrubber is immutable, so every pass's
 	// goroutines share it; a compile failure still parks each candidate.
-	o.scrub, o.scrubErr = transforms.New(o.scrubConfig())
+	o.scrub, o.scrubErr = scrub.New(o.scrubConfig())
 
 	// Large-file spools live under the state directory, not $TMPDIR, which is RAM where /tmp is a
 	// tmpfs. This run holds the state lock and has opened no spool yet, so whatever is there was
@@ -497,8 +498,8 @@ func (t *stageTracker) refresh() {
 	t.step(label, t.source)
 }
 
-func (o Options) scrubConfig() transforms.Config {
-	cfg := transforms.DefaultConfig()
+func (o Options) scrubConfig() scrub.Config {
+	cfg := scrub.DefaultConfig()
 	cfg.RulePacks = o.Plan.RulePacks
 	// Additive: configuration can only lengthen the compiled default list, never replace it.
 	cfg.SecretKeyNames = append(cfg.SecretKeyNames, o.Plan.SecretKeyNames...)

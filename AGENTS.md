@@ -8,6 +8,10 @@ The control plane in `fleet-manager/` is its own component. For a change there, 
 [shipper-protocol/AGENTS.md](shipper-protocol/AGENTS.md) and run `make -C shipper-protocol check`,
 and expect a change there to run both other gates, since they build against it.
 
+The scrubber in `scrub/` is a module of its own, with no dependency, so that components outside the
+shipper can import it. The root `make check` gates it with the shipper; its exported names are an
+API other repositories build against, so a rename or removal there is a compatibility change.
+
 ## Workflow
 
 - Open a draft PR when you are done. Only humans mark a branch ready to review. Fixes go to the same branch, but bigger follow-ups should use a stacked PR. Ask if unsure.

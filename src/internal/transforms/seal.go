@@ -19,6 +19,8 @@ import (
 
 	"filippo.io/age"
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 // Entry names inside the container, fixed rather than derived from the source file: the
@@ -51,28 +53,11 @@ const maxZstdWindow = 64 << 20
 // caller should double its range rather than treat the object as corrupt.
 var ErrPrefixTooShort = errors.New("seal: object prefix too short to contain the manifest")
 
-// Scrubbed proves the payload passed through the scrubber, or a named Unscrubbed decision.
-type Scrubbed struct {
-	b      []byte
-	reader io.Reader
-	size   int64
-	hash   string
-	// via is "scrubber" or the Unscrubbed reason; empty marks the zero value, which Seal refuses.
-	via string
-}
-
-// Unscrubbed declares raw as shippable without scrubbing; reason says why, e.g. a
-// shipper-authored heartbeat or a source configured scrub: false.
-func Unscrubbed(raw []byte, reason string) Scrubbed { return Scrubbed{b: raw, via: reason} }
-
-// Bytes returns an in-memory payload, nil for ScrubTo streams; the slice must not be modified.
-func (s Scrubbed) Bytes() []byte { return s.b }
-
 // Seal builds one mirror object and returns the manifest as sealed: ShippedHash, PayloadSize
 // and, unless the caller set it, Encryption are filled here, so what a caller needs for object
 // metadata is the returned copy and never its own.
-func Seal(m Manifest, scrubbed Scrubbed, recipients []age.Recipient) ([]byte, Manifest, error) {
-	if scrubbed.reader != nil {
+func Seal(m Manifest, scrubbed scrub.Scrubbed, recipients []age.Recipient) ([]byte, Manifest, error) {
+	if stream, _, _ := scrubbed.Stream(); stream != nil {
 		return nil, Manifest{}, errors.New("seal: stream requires SealTo")
 	}
 	m, err := sealManifest(m, scrubbed, recipients)
@@ -83,24 +68,24 @@ func Seal(m Manifest, scrubbed Scrubbed, recipients []age.Recipient) ([]byte, Ma
 	if err != nil {
 		return nil, Manifest{}, err
 	}
-	obj, err := writeContainer(manifestJSON, scrubbed.b, m.PayloadMTime, recipients)
+	obj, err := writeContainer(manifestJSON, scrubbed.Bytes(), m.PayloadMTime, recipients)
 	if err != nil {
 		return nil, Manifest{}, err
 	}
 	return obj, m, nil
 }
 
-func sealManifest(m Manifest, scrubbed Scrubbed, recipients []age.Recipient) (Manifest, error) {
+func sealManifest(m Manifest, scrubbed scrub.Scrubbed, recipients []age.Recipient) (Manifest, error) {
 	if len(recipients) == 0 {
 		return Manifest{}, errors.New("seal: no age recipients: encryption is not optional")
 	}
-	if scrubbed.via == "" {
+	if scrubbed.Via() == "" {
 		return Manifest{}, errors.New("seal: payload neither scrubbed nor declared Unscrubbed with a reason")
 	}
-	m.ShippedHash = Hash(scrubbed.b)
-	m.PayloadSize = int64(len(scrubbed.b))
-	if scrubbed.reader != nil {
-		m.ShippedHash, m.PayloadSize = scrubbed.hash, scrubbed.size
+	m.ShippedHash = Hash(scrubbed.Bytes())
+	m.PayloadSize = int64(len(scrubbed.Bytes()))
+	if stream, size, hash := scrubbed.Stream(); stream != nil {
+		m.ShippedHash, m.PayloadSize = hash, size
 	}
 	if m.SealedAt == "" {
 		return Manifest{}, errors.New("seal: sealed_at must be set by the caller")
@@ -132,7 +117,7 @@ func writeContainer(
 }
 
 // SealTo preserves the object format while allowing ciphertext to live outside the heap.
-func SealTo(w io.Writer, m Manifest, scrubbed Scrubbed, recipients []age.Recipient) (Manifest, error) {
+func SealTo(w io.Writer, m Manifest, scrubbed scrub.Scrubbed, recipients []age.Recipient) (Manifest, error) {
 	m, err := sealManifest(m, scrubbed, recipients)
 	if err != nil {
 		return Manifest{}, err
@@ -141,9 +126,9 @@ func SealTo(w io.Writer, m Manifest, scrubbed Scrubbed, recipients []age.Recipie
 	if err != nil {
 		return Manifest{}, err
 	}
-	r := scrubbed.reader
+	r, _, _ := scrubbed.Stream()
 	if r == nil {
-		r = bytes.NewReader(scrubbed.b)
+		r = bytes.NewReader(scrubbed.Bytes())
 	}
 	if err := writeContainerTo(w, manifestJSON, r, m.PayloadSize, m.PayloadMTime, recipients); err != nil {
 		return Manifest{}, err

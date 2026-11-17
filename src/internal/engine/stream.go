@@ -14,6 +14,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 // Large JSONL keeps the same snapshot object and commit semantics, with disk replacing whole-file buffers.
@@ -48,7 +49,7 @@ func (o Options) prepareStream(ctx context.Context, job fileJob, src sources.Res
 		return fail(fmt.Errorf("create scrub spool: %w", err))
 	}
 	defer plain.Close()
-	scrubbed, sourceHash, err := o.scrub.ScrubTo(ctx, plain, stream, transforms.Hint{Family: src.Family, JSONL: true}, src.MaxFileBytes)
+	scrubbed, sourceHash, err := o.scrub.ScrubTo(ctx, plain, stream, scrub.Hint{Family: src.Family, JSONL: true}, src.MaxFileBytes)
 	if err != nil {
 		return fail(fmt.Errorf("stream scrub failed closed: %w", err))
 	}

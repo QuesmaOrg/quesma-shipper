@@ -1,0 +1,62 @@
+package scrub_test
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
+)
+
+// The prefilter is a speed change that must never be a redaction change: a configured name it
+// cannot represent, and a config value that would make the candidate floor meaningless.
+
+// A name carrying a multi-byte rune has no sound literal for the byte-folding automaton to gate
+// on. The answer is to stop prefiltering the key-name regex, not to stop redacting.
+func TestNonASCIIKeyNameStillRedacts(t *testing.T) {
+	cfg := scrub.DefaultConfig()
+	cfg.SecretKeyNames = append(scrub.DefaultSecretKeyNames(), "CLÉ_SECRÈTE")
+	s, err := scrub.New(cfg)
+	if err != nil {
+		t.Fatalf("a non-ASCII key name must compile, got %v", err)
+	}
+
+	line := []byte(`{"type":"user","text":"CLÉ_SECRÈTE=hunter2"}` + "\n")
+	res, err := s.Scrub(line, scrub.Hint{Family: "claude-code", JSONL: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(res.Out.Bytes()), scrub.Sentinel("key-name")) {
+		t.Errorf("the secret survived: %s", res.Out.Bytes())
+	}
+	if strings.Contains(string(res.Out.Bytes()), "hunter2") {
+		t.Errorf("the secret survived verbatim: %s", res.Out.Bytes())
+	}
+
+	// Dropping the whole gate is the fallback; dropping a rule is not.
+	res, err = s.Scrub([]byte(`{"type":"user","text":"GITHUB_TOKEN=hunter2"}`+"\n"),
+		scrub.Hint{Family: "claude-code", JSONL: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(res.Out.Bytes()), "hunter2") {
+		t.Errorf("an ASCII name stopped firing next to a non-ASCII one: %s", res.Out.Bytes())
+	}
+}
+
+// A negative floor is refused: `{-3,}` compiles as literal text ("never fires") while the
+// candidate scanner reads it as "every run fires", and neither is what someone typing it means.
+func TestNegativeEntropyMinLengthFailsTheBuild(t *testing.T) {
+	cfg := scrub.DefaultConfig()
+	cfg.Entropy.MinLength = -3
+	if _, err := scrub.New(cfg); err == nil {
+		t.Fatal("a negative entropy min_length must not compile")
+	} else if !strings.Contains(err.Error(), "-3") {
+		t.Errorf("the error must name the offending value, got %v", err)
+	}
+
+	// Zero stays legal: it clamps to a one-byte floor, which no positive threshold can tell apart.
+	cfg.Entropy.MinLength = 0
+	if _, err := scrub.New(cfg); err != nil {
+		t.Errorf("min_length 0 must still compile, got %v", err)
+	}
+}

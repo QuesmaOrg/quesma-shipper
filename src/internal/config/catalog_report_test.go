@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
-	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/packs"
+	"github.com/QuesmaOrg/quesma-shipper/scrub/packs"
 	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 )
 

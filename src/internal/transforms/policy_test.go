@@ -2,18 +2,20 @@ package transforms_test
 
 import (
 	"encoding/json"
+	"os"
 	"slices"
 	"testing"
 
 	"filippo.io/age"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 func TestSealPolicyTracksEffectiveScrubbingAndRecipientSets(t *testing.T) {
 	alice, _ := age.GenerateX25519Identity()
 	bob, _ := age.GenerateX25519Identity()
 	readers := []age.Recipient{alice.Recipient(), bob.Recipient()}
-	digest := func(cfg transforms.Config, recipients []age.Recipient) string {
+	digest := func(cfg scrub.Config, recipients []age.Recipient) string {
 		t.Helper()
 		hash, err := transforms.SealPolicyDigest(cfg, recipients)
 		if err != nil {
@@ -21,26 +23,26 @@ func TestSealPolicyTracksEffectiveScrubbingAndRecipientSets(t *testing.T) {
 		}
 		return hash
 	}
-	cfg := transforms.DefaultConfig()
+	cfg := scrub.DefaultConfig()
 	want := digest(cfg, readers)
 	cfg.RulePacks = append(cfg.RulePacks, cfg.RulePacks[0])
 	slices.Reverse(cfg.RulePacks)
 	if got := digest(cfg, []age.Recipient{bob.Recipient(), alice.Recipient(), alice.Recipient()}); got != want {
 		t.Fatal("ordering or duplicates changed the seal policy")
 	}
-	if digest(transforms.DefaultConfig(), readers[:1]) == want {
+	if digest(scrub.DefaultConfig(), readers[:1]) == want {
 		t.Fatal("removing a reader left the seal policy unchanged")
 	}
-	for name, change := range map[string]func(*transforms.Config){
-		"packs":        func(c *transforms.Config) { c.RulePacks = c.RulePacks[1:] },
-		"secret names": func(c *transforms.Config) { c.SecretKeyNames = append(c.SecretKeyNames, "HOUSE_SIG") },
-		"exemptions":   func(c *transforms.Config) { c.Exemptions = map[string][]string{"*": {"house"}} },
-		"drops":        func(c *transforms.Config) { c.Drops = map[string][]string{"*": {"house"}} },
-		"entropy":      func(c *transforms.Config) { c.Entropy.MinLength++ },
-		"username":     func(c *transforms.Config) { c.Username = "alice" },
+	for name, change := range map[string]func(*scrub.Config){
+		"packs":        func(c *scrub.Config) { c.RulePacks = c.RulePacks[1:] },
+		"secret names": func(c *scrub.Config) { c.SecretKeyNames = append(c.SecretKeyNames, "HOUSE_SIG") },
+		"exemptions":   func(c *scrub.Config) { c.Exemptions = map[string][]string{"*": {"house"}} },
+		"drops":        func(c *scrub.Config) { c.Drops = map[string][]string{"*": {"house"}} },
+		"entropy":      func(c *scrub.Config) { c.Entropy.MinLength++ },
+		"username":     func(c *scrub.Config) { c.Username = "alice" },
 	} {
 		t.Run(name, func(t *testing.T) {
-			cfg := transforms.DefaultConfig()
+			cfg := scrub.DefaultConfig()
 			change(&cfg)
 			if digest(cfg, readers) == want {
 				t.Fatal("changed scrub policy kept the same digest")
@@ -51,16 +53,33 @@ func TestSealPolicyTracksEffectiveScrubbingAndRecipientSets(t *testing.T) {
 
 // A scrub-output change under the same policy would incorrectly reuse forced progress.
 func TestSealPolicyPinsScrubConformanceOutputs(t *testing.T) {
-	vectors := loadScrubVectors(t)
-	cfg := transforms.DefaultConfig()
+	// The scrub module's own conformance vectors, read as its test reads them.
+	raw, err := os.ReadFile("../../conformance/v1/scrub/redaction.json")
+	if err != nil {
+		t.Fatalf("read vectors: %v", err)
+	}
+	var vectors struct {
+		Username   string              `json:"username"`
+		Exemptions map[string][]string `json:"structural_exempt"`
+		Vectors    []struct {
+			Name   string `json:"name"`
+			Family string `json:"family"`
+			JSONL  bool   `json:"jsonl"`
+			Before string `json:"before"`
+		} `json:"vectors"`
+	}
+	if err := json.Unmarshal(raw, &vectors); err != nil {
+		t.Fatal(err)
+	}
+	cfg := scrub.DefaultConfig()
 	cfg.Username, cfg.Exemptions = vectors.Username, vectors.Exemptions
-	scrubber, err := transforms.New(cfg)
+	scrubber, err := scrub.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	outputs := map[string]string{}
 	for _, vector := range vectors.Vectors {
-		res, err := scrubber.Scrub([]byte(vector.Before), transforms.Hint{Family: vector.Family, JSONL: vector.JSONL})
+		res, err := scrubber.Scrub([]byte(vector.Before), scrub.Hint{Family: vector.Family, JSONL: vector.JSONL})
 		if err != nil {
 			t.Fatal(err)
 		}

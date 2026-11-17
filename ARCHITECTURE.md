@@ -31,8 +31,7 @@ quesma-shipper/
                           Owns the upload port, the fingerprint state and the heartbeat.
       sources/            WHAT to read and HOW: catalog resolution, gather, deny, pathexp
         sqliteread/       live agent databases; the sqlite dependency stops here
-      transforms/         what changes between read and write: scrub → enrich → seal
-        packs/            the compiled redaction rule packs (data, importable by config)
+      transforms/         what changes between read and write: enrich → seal, around the scrub
         cursorjoin/       the Cursor enricher
       upload/             the presigned PUT: origin allowlist, exact-key validation, net/http
                           and nothing else. No cloud SDK exists in this module.
@@ -45,6 +44,9 @@ quesma-shipper/
       formats/            the shared vocabulary: local-contract schemas, the model types,
                           the object-key naming grammar (+ its conformance vectors)
         catalogdata/      the embedded source-catalog YAML
+  scrub/                  the scrubber: a separate Go module with no dependency, so a component
+                          outside the shipper can scrub with the same rules
+    packs/                the compiled redaction rule packs (data, importable by config)
   fleet-manager/          the control plane: a separate Go module, one package under src/,
                           with its own Makefile, ARCHITECTURE.md and release line
 ```
@@ -58,14 +60,14 @@ would compile, so the table is the reference for what direction is intended.
 
 | Package | May import |
 | --- | --- |
-| `src/app` | `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/identity`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/sources`, `src/internal/transforms`, `src/internal/transforms/cursorjoin`, `src/internal/upload`, `src/packaging` |
+| `src/app` | `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/identity`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/sources`, `src/internal/transforms`, `scrub`, `src/internal/transforms/cursorjoin`, `src/internal/upload`, `src/packaging` |
 | `src/cmd/quesma-shipper` | `src/app`, `src/internal/cli`, `src/internal/platform` |
-| `src/cmd/quesma-unseal` | `src/internal/legal`, `src/internal/transforms` |
+| `src/cmd/quesma-unseal` | `src/internal/legal`, `src/internal/transforms`, `scrub` |
 | `src/e2e` | — |
 | `src/internal/cli` | `src/app`, `src/internal/config`, `src/internal/controlplane`, `src/internal/engine`, `src/internal/formats`, `src/internal/identity`, `src/internal/legal`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/platform/crashjournal`, `src/internal/sources`, `src/packaging` |
-| `src/internal/config` | `src/internal/platform`, `src/internal/sources`, `src/internal/transforms`, `src/internal/transforms/packs` |
+| `src/internal/config` | `src/internal/platform`, `src/internal/sources`, `src/internal/transforms`, `scrub`, `scrub/packs` |
 | `src/internal/controlplane` | `src/internal/config`, `src/internal/formats`, `src/internal/platform` |
-| `src/internal/engine` | `src/internal/formats`, `src/internal/identity`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/sources`, `src/internal/transforms` |
+| `src/internal/engine` | `src/internal/formats`, `src/internal/identity`, `src/internal/platform`, `src/internal/platform/auditlog`, `src/internal/sources`, `src/internal/transforms`, `scrub` |
 | `src/internal/formats` | — |
 | `src/internal/legal` | — |
 | `src/internal/formats/catalogdata` | — |
@@ -75,9 +77,10 @@ would compile, so the table is the reference for what direction is intended.
 | `src/internal/platform/crashjournal` | `src/internal/platform` |
 | `src/internal/sources` | `src/internal/formats`, `src/internal/formats/catalogdata`, `src/internal/platform`, `src/internal/sources/sqliteread` |
 | `src/internal/sources/sqliteread` | — |
-| `src/internal/transforms` | `src/internal/formats`, `src/internal/transforms/packs` |
+| `src/internal/transforms` | `src/internal/formats`, `scrub`, `scrub/packs` |
 | `src/internal/transforms/cursorjoin` | `src/internal/sources/sqliteread`, `src/internal/transforms` |
-| `src/internal/transforms/packs` | — |
+| `scrub` | `scrub/packs` |
+| `scrub/packs` | — |
 | `src/internal/upload` | — |
 | `src/packaging` | `src/packaging/common`, and the current OS package (`src/packaging/macos`, `src/packaging/linux`, or `src/packaging/windows`) |
 | `src/packaging/common` | `src/internal/platform` |
