@@ -28,9 +28,14 @@ var canaryUnscrubbed = map[string]string{
 	"codex-account":  "scrub: false, account and usage snapshots fetched from the provider, not user files",
 	"cursor-account": "scrub: false, account and usage snapshots fetched from the provider, not user files",
 	"cursor-usage":   "scrub: false, usage events fetched from the provider, not user files",
+	"otel-identity":  "scrub: false, the email and account ids otel-gateway lifts out of telemetry, which the PII rules would erase",
 }
 
 const canaryUUID = "0199cccc-dddd-7eee-8fff-000011112222"
+
+// otelSpool is where the fixtures put the gateway's spool, under the fixture home; resolveCatalog
+// names it in QUESMA_OTEL_SPOOL, the one variable the otel sources' roots read.
+const otelSpool = "otel-spool"
 
 // canaryLines carries every codexSecrets value in the context its detector keys on.
 func canaryLines() []string {
@@ -82,6 +87,19 @@ func readFile(t *testing.T, path string) []byte {
 
 // canaryFixtures writes each source's native shapes under home.
 var canaryFixtures = map[string]func(t *testing.T, home string){
+	// What otel-gateway spools: one log record per line, the prompt and the tool arguments in attrs.
+	"otel-claude-code": func(t *testing.T, home string) {
+		writeFile(t, filepath.Join(home, otelSpool, "claude-code", "20261116T153010.000000000Z.jsonl"), []byte(canaryJSONL(func(l string) string {
+			return `{"v":1,"agent":"claude-code","time_unix_nano":"1794837866657000000","attrs":{"event.name":"user_prompt","session.id":"` +
+				canaryUUID + `","prompt":` + jsonString(l) + `}}`
+		})))
+	},
+	"otel-codex": func(t *testing.T, home string) {
+		writeFile(t, filepath.Join(home, otelSpool, "codex", "20261116T153010.000000000Z.jsonl"), []byte(canaryJSONL(func(l string) string {
+			return `{"v":1,"agent":"codex","time_unix_nano":"1794837866657000000","attrs":{"event.name":"codex.tool_result","conversation.id":"` +
+				canaryUUID + `","tool_name":"exec_command","arguments":` + jsonString(`{"cmd":`+jsonString("export "+l)+`}`) + `,"output":` + jsonString(l) + `}}`
+		})))
+	},
 	"claude-code-transcripts": func(t *testing.T, home string) {
 		dir := filepath.Join(home, ".claude", "projects", "-work-api")
 		cwd := jsonString(filepath.Join(home, "work", "api"))

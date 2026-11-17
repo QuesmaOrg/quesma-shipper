@@ -106,7 +106,12 @@ func (f *fixture) resolveCatalog(keep func(sources.Resolved) bool) sources.Env {
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	env := sources.Env{Home: f.home, Lookup: func(string) (string, bool) { return "", false }}
+	env := sources.Env{Home: f.home, Lookup: func(name string) (string, bool) {
+		if name == "QUESMA_OTEL_SPOOL" {
+			return filepath.Join(f.home, otelSpool), true
+		}
+		return "", false
+	}}
 	eff, err := config.Resolve(config.Input{Catalog: catalog, Env: env, StateDir: f.stateDir})
 	if err != nil {
 		f.t.Fatal(err)
