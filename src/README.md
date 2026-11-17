@@ -156,6 +156,16 @@ The cap bounds the entire decoded snapshot, including every record and line endi
 does not remove the existing 1 GiB encrypted-object limit or the container's 8 GiB payload boundary.
 Scrub, read, disk-space, and upload failures commit no successful fingerprint.
 
+Each run's encrypted archive heartbeat (`state/heartbeat.json.age`) reports discovery-level
+oversize files per source in `oversize_files`: relative path with username masking, observed
+size, and effective limit. The list is sent even when nothing ships; an empty list clears a
+previous oversize report. Older heartbeats omit it, and a source not scanned has `null`.
+Unreadable paths remain an aggregate count; this is not a full inventory of read or upload
+failures. Heartbeats are best effort and replaced in place, so consumers must check their `at`
+timestamp and failure/stall state before treating the report as current (a stall can repeat the
+last completed scan). See the
+[wire contract](../shipper-protocol/PROTOCOL.md#archive-heartbeat-files-excluded-by-the-size-cap).
+
 Records up to 64 MiB stream in batches. A larger record is processed separately: completed records
 are flushed, then a process-wide slot admits only one reader to grow its exceptional record buffer,
 scrub it, and write it to the scrubbed spool. Waiting readers honor cancellation; ordinary records

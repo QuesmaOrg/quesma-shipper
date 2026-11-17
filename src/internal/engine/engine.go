@@ -327,6 +327,7 @@ func Run(ctx context.Context, st *Store, o Options) (rep Report, err error) {
 		}
 
 		// Files the size cap kept out, audited one line each: "will never read it" is a decision.
+		out.OversizeFiles = append([]formats.OversizeFile{}, disc.Oversize...)
 		out.Oversize = len(disc.Oversize)
 		for _, big := range disc.Oversize {
 			if big.Size > out.OversizeLargest {

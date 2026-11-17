@@ -1,6 +1,5 @@
-// Heartbeat construction. Discovery health is NOT upload tracking: per source, no cursor offsets,
-// no object keys, no statement about what was uploaded. It answers "is this source still
-// findable", and it needs nothing configured, so it carries while any backend is unreachable.
+// Heartbeat construction: discovery health and files excluded by the size cap.
+// Paths describe skipped files only; transcript bytes and upload progress stay out.
 package engine
 
 import (
@@ -59,8 +58,11 @@ type SourceHealth struct {
 	Parked    int `json:"parked"`
 	Failed    int `json:"failed"`
 
-	// Oversize counts files the size cap excluded: never collected, then reaped by the agent.
+	// Oversize counts files discovery excluded by the size cap.
 	Oversize int `json:"oversize,omitempty"`
+
+	// Nil means discovery was not completed; an empty list means none exceeded the cap.
+	OversizeFiles []formats.OversizeFile `json:"oversize_files"`
 
 	// Unreadable counts paths discovery could not look at, which this install will never ship.
 	Unreadable int `json:"unreadable,omitempty"`
@@ -89,6 +91,7 @@ type Input struct {
 	ConfigVersion  int
 	ConfigExpired  bool
 	RunID          string
+	Username       string
 	Report         formats.Report
 	Now            time.Time
 
@@ -117,7 +120,7 @@ func Build(in Input) Heartbeat {
 			SourceID:     s.SourceID,
 			Family:       s.Family,
 			State:        string(s.Health),
-			Reason:       s.Reason,
+			Reason:       formats.ApplyUserPlaceholder(s.Reason, in.Username),
 			Sniff:        string(s.Sniff),
 			AgentVersion: s.AgentVersion,
 			FilesSeen:    len(s.Files),
@@ -128,6 +131,13 @@ func Build(in Input) Heartbeat {
 			EnrichSkipped:  s.EnrichSkipped,
 			EnrichMismatch: s.EnrichMismatch,
 			EnrichErrors:   s.EnrichErrors,
+		}
+		if s.OversizeFiles != nil {
+			sh.OversizeFiles = make([]formats.OversizeFile, len(s.OversizeFiles))
+			for i, file := range s.OversizeFiles {
+				file.RelPath = formats.ApplyUserPlaceholder(file.RelPath, in.Username)
+				sh.OversizeFiles[i] = file
+			}
 		}
 		if s.EnricherID != "" {
 			sh.Enricher = fmt.Sprintf("%s@%d", s.EnricherID, s.EnricherVersion)

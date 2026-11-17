@@ -1,0 +1,29 @@
+{
+  "heartbeat_version": 1,
+  "at": "2026-11-17T10:00:00Z",
+  "organization_id": "acme",
+  "install_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "client_version": "0.1.0-test",
+  "config_version": 1,
+  "sources": [
+    {
+      "source_id": "claude-code-transcripts",
+      "family": "claude-code",
+      "state": "collected",
+      "files_seen": 1,
+      "shipped": 1,
+      "unchanged": 0,
+      "parked": 0,
+      "failed": 0,
+      "oversize": 1,
+      "oversize_files": [
+        {
+          "relative_path": "projects/-Users-__USER__-demo/session.jsonl",
+          "size_bytes": 600000000,
+          "max_file_bytes": 536870912
+        }
+      ],
+      "last_collected_at": "2026-11-17T10:00:00Z"
+    }
+  ]
+}

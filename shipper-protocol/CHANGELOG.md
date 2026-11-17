@@ -37,6 +37,13 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
 
 ### Added
 
+- The sealed archive heartbeat adds per-source `oversize_files`: relative path, observed size
+  and configured limit for every file discovery excluded by size. Paths use the manifest's
+  username placeholder. An empty array means none; null or absent means no detail is available.
+  This is additive inside the existing encrypted object; HTTP envelopes and existing fixtures
+  are unchanged and no Fleet Manager upgrade is required. New schema and synthetic fixtures
+  pin the reporting contract.
+
 - `POST /v3/uploads/authorize` accepts an explicit `force_resend: true` and issues PUT tickets
   without consulting stored hashes. Its signature binds the v3 endpoint. Existing v1/v2 shapes,
   signatures and behavior are unchanged; normal clients keep using v2. Upgrade Fleet Manager
