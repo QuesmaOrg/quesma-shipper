@@ -8,6 +8,11 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
 
 ### Changed
 
+- State that the "no writer lease" safety argument holds for the bucket's noncurrent-version
+  retention, seven days under the Fleet Manager templates: a concurrent writer's overwrite can be
+  recovered from the earlier version within that window only. No wire, schema or fixture bytes
+  change.
+
 - The shipper resends an upload authorization or a PUT once, after about one second, when no
   complete HTTP response arrived (DNS, connect, TLS handshake, reset, timeout, a 2xx body cut
   short). A second silence stops the run's uploads as offline. HTTP statuses are still never
