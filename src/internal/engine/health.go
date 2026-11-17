@@ -120,7 +120,7 @@ func Build(in Input) Heartbeat {
 			SourceID:     s.SourceID,
 			Family:       s.Family,
 			State:        string(s.Health),
-			Reason:       s.Reason,
+			Reason:       formats.ApplyUserPlaceholder(s.Reason, in.Username),
 			Sniff:        string(s.Sniff),
 			AgentVersion: s.AgentVersion,
 			FilesSeen:    len(s.Files),

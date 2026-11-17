@@ -453,7 +453,9 @@ the cap or disappears no longer appears.
 
 The field is additive and optional for readers: an absent field identifies an older writer;
 `null` means this report has no completed discovery for that source (for example, a disabled
-source). Neither means a complete empty scan. Older readers ignore the field. Existing field
+source). Neither means an empty scan. An empty array means no oversize files were found in
+the paths discovery could inspect; when `unreadable > 0`, it says nothing about the paths that
+could not be inspected. Older readers ignore the field. Existing field
 meanings and `heartbeat_version` stay unchanged. A `doctor` upload probe includes the same
 oversize details from its discovery.
 

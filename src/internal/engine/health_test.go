@@ -107,3 +107,29 @@ func TestHeartbeatRecordsPerSourceCounts(t *testing.T) {
 	}
 	t.Error("source not found in heartbeat")
 }
+
+func TestHeartbeatMasksUsernameInDiscoveryReasons(t *testing.T) {
+	for _, tc := range []struct{ name, reason, want string }{
+		{"windows", `root C:\Users\jane\.claude exists but no file matched [todos/**]`, `root C:\Users\__USER__\.claude exists but no file matched [todos/**]`},
+		{"macos", "root /Users/jane/.claude exists but no file matched [todos/**]", "root /Users/__USER__/.claude exists but no file matched [todos/**]"},
+		{"linux", "open /home/jane/.claude/projects: permission denied", "open /home/__USER__/.claude/projects: permission denied"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rep := formats.Report{Sources: []formats.SourceOutcome{{SourceID: "claude-code-transcripts", Reason: tc.reason}}}
+			hb := engine.Build(engine.Input{Username: "jane", Report: rep})
+			if got := hb.Sources[0].Reason; got != tc.want {
+				t.Fatalf("reason = %q, want %q", got, tc.want)
+			}
+			body, err := hb.Encode()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(body), "jane") {
+				t.Fatalf("heartbeat leaked username: %s", body)
+			}
+			if rep.Sources[0].Reason != tc.reason {
+				t.Fatal("heartbeat changed the local diagnostic")
+			}
+		})
+	}
+}
