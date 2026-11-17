@@ -599,14 +599,15 @@ func doctorReport(probes []sourceProbe) formats.Report {
 			continue
 		}
 		rep.Sources = append(rep.Sources, formats.SourceOutcome{
-			SourceID:     pr.src.ID,
-			Family:       pr.src.Family,
-			Health:       pr.d.Health,
-			Sniff:        pr.d.Sniff,
-			AgentVersion: pr.d.AgentVersion,
-			Reason:       pr.d.Reason,
-			Oversize:     len(pr.d.Oversize),
-			Unreadable:   pr.d.Unreadable,
+			SourceID:      pr.src.ID,
+			Family:        pr.src.Family,
+			Health:        pr.d.Health,
+			Sniff:         pr.d.Sniff,
+			AgentVersion:  pr.d.AgentVersion,
+			Reason:        pr.d.Reason,
+			Oversize:      len(pr.d.Oversize),
+			OversizeFiles: append([]formats.OversizeFile{}, pr.d.Oversize...),
+			Unreadable:    pr.d.Unreadable,
 		})
 	}
 	return rep

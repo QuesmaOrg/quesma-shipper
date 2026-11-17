@@ -355,6 +355,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 		ConfigVersion:  r.eff.ConfigVersion,
 		ConfigExpired:  r.eff.ConfigExpired,
 		RunID:          r.runID,
+		Username:       engine.UsernameFromStateDir(r.eff.StateDir),
 		Report:         rep,
 		Now:            time.Now().UTC(),
 		// The crash comes from this process reading the journal; the failures come from the
@@ -367,7 +368,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 	}
 	hash := transforms.Hash(body)
 
-	// Mirrored in the clear (counts and versions, never payload bytes) so `quesma-shipper doctor` needs
+	// Mirrored in the clear (discovery metadata, never payload bytes) so `quesma-shipper doctor` needs
 	// no network call. Best-effort: a reporting nicety must never fail a flush.
 	if mirror {
 		_ = platform.WriteAtomic(filepath.Join(r.eff.StateDir, engine.Name), body, 0o600)

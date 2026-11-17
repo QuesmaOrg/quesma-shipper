@@ -102,6 +102,15 @@ Two edges deserve prose because they look like mistakes and are the design:
   alternative is a second implementation of the same document. The catalog report the config request
   carries is config's too: only the resolver knows which sources, packs and features a document may name.
 
+## Discovery reporting
+
+The engine carries every discovery-level oversize file into the run report. The archive
+heartbeat adds each source's relative paths, observed sizes and effective limits, applying the
+same username placeholder as manifests. These details go through the existing sealed heartbeat
+upload; no plaintext paths are added to control-plane telemetry. The local heartbeat mirror is
+private (0600) and now also contains this discovery metadata. The list describes the current
+scan only, not upload progress; unreadable paths retain their aggregate count.
+
 ## Large JSONL records
 
 For eligible file-backed JSONL above 8 MiB decoded, `engine` owns scrubbed and encrypted temporary

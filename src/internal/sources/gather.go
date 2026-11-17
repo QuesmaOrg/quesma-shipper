@@ -585,11 +585,7 @@ func walkGlobs(src Resolved, deny *List, ignore *RepoFilter) ([]Candidate, []Ove
 }
 
 // Oversize is one file the size cap kept out of a run.
-type Oversize struct {
-	RelPath string
-	Size    int64
-	Limit   int64
-}
+type Oversize = formats.OversizeFile
 
 // matchesAny expects patterns already normalised by normalizeGlobs.
 func matchesAny(rel string, patterns []string) bool {

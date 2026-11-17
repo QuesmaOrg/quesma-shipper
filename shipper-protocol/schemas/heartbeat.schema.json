@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/QuesmaOrg/shipper-protocol/schemas/heartbeat.schema.json",
+  "title": "Sealed archive heartbeat v1 discovery report",
+  "type": "object",
+  "required": [
+    "heartbeat_version",
+    "at",
+    "organization_id",
+    "install_id",
+    "client_version",
+    "config_version",
+    "sources"
+  ],
+  "properties": {
+    "heartbeat_version": {
+      "const": 1
+    },
+    "at": {
+      "type": "string"
+    },
+    "organization_id": {
+      "type": "string"
+    },
+    "install_id": {
+      "type": "string"
+    },
+    "client_version": {
+      "type": "string"
+    },
+    "config_version": {
+      "type": "integer"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "source_id",
+          "state"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "oversize": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "oversize_files": {
+            "description": "Absent (older writer) or null means unknown; [] means discovery found no oversize files. Includes every file excluded at discovery, after policy exclusions.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object",
+              "required": [
+                "relative_path",
+                "size_bytes",
+                "max_file_bytes"
+              ],
+              "properties": {
+                "relative_path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "not": {
+                    "pattern": "^/|^[A-Za-z]:|(^|/)\\.{1,2}(/|$)"
+                  }
+                },
+                "size_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_file_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    }
+  }
+}

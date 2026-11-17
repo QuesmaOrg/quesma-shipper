@@ -30,6 +30,7 @@ import (
 // wireSchemas is the complete set, versioned subdirectories included. A schema added to
 // the shipper-protocol module without a row here (or vice versa) fails TestWireSchemasComplete.
 var wireSchemas = []string{
+	"heartbeat.schema.json",
 	"enroll-request.schema.json",
 	"enroll-response.schema.json",
 	"config-request.schema.json",

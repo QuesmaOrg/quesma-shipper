@@ -427,6 +427,45 @@ addressing spelling. The shipper never follows redirects. HTTP 200 is the only s
 status in protocol v2. The heartbeat uses the same writer, endpoint, validation, uploader, and
 timeout policy as mirror objects.
 
+## Archive heartbeat: files excluded by the size cap
+
+The existing `state/heartbeat.json.age` object contains a sealed JSON heartbeat with
+`heartbeat_version: 1`. Its discovery-report shape is pinned by
+`schemas/heartbeat.schema.json` and `fixtures/v1/heartbeat/`. This is archive data, not a new
+HTTP message: the upload authorization envelope, object key and encryption are unchanged, and
+Fleet Manager never receives the plaintext paths.
+
+Each completed source discovery sets `sources[].oversize_files` to an array, including an empty
+array when no files exceeded the cap. Each entry has:
+
+| Field | Meaning |
+| --- | --- |
+| `relative_path` | Path relative to the configured source root, with forward-slash separators and the same username placeholder as sealed manifest paths. |
+| `size_bytes` | File size observed by discovery, before reading or decoding. |
+| `max_file_bytes` | Effective source limit that excluded this file; strictly less than `size_bytes`. |
+
+The existing `oversize` count equals the array length (zero counts may be omitted). No list
+truncation or sampling applies. Policy exclusions, denied paths and ignored repositories do not
+appear. This does not inspect file contents, lift the cap, or mark the file as successfully
+uploaded. It reports every discovery-level oversize file on every run, even when no files ship
+or the upload budget is exhausted. A later scan replaces the list; a file that shrinks below
+the cap or disappears no longer appears.
+
+The field is additive and optional for readers: an absent field identifies an older writer;
+`null` means this report has no completed discovery for that source (for example, a disabled
+source). Neither means a complete empty scan. Older readers ignore the field. Existing field
+meanings and `heartbeat_version` stay unchanged. A `doctor` upload probe includes the same
+oversize details from its discovery.
+
+This is a discovery report, not a full inventory or an upload ledger. Unreadable paths retain
+only their existing aggregate count. Read-time failures (including a file growing or decoding
+past its cap after discovery), failed uploads and files not attempted within the budget are not
+listed. The heartbeat remains best-effort current state, overwritten in place each run; delivery
+failure can leave an older heartbeat in the archive. The `at` field dates heartbeat creation,
+not a guaranteed new scan: stall heartbeats can repeat the last completed run report. Readers
+must consider the timestamp and failure/stall state, and must not interpret absence of a fresh
+report as proof that a session ended.
+
 ## V3 forced upload authorization
 
 `POST /v3/uploads/authorize` is an explicit replacement request, used by a local one-shot

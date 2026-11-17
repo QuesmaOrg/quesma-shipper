@@ -85,6 +85,13 @@ type FileOutcome struct {
 // A status carrier, not part of the data path: nil means silent.
 type Progress func(sourceID string, done, total int, f FileOutcome)
 
+// OversizeFile describes a file discovery excluded without reading its contents.
+type OversizeFile struct {
+	RelPath string `json:"relative_path"`
+	Size    int64  `json:"size_bytes"`
+	Limit   int64  `json:"max_file_bytes"`
+}
+
 // SourceOutcome is one source's contribution to a run.
 type SourceOutcome struct {
 	SourceID     string
@@ -102,7 +109,8 @@ type SourceOutcome struct {
 	Emitted bool
 
 	// Oversize counts files the size cap kept out; they are never read and never shipped.
-	Oversize int
+	Oversize      int
+	OversizeFiles []OversizeFile
 
 	// The worst offender: a count alone cannot say whether the cap met one pathological file.
 	OversizeLargest int64

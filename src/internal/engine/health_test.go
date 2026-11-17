@@ -36,8 +36,8 @@ func report() formats.Report {
 	}
 }
 
-// The heartbeat carries no transcript bytes: it answers "is this source still findable", never
-// "what did you send".
+// Ordinary file outcomes contribute counts, never their paths or transcript bytes.
+// Only discovery-level oversize entries carry per-file metadata.
 func TestHeartbeatCarriesNoContentOrUploadState(t *testing.T) {
 	hb := engine.Build(engine.Input{
 		OrganizationID: "default", InstallID: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
@@ -49,7 +49,7 @@ func TestHeartbeatCarriesNoContentOrUploadState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// No object keys, cursor offsets or paths, which would make it upload tracking. Matched against
+	// No uploaded object keys, cursor offsets or file paths. Matched against
 	// field NAMES: "cursor" alone also matches the legitimate source id "cursor-transcripts".
 	for _, forbidden := range []string{
 		"abc.age", `"object_key"`, `"cursor_before"`, `"cursor_after"`, `"offset"`,

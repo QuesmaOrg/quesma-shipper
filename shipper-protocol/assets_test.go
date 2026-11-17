@@ -173,6 +173,7 @@ func TestSchemaFixtures(t *testing.T) {
 		requestSchema  string
 		responseSchema string
 	}{
+		{"v1 archive heartbeat", "fixtures/v1/heartbeat/*.json", "schemas/heartbeat.schema.json", "schemas/heartbeat.schema.json"},
 		{"v1 enroll", "fixtures/v1/enroll/*.json", "schemas/enroll-request.schema.json", "schemas/enroll-response.schema.json"},
 		{"v1 config", "fixtures/v1/config/*.json", "schemas/config-request.schema.json", "schemas/config-response.schema.json"},
 		{"v2 upload authorization", "fixtures/v2/uploads-authorize/*.json", "schemas/v2/uploads-authorize-request.schema.json", "schemas/v2/uploads-authorize-response.schema.json"},
