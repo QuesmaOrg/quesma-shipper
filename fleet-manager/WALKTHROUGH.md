@@ -207,7 +207,9 @@ telemetry, and upload authorization remain available while it is repaired.
 Deploy the shipper fallback release first, then fleet-manager, then the dashboard.
 Once configs have been saved in typed form, rolling back to an older fleet-manager
 binary requires restoring the corresponding versioned `config.json` objects first:
-older strict record decoders do not recognize the new `collection` field. Any
+older strict record decoders do not recognize the new `collection` field. Superseded
+versions expire after seven days, so copy each organization's `control/config.json`
+before the upgrade. Any
 write stores that field, including one that only changes recipients, so the same
 applies during a rolling deployment: old replicas still running answer that
 organization's config requests with an error, and a shipper whose request reaches

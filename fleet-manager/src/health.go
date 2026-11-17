@@ -15,7 +15,7 @@ import (
 )
 
 // maxFaults bounds one report. The shipper's own log holds twenty, but every write leaves a
-// permanent noncurrent version in a versioned bucket, and the newest few are what a table shows.
+// noncurrent version in a versioned bucket, and the newest few are what a table shows.
 const maxFaults = 5
 
 // maxFaultMessage is longer than the other client facts on purpose: a message's cause is at the end

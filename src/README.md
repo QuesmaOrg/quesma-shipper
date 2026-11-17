@@ -238,7 +238,8 @@ rerunning the flag resumes the same seal policy and skips unchanged files alread
 derived outputs. Keep local state to preserve that progress. If the background service holds the
 state lock, retry later or stop the service for the one-shot run and start it afterward.
 
-Only the current bucket version is replaced: removing a reader leaves old versions readable, and
+Only the current bucket version is replaced: removing a reader leaves old versions readable until
+the bucket's lifecycle rule expires them (seven days under the Fleet Manager templates), and
 re-scrubbing removes nothing already collected in old versions or downstream ingest history. Missing,
 excluded and oversize source files are not re-sealed; the command warns about outstanding objects
 still remembered in local state. Ordinary runs still skip unchanged files, and the fleet-wide trigger

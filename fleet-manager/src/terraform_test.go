@@ -11,9 +11,9 @@ func TestTerraformPinsVersioningAndDataPermissions(t *testing.T) {
 		file                string
 		required, forbidden []string
 	}{
-		{"../terraform/aws/main.tf", []string{"status = \"Enabled\"", "TrajectoryWriteAndTagOnly", "s3:PutObject", "s3:PutObjectTagging", "s3:GetBucketVersioning", "aws_ecs_express_gateway_service", "AmazonECSInfrastructureRoleforExpressGatewayServices", "health_check_path       = \"/healthz\""},
+		{"../terraform/aws/main.tf", []string{"status = \"Enabled\"", "filter {}\n    noncurrent_version_expiration { noncurrent_days = 7 }", "TrajectoryWriteAndTagOnly", "s3:PutObject", "s3:PutObjectTagging", "s3:GetBucketVersioning", "aws_ecs_express_gateway_service", "AmazonECSInfrastructureRoleforExpressGatewayServices", "health_check_path       = \"/healthz\""},
 			[]string{"s3:GetObjectVersion", "s3:DeleteObject", "aws_lambda_", "aws_vpc", "aws_lb", "aws_security_group", "aws_ecs_service"}},
-		{"../terraform/gcp/main.tf", []string{"google_project_service", "versioning {", "enabled = true", "storage.objects.create", "storage.objects.delete", "storage.buckets.get", "serviceAccountTokenCreator", "allUsers", "path = \"/health\""},
+		{"../terraform/gcp/main.tf", []string{"google_project_service", "versioning {", "enabled = true", "with_state                 = \"ARCHIVED\"\n      days_since_noncurrent_time = 7", "action { type = \"Delete\" }", "storage.objects.create", "storage.objects.delete", "storage.buckets.get", "serviceAccountTokenCreator", "allUsers", "path = \"/health\""},
 			[]string{"storage.objects.getIamPolicy", "storage.objects.setIamPolicy"}},
 	}
 	for _, tc := range cases {
