@@ -1,7 +1,7 @@
 #!/bin/sh
-# Deploys Fleet Manager and its bucket into your AWS account or Google Cloud project with the
-# Terraform template of this repository, without a clone: it downloads the template, applies it,
-# and prints what the next step needs. Re-running upgrades. Usage: deploy.sh aws|gcp [options]
+# Deploys Fleet Manager and its bucket into your AWS account, Google Cloud project (Terraform) or
+# Cloudflare account (wrangler), without a clone: it downloads the template, applies it, and
+# prints what the next step needs. Re-running upgrades. Usage: deploy.sh aws|gcp|cloudflare [options]
 set -eu
 
 REPO=QuesmaOrg/quesma-shipper
@@ -11,9 +11,9 @@ HOME_DIR=${QUESMA_FLEET_MANAGER_HOME:-$HOME/.quesma/fleet-manager}
 main() {
 	[ $# -ge 1 ] || { usage >&2; exit 2; }
 	case $1 in
-	aws | gcp) CLOUD=$1; shift ;;
+	aws | gcp | cloudflare) CLOUD=$1; shift ;;
 	-h | --help) usage; exit 0 ;;
-	*) die "the first argument is the cloud: aws or gcp (see --help)" ;;
+	*) die "the first argument is the cloud: aws, gcp or cloudflare (see --help)" ;;
 	esac
 
 	ACTION=apply
@@ -21,11 +21,13 @@ main() {
 	output | destroy | plan | analytics-key) ACTION=$1; shift ;;
 	esac
 
-	BUCKET= REGION= NAME= IMAGE= PROJECT= TELEMETRY= QUESMA_ETL= ANALYTICS_KEY= YES= ARG=
+	BUCKET= REGION= NAME= IMAGE= PROJECT= TELEMETRY= QUESMA_ETL= ANALYTICS_KEY= YES= ARG= ACCOUNT= JURISDICTION=
 	while [ $# -gt 0 ]; do
 		case $1 in
 		--bucket) BUCKET=$2; shift 2 ;;
 		--region) REGION=$2; shift 2 ;;
+		--account) ACCOUNT=$2; shift 2 ;;
+		--jurisdiction) JURISDICTION=$2; shift 2 ;;
 		--name) NAME=$2; shift 2 ;;
 		--image) IMAGE=$2; shift 2 ;;
 		--project) PROJECT=$2; shift 2 ;;
@@ -48,6 +50,16 @@ main() {
 	DIR=$HOME_DIR/$CLOUD
 	VARS=$DIR/terraform.tfvars.json
 	[ -n "$REF" ] || REF=$(cat "$DIR/ref" 2>/dev/null || echo main)
+	if [ "$CLOUD" = cloudflare ]; then
+		VARS=$DIR/settings.json
+		case $ACTION in
+		apply) cf_apply ;;
+		output) cf_output ;;
+		destroy) cf_destroy ;;
+		*) die "$ACTION is for aws and gcp" ;;
+		esac
+		return
+	fi
 	pick_terraform
 
 	case $ACTION in
@@ -269,6 +281,188 @@ wait_healthy() {
 	done
 }
 
+# Cloudflare: wrangler instead of Terraform. The state is the remembered settings, the admin
+# credential and the service URL; Cloudflare keeps the R2 keys as Worker secrets.
+WRANGLER_VERSION=4.157.0
+DEFAULT_IMAGE=docker.io/quesma/fleet-manager:latest
+
+cf_apply() {
+	need curl tar openssl docker
+	[ -n "${WRANGLER:-}" ] || need npx
+	mkdir -p "$DIR"
+	chmod 700 "$DIR"
+	cf_collect
+	jurisdiction=${JURISDICTION:+--jurisdiction $JURISDICTION}
+	if [ ! -f "$DIR/url" ] && { [ -z "${FLEET_MANAGER_R2_ACCESS_KEY_ID:-}" ] || [ -z "${FLEET_MANAGER_R2_SECRET_ACCESS_KEY:-}" ]; }; then
+		die "FLEET_MANAGER_R2_ACCESS_KEY_ID and FLEET_MANAGER_R2_SECRET_ACCESS_KEY are required on the first" \
+			"deploy: in the dashboard, R2 > Manage API tokens, create an Object Read & Write token for bucket $BUCKET"
+	fi
+	cf_fetch_template
+	image=$(cf_pin_image "$IMAGE")
+	printf '# Written by deploy.sh: the image this deployment runs.\nFROM %s\n' "$image" >"$DIR/worker/Dockerfile"
+	cf_write_vars
+	say "Cloudflare account $ACCOUNT, bucket $BUCKET, image $image"
+
+	if ! wr r2 bucket info "$BUCKET" $jurisdiction >"$DIR/wrangler.log" 2>&1; then
+		say "creating the R2 bucket $BUCKET"
+		wr r2 bucket create "$BUCKET" $jurisdiction >"$DIR/wrangler.log" 2>&1 \
+			|| { cat "$DIR/wrangler.log"; die "could not create the R2 bucket $BUCKET"; }
+	fi
+	if [ ! -f "$DIR/admin_credential" ]; then
+		(umask 077 && printf 'fma1.%s' "$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')" >"$DIR/admin_credential")
+		say "minted a new admin credential; any earlier one for this bucket stops working"
+	fi
+	digest=$(openssl dgst -sha256 -r <"$DIR/admin_credential" | cut -d' ' -f1)
+	printf '{"schema":1,"secret_digest":"%s"}' "$digest" | wr r2 object put "$BUCKET/v1/control/admin/credential.json" \
+		--pipe --remote --content-type application/json $jurisdiction >"$DIR/wrangler.log" 2>&1 \
+		|| { cat "$DIR/wrangler.log"; die "could not write the admin credential digest to $BUCKET"; }
+
+	secrets=$DIR/secrets.json
+	trap 'rm -f "$secrets"' EXIT
+	(umask 077 && cf_secrets >"$secrets")
+	say "deploying with wrangler $WRANGLER_VERSION; the first deploy builds the image and can take minutes"
+	wr deploy --config "$DIR/worker/wrangler.jsonc" --name "$NAME" --secrets-file "$secrets" >"$DIR/deploy.log" 2>&1 \
+		|| { rm -f "$secrets"; cat "$DIR/deploy.log"; die "wrangler deploy failed"; }
+	rm -f "$secrets"
+	url=$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' "$DIR/deploy.log" | head -1)
+	[ -n "$url" ] || { cat "$DIR/deploy.log"; die "wrangler deploy printed no workers.dev URL"; }
+	echo "$url" >"$DIR/url"
+	wait_healthy "$url"
+	cat <<EOF
+
+Fleet Manager is up.
+
+  service      $url
+  admin UI     $url/admin/
+  bucket       $BUCKET
+  credential   $(cat "$DIR/admin_credential")
+               paste it into the admin UI; \`$0 cloudflare output admin_credential\` prints it again
+
+Next: open the admin UI, create your organization (two age recipients from two custodians), then
+create an invite per machine. On each developer machine, install the shipper and enroll it:
+
+  quesma-shipper login <invite> --server $url
+
+R2 has no object versioning: an object a shipper uploads again replaces the earlier one.
+Everything about this deployment lives in $DIR, including the only copy of the admin
+credential. Back that directory up; run this command again to upgrade.
+EOF
+}
+
+cf_output() {
+	[ -f "$DIR/url" ] || die "nothing deployed in $DIR yet"
+	url=$(cat "$DIR/url")
+	case $ARG in
+	'') printf 'admin_credential = %s\nadmin_url = %s/admin/\nbucket = %s\nservice_url = %s\n' \
+		"$(cat "$DIR/admin_credential")" "$url" "$(stored bucket)" "$url" ;;
+	admin_credential) cat "$DIR/admin_credential"; echo ;;
+	admin_url) echo "$url/admin/" ;;
+	bucket) stored bucket ;;
+	service_url) echo "$url" ;;
+	*) die "no output $ARG: admin_credential, admin_url, bucket or service_url" ;;
+	esac
+}
+
+cf_destroy() {
+	[ -f "$DIR/url" ] || die "nothing deployed in $DIR yet"
+	[ -n "${WRANGLER:-}" ] || need npx
+	cf_collect
+	say "this removes the Worker $NAME and its container; the bucket $BUCKET and its objects are kept"
+	if [ -z "$YES" ]; then
+		printf 'deploy: type yes to continue: '
+		read -r answer || answer=
+		[ "$answer" = yes ] || die "not confirmed"
+	fi
+	wr delete --name "$NAME" >"$DIR/wrangler.log" 2>&1 || { cat "$DIR/wrangler.log"; die "wrangler delete failed"; }
+	rm -f "$DIR/url"
+	say "removed; delete the bucket in the dashboard once you no longer need what it holds"
+}
+
+# Flags win, then what the last run recorded, then the environment and defaults.
+cf_collect() {
+	[ -n "$BUCKET" ] || BUCKET=$(stored bucket)
+	[ -n "$ACCOUNT" ] || ACCOUNT=$(stored account)
+	[ -n "$ACCOUNT" ] || ACCOUNT=${CLOUDFLARE_ACCOUNT_ID:-}
+	[ -n "$JURISDICTION" ] || JURISDICTION=$(stored jurisdiction)
+	[ -n "$NAME" ] || NAME=$(stored name)
+	[ -n "$NAME" ] || NAME=fleet-manager
+	[ -n "$IMAGE" ] || IMAGE=$(stored image)
+	[ -n "$IMAGE" ] || IMAGE=$DEFAULT_IMAGE
+	[ -n "$TELEMETRY" ] || TELEMETRY=$(stored default_telemetry_collector_url)
+	[ -n "$QUESMA_ETL" ] || QUESMA_ETL=$(stored default_allow_quesma_etl)
+	[ -n "$QUESMA_ETL" ] || [ -f "$DIR/url" ] || QUESMA_ETL=false
+	printf '%s\n' "$BUCKET" | grep -Eqx '[a-z0-9][a-z0-9-]{1,61}[a-z0-9]' \
+		|| die "--bucket NAME is required: 3 to 63 lowercase letters, digits and hyphens"
+	printf '%s\n' "$ACCOUNT" | grep -Eqx '[0-9a-f]{32}' \
+		|| die "--account ID (or CLOUDFLARE_ACCOUNT_ID) is required: the 32-character ID in the dashboard URL"
+	case $JURISDICTION in '' | eu | fedramp) ;; *) die "--jurisdiction is eu or fedramp, not $JURISDICTION" ;; esac
+	case $TELEMETRY in *[\"\\]*) die "--telemetry URL may not contain quotes or backslashes" ;; esac
+	export CLOUDFLARE_ACCOUNT_ID=$ACCOUNT
+}
+
+cf_write_vars() {
+	v="  \"bucket\": \"$BUCKET\",
+  \"account\": \"$ACCOUNT\",
+  \"name\": \"$NAME\",
+  \"image\": \"$IMAGE\",
+"
+	[ -z "$JURISDICTION" ] || v="$v  \"jurisdiction\": \"$JURISDICTION\",
+"
+	[ -z "$TELEMETRY" ] || v="$v  \"default_telemetry_collector_url\": \"$TELEMETRY\",
+"
+	[ -z "$QUESMA_ETL" ] || v="$v  \"default_allow_quesma_etl\": $QUESMA_ETL,
+"
+	{ echo '{'; printf '%s' "$v" | sed '$ s/,$//'; echo '}'; } >"$VARS"
+}
+
+# The container's environment, as the Worker secrets src/index.js forwards. Wrangler keeps secrets
+# a run omits, so a re-run without the R2 keys in the environment keeps the stored ones.
+cf_secrets() {
+	for name in FLEET_MANAGER_R2_ACCESS_KEY_ID FLEET_MANAGER_R2_SECRET_ACCESS_KEY; do
+		eval "value=\${$name:-}"
+		case $value in *[\"\\]*) die "$name may not contain quotes or backslashes" ;; esac
+	done
+	printf '{"FLEET_MANAGER_BUCKET":"%s","FLEET_MANAGER_ACCOUNT":"%s"' "$BUCKET" "$ACCOUNT"
+	[ -z "$JURISDICTION" ] || printf ',"FLEET_MANAGER_R2_JURISDICTION":"%s"' "$JURISDICTION"
+	[ -z "$QUESMA_ETL" ] || printf ',"FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL":"%s"' "$QUESMA_ETL"
+	[ -z "$TELEMETRY" ] || printf ',"FLEET_MANAGER_DEFAULT_TELEMETRY_COLLECTOR_URL":"%s"' "$TELEMETRY"
+	[ -z "${FLEET_MANAGER_R2_ACCESS_KEY_ID:-}" ] || printf ',"FLEET_MANAGER_R2_ACCESS_KEY_ID":"%s"' "$FLEET_MANAGER_R2_ACCESS_KEY_ID"
+	[ -z "${FLEET_MANAGER_R2_SECRET_ACCESS_KEY:-}" ] || printf ',"FLEET_MANAGER_R2_SECRET_ACCESS_KEY":"%s"' "$FLEET_MANAGER_R2_SECRET_ACCESS_KEY"
+	printf '}\n'
+}
+
+cf_fetch_template() {
+	tmp=$(mktemp -d)
+	say "fetching the cloudflare template from $REPO at $REF"
+	curl -fsSL "https://codeload.github.com/$REPO/tar.gz/$REF" | tar -xzf - -C "$tmp" \
+		|| { rm -rf "$tmp"; die "download of $REPO at $REF failed"; }
+	src=$(find "$tmp" -type d -path "*/fleet-manager/cloudflare" | head -1)
+	[ -n "$src" ] || { rm -rf "$tmp"; die "no fleet-manager/cloudflare in $REPO at $REF"; }
+	rm -rf "$DIR/worker"
+	cp -R "$src" "$DIR/worker"
+	rm -rf "$tmp"
+	echo "$REF" >"$DIR/ref"
+}
+
+# A tag is resolved to the digest it names now, so the deployment runs exactly what was resolved.
+cf_pin_image() {
+	case $1 in *@sha256:*) echo "$1"; return ;; esac
+	base=$1
+	case ${1##*/} in *:*) base=${1%:*} ;; esac
+	digest=$(docker buildx imagetools inspect "$1" --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"') || digest=
+	if [ -n "$digest" ]; then
+		echo "$base@$digest"
+		return
+	fi
+	docker image inspect "$1" >/dev/null 2>&1 || die "image $1 is neither in a registry nor in local Docker"
+	say "image $1 exists only in local Docker, so this deployment is not pinned to a digest" >&2
+	echo "$1"
+}
+
+wr() {
+	if [ -n "${WRANGLER:-}" ]; then "$WRANGLER" "$@"; else npx --yes "wrangler@$WRANGLER_VERSION" "$@"; fi
+}
+
 pick_terraform() {
 	if [ -n "${TF:-}" ]; then need "$TF"
 	elif command -v terraform >/dev/null 2>&1; then TF=terraform
@@ -289,10 +483,12 @@ Deploys Fleet Manager into your cloud account and prints the admin URL and crede
 
   deploy.sh aws --bucket NAME [--region REGION]                  AWS: S3 bucket, roles, ECS Express service
   deploy.sh gcp --project ID [--bucket NAME] [--region REGION]   Google Cloud: GCS bucket, roles, Cloud Run
-  deploy.sh aws|gcp output [NAME]                                the outputs, or one of them (admin_credential)
+  deploy.sh cloudflare --bucket NAME [--account ID]              Cloudflare: R2 bucket, Worker, Container
+  deploy.sh aws|gcp|cloudflare output [NAME]                     the outputs, or one of them (admin_credential)
   deploy.sh aws analytics-key ORG                                an organization's analytics identity, as KMS ciphertext
   deploy.sh aws|gcp plan                                         show what a run would change
   deploy.sh aws|gcp destroy                                      remove it all; refuses a bucket with objects
+  deploy.sh cloudflare destroy                                   remove the Worker and container; keeps the bucket
 
 Options, remembered between runs:
   --name NAME             what the service and its roles are called (default fleet-manager)
@@ -301,11 +497,16 @@ Options, remembered between runs:
   --quesma-etl            seal uploads to Quesma's recipient for organizations that do not choose
   --no-quesma-etl         do not (the default for a new deployment)
   --analytics-key         on aws, create the KMS key analytics identities are encrypted under
+  --account ID            on cloudflare, the account ID (default \$CLOUDFLARE_ACCOUNT_ID)
+  --jurisdiction J        on cloudflare, an R2 jurisdiction: eu or fedramp
   --telemetry URL         forward shipper telemetry there for organizations that name nowhere
   --ref REF               the template's git ref, main unless set once; --dir DIR where state is kept
   -y, --yes               apply without asking
 
 Needs: terraform or tofu, curl, and the aws or gcloud CLI signed in to the target account.
+On cloudflare instead: Docker, npx (Node.js), curl, openssl, a Workers Paid plan, CLOUDFLARE_API_TOKEN
+or \`npx wrangler login\`, and on the first run FLEET_MANAGER_R2_ACCESS_KEY_ID and
+FLEET_MANAGER_R2_SECRET_ACCESS_KEY from an R2 Object Read & Write token for the bucket.
 EOF
 }
 
