@@ -9,8 +9,8 @@ import (
 	"unicode"
 )
 
-// seenWriteInterval collapses bursts into one write. Every write leaves a permanent noncurrent
-// version in a versioned bucket, so unthrottled telemetry would be the fleet's largest churn.
+// seenWriteInterval collapses bursts into one write. Every write leaves a noncurrent version in a
+// versioned bucket, so unthrottled telemetry would be the fleet's largest churn.
 const seenWriteInterval = time.Minute
 
 const seenWriteTimeout = 3 * time.Second

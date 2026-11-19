@@ -54,6 +54,14 @@ resource "google_storage_bucket" "fleet" {
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
   versioning { enabled = true }
+  # Shippers re-upload a whole session each time it grows; superseded versions expire after a week.
+  lifecycle_rule {
+    condition {
+      with_state                 = "ARCHIVED"
+      days_since_noncurrent_time = 7
+    }
+    action { type = "Delete" }
+  }
   depends_on = [google_project_service.required]
 }
 

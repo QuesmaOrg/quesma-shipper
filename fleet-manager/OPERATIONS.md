@@ -93,9 +93,9 @@ rclone copy --update "$W/resealed/" "aws:$B/v1/organization=acme" --include 'ins
 
 Each object whose manifest does not list that recipient lands in `$W/resealed` under its own key, with
 the same payload, sealed to the recipients it lists plus the new one. `--update` skips a key a
-shipper rewrote after the copy. The upload adds a version and keeps the earlier one. rclone does not
-carry the metadata the fleet manager stored with the object, so after a shipper's `state reset`
-those files upload once more.
+shipper rewrote after the copy. The upload adds a version and keeps the earlier one for seven days.
+rclone does not carry the metadata the fleet manager stored with the object, so after a shipper's
+`state reset` those files upload once more.
 
 An analytics identity is fixed the same way, and earlier: it can be set only when the organization is
 created, so an organization created without one has no history a processor can open later, unless a
@@ -103,10 +103,13 @@ custodian reseals it to the processor's recipient. Upgrade
 every replica before creating the first one: an older replica cannot read a configuration that has
 it, and then lists no organizations at all.
 
-**A re-uploaded file keeps its earlier versions.** The bucket is versioned and nothing expires mirror
-objects, so a value that leaked under old scrub rules is still readable in the earlier version until
-an operator deletes it by hand. A `state reset` after a shipper upgrade that changed scrubbing
-re-uploads every file the new binary scrubs differently.
+**A re-uploaded file keeps its earlier versions for seven days.** The bucket is versioned, and the
+templates' lifecycle rule deletes every superseded version seven days after it is superseded (on
+AWS, check-in records after one). Current versions never expire. Within that week a value that
+leaked under old scrub rules is still readable in the earlier version; delete it by hand to remove
+it sooner. On GCS a deleted version, by lifecycle or by hand, stays restorable for the bucket's
+soft-delete retention, seven days unless changed. A `state reset` after a shipper upgrade that
+changed scrubbing re-uploads every file the new binary scrubs differently.
 
 One thing has no dependency at all: installing the shipper binary. It registers a service that waits
 for enrollment, so you can push it out ahead of everything else and enroll later.
@@ -151,7 +154,8 @@ writes may leave unused records; only the record matching the current configurat
 The view names only the last writer, so an administrator's later save, even of an unchanged form, is
 shown as the author of a partner's earlier change. To find who made an earlier change, list the
 `config.json` object versions, take the sha256 of each version's bytes, and read
-`control/config-authorship/<digest>.json`.
+`control/config-authorship/<digest>.json`. Superseded versions expire after seven days; for an older
+change, list `control/config-authorship/` and read each record's `author` and `updated_at`.
 
 The stored `config.json` format and permissions are unchanged. Older replicas and rollbacks can
 still read it, and ignore the new records. Configurations written before this feature or
@@ -249,12 +253,18 @@ aws s3api put-public-access-block --bucket "$BUCKET" \
   'BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true'
 ```
 
-The lifecycle rule that expires superseded check-in records filters on a **tag**, not a prefix,
-because the organization sits in the middle of the key and S3 prefixes take no wildcard:
+The lifecycle rules expire superseded versions: every object's after seven days, check-in records'
+after one. The second filters on a **tag**, not a prefix, because the organization sits in the
+middle of the key and S3 prefixes take no wildcard:
 
 ```sh
 cat > lifecycle.json <<'JSON'
 {"Rules": [{
+  "ID": "expire-superseded-versions",
+  "Status": "Enabled",
+  "Filter": {},
+  "NoncurrentVersionExpiration": {"NoncurrentDays": 7}
+}, {
   "ID": "expire-superseded-ephemeral-records",
   "Status": "Enabled",
   "Filter": {"Tag": {"Key": "lifecycle", "Value": "ephemeral"}},

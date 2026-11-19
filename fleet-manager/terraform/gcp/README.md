@@ -10,17 +10,20 @@ creating the organization and enrolling the shippers, are
 
 - The IAM, IAM Credentials, Cloud Run and Cloud Storage APIs, enabled in the project.
 - A Cloud Storage bucket with versioning on, uniform bucket-level access and public-access
-  prevention enforced. GCS has no tag-based lifecycle condition, so superseded check-in records
-  accumulate; expire them with an out-of-band job if that matters for the fleet's size.
+  prevention enforced, and a lifecycle rule that deletes every superseded version seven days after
+  it is superseded. GCS has no tag-based lifecycle condition, so check-in records wait the seven
+  days too. Soft delete, left at the GCS default, keeps each deleted version restorable for its
+  retention period, seven days by default.
 - A runtime service account with custom roles bound by condition: read, write and delete below
   every organization's `control/` prefix; create, delete and read below `install=` (read only to
   name installs and to deduplicate uploads; it can fetch ciphertext, never decrypt it); read of the
   two credential digests; and `signBlob` on itself, because GCS presigned URLs are signed through
   the IAM API. Delete is included because GCS requires delete-plus-create to replace object bytes;
-  versioning preserves the displaced version. Listing is the exception: GCS authorizes it against
-  the bucket, not the names returned, so it is granted on the whole bucket and the runtime can see
-  every object name. IAM Conditions have no regular expressions, so the prefixes are matched with
-  `extract()`; the organization slug's alphabet is enforced where organizations are created.
+  versioning preserves the displaced version for seven days. Listing is the exception: GCS
+  authorizes it against the bucket, not the names returned, so it is granted on the whole bucket
+  and the runtime can see every object name. IAM Conditions have no regular expressions, so the
+  prefixes are matched with `extract()`; the organization slug's alphabet is enforced where
+  organizations are created.
 - The administrator and reporter credentials, as random values whose SHA-256 digests are written to
   the bucket. Only the digests leave Terraform; the values are sensitive outputs.
 - A publicly invocable Cloud Run service. Shippers authenticate at the application layer after

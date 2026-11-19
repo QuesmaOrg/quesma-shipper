@@ -48,11 +48,22 @@ resource "aws_s3_bucket_versioning" "fleet" {
   versioning_configuration { status = "Enabled" }
 }
 
-# Telemetry is rewritten as shippers check in. Versioning keeps every one of those writes, so the
-# service tags them and this rule expires the superseded copies. A prefix rule cannot do the job:
-# the organization sits in the middle of the key and S3 prefixes take no wildcard.
-resource "aws_s3_bucket_lifecycle_configuration" "ephemeral" {
+moved {
+  from = aws_s3_bucket_lifecycle_configuration.ephemeral
+  to   = aws_s3_bucket_lifecycle_configuration.fleet
+}
+
+# A shipper re-uploads a whole session each time it grows, so versioning would otherwise keep every
+# copy forever. Superseded versions of every object expire after seven days; telemetry, which the
+# service tags because S3 prefixes take no wildcard for the organization, expires after one.
+resource "aws_s3_bucket_lifecycle_configuration" "fleet" {
   bucket = aws_s3_bucket.fleet.id
+  rule {
+    id     = "expire-superseded-versions"
+    status = "Enabled"
+    filter {}
+    noncurrent_version_expiration { noncurrent_days = 7 }
+  }
   rule {
     id     = "expire-superseded-ephemeral-records"
     status = "Enabled"

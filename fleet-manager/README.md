@@ -344,14 +344,15 @@ write never fails a shipper's request, and repeated check-ins within a minute co
 write. "Last vend" means tickets were issued, not that the upload finished — files go straight from
 the machine to the bucket, which this service never sees.
 
-Every write still leaves a superseded version in a versioned bucket. The AWS template tags these
-objects `lifecycle=ephemeral` and expires their superseded versions the next day. GCS has no
-tag-based lifecycle condition and its prefix conditions take no wildcard, so a GCP deployment
-accumulates these versions; expire them with an out-of-band job if that matters for the fleet's size.
+Every write still leaves a superseded version in a versioned bucket. Both templates expire every
+superseded version seven days after it is superseded. On AWS the service also tags these objects
+`lifecycle=ephemeral` and the template expires theirs the next day; GCS has no tag-based lifecycle
+condition and its prefix conditions take no wildcard, so on GCP they wait the seven days.
 
 The GCP runtime role includes `storage.objects.delete` only on every organization's control prefix
 and install-data prefix because GCS requires delete-plus-create to replace object bytes. Bucket
-versioning preserves the displaced version, and fleet manager itself exposes no delete operation.
+versioning preserves the displaced version for seven days, and fleet manager itself exposes no
+delete operation.
 Organization discovery also permits the runtime identity to list keys below `v1/organization=`.
 That listing can reveal encrypted trajectory object names, but not read their contents; this is an
 accepted tradeoff of using each organization's `config.json` as the only organization registry.

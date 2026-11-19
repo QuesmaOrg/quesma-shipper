@@ -64,7 +64,7 @@ func TestRevokedInstallsAreNotReportable(t *testing.T) {
 	}
 }
 
-// Twenty faults ride a heartbeat, but every write leaves a permanent noncurrent version.
+// Twenty faults ride a heartbeat, but every write leaves a noncurrent version.
 func TestOnlyTheNewestFaultsAreKept(t *testing.T) {
 	manager := initialisedManager(t)
 	installID := enrolledInstall(t, manager)
