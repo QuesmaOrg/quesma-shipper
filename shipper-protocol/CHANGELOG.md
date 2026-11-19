@@ -8,6 +8,10 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
 
 ### Changed
 
+- Bucket versioning is recommended rather than mandatory, so a Cloudflare R2 bucket, which cannot
+  version, is a valid sink. Without versioning, a concurrent or repeated write of one key replaces
+  the earlier object instead of keeping it as a version. No schema or fixture bytes change.
+
 - The shipper resends an upload authorization or a PUT once, after about one second, when no
   complete HTTP response arrived (DNS, connect, TLS handshake, reset, timeout, a 2xx body cut
   short). A second silence stops the run's uploads as offline. HTTP statuses are still never

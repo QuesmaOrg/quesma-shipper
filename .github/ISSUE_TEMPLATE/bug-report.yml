@@ -15,7 +15,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: Output of `quesma-shipper --version`, or of `fleet-manager` run with no arguments and the provider it runs on (aws, gcp or azure).
+      description: Output of `quesma-shipper --version`, or of `fleet-manager` run with no arguments and the provider it runs on (aws, gcp, azure or r2).
     validations:
       required: true
   - type: input
