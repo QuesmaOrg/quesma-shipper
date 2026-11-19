@@ -19,17 +19,18 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/engine"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 func TestOversizedRecordStreamsWithinConfiguredFileCap(t *testing.T) {
 	prefix := "{\"text\":\"before alice@example.com\"}\r\n"
-	large := `{"message":{"content":[{"type":"image","source":{"data":"` + strings.Repeat("A", transforms.StreamRecordThreshold+1) + `"}}]}}` + "\r\n"
+	large := `{"message":{"content":[{"type":"image","source":{"data":"` + strings.Repeat("A", scrub.StreamRecordThreshold+1) + `"}}]}}` + "\r\n"
 	raw := prefix + large + `{"tail":"alice@example.com`
-	s, err := transforms.New(transforms.DefaultConfig())
+	s, err := scrub.New(scrub.DefaultConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := s.Scrub([]byte(raw), transforms.Hint{Family: "claude-code", JSONL: true})
+	want, err := s.Scrub([]byte(raw), scrub.Hint{Family: "claude-code", JSONL: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +151,7 @@ func TestLargeTranscriptFailuresLeaveNoCommittedUploadOrSpool(t *testing.T) {
 			line := `{"text":"hello"}` + "\n"
 			raw := strings.Repeat(line, sources.StreamThreshold/len(line)+1)
 			if kind == "record" {
-				raw = strings.Repeat("a", transforms.StreamRecordThreshold+1)
+				raw = strings.Repeat("a", scrub.StreamRecordThreshold+1)
 			}
 			f.writeTranscript("p/large.jsonl", raw)
 			var saved engine.PreparedObject

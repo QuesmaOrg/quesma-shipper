@@ -11,7 +11,7 @@ import (
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
-	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 // --- harness ----------------------------------------------------------------
@@ -505,7 +505,7 @@ structural_exempt:
 	if !slices.Contains(eff.StructuralEx["claude-code"], "acmeInternalTraceId") {
 		t.Errorf("served exemption not applied: %v", eff.StructuralEx)
 	}
-	for _, compiled := range transforms.CompiledExemptions()["claude-code"] {
+	for _, compiled := range scrub.CompiledExemptions()["claude-code"] {
 		if !slices.Contains(eff.StructuralEx["claude-code"], compiled) {
 			t.Errorf("served addition displaced compiled exemption %q", compiled)
 		}

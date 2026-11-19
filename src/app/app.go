@@ -29,6 +29,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/cursorjoin"
 	"github.com/QuesmaOrg/quesma-shipper/packaging"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 // Runtime is everything a flush needs, assembled once.
@@ -396,7 +397,7 @@ func (r *Runtime) writeHeartbeat(ctx context.Context, rep formats.Report, mirror
 		ConfigExpired: r.eff.ConfigExpired,
 		Client:        clientBlock(),
 		RunID:         r.runID,
-	}, transforms.Unscrubbed(body, "heartbeat: shipper-authored"), r.recipients)
+	}, scrub.Unscrubbed(body, "heartbeat: shipper-authored"), r.recipients)
 	if err != nil {
 		return err
 	}

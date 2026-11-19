@@ -15,8 +15,8 @@ import (
 
 	"filippo.io/age"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
-	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
-	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/packs"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
+	"github.com/QuesmaOrg/quesma-shipper/scrub/packs"
 	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 )
 
@@ -125,7 +125,7 @@ func Resolve(in Input) (*Effective, error) {
 		Catalog:        in.Catalog,
 		RulePacks:      []string{"gitleaks-core", "quesma-extra", "cloud-keys", "generic-entropy", "pii-core"},
 		// Without the compiled exemption baseline the entropy backstop shreds the join keys that make a trajectory a graph.
-		StructuralEx:            transforms.CompiledExemptions(),
+		StructuralEx:            scrub.CompiledExemptions(),
 		IncludeInstallRecipient: true,
 		AutoupdateEnabled:       true,
 		Provenance:              map[string]Origin{},
@@ -471,7 +471,7 @@ func checkUploadTargets(eff *Effective) error {
 }
 
 func checkRulePacks(eff *Effective) error {
-	// An unknown pack is refused once here rather than at transforms.New per file per tick.
+	// An unknown pack is refused once here rather than at scrub.New per file per tick.
 	available := packs.Available()
 	for _, name := range eff.RulePacks {
 		if !slices.Contains(available, name) {

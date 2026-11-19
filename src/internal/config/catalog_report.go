@@ -9,7 +9,7 @@ import (
 	"slices"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
-	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/packs"
+	"github.com/QuesmaOrg/quesma-shipper/scrub/packs"
 	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 )
 

@@ -6,6 +6,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 // baseManifest fills the fields every object of this run shares, raw and derived alike, so a
@@ -45,7 +46,7 @@ func (o Options) manifestFor(
 	disc sources.Discovery,
 	sourceHash string,
 	mtime time.Time,
-	res transforms.Result,
+	res scrub.Result,
 ) transforms.Manifest {
 	m := o.baseManifest(src, cand.Path)
 	m.SourceHash = sourceHash

@@ -1,8 +1,10 @@
 # Makefile for Quesma Shipper.
 #
-# The Shipper module lives in src/. Its wire contract is the shipper-protocol/ module beside it.
+# The Shipper module lives in src/. Its wire contract is the shipper-protocol/ module beside it,
+# and its scrubber the scrub/ module: a module of its own so other components can import it.
 
 MODULE := src
+SCRUB  := scrub
 BIN    := bin/quesma-shipper
 PKG    := ./...
 
@@ -95,10 +97,12 @@ doctor: ## Check the tools this repository's targets need
 .PHONY: test
 test: ## Run the unit suite
 	cd $(MODULE) && go test $(PKG)
+	cd $(SCRUB) && go test $(PKG)
 
 .PHONY: race
 race: ## Run the unit suite under the race detector
 	cd $(MODULE) && go test -race $(PKG)
+	cd $(SCRUB) && go test -race $(PKG)
 
 # The full local tier measures the shipped binary through a latency-shaped MinIO path. The HTTP
 # protocol peer only verifies device signatures and issues presigned tickets; it models no control
@@ -182,22 +186,25 @@ endef
 # ---------------------------------------------------------------------------- checks
 
 .PHONY: fmt
-fmt: ## Format the module in place
+fmt: ## Format the modules in place
 	cd $(MODULE) && gofmt -w .
+	cd $(SCRUB) && gofmt -w .
 
 .PHONY: fmt-check
 fmt-check: ## Fail if anything is unformatted
-	@cd $(MODULE) && out=$$(gofmt -l .); \
+	@out=$$(gofmt -l $(MODULE) $(SCRUB)); \
 	if [ -n "$$out" ]; then echo "unformatted:"; echo "$$out"; exit 1; fi
 
 .PHONY: vet
 vet: ## Run go vet, and type-check the Windows build
 	cd $(MODULE) && go vet $(PKG) && GOOS=windows go vet $(PKG)
+	cd $(SCRUB) && go vet $(PKG) && GOOS=windows go vet $(PKG)
 
 .PHONY: tidy
 tidy: ## Tidy go.mod, failing if it was not already tidy
 	cd $(MODULE) && go mod tidy
-	@cd $(MODULE) && git diff --quiet go.mod go.sum || \
+	cd $(SCRUB) && go mod tidy
+	@git diff --quiet $(MODULE)/go.mod $(MODULE)/go.sum $(SCRUB)/go.mod || \
 		{ echo "go.mod/go.sum were not tidy; the fixed files are on disk — commit them"; exit 1; }
 
 .PHONY: version-check
