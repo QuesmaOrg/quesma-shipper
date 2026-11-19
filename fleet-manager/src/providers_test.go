@@ -99,6 +99,7 @@ func TestUploadSignersOmitClassTags(t *testing.T) {
 	client := awss3.NewFromConfig(aws.Config{Region: "eu-central-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")})
 	signers := map[string]UploadSigner{
 		"s3": &s3Signer{bucket: "archive", client: client},
+		"r2": testR2Signer(t, ""),
 		"gcs": &gcsSigner{bucket: "archive", account: "signer@example.iam.gserviceaccount.com",
 			signBytes: func(context.Context, []byte) ([]byte, error) { return []byte("signature"), nil }},
 		"azure": &azureSigner{account: "archive", container: "trajectories", delegation: &fakeDelegation{},

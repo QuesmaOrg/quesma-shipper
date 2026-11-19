@@ -211,6 +211,12 @@ func TestInitRequiresVersioningAndValidRecipients(t *testing.T) {
 	if err := manager.Init(context.Background(), FleetConfig{AgeRecipients: testAgeRecipients(t, 2)}); err == nil {
 		t.Fatal("initialized without versioning")
 	}
+	root, _ := NewManager(store)
+	root.allowUnversioned = true
+	unversioned, _ := root.ForOrganization("beta")
+	if err := unversioned.Init(context.Background(), FleetConfig{AgeRecipients: testAgeRecipients(t, 2)}); err != nil {
+		t.Fatalf("a provider that cannot version was refused: %v", err)
+	}
 	store.versioning = true
 	if err := manager.Init(context.Background(), FleetConfig{AgeRecipients: []string{"AGE-SECRET-KEY-PRIVATE"}, IncludeInstallRecipient: false}); err == nil {
 		t.Fatal("accepted private recipient")

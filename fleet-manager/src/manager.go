@@ -18,6 +18,8 @@ type Manager struct {
 	now   func() time.Time
 	// transition is test-only fault injection; production leaves it nil.
 	transition func(string) error
+	// allowUnversioned is set only for a provider that cannot version, never by configuration.
+	allowUnversioned bool
 }
 
 func NewManager(store ObjectStore) (*Manager, error) {
@@ -31,7 +33,7 @@ func (m *Manager) ForOrganization(org string) (*Manager, error) {
 	if !orgPattern.MatchString(org) {
 		return nil, errors.New("organization must be a lowercase slug of at most 63 characters")
 	}
-	return &Manager{store: m.store, org: org, now: m.now, transition: m.transition}, nil
+	return &Manager{store: m.store, org: org, now: m.now, transition: m.transition, allowUnversioned: m.allowUnversioned}, nil
 }
 
 func enrollmentOrganization(token string) (string, error) {
@@ -154,7 +156,7 @@ func (m *Manager) Init(ctx context.Context, cfg FleetConfig) error {
 	if err != nil {
 		return fmt.Errorf("verify object versioning: %w", err)
 	}
-	if !enabled {
+	if !enabled && !m.allowUnversioned {
 		return errors.New("object versioning is required")
 	}
 	// Only an administrator creates an organization.

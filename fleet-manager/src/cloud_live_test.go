@@ -54,7 +54,7 @@ func TestLiveObjectStoreConformance(t *testing.T) {
 		t.Fatalf("list: %#v %v", objects, err)
 	}
 	enabled, err := manager.store.VersioningEnabled(ctx)
-	if err != nil || !enabled {
+	if err != nil || enabled == manager.allowUnversioned {
 		t.Fatalf("versioning: %t %v", enabled, err)
 	}
 }
@@ -63,6 +63,8 @@ func deleteLiveObject(t *testing.T, ctx context.Context, store ObjectStore, key 
 	t.Helper()
 	switch value := store.(type) {
 	case *s3Store:
+		_, _ = value.client.DeleteObject(ctx, &awss3.DeleteObjectInput{Bucket: aws.String(value.bucket), Key: aws.String(key)})
+	case *r2Store:
 		_, _ = value.client.DeleteObject(ctx, &awss3.DeleteObjectInput{Bucket: aws.String(value.bucket), Key: aws.String(key)})
 	case *gcsStore:
 		_ = value.bucket.Object(key).Delete(ctx)
