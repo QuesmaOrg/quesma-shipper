@@ -70,7 +70,7 @@ func TestR2PutSendsNoTagsAndVersioningIsNotQueried(t *testing.T) {
 	defer server.Close()
 	client := awss3.New(awss3.Options{Region: "auto", BaseEndpoint: aws.String(server.URL), UsePathStyle: true,
 		Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")})
-	store := &r2Store{&s3Store{bucket: "archive", client: client}}
+	store := &s3Store{bucket: "archive", client: client, untagged: true, unversioned: true}
 	ctx := context.Background()
 	if err := store.Put(ctx, "v1/organization=acme/control/seen/x.json", []byte(`{}`)); err != nil {
 		t.Fatal(err)
@@ -118,7 +118,7 @@ func TestOpenTargetWaivesVersioningOnlyForR2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !manager.allowUnversioned || !org.allowUnversioned {
+	if !manager.cannotVersion() || !org.cannotVersion() {
 		t.Fatal("r2 manager still requires versioning")
 	}
 	// Loading AWS config makes no request, so this stays offline; a stray profile must not interfere.
@@ -129,7 +129,7 @@ func TestOpenTargetWaivesVersioningOnlyForR2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if versioned.allowUnversioned {
+	if versioned.cannotVersion() {
 		t.Fatal("aws manager waives versioning")
 	}
 }

@@ -58,8 +58,7 @@ widening what that grant exposes, and gets the same confirmation a grant change 
 **There is no delete.** No route deletes an object, and no organization can be removed. GCS is
 granted `storage.objects.delete` only because replacing object bytes there requires
 delete-plus-create; bucket versioning preserves what is displaced, and the deployment's lifecycle
-rule, not the service, expires it after seven days. An R2 token cannot be narrower than a bucket,
-so there the runtime holds delete too and nothing preserves a replaced object.
+rule, not the service, expires it after seven days. On R2 nothing preserves a replaced object.
 
 **Control records are conditional.** A record is created with `Create` (`If-None-Match: *`) and
 updated with `Replace` (`If-Match`). Replicas coordinate through the store and in no other way,

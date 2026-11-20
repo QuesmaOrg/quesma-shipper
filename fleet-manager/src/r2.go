@@ -1,11 +1,9 @@
 package main
 
-// Cloudflare R2 speaks the S3 API, so this reuses the S3 provider. R2 has no object tagging (a
-// tagged PutObject is answered 501) and no object versioning, so a replaced object is gone.
+// Cloudflare R2 speaks the S3 API, so this configures the S3 provider for it. R2 has no object
+// tagging (a tagged PutObject is answered 501) and no object versioning, so a replaced object is gone.
 
 import (
-	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -17,11 +15,7 @@ import (
 
 var r2AccountPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
-type r2Store struct{ *s3Store }
-
-type r2Signer struct{ *s3Signer }
-
-func newR2(account, bucket, jurisdiction, accessKeyID, secretAccessKey string) (*r2Store, UploadSigner, error) {
+func newR2(account, bucket, jurisdiction, accessKeyID, secretAccessKey string) (*s3Store, UploadSigner, error) {
 	if !r2AccountPattern.MatchString(account) {
 		return nil, nil, fmt.Errorf("--account must be a Cloudflare account ID (32 lowercase hex characters), not %q", account)
 	}
@@ -39,22 +33,5 @@ func newR2(account, bucket, jurisdiction, accessKeyID, secretAccessKey string) (
 	// Path-style keeps the bucket in the ticket path, where the shipper's bucket probe reads it.
 	client := awss3.New(awss3.Options{Region: "auto", BaseEndpoint: aws.String("https://" + host + ".r2.cloudflarestorage.com"), UsePathStyle: true,
 		Credentials: credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, "")})
-	return &r2Store{&s3Store{bucket: bucket, client: client}}, &r2Signer{&s3Signer{bucket: bucket, client: client}}, nil
-}
-
-func (s *r2Store) Put(ctx context.Context, key string, raw []byte) error {
-	_, err := s.client.PutObject(ctx, &awss3.PutObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key), Body: bytes.NewReader(raw),
-		ContentType: aws.String("application/json")})
-	return mapS3Error(err)
-}
-
-func (s *r2Store) VersioningEnabled(context.Context) (bool, error) { return false, nil }
-
-func (s *r2Signer) Authorize(ctx context.Context, scope InstallScope, batch UploadBatch) (TicketBatch, error) {
-	for _, object := range batch.Objects {
-		if object.Tagging != "" {
-			return TicketBatch{}, fmt.Errorf("object %s carries tags, which R2 does not support", object.ObjectID)
-		}
-	}
-	return s.s3Signer.Authorize(ctx, scope, batch)
+	return &s3Store{bucket: bucket, client: client, untagged: true, unversioned: true}, &s3Signer{bucket: bucket, client: client, untagged: true}, nil
 }

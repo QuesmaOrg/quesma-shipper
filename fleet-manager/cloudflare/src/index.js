@@ -25,13 +25,16 @@ export default {
 
 export class FleetManager extends DurableObject {
 	async fetch(request) {
-		this.booting ??= this.boot().finally(() => {
-			this.booting = undefined;
-		});
-		try {
-			await this.booting;
-		} catch (err) {
-			return new Response(`${err.message}\n`, { status: 503, headers: { "content-type": "text/plain" } });
+		// Secrets and the image are fixed for this instance's life, so a checked container stays good.
+		if (!(this.ready && this.ctx.container.running)) {
+			this.booting ??= this.boot().finally(() => {
+				this.booting = undefined;
+			});
+			try {
+				await this.booting;
+			} catch (err) {
+				return new Response(`${err.message}\n`, { status: 503, headers: { "content-type": "text/plain" } });
+			}
 		}
 		// The container port speaks plain HTTP; this hop never leaves Cloudflare.
 		const url = new URL(request.url);
@@ -46,20 +49,18 @@ export class FleetManager extends DurableObject {
 		for (const name of CONTAINER_ENV) {
 			if (this.env[name]) env[name] = this.env[name];
 		}
-		const config = await sha256(JSON.stringify(env));
-		const wanted = `${image} ${config}`;
+		const config = await sha256(JSON.stringify({ image, env }));
+		this.ready = false;
 		if (container.running) {
-			if (this.started === wanted) return;
 			const live = await container.inspect();
-			if (live && live.image === image && live.labels.config === config) {
+			if (live && live.labels.config === config) {
 				// The idle timeout belongs to the Durable Object instance that set it, not the container.
 				await container.setInactivityTimeout(IDLE_MS);
-				this.started = wanted;
+				this.ready = true;
 				return;
 			}
 			await container.destroy();
 		}
-		this.started = undefined;
 		const began = Date.now();
 		console.log(`fleet-manager container starting from ${image}`);
 		container.start({ image, env, enableInternet: true, instance: "lite", labels: { config } });
@@ -70,7 +71,7 @@ export class FleetManager extends DurableObject {
 			if (!container.running) break;
 			try {
 				if ((await port.fetch("http://fleet-manager/healthz")).ok) {
-					this.started = wanted;
+					this.ready = true;
 					console.log(`fleet-manager container ready in ${Date.now() - began} ms`);
 					return;
 				}

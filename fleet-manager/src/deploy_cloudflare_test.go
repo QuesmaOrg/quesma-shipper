@@ -5,10 +5,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -154,13 +157,8 @@ func TestDeployCloudflareUploadsOnlyTheDigestAndKeepsKeysOutOfState(t *testing.T
 	}
 	want := map[string]string{"FLEET_MANAGER_BUCKET": "fleet", "FLEET_MANAGER_ACCOUNT": testR2Account, "FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL": "false",
 		"FLEET_MANAGER_R2_ACCESS_KEY_ID": "key-id", "FLEET_MANAGER_R2_SECRET_ACCESS_KEY": "key-secret"}
-	if len(secrets) != len(want) {
+	if !maps.Equal(secrets, want) {
 		t.Errorf("secrets %v, want %v", secrets, want)
-	}
-	for name, value := range want {
-		if secrets[name] != value {
-			t.Errorf("secret %s = %q, want %q", name, secrets[name], value)
-		}
 	}
 	_ = filepath.WalkDir(state, func(path string, entry fs.DirEntry, err error) error {
 		if err == nil && !entry.IsDir() {
@@ -222,11 +220,17 @@ func TestCloudflareWorkerForwardsWhatDeployStores(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"FLEET_MANAGER_BUCKET", "FLEET_MANAGER_ACCOUNT", "FLEET_MANAGER_R2_JURISDICTION", "FLEET_MANAGER_R2_ACCESS_KEY_ID",
-		"FLEET_MANAGER_R2_SECRET_ACCESS_KEY", "FLEET_MANAGER_DEFAULT_ALLOW_QUESMA_ETL", "FLEET_MANAGER_DEFAULT_TELEMETRY_COLLECTOR_URL"} {
-		if !strings.Contains(string(worker), `"`+name+`"`) || !strings.Contains(string(deploy), `"`+name+`":`) {
-			t.Errorf("%s is not both stored by deploy.sh and forwarded by the Worker", name)
+	names := func(pattern string, raw []byte) []string {
+		var out []string
+		for _, match := range regexp.MustCompile(pattern).FindAllSubmatch(raw, -1) {
+			out = append(out, string(match[1]))
 		}
+		slices.Sort(out)
+		return slices.Compact(out)
+	}
+	forwarded, stored := names(`"(FLEET_MANAGER_[A-Z0-9_]+)"`, worker), names(`"(FLEET_MANAGER_[A-Z0-9_]+)":`, deploy)
+	if len(stored) == 0 || !slices.Equal(forwarded, stored) {
+		t.Errorf("the Worker forwards %v, deploy.sh stores %v", forwarded, stored)
 	}
 	for _, want := range []string{`FLEET_MANAGER_PROVIDER: "r2"`, "/healthz", "enableInternet: true", "container.inspect()"} {
 		if !strings.Contains(string(worker), want) {

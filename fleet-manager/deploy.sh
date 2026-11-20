@@ -88,23 +88,29 @@ run_apply() {
 
 	url=$(tf output -raw service_url)
 	wait_healthy "$url"
+	print_up "$url" "$(tf output -raw admin_url)" "$(tf output -raw bucket)" "$(tf output -raw admin_credential)" \
+		"Everything about this deployment lives in $DIR, including terraform.tfstate. Back that
+directory up; run this command again to upgrade."
+}
+
+# URL, admin URL, bucket, credential, then the closing paragraph about this deployment's state.
+print_up() {
 	cat <<EOF
 
 Fleet Manager is up.
 
-  service      $url
-  admin UI     $(tf output -raw admin_url)
-  bucket       $(tf output -raw bucket)
-  credential   $(tf output -raw admin_credential)
+  service      $1
+  admin UI     $2
+  bucket       $3
+  credential   $4
                paste it into the admin UI; \`$0 $CLOUD output admin_credential\` prints it again
 
 Next: open the admin UI, create your organization (two age recipients from two custodians), then
 create an invite per machine. On each developer machine, install the shipper and enroll it:
 
-  quesma-shipper login <invite> --server $url
+  quesma-shipper login <invite> --server $1
 
-Everything about this deployment lives in $DIR, including terraform.tfstate. Back that
-directory up; run this command again to upgrade.
+$5
 EOF
 }
 
@@ -172,7 +178,7 @@ collect_vars() {
 	[ -n "$QUESMA_ETL" ] || QUESMA_ETL=$(stored default_allow_quesma_etl)
 	# A new deployment states Quesma's recipient off. One made before leaves it to the template,
 	# whose default stays on, so an upgrade with this script or an older copy changes nothing.
-	[ -n "$QUESMA_ETL" ] || [ -f "$DIR/terraform.tfstate" ] || QUESMA_ETL=false
+	[ -n "$QUESMA_ETL" ] || [ -f "$DIR/terraform.tfstate" ] || [ -f "$DIR/url" ] || QUESMA_ETL=false
 	[ -n "$ANALYTICS_KEY" ] || ANALYTICS_KEY=$(stored analytics_key)
 	case $CLOUD in
 	aws)
@@ -182,6 +188,7 @@ collect_vars() {
 	gcp)
 		[ -n "$PROJECT" ] || die "--project ID is required"
 		[ -n "$REGION" ] || REGION=europe-central2 ;;
+	cloudflare) cf_collect ;;
 	esac
 }
 
@@ -201,6 +208,12 @@ write_vars() {
   \"region\": \"$REGION\",
 "
 		[ -z "$BUCKET" ] || v="$v  \"bucket\": \"$BUCKET\",
+" ;;
+	cloudflare)
+		v="  \"bucket\": \"$BUCKET\",
+  \"account\": \"$ACCOUNT\",
+"
+		[ -z "$JURISDICTION" ] || v="$v  \"jurisdiction\": \"$JURISDICTION\",
 " ;;
 	esac
 	[ -z "$NAME" ] || v="$v  \"name\": \"$NAME\",
@@ -258,14 +271,22 @@ preflight_gcp() {
 fetch_template() {
 	tmp=$(mktemp -d)
 	trap 'rm -rf "$tmp"' EXIT
+	sub=terraform/$CLOUD
+	[ "$CLOUD" != cloudflare ] || sub=cloudflare
 	say "fetching the $CLOUD template from $REPO at $REF"
 	curl -fsSL "https://codeload.github.com/$REPO/tar.gz/$REF" | tar -xzf - -C "$tmp" \
 		|| die "download of $REPO at $REF failed"
-	src=$(find "$tmp" -type d -path "*/fleet-manager/terraform/$CLOUD" | head -1)
-	[ -n "$src" ] || die "no fleet-manager/terraform/$CLOUD in $REPO at $REF"
-	rm -f "$DIR"/*.tf
-	cp "$src"/*.tf "$DIR"/
-	[ -f "$DIR/.terraform.lock.hcl" ] || cp "$src/.terraform.lock.hcl" "$DIR/" 2>/dev/null || true
+	src=$(find "$tmp" -type d -path "*/fleet-manager/$sub" | head -1)
+	[ -n "$src" ] || die "no fleet-manager/$sub in $REPO at $REF"
+	if [ "$CLOUD" = cloudflare ]; then
+		rm -rf "$DIR/worker"
+		cp -R "$src" "$DIR/worker"
+	else
+		rm -f "$DIR"/*.tf
+		cp "$src"/*.tf "$DIR"/
+		[ -f "$DIR/.terraform.lock.hcl" ] || cp "$src/.terraform.lock.hcl" "$DIR/" 2>/dev/null || true
+	fi
+	rm -rf "$tmp"
 	echo "$REF" >"$DIR/ref"
 }
 
@@ -292,25 +313,20 @@ cf_apply() {
 	[ -n "${WRANGLER:-}" ] || need npx
 	mkdir -p "$DIR"
 	chmod 700 "$DIR"
-	cf_collect
+	collect_vars
 	jurisdiction=${JURISDICTION:+--jurisdiction $JURISDICTION}
-	cf_fetch_template
+	fetch_template
 	image=$(cf_pin_image "$IMAGE")
 	printf '# Written by deploy.sh: the image this deployment runs.\nFROM %s\n' "$image" >"$DIR/worker/Dockerfile"
 	say "Cloudflare account $ACCOUNT, Worker $NAME, bucket $BUCKET, image $image"
 	[ -f "$DIR/admin_credential" ] \
 		|| say "no admin credential in $DIR: a new one replaces whatever this bucket accepted before"
-	if [ -z "$YES" ]; then
-		printf 'deploy: type yes to deploy: '
-		read -r answer || answer=
-		[ "$answer" = yes ] || die "not confirmed"
-	fi
-	cf_write_vars
+	confirm deploy
+	write_vars
 
 	if ! wr r2 bucket info "$BUCKET" $jurisdiction >"$DIR/wrangler.log" 2>&1; then
 		say "creating the R2 bucket $BUCKET"
-		wr r2 bucket create "$BUCKET" $jurisdiction >"$DIR/wrangler.log" 2>&1 \
-			|| { cat "$DIR/wrangler.log"; die "could not create the R2 bucket $BUCKET"; }
+		wr_logged "could not create the R2 bucket $BUCKET" r2 bucket create "$BUCKET" $jurisdiction
 	fi
 	if [ ! -f "$DIR/url" ] && { [ -z "${FLEET_MANAGER_R2_ACCESS_KEY_ID:-}" ] || [ -z "${FLEET_MANAGER_R2_SECRET_ACCESS_KEY:-}" ]; }; then
 		die "FLEET_MANAGER_R2_ACCESS_KEY_ID and FLEET_MANAGER_R2_SECRET_ACCESS_KEY are required on the first" \
@@ -322,9 +338,8 @@ cf_apply() {
 		say "minted a new admin credential; any earlier one for this bucket stops working"
 	fi
 	digest=$(openssl dgst -sha256 -r <"$DIR/admin_credential" | cut -d' ' -f1)
-	printf '{"schema":1,"secret_digest":"%s"}' "$digest" | wr r2 object put "$BUCKET/v1/control/admin/credential.json" \
-		--pipe --remote --content-type application/json $jurisdiction >"$DIR/wrangler.log" 2>&1 \
-		|| { cat "$DIR/wrangler.log"; die "could not write the admin credential digest to $BUCKET"; }
+	printf '{"schema":1,"secret_digest":"%s"}' "$digest" | wr_logged "could not write the admin credential digest to $BUCKET" \
+		r2 object put "$BUCKET/v1/control/admin/credential.json" --pipe --remote --content-type application/json $jurisdiction
 
 	secrets=$DIR/secrets.json
 	# dash skips the EXIT trap on a signal, so each signal becomes an exit that runs it.
@@ -335,31 +350,16 @@ cf_apply() {
 	(umask 077 && cf_secrets >"$secrets")
 	say "deploying with wrangler $WRANGLER_VERSION; the first deploy builds the image and can take minutes"
 	wr deploy --config "$DIR/worker/wrangler.jsonc" --name "$NAME" --secrets-file "$secrets" >"$DIR/deploy.log" 2>&1 \
-		|| { rm -f "$secrets"; cat "$DIR/deploy.log"; die "wrangler deploy failed"; }
+		|| { cat "$DIR/deploy.log"; die "wrangler deploy failed"; }
 	rm -f "$secrets"
 	url=$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' "$DIR/deploy.log" | head -1)
 	[ -n "$url" ] || { cat "$DIR/deploy.log"; die "wrangler deploy printed no workers.dev URL"; }
 	echo "$url" >"$DIR/url"
 	wait_healthy "$url"
-	cat <<EOF
-
-Fleet Manager is up.
-
-  service      $url
-  admin UI     $url/admin/
-  bucket       $BUCKET
-  credential   $(cat "$DIR/admin_credential")
-               paste it into the admin UI; \`$0 cloudflare output admin_credential\` prints it again
-
-Next: open the admin UI, create your organization (two age recipients from two custodians), then
-create an invite per machine. On each developer machine, install the shipper and enroll it:
-
-  quesma-shipper login <invite> --server $url
-
-R2 has no object versioning: an object a shipper uploads again replaces the earlier one.
+	print_up "$url" "$url/admin/" "$BUCKET" "$(cat "$DIR/admin_credential")" \
+		"R2 has no object versioning: an object a shipper uploads again replaces the earlier one.
 Everything about this deployment lives in $DIR, including the only copy of the admin
-credential. Back that directory up; run this command again to upgrade.
-EOF
+credential. Back that directory up; run this command again to upgrade."
 }
 
 cf_output() {
@@ -379,17 +379,12 @@ cf_output() {
 cf_destroy() {
 	[ -f "$DIR/url" ] || die "nothing deployed in $DIR yet"
 	[ -n "${WRANGLER:-}" ] || need npx
-	cf_collect
+	collect_vars
 	say "this removes the Worker $NAME and its container; the bucket $BUCKET and its objects are kept"
-	if [ -z "$YES" ]; then
-		printf 'deploy: type yes to continue: '
-		read -r answer || answer=
-		[ "$answer" = yes ] || die "not confirmed"
-	fi
+	confirm continue
 	# Run non-interactively, wrangler deletes the Worker but only lists the Container applications it
 	# owned, which keep running and billing; they are deleted here by the ids it lists.
-	wr delete --name "$NAME" --force </dev/null >"$DIR/wrangler.log" 2>&1 \
-		|| { cat "$DIR/wrangler.log"; die "wrangler delete failed"; }
+	wr_logged "wrangler delete failed" delete --name "$NAME" --force </dev/null
 	if grep -q 'not check whether' "$DIR/wrangler.log"; then
 		cat "$DIR/wrangler.log"
 		die "the Worker is gone, but its container may still run: delete it in the dashboard under Containers"
@@ -400,27 +395,21 @@ cf_destroy() {
 		die "the Worker is gone, but no container id could be read: delete it in the dashboard under Containers"
 	fi
 	for id in $ids; do
-		(CI=true && export CI && wr containers delete "$id" </dev/null >"$DIR/wrangler.log" 2>&1) \
-			|| { cat "$DIR/wrangler.log"; die "could not delete the container application $id"; }
+		(CI=true && export CI && wr_logged "could not delete the container application $id" containers delete "$id" </dev/null)
 		say "deleted the container application $id"
 	done
 	rm -f "$DIR/url"
 	say "removed; delete the bucket in the dashboard once you no longer need what it holds"
 }
 
-# Flags win, then what the last run recorded, then the environment and defaults.
+# What only Cloudflare has, after collect_vars' shared precedence; there is no template to default.
 cf_collect() {
-	[ -n "$BUCKET" ] || BUCKET=$(stored bucket)
+	[ -z "$ANALYTICS_KEY" ] || die "--analytics-key needs AWS KMS"
 	[ -n "$ACCOUNT" ] || ACCOUNT=$(stored account)
 	[ -n "$ACCOUNT" ] || ACCOUNT=${CLOUDFLARE_ACCOUNT_ID:-}
 	[ -n "$JURISDICTION" ] || JURISDICTION=$(stored jurisdiction)
-	[ -n "$NAME" ] || NAME=$(stored name)
 	[ -n "$NAME" ] || NAME=fleet-manager
-	[ -n "$IMAGE" ] || IMAGE=$(stored image)
 	[ -n "$IMAGE" ] || IMAGE=$DEFAULT_IMAGE
-	[ -n "$TELEMETRY" ] || TELEMETRY=$(stored default_telemetry_collector_url)
-	[ -n "$QUESMA_ETL" ] || QUESMA_ETL=$(stored default_allow_quesma_etl)
-	[ -n "$QUESMA_ETL" ] || [ -f "$DIR/url" ] || QUESMA_ETL=false
 	printf '%s\n' "$BUCKET" | grep -Eqx '[a-z0-9][a-z0-9-]{1,61}[a-z0-9]' \
 		|| die "--bucket NAME is required: 3 to 63 lowercase letters, digits and hyphens"
 	printf '%s\n' "$ACCOUNT" | grep -Eqx '[0-9a-f]{32}' \
@@ -438,21 +427,6 @@ cf_collect() {
 	export CLOUDFLARE_ACCOUNT_ID=$ACCOUNT
 }
 
-cf_write_vars() {
-	v="  \"bucket\": \"$BUCKET\",
-  \"account\": \"$ACCOUNT\",
-  \"name\": \"$NAME\",
-  \"image\": \"$IMAGE\",
-"
-	[ -z "$JURISDICTION" ] || v="$v  \"jurisdiction\": \"$JURISDICTION\",
-"
-	[ -z "$TELEMETRY" ] || v="$v  \"default_telemetry_collector_url\": \"$TELEMETRY\",
-"
-	[ -z "$QUESMA_ETL" ] || v="$v  \"default_allow_quesma_etl\": $QUESMA_ETL,
-"
-	{ echo '{'; printf '%s' "$v" | sed '$ s/,$//'; echo '}'; } >"$VARS"
-}
-
 # The container's environment, as the Worker secrets src/index.js forwards. Wrangler keeps secrets
 # a run omits, so a re-run without the R2 keys in the environment keeps the stored ones.
 cf_secrets() {
@@ -467,19 +441,6 @@ cf_secrets() {
 	[ -z "${FLEET_MANAGER_R2_ACCESS_KEY_ID:-}" ] || printf ',"FLEET_MANAGER_R2_ACCESS_KEY_ID":"%s"' "$FLEET_MANAGER_R2_ACCESS_KEY_ID"
 	[ -z "${FLEET_MANAGER_R2_SECRET_ACCESS_KEY:-}" ] || printf ',"FLEET_MANAGER_R2_SECRET_ACCESS_KEY":"%s"' "$FLEET_MANAGER_R2_SECRET_ACCESS_KEY"
 	printf '}\n'
-}
-
-cf_fetch_template() {
-	tmp=$(mktemp -d)
-	say "fetching the cloudflare template from $REPO at $REF"
-	curl -fsSL "https://codeload.github.com/$REPO/tar.gz/$REF" | tar -xzf - -C "$tmp" \
-		|| { rm -rf "$tmp"; die "download of $REPO at $REF failed"; }
-	src=$(find "$tmp" -type d -path "*/fleet-manager/cloudflare" | head -1)
-	[ -n "$src" ] || { rm -rf "$tmp"; die "no fleet-manager/cloudflare in $REPO at $REF"; }
-	rm -rf "$DIR/worker"
-	cp -R "$src" "$DIR/worker"
-	rm -rf "$tmp"
-	echo "$REF" >"$DIR/ref"
 }
 
 # A tag is resolved to the digest it names now, so the deployment runs exactly what was resolved.
@@ -503,6 +464,20 @@ cf_pin_image() {
 
 wr() {
 	if [ -n "${WRANGLER:-}" ]; then "$WRANGLER" "$@"; else npx --yes "wrangler@$WRANGLER_VERSION" "$@"; fi
+}
+
+# wrangler with its output kept in wrangler.log and shown only when it fails with message $1.
+wr_logged() {
+	msg=$1
+	shift
+	wr "$@" >"$DIR/wrangler.log" 2>&1 || { cat "$DIR/wrangler.log"; die "$msg"; }
+}
+
+confirm() {
+	[ -z "$YES" ] || return 0
+	printf 'deploy: type yes to %s: ' "$1"
+	read -r answer || answer=
+	[ "$answer" = yes ] || die "not confirmed"
 }
 
 pick_terraform() {

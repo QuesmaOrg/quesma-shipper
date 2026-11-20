@@ -205,14 +205,17 @@ func TestInviteReleaseRequiresAbsentOrRevokedInstall(t *testing.T) {
 	}
 }
 
+type versionlessMemoryStore struct{ *memoryStore }
+
+func (versionlessMemoryStore) cannotVersion() bool { return true }
+
 func TestInitRequiresVersioningAndValidRecipients(t *testing.T) {
 	manager, store := testManager(t)
 	store.versioning = false
 	if err := manager.Init(context.Background(), FleetConfig{AgeRecipients: testAgeRecipients(t, 2)}); err == nil {
 		t.Fatal("initialized without versioning")
 	}
-	root, _ := NewManager(store)
-	root.allowUnversioned = true
+	root, _ := NewManager(versionlessMemoryStore{store})
 	unversioned, _ := root.ForOrganization("beta")
 	if err := unversioned.Init(context.Background(), FleetConfig{AgeRecipients: testAgeRecipients(t, 2)}); err != nil {
 		t.Fatalf("a provider that cannot version was refused: %v", err)

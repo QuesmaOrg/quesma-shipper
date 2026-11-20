@@ -91,7 +91,6 @@ func openTarget(ctx context.Context, target *targetOptions) (*Manager, UploadSig
 	if err != nil {
 		return nil, nil, err
 	}
-	manager.allowUnversioned = target.provider == "r2"
 	return manager, signer, nil
 }
 
@@ -142,7 +141,7 @@ func runServe(ctx context.Context, args []string) error {
 	}
 	httpServer := &http.Server{Addr: ":" + port, Handler: server.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	log.Printf("serving multiple organizations with provider %s on port %s", target.provider, port)
-	if manager.allowUnversioned {
+	if manager.cannotVersion() {
 		log.Printf("provider %s has no object versioning: a replaced object is not retained", target.provider)
 	}
 	// Said at startup, because it decides what every organization that left a setting unset is
