@@ -19,6 +19,8 @@ import (
 type s3Store struct {
 	bucket string
 	client *awss3.Client
+	// Set for R2's dialect of the S3 API: it answers a tagged PutObject 501 and cannot version.
+	untagged, unversioned bool
 }
 
 func newS3(ctx context.Context, bucket, region string) (*s3Store, UploadSigner, error) {
@@ -62,8 +64,11 @@ func (s *s3Store) Replace(ctx context.Context, key, version string, raw []byte) 
 // The tag lets a bucket lifecycle rule expire these noncurrent versions; a literal-prefix rule
 // cannot, because the organization sits in the middle of the key.
 func (s *s3Store) Put(ctx context.Context, key string, raw []byte) error {
-	_, err := s.client.PutObject(ctx, &awss3.PutObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key), Body: bytes.NewReader(raw),
-		ContentType: aws.String("application/json"), Tagging: aws.String("lifecycle=ephemeral")})
+	input := &awss3.PutObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key), Body: bytes.NewReader(raw), ContentType: aws.String("application/json")}
+	if !s.untagged {
+		input.Tagging = aws.String("lifecycle=ephemeral")
+	}
+	_, err := s.client.PutObject(ctx, input)
 	return mapS3Error(err)
 }
 
@@ -106,7 +111,12 @@ func (s *s3Store) StoredHashes(ctx context.Context, key string) (StoredHashes, e
 	return StoredHashes{Source: head.Metadata["source-hash"], Shipped: head.Metadata["shipped-hash"]}, nil
 }
 
+func (s *s3Store) cannotVersion() bool { return s.unversioned }
+
 func (s *s3Store) VersioningEnabled(ctx context.Context) (bool, error) {
+	if s.unversioned {
+		return false, nil
+	}
 	out, err := s.client.GetBucketVersioning(ctx, &awss3.GetBucketVersioningInput{Bucket: aws.String(s.bucket)})
 	if err != nil {
 		return false, mapS3Error(err)
@@ -152,8 +162,9 @@ func errorsAs(err error, target any) bool {
 }
 
 type s3Signer struct {
-	bucket string
-	client *awss3.Client
+	bucket   string
+	client   *awss3.Client
+	untagged bool
 }
 
 func (s *s3Signer) Authorize(ctx context.Context, _ InstallScope, batch UploadBatch) (TicketBatch, error) {
@@ -169,6 +180,9 @@ func (s *s3Signer) Authorize(ctx context.Context, _ InstallScope, batch UploadBa
 	for _, object := range batch.Objects {
 		input := &awss3.PutObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(object.Key), ContentLength: aws.Int64(object.Size), Metadata: object.Metadata}
 		if object.Tagging != "" {
+			if s.untagged {
+				return TicketBatch{}, fmt.Errorf("object %s carries tags, which R2 does not support", object.ObjectID)
+			}
 			input.Tagging = aws.String(object.Tagging)
 		}
 		signed, err := presigner.PresignPutObject(ctx, input, awss3.WithPresignExpires(lifetime))

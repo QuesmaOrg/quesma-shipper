@@ -8,8 +8,8 @@ Use GitHub's private vulnerability reporting at
 <https://github.com/QuesmaOrg/quesma-shipper/security/advisories/new>, or email
 `contact@quesma.com` with the subject `Security: fleet-manager`. Include:
 
-- the version, from running `fleet-manager` with no arguments, and the provider (`aws`, `gcp` or
-  `azure`);
+- the version, from running `fleet-manager` with no arguments, and the provider (`aws`, `gcp`,
+  `azure` or `r2`);
 - the impact and the conditions needed to reproduce it;
 - minimal reproduction steps that use synthetic data;
 - a suggested mitigation, if you have one.
@@ -54,6 +54,8 @@ In scope:
   An organization's analytics identity replaced or removed after creation.
 - **The deployment templates.** A grant in `terraform/aws` or `terraform/gcp` wider than the
   service needs — in particular anything that lets the runtime identity read a trajectory payload.
+  The Cloudflare deployment's R2 key covers its whole bucket by design (R2 grants nothing narrower);
+  a path that exposes that key outside the Worker and its container is in scope.
 
 Out of scope:
 

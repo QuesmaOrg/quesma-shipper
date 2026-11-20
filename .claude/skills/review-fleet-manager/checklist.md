@@ -95,7 +95,7 @@ and report only what the PR introduced or made worse.
     bucket; no cache, no local disk, no database, no lock service. [H, codified]
 18. **Control records are conditional.** Created with `If-None-Match: *`, replaced with `If-Match`;
     replicas coordinate through the store and nowhere else; an organization is never created in a
-    bucket without versioning. [H, codified]
+    bucket without versioning, except through the r2 provider, which cannot version. [H, codified]
 19. **Disposable records never fail a request.** `seen/` uses unconditional writes, is tagged
     `lifecycle=ephemeral`, collapses check-ins within `seenWriteInterval`, and a failed write is
     logged and dropped. The hot path never rewrites a security record. [H, codified]

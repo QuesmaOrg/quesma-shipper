@@ -15,7 +15,8 @@ without versioning starts the service normally, then refuses to create an organi
 `{"error":"create organization unavailable"}`. The reason appears only in the service log, as
 `admin create organization failed: object versioning is required`, so check the log rather than the
 response. `make run` and the Terraform templates both enable versioning, so this applies only if you
-create the bucket by hand.
+create the bucket by hand. `--provider r2` skips the check, because R2 cannot version; the service
+says so once at startup: `provider r2 has no object versioning: a replaced object is not retained`.
 
 **The telemetry signing identity is created at startup, before the listener opens.** The runtime
 identity needs both read and write access to `private/fleet-manager/telemetry-identity.json`,
@@ -109,7 +110,10 @@ AWS, check-in records after one). Current versions never expire. Within that wee
 leaked under old scrub rules is still readable in the earlier version; delete it by hand to remove
 it sooner. On GCS a deleted version, by lifecycle or by hand, stays restorable for the bucket's
 soft-delete retention, seven days unless changed. A `state reset` after a shipper upgrade that
-changed scrubbing re-uploads every file the new binary scrubs differently.
+changed scrubbing re-uploads every file the new binary scrubs differently. On R2 the opposite
+holds: the re-upload replaces the earlier object, so the leaked value is gone with it, and so is
+the history. If one install identity runs on two machines (a cloned VM, a restored backup),
+whichever uploads a file last wins, and both believe they shipped it.
 
 One thing has no dependency at all: installing the shipper binary. It registers a service that waits
 for enrollment, so you can push it out ahead of everything else and enroll later.
@@ -119,7 +123,8 @@ for enrollment, so you can push it out ahead of everything else and enroll later
 **Rotate the administrator credential.** With Terraform,
 `terraform apply -replace=random_bytes.admin_credential`; the digest object changes during the
 apply and the old credential stops working immediately. Locally, delete
-`fleet-manager/data/admin-credential` and run `make -C fleet-manager run` again.
+`fleet-manager/data/admin-credential` and run `make -C fleet-manager run` again. On Cloudflare,
+delete `~/.quesma/fleet-manager/cloudflare/admin_credential` and run `deploy.sh cloudflare` again.
 
 **Give a third party one organization.** **Partner → Create credential** in the administration UI
 (or `POST /v1/admin/orgs/{org}/partner`) shows an `fmp1.` credential once. It can manage that
@@ -184,6 +189,22 @@ Shippers update themselves through the signed TUF channel. This is pre-1.0: the 
 configuration format and the object naming are pinned by tests but can still change between minor
 releases.
 
+**On Cloudflare,** `deploy.sh cloudflare` again is the upgrade: it resolves the image tag to a
+digest, rebuilds `cloudflare/Dockerfile` on your Docker, pushes it to Cloudflare's registry and
+deploys. A deploy does not restart a running container. The Worker does, on the first request after
+it, whenever the image or the container environment differs from what the container started with.
+That is also how a new R2 key takes effect: export the two `FLEET_MANAGER_R2_*` variables and run
+the deploy again (without them, a re-run keeps the stored ones). One `lite` container (1/16 vCPU,
+256 MiB) serves every request, starts in about a second once Cloudflare has its image, and stops
+after 30 minutes without one. Its log is in the dashboard under Workers, `fleet-manager`, and
+`npx wrangler tail fleet-manager` shows the Worker's. The R2 key is an Object Read & Write token for the one bucket: R2 grants nothing
+narrower, so unlike the Terraform templates the runtime can read, overwrite and delete anything
+there, the admin credential's digest included. Only the Worker and its container hold the key.
+Shippers get per-object tickets. To run the same image on your own server instead, keep the R2
+bucket and run the container with `FLEET_MANAGER_PROVIDER=r2`, `FLEET_MANAGER_BUCKET`,
+`FLEET_MANAGER_ACCOUNT` and the two `FLEET_MANAGER_R2_*` keys in its environment (arguments would
+replace the image's `--serve`), with Cloudflare Tunnel or any HTTPS terminator in front.
+
 **Back up three things,** which fail differently: the private `age` identities (losing them makes
 every object ever written permanently unreadable), the bucket (it *is* the database), and the
 Terraform state. If you mirror the archive, exclude `private/`. It holds the telemetry signing
@@ -222,7 +243,8 @@ other than MinIO, or a policy that requires you to create the bucket yourself.
 **What the store must provide.** Object versioning; conditional writes (`If-None-Match: *` and
 `If-Match`); presigned PUT with `Content-Length` signed; object tagging on PUT; and user metadata on
 PUT. Only `x-amz-tagging` and `x-amz-meta-*` may appear as signed headers on a ticket. Any other
-signed header is rejected.
+signed header is rejected. Cloudflare R2 has neither versioning nor tagging: use `--provider r2`,
+which needs neither, rather than `aws` with a custom endpoint.
 
 **Key layout.**
 

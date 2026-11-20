@@ -75,8 +75,11 @@ func openTarget(ctx context.Context, target *targetOptions) (*Manager, UploadSig
 			return nil, nil, errors.New("FLEET_MANAGER_AZURE_SUBSCRIPTION_ID and FLEET_MANAGER_AZURE_RESOURCE_GROUP are required for Azure versioning verification")
 		}
 		store, signer, err = newAzure(target.account, target.bucket, subscriptionID, resourceGroup)
+	case "r2":
+		store, signer, err = newR2(target.account, target.bucket, os.Getenv("FLEET_MANAGER_R2_JURISDICTION"),
+			os.Getenv("FLEET_MANAGER_R2_ACCESS_KEY_ID"), os.Getenv("FLEET_MANAGER_R2_SECRET_ACCESS_KEY"))
 	default:
-		return nil, nil, errors.New("--provider must be aws, gcp, or azure")
+		return nil, nil, errors.New("--provider must be aws, gcp, azure, or r2")
 	}
 	if err != nil {
 		return nil, nil, err
@@ -85,16 +88,19 @@ func openTarget(ctx context.Context, target *targetOptions) (*Manager, UploadSig
 		return nil, nil, errors.New("upload signer is unavailable")
 	}
 	manager, err := NewManager(store)
-	return manager, signer, err
+	if err != nil {
+		return nil, nil, err
+	}
+	return manager, signer, nil
 }
 
 func runServe(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("--serve", flag.ContinueOnError)
 	target := &targetOptions{}
-	fs.StringVar(&target.provider, "provider", os.Getenv("FLEET_MANAGER_PROVIDER"), "aws, gcp, or azure")
+	fs.StringVar(&target.provider, "provider", os.Getenv("FLEET_MANAGER_PROVIDER"), "aws, gcp, azure, or r2")
 	fs.StringVar(&target.bucket, "bucket", os.Getenv("FLEET_MANAGER_BUCKET"), "bucket or Azure container")
 	fs.StringVar(&target.region, "region", os.Getenv("FLEET_MANAGER_REGION"), "AWS region")
-	fs.StringVar(&target.account, "account", os.Getenv("FLEET_MANAGER_ACCOUNT"), "GCP service account or Azure storage account")
+	fs.StringVar(&target.account, "account", os.Getenv("FLEET_MANAGER_ACCOUNT"), "GCP service account, Azure storage account, or Cloudflare account ID")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -135,6 +141,9 @@ func runServe(ctx context.Context, args []string) error {
 	}
 	httpServer := &http.Server{Addr: ":" + port, Handler: server.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	log.Printf("serving multiple organizations with provider %s on port %s", target.provider, port)
+	if manager.cannotVersion() {
+		log.Printf("provider %s has no object versioning: a replaced object is not retained", target.provider)
+	}
 	// Said at startup, because it decides what every organization that left a setting unset is
 	// served, and nothing else in the log would show it.
 	collector := defaults.TelemetryCollectorURL

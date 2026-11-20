@@ -28,7 +28,8 @@ where the fact surfaced; facts learned before the module moved into this reposit
 - The telemetry signing seed lives at `private/fleet-manager/telemetry-identity.json`, outside
   `v1/`, so `v1/*` readers cannot see it. The runtime needs read and write on it at startup even
   when forwarding is off; archive mirrors exclude `private/`.
-- Object versioning is required and checked at first organization creation, not at startup.
+- Object versioning is required (except on `r2`, which cannot version) and checked at first
+  organization creation, not at startup.
   Replacing an object creates a new version; a secret written by mistake lives on in the old one,
   sealed to the recipients of that time. The external reader grant is current versions only, so a
   displaced version is unreachable through the bucket policy, but a copy a reader already took
