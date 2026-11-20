@@ -8,8 +8,9 @@ creating the organization and enrolling the shippers, are
 
 ## What it creates
 
-- A private S3 bucket with versioning on, a full public-access block, and a lifecycle rule that
-  expires superseded check-in records the day after they are superseded.
+- A private S3 bucket with versioning on, a full public-access block, and lifecycle rules that
+  expire every superseded version seven days after it is superseded, and superseded check-in
+  records after one.
 - A runtime role for the service: read and write below every organization's `control/` prefix,
   write and tag below `install=`, read there only to name installs and to deduplicate uploads (it
   can fetch ciphertext, never decrypt it), and read of the two credential digests it verifies

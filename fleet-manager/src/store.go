@@ -12,7 +12,7 @@ type ObjectStore interface {
 	Create(context.Context, string, []byte) error
 	Replace(context.Context, string, string, []byte) error
 	// Put writes unconditionally. It is for records that can be regenerated at will, so providers
-	// may mark them for lifecycle expiry rather than keeping every version forever.
+	// may mark them for lifecycle expiry sooner than other records.
 	Put(context.Context, string, []byte) error
 	List(context.Context, string) ([]ObjectInfo, error)
 	ListPrefixes(context.Context, string, string) ([]string, error)
