@@ -288,25 +288,34 @@ DEFAULT_IMAGE=docker.io/quesma/fleet-manager:latest
 
 cf_apply() {
 	need curl tar openssl docker
+	docker buildx version >/dev/null 2>&1 || die "needs docker with buildx, to resolve the image digest"
 	[ -n "${WRANGLER:-}" ] || need npx
 	mkdir -p "$DIR"
 	chmod 700 "$DIR"
 	cf_collect
 	jurisdiction=${JURISDICTION:+--jurisdiction $JURISDICTION}
-	if [ ! -f "$DIR/url" ] && { [ -z "${FLEET_MANAGER_R2_ACCESS_KEY_ID:-}" ] || [ -z "${FLEET_MANAGER_R2_SECRET_ACCESS_KEY:-}" ]; }; then
-		die "FLEET_MANAGER_R2_ACCESS_KEY_ID and FLEET_MANAGER_R2_SECRET_ACCESS_KEY are required on the first" \
-			"deploy: in the dashboard, R2 > Manage API tokens, create an Object Read & Write token for bucket $BUCKET"
-	fi
 	cf_fetch_template
 	image=$(cf_pin_image "$IMAGE")
 	printf '# Written by deploy.sh: the image this deployment runs.\nFROM %s\n' "$image" >"$DIR/worker/Dockerfile"
+	say "Cloudflare account $ACCOUNT, Worker $NAME, bucket $BUCKET, image $image"
+	[ -f "$DIR/admin_credential" ] \
+		|| say "no admin credential in $DIR: a new one replaces whatever this bucket accepted before"
+	if [ -z "$YES" ]; then
+		printf 'deploy: type yes to deploy: '
+		read -r answer || answer=
+		[ "$answer" = yes ] || die "not confirmed"
+	fi
 	cf_write_vars
-	say "Cloudflare account $ACCOUNT, bucket $BUCKET, image $image"
 
 	if ! wr r2 bucket info "$BUCKET" $jurisdiction >"$DIR/wrangler.log" 2>&1; then
 		say "creating the R2 bucket $BUCKET"
 		wr r2 bucket create "$BUCKET" $jurisdiction >"$DIR/wrangler.log" 2>&1 \
 			|| { cat "$DIR/wrangler.log"; die "could not create the R2 bucket $BUCKET"; }
+	fi
+	if [ ! -f "$DIR/url" ] && { [ -z "${FLEET_MANAGER_R2_ACCESS_KEY_ID:-}" ] || [ -z "${FLEET_MANAGER_R2_SECRET_ACCESS_KEY:-}" ]; }; then
+		die "FLEET_MANAGER_R2_ACCESS_KEY_ID and FLEET_MANAGER_R2_SECRET_ACCESS_KEY are required on the first" \
+			"deploy: the bucket $BUCKET exists now, so in the dashboard, R2 > Manage API tokens, create an" \
+			"Object Read & Write token for it, export its two keys and run this again"
 	fi
 	if [ ! -f "$DIR/admin_credential" ]; then
 		(umask 077 && printf 'fma1.%s' "$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')" >"$DIR/admin_credential")
@@ -318,7 +327,11 @@ cf_apply() {
 		|| { cat "$DIR/wrangler.log"; die "could not write the admin credential digest to $BUCKET"; }
 
 	secrets=$DIR/secrets.json
+	# dash skips the EXIT trap on a signal, so each signal becomes an exit that runs it.
 	trap 'rm -f "$secrets"' EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	trap 'exit 129' HUP
 	(umask 077 && cf_secrets >"$secrets")
 	say "deploying with wrangler $WRANGLER_VERSION; the first deploy builds the image and can take minutes"
 	wr deploy --config "$DIR/worker/wrangler.jsonc" --name "$NAME" --secrets-file "$secrets" >"$DIR/deploy.log" 2>&1 \
@@ -373,7 +386,24 @@ cf_destroy() {
 		read -r answer || answer=
 		[ "$answer" = yes ] || die "not confirmed"
 	fi
-	wr delete --name "$NAME" >"$DIR/wrangler.log" 2>&1 || { cat "$DIR/wrangler.log"; die "wrangler delete failed"; }
+	# Run non-interactively, wrangler deletes the Worker but only lists the Container applications it
+	# owned, which keep running and billing; they are deleted here by the ids it lists.
+	wr delete --name "$NAME" --force </dev/null >"$DIR/wrangler.log" 2>&1 \
+		|| { cat "$DIR/wrangler.log"; die "wrangler delete failed"; }
+	if grep -q 'not check whether' "$DIR/wrangler.log"; then
+		cat "$DIR/wrangler.log"
+		die "the Worker is gone, but its container may still run: delete it in the dashboard under Containers"
+	fi
+	ids=$(sed -n 's/^[[:space:]]*- .* (\([0-9A-Za-z-]*\))[[:space:]]*$/\1/p' "$DIR/wrangler.log")
+	if [ -z "$ids" ] && grep -q 'running and billing' "$DIR/wrangler.log"; then
+		cat "$DIR/wrangler.log"
+		die "the Worker is gone, but no container id could be read: delete it in the dashboard under Containers"
+	fi
+	for id in $ids; do
+		(CI=true && export CI && wr containers delete "$id" </dev/null >"$DIR/wrangler.log" 2>&1) \
+			|| { cat "$DIR/wrangler.log"; die "could not delete the container application $id"; }
+		say "deleted the container application $id"
+	done
 	rm -f "$DIR/url"
 	say "removed; delete the bucket in the dashboard once you no longer need what it holds"
 }
@@ -397,6 +427,14 @@ cf_collect() {
 		|| die "--account ID (or CLOUDFLARE_ACCOUNT_ID) is required: the 32-character ID in the dashboard URL"
 	case $JURISDICTION in '' | eu | fedramp) ;; *) die "--jurisdiction is eu or fedramp, not $JURISDICTION" ;; esac
 	case $TELEMETRY in *[\"\\]*) die "--telemetry URL may not contain quotes or backslashes" ;; esac
+	# The R2 token is scoped to one bucket and the secrets belong to one Worker.
+	if [ -f "$DIR/url" ]; then
+		for pair in "bucket:$BUCKET" "name:$NAME" "jurisdiction:$JURISDICTION"; do
+			key=${pair%%:*} new=${pair#*:} old=$(stored "${pair%%:*}")
+			[ "$old" = "$new" ] || die "--$key cannot change on a deployed Fleet Manager (${old:-none} to" \
+				"${new:-none}): run \`$0 cloudflare destroy\` first, or use another --dir"
+		done
+	fi
 	export CLOUDFLARE_ACCOUNT_ID=$ACCOUNT
 }
 
@@ -449,11 +487,15 @@ cf_pin_image() {
 	case $1 in *@sha256:*) echo "$1"; return ;; esac
 	base=$1
 	case ${1##*/} in *:*) base=${1%:*} ;; esac
-	digest=$(docker buildx imagetools inspect "$1" --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"') || digest=
-	if [ -n "$digest" ]; then
-		echo "$base@$digest"
+	# Only "not found" from the registry means absent; any other failure stops rather than guessing.
+	if out=$(docker buildx imagetools inspect "$1" --format '{{json .Manifest.Digest}}' 2>&1); then
+		echo "$base@$(printf '%s' "$out" | tr -d '"')"
 		return
 	fi
+	case $out in
+	*": not found"* | *"repository does not exist"*) ;;
+	*) die "cannot ask the registry about $1, so not guessing: $out" ;;
+	esac
 	docker image inspect "$1" >/dev/null 2>&1 || die "image $1 is neither in a registry nor in local Docker"
 	say "image $1 exists only in local Docker, so this deployment is not pinned to a digest" >&2
 	echo "$1"
@@ -501,7 +543,7 @@ Options, remembered between runs:
   --jurisdiction J        on cloudflare, an R2 jurisdiction: eu or fedramp
   --telemetry URL         forward shipper telemetry there for organizations that name nowhere
   --ref REF               the template's git ref, main unless set once; --dir DIR where state is kept
-  -y, --yes               apply without asking
+  -y, --yes               apply (or on cloudflare, deploy or destroy) without asking
 
 Needs: terraform or tofu, curl, and the aws or gcloud CLI signed in to the target account.
 On cloudflare instead: Docker, npx (Node.js), curl, openssl, a Workers Paid plan, CLOUDFLARE_API_TOKEN

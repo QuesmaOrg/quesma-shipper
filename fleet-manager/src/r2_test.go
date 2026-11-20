@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -119,5 +120,16 @@ func TestOpenTargetWaivesVersioningOnlyForR2(t *testing.T) {
 	}
 	if !manager.allowUnversioned || !org.allowUnversioned {
 		t.Fatal("r2 manager still requires versioning")
+	}
+	// Loading AWS config makes no request, so this stays offline; a stray profile must not interfere.
+	t.Setenv("AWS_CONFIG_FILE", os.DevNull)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", os.DevNull)
+	t.Setenv("AWS_PROFILE", "")
+	versioned, _, err := openTarget(context.Background(), &targetOptions{provider: "aws", bucket: "archive", region: "eu-central-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if versioned.allowUnversioned {
+		t.Fatal("aws manager waives versioning")
 	}
 }

@@ -98,6 +98,7 @@ on each machine.
 
    BUCKET_NAME=acme-trajectories   # has to be globally unique: no other AWS or Google Cloud customer has it
    GCLOUD_PROJECT_ID=acme-prod     # Google Cloud only: an existing project ID with a billing account linked
+   CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef   # Cloudflare only: the ID in the dashboard URL
 
    sh deploy.sh aws --bucket $BUCKET_NAME --region eu-central-1                                # AWS, or
    sh deploy.sh gcp --bucket $BUCKET_NAME --project $GCLOUD_PROJECT_ID --region europe-central2  # Google Cloud, or
@@ -107,9 +108,10 @@ on each machine.
    R2 has no object versioning: on Cloudflare, a file uploaded again replaces the earlier copy
    instead of keeping it ([OPERATIONS.md](fleet-manager/OPERATIONS.md) has what that gives up).
 
-   It shows the plan, asks for `yes`, and after a few minutes prints the service URL, the admin UI
-   address and the admin credential. Keep `~/.quesma/fleet-manager/<cloud>/` backed up, since the
-   Terraform state is there. Running the same command again applies the latest template; upgrading
+   It shows the plan (on Cloudflare, what it will deploy), asks for `yes`, and after a few minutes
+   prints the service URL, the admin UI address and the admin credential. Keep
+   `~/.quesma/fleet-manager/<cloud>/` backed up: it holds the Terraform state, and on Cloudflare the
+   only copy of the admin credential. Running the same command again applies the latest template; upgrading
    the service image is in [OPERATIONS.md](fleet-manager/OPERATIONS.md). `sh deploy.sh aws output
    admin_credential` prints the credential again; `sh deploy.sh --help` lists the rest.
 
@@ -159,8 +161,10 @@ on each machine.
    download it again after the shipper updates. From an up-to-date clone,
    `(cd src && go run ./cmd/quesma-unseal open …)` does the same without the download.
 
-   On Google Cloud, `deploy.sh gcp output bucket` and a `gcs` remote; on Azure, the container name
-   and an `azureblob` remote. `$W/plain` holds `<install name> (<id prefix>)/<source>/<native path>`,
+   On Google Cloud, `deploy.sh gcp output bucket` and a `gcs` remote; on Cloudflare,
+   `deploy.sh cloudflare output bucket` and an R2 remote (`rclone config create r2 s3 provider
+   Cloudflare access_key_id … secret_access_key … endpoint https://<account>.r2.cloudflarestorage.com`);
+   on Azure, the container name and an `azureblob` remote. `$W/plain` holds `<install name> (<id prefix>)/<source>/<native path>`,
    or the install id when unnamed, each file beside a `.manifest.json` sidecar. Re-running both
    commands fetches and decrypts only changed objects. An object whose output moved, because its
    install was renamed or its session archived, leaves no copy at the old path; nothing else is

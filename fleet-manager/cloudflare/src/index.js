@@ -52,6 +52,8 @@ export class FleetManager extends DurableObject {
 			if (this.started === wanted) return;
 			const live = await container.inspect();
 			if (live && live.image === image && live.labels.config === config) {
+				// The idle timeout belongs to the Durable Object instance that set it, not the container.
+				await container.setInactivityTimeout(IDLE_MS);
 				this.started = wanted;
 				return;
 			}

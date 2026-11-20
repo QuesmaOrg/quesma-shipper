@@ -197,8 +197,9 @@ after 30 minutes without one. Its log is in the dashboard under Workers, `fleet-
 narrower, so unlike the Terraform templates the runtime can read, overwrite and delete anything
 there, the admin credential's digest included. Only the Worker and its container hold the key.
 Shippers get per-object tickets. To run the same image on your own server instead, keep the R2
-bucket, run the container with those same `FLEET_MANAGER_*` variables and `--provider r2`, and put
-Cloudflare Tunnel or any HTTPS terminator in front.
+bucket and run the container with `FLEET_MANAGER_PROVIDER=r2`, `FLEET_MANAGER_BUCKET`,
+`FLEET_MANAGER_ACCOUNT` and the two `FLEET_MANAGER_R2_*` keys in its environment (arguments would
+replace the image's `--serve`), with Cloudflare Tunnel or any HTTPS terminator in front.
 
 **Back up three things,** which fail differently: the private `age` identities (losing them makes
 every object ever written permanently unreadable), the bucket (it *is* the database), and the

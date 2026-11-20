@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ const testDigest = "sha256:" + "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12
 
 // deployCloudflare runs `deploy.sh cloudflare <args>` against stand-ins for wrangler, docker and
 // curl. wrangler records each call, what it read on stdin and the secrets file it was handed.
+// DOCKER_REGISTRY=down in env makes the registry lookup fail the way a rate limit does.
 func deployCloudflare(t *testing.T, dir string, env []string, args ...string) (string, error) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -40,20 +42,28 @@ func deployCloudflare(t *testing.T, dir string, env []string, args ...string) (s
 		write("template/fleet-manager/cloudflare/"+name, string(raw), 0o644)
 	}
 	log := filepath.Join(dir, "log")
+	// The container line is indented, as wrangler's formatted warnings may be.
 	write("bin/wrangler", `#!/bin/sh
 echo "$*" >>"`+log+`/wrangler-calls"
 case "$1 $2 $3" in
 "r2 bucket info") exit 1 ;;
 "r2 object put") cat >"`+log+`/object" ;;
 esac
-if [ "$1" = deploy ]; then
+case $1 in
+deploy)
 	while [ $# -gt 0 ]; do [ "$1" = --secrets-file ] && cp "$2" "`+log+`/secrets.json"; shift; done
-	echo "Deployed fleet-manager https://fleet-manager.example.workers.dev"
-fi
+	echo "Deployed fleet-manager https://fleet-manager.example.workers.dev" ;;
+delete)
+	echo "fleet-manager owned 1 Cloudflare Container application, which keeps running and billing now that the Worker is gone:"
+	echo "  - fleet-manager-fleetmanager (a1b2c3d4-0000-4000-8000-000000000001)" ;;
+esac
 exit 0
 `, 0o755)
 	write("bin/docker", `#!/bin/sh
-[ "$1 $2 $3" = "buildx imagetools inspect" ] && echo '"`+testDigest+`"'
+if [ "$1 $2 $3" = "buildx imagetools inspect" ]; then
+	[ "${DOCKER_REGISTRY:-}" = down ] && { echo "ERROR: toomanyrequests: rate limit reached"; exit 1; }
+	echo '"`+testDigest+`"'
+fi
 exit 0
 `, 0o755)
 	write("bin/curl", `#!/bin/sh
@@ -67,21 +77,51 @@ exit 0
 	return string(out), err
 }
 
-func TestDeployCloudflareRefusesAFirstRunWithoutR2Keys(t *testing.T) {
+func wranglerCalls(t *testing.T, dir string) string {
+	t.Helper()
+	raw, _ := os.ReadFile(filepath.Join(dir, "log/wrangler-calls"))
+	return string(raw)
+}
+
+var cloudflareKeys = []string{"CLOUDFLARE_ACCOUNT_ID=" + testR2Account, "FLEET_MANAGER_R2_ACCESS_KEY_ID=key-id", "FLEET_MANAGER_R2_SECRET_ACCESS_KEY=key-secret"}
+
+func TestDeployCloudflareAsksBeforeChangingAnything(t *testing.T) {
 	dir := t.TempDir()
-	out, err := deployCloudflare(t, dir, []string{"CLOUDFLARE_ACCOUNT_ID=" + testR2Account, "FLEET_MANAGER_R2_ACCESS_KEY_ID=k"}, "--bucket", "fleet")
-	if err == nil || !strings.Contains(out, "FLEET_MANAGER_R2_SECRET_ACCESS_KEY") {
-		t.Fatalf("deployed without both R2 keys: %v\n%s", err, out)
+	out, err := deployCloudflare(t, dir, cloudflareKeys, "--bucket", "fleet")
+	if err == nil || !strings.Contains(out, "not confirmed") {
+		t.Fatalf("deployed without a yes: %v\n%s", err, out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "log/wrangler-calls")); err == nil {
-		t.Error("wrangler ran before the keys were checked")
+	if calls := wranglerCalls(t, dir); calls != "" {
+		t.Errorf("wrangler ran before the deploy was confirmed:\n%s", calls)
+	}
+}
+
+func TestDeployCloudflareCreatesTheBucketBeforeAskingForItsKeys(t *testing.T) {
+	dir := t.TempDir()
+	out, err := deployCloudflare(t, dir, []string{"CLOUDFLARE_ACCOUNT_ID=" + testR2Account, "FLEET_MANAGER_R2_ACCESS_KEY_ID=k"}, "--bucket", "fleet", "--yes")
+	if err == nil || !strings.Contains(out, "FLEET_MANAGER_R2_SECRET_ACCESS_KEY") || !strings.Contains(out, "the bucket fleet exists now") {
+		t.Fatalf("deployed without both R2 keys, or did not say the bucket exists: %v\n%s", err, out)
+	}
+	calls := wranglerCalls(t, dir)
+	if !strings.Contains(calls, "r2 bucket create fleet") || strings.Contains(calls, "object put") || strings.Contains(calls, "deploy") {
+		t.Errorf("want the bucket created and nothing else written:\n%s", calls)
+	}
+}
+
+func TestDeployCloudflareStopsWhenTheRegistryCannotBeAsked(t *testing.T) {
+	dir := t.TempDir()
+	out, err := deployCloudflare(t, dir, append([]string{"DOCKER_REGISTRY=down"}, cloudflareKeys...), "--bucket", "fleet", "--yes")
+	if err == nil || !strings.Contains(out, "cannot ask the registry") {
+		t.Fatalf("deployed an unresolved image: %v\n%s", err, out)
+	}
+	if calls := wranglerCalls(t, dir); calls != "" {
+		t.Errorf("wrangler ran with an unresolved image:\n%s", calls)
 	}
 }
 
 func TestDeployCloudflareUploadsOnlyTheDigestAndKeepsKeysOutOfState(t *testing.T) {
 	dir := t.TempDir()
-	keys := []string{"CLOUDFLARE_ACCOUNT_ID=" + testR2Account, "FLEET_MANAGER_R2_ACCESS_KEY_ID=key-id", "FLEET_MANAGER_R2_SECRET_ACCESS_KEY=key-secret"}
-	out, err := deployCloudflare(t, dir, keys, "--bucket", "fleet")
+	out, err := deployCloudflare(t, dir, cloudflareKeys, "--bucket", "fleet", "--yes")
 	if err != nil {
 		t.Fatalf("deploy.sh: %v\n%s", err, out)
 	}
@@ -99,6 +139,9 @@ func TestDeployCloudflareUploadsOnlyTheDigestAndKeepsKeysOutOfState(t *testing.T
 	sum := sha256.Sum256(credential)
 	if object, _ := os.ReadFile(filepath.Join(dir, "log/object")); string(object) != `{"schema":1,"secret_digest":"`+hex.EncodeToString(sum[:])+`"}` {
 		t.Errorf("uploaded %q, want only the credential's digest", object)
+	}
+	if calls := wranglerCalls(t, dir); !strings.Contains(calls, "r2 object put fleet/v1/control/admin/credential.json --pipe --remote") {
+		t.Errorf("digest not written to the admin credential key in the remote bucket:\n%s", calls)
 	}
 	dockerfile, _ := os.ReadFile(filepath.Join(state, "worker/Dockerfile"))
 	if !strings.Contains(string(dockerfile), "FROM docker.io/quesma/fleet-manager@"+testDigest+"\n") {
@@ -119,15 +162,17 @@ func TestDeployCloudflareUploadsOnlyTheDigestAndKeepsKeysOutOfState(t *testing.T
 			t.Errorf("secret %s = %q, want %q", name, secrets[name], value)
 		}
 	}
-	entries, _ := os.ReadDir(state)
-	for _, entry := range entries {
-		if raw, _ := os.ReadFile(filepath.Join(state, entry.Name())); strings.Contains(string(raw), "key-secret") {
-			t.Errorf("%s keeps the R2 secret on disk", entry.Name())
+	_ = filepath.WalkDir(state, func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() {
+			if raw, _ := os.ReadFile(path); strings.Contains(string(raw), "key-secret") {
+				t.Errorf("%s keeps the R2 secret on disk", path)
+			}
 		}
-	}
+		return nil
+	})
 
 	// An upgrade needs no keys: Cloudflare keeps the stored secrets and the credential is reused.
-	out, err = deployCloudflare(t, dir, []string{"CLOUDFLARE_ACCOUNT_ID=" + testR2Account})
+	out, err = deployCloudflare(t, dir, []string{"CLOUDFLARE_ACCOUNT_ID=" + testR2Account}, "--yes")
 	if err != nil {
 		t.Fatalf("second run: %v\n%s", err, out)
 	}
@@ -138,6 +183,32 @@ func TestDeployCloudflareUploadsOnlyTheDigestAndKeepsKeysOutOfState(t *testing.T
 	raw, _ = os.ReadFile(filepath.Join(dir, "log/secrets.json"))
 	if strings.Contains(string(raw), "R2_ACCESS_KEY") || !strings.Contains(string(raw), `"FLEET_MANAGER_BUCKET":"fleet"`) {
 		t.Errorf("second run secrets %s, want the remembered bucket and no R2 keys", raw)
+	}
+
+	// The keys and secrets belong to one bucket and one Worker, so neither may change in place.
+	for _, args := range [][]string{{"--bucket", "other"}, {"--name", "other"}} {
+		out, err = deployCloudflare(t, dir, []string{"CLOUDFLARE_ACCOUNT_ID=" + testR2Account}, append(args, "--yes")...)
+		if err == nil || !strings.Contains(out, "cannot change on a deployed Fleet Manager") {
+			t.Errorf("%v on an existing deployment was accepted: %v\n%s", args, err, out)
+		}
+	}
+}
+
+func TestDeployCloudflareDestroyAlsoDeletesTheContainer(t *testing.T) {
+	dir := t.TempDir()
+	if out, err := deployCloudflare(t, dir, cloudflareKeys, "--bucket", "fleet", "--yes"); err != nil {
+		t.Fatalf("deploy.sh: %v\n%s", err, out)
+	}
+	out, err := deployCloudflare(t, dir, []string{"CLOUDFLARE_ACCOUNT_ID=" + testR2Account}, "destroy", "--yes")
+	if err != nil {
+		t.Fatalf("destroy: %v\n%s", err, out)
+	}
+	calls := wranglerCalls(t, dir)
+	if !strings.Contains(calls, "delete --name fleet-manager --force") || !strings.Contains(calls, "containers delete a1b2c3d4-0000-4000-8000-000000000001") {
+		t.Errorf("destroy left the container application running:\n%s", calls)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "state/cloudflare/url")); err == nil {
+		t.Error("destroy kept the service URL")
 	}
 }
 
