@@ -1,0 +1,49 @@
+# OpenTelemetry that Claude Code and Codex exported to a gateway, for machines with no shipper. The
+# gateway spools the log events per person and runs the shipper over each spool, so they are
+# scrubbed, sealed and uploaded as any source is.
+#
+# The one root is $QUESMA_OTEL_SPOOL, which only a gateway sets: on a developer's machine it is
+# unset, the root stays unresolved and nothing is read.
+spec_version: 1
+family: otel
+display_name: OpenTelemetry
+
+sources:
+  - id: otel-claude-code
+    description: Claude Code log events, one JSON object per line, one immutable file per ship.
+    gather: file_glob
+    artifact_class: trajectory
+    roots:
+      - $QUESMA_OTEL_SPOOL
+    max_file_bytes: 536870912
+    include:
+      - "claude-code/*.jsonl"
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 65536
+
+  - id: otel-codex
+    description: Codex log events, one JSON object per line, one immutable file per ship.
+    gather: file_glob
+    artifact_class: trajectory
+    roots:
+      - $QUESMA_OTEL_SPOOL
+    max_file_bytes: 536870912
+    include:
+      - "codex/*.jsonl"
+    sniff:
+      kind: jsonl
+      max_scan_bytes: 65536
+
+  - id: otel-identity
+    description: Who the telemetry says sent it, lifted out of the events; one line per distinct claim.
+    gather: file_glob
+    scrub: false
+    artifact_class: context
+    roots:
+      - $QUESMA_OTEL_SPOOL
+    max_file_bytes: 8388608
+    include:
+      - "identity.jsonl"
+    sniff:
+      kind: jsonl
