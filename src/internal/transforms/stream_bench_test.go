@@ -10,12 +10,13 @@ import (
 	"filippo.io/age"
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 // Both paths include input reads, scrubbing, hashing, sealing and draining the prepared object.
 func BenchmarkLargeJSONLPipeline(b *testing.B) {
 	id, _ := age.GenerateX25519Identity()
-	scrubber, err := transforms.New(transforms.DefaultConfig())
+	scrubber, err := scrub.New(scrub.DefaultConfig())
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -51,7 +52,7 @@ func BenchmarkLargeJSONLPipeline(b *testing.B) {
 								b.Fatal(err)
 							}
 							m.SourceHash = transforms.Hash(raw)
-							result, err := scrubber.Scrub(raw, transforms.Hint{Family: "claude-code", JSONL: true})
+							result, err := scrubber.Scrub(raw, scrub.Hint{Family: "claude-code", JSONL: true})
 							if err != nil {
 								b.Fatal(err)
 							}
@@ -75,7 +76,7 @@ func BenchmarkLargeJSONLPipeline(b *testing.B) {
 							if err != nil {
 								b.Fatal(err)
 							}
-							result, hash, err := scrubber.ScrubTo(context.Background(), plain, source, transforms.Hint{Family: "claude-code", JSONL: true}, size)
+							result, hash, err := scrubber.ScrubTo(context.Background(), plain, source, scrub.Hint{Family: "claude-code", JSONL: true}, size)
 							source.Close()
 							if err != nil {
 								b.Fatal(err)

@@ -13,6 +13,7 @@ on:
     # every enrolled machine download a byte-identical-in-behavior new shipper.
     paths:
       - "src/**"
+      - "scrub/**"
       - "scripts/release-version.sh"
       - "VERSION"
       - "Makefile"

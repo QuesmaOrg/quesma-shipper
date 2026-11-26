@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/config"
-	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 	protocol "github.com/QuesmaOrg/quesma-shipper/shipper-protocol"
 )
 
@@ -213,7 +213,7 @@ func rulebookProbes(t *testing.T) map[string]rulebookProbe {
 				if !slices.Contains(eff.StructuralEx["claude-jsonl"], "message.id") {
 					t.Error("served exemption did not merge")
 				}
-				for k := range transforms.CompiledExemptions() {
+				for k := range scrub.CompiledExemptions() {
 					if _, ok := eff.StructuralEx[k]; !ok {
 						t.Errorf("served exemptions replaced the compiled baseline: %s gone", k)
 					}

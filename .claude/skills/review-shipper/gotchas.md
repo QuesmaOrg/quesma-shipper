@@ -108,7 +108,7 @@ surfaced.
 - Doctor's warning rows never change the exit code; `TestAdvisoryRowsNeverFail` pins it, so a fully
   stopped install still exits 0. Changing that is a human decision. (#33)
 - Conformance vectors and golden output are regenerated with `-update` flags in `src/e2e`,
-  `src/internal/formats` and `src/internal/transforms`, only after a maintainer has agreed to the
+  `src/internal/formats`, `src/internal/transforms` and `scrub`, only after a maintainer has agreed to the
   diff; a vector that would change format is deferred for confirmation. (#50, #62, #66, #69, #76)
 - Fleet Manager decodes `tags.json` strictly: an older replica drops any record that carries a new
   field, so a new field needs every replica upgraded first. (#65)

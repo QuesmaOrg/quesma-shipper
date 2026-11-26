@@ -11,6 +11,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 // Per-file collection. The order is the invariant: pre-filter, content hash, scrub, seal, PUT,
@@ -228,12 +229,12 @@ func failAndBackOff(o Options, res *fileResult, key Key, fp Fingerprint, reason 
 	res.intent = intent{kind: intentBackoff, key: key, fp: next, reason: reason}
 }
 
-func scrubSource(src sources.Resolved, raw []byte, jsonl bool, scrubber *transforms.Scrubber, scrubErr error) (transforms.Result, error) {
+func scrubSource(src sources.Resolved, raw []byte, jsonl bool, scrubber *scrub.Scrubber, scrubErr error) (scrub.Result, error) {
 	if src.Scrub != nil && !*src.Scrub {
-		return transforms.Result{Out: transforms.Unscrubbed(raw, "source scrub: false"), BytesTotal: len(raw)}, nil
+		return scrub.Result{Out: scrub.Unscrubbed(raw, "source scrub: false"), BytesTotal: len(raw)}, nil
 	}
 	if scrubErr != nil {
-		return transforms.Result{}, scrubErr
+		return scrub.Result{}, scrubErr
 	}
-	return scrubber.Scrub(raw, transforms.Hint{Family: src.Family, JSONL: jsonl})
+	return scrubber.Scrub(raw, scrub.Hint{Family: src.Family, JSONL: jsonl})
 }

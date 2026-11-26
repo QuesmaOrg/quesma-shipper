@@ -7,11 +7,13 @@ import (
 	"slices"
 
 	"filippo.io/age"
-	"github.com/QuesmaOrg/quesma-shipper/internal/transforms/packs"
+
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
+	"github.com/QuesmaOrg/quesma-shipper/scrub/packs"
 )
 
 // SealPolicyDigest identifies the readers and effective scrub policy for resumable local resends.
-func SealPolicyDigest(cfg Config, recipients []age.Recipient) (string, error) {
+func SealPolicyDigest(cfg scrub.Config, recipients []age.Recipient) (string, error) {
 	readers := make([]string, 0, len(recipients))
 	for _, r := range recipients {
 		s, ok := r.(fmt.Stringer)
@@ -42,7 +44,7 @@ func SealPolicyDigest(cfg Config, recipients []age.Recipient) (string, error) {
 	body, err := json.Marshal(struct {
 		Version int
 		Readers []string
-		Scrub   Config
+		Scrub   scrub.Config
 		Rules   map[string]string
 	}{1, readers, cfg, rules})
 	if err != nil {

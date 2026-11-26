@@ -220,7 +220,7 @@ reports, and say which.
   note in the PR, and the order in which shipper, Fleet Manager and the ETL must upgrade (#49,
   #50, #62).
 - Golden output (`src/e2e/golden_test.go`), the conformance vectors (`src/conformance/`, regenerated
-  by the `-update` flags in `src/internal/formats` and `src/internal/transforms`) and the wire
+  by the `-update` flags in `src/internal/formats`, `src/internal/transforms` and `scrub`) and the wire
   fixtures behind `src/internal/controlplane/wire_contract_test.go` change only as additions the
   description explains, after a maintainer has agreed to the diff; a vector whose format would
   change is deferred for confirmation (#50, #66, #69, #76).

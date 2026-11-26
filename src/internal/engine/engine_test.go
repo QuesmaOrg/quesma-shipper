@@ -24,6 +24,7 @@ import (
 	"github.com/QuesmaOrg/quesma-shipper/internal/platform/auditlog"
 	"github.com/QuesmaOrg/quesma-shipper/internal/sources"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 // --- harness ----------------------------------------------------------------
@@ -557,7 +558,7 @@ func TestOpaquePayloadsAreDroppedAndCounted(t *testing.T) {
 	if strings.Contains(payload, blob[:64]) {
 		t.Error("an opaque payload reached the sink")
 	}
-	if m.Redaction == nil || m.Redaction.RuleHits[transforms.Dropped] != 2 {
+	if m.Redaction == nil || m.Redaction.RuleHits[scrub.Dropped] != 2 {
 		t.Errorf("the ledger should count each drop: %+v", m.Redaction)
 	}
 }

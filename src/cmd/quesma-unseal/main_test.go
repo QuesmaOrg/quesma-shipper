@@ -19,6 +19,7 @@ import (
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/formats"
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
 
 const (
@@ -97,7 +98,7 @@ func (a *archive) put(key string, m transforms.Manifest, payload string, mtime t
 	if len(to) == 0 {
 		to = []age.Recipient{a.id.Recipient()}
 	}
-	obj, _, err := transforms.Seal(m, transforms.Unscrubbed([]byte(payload), "test fixture"), to)
+	obj, _, err := transforms.Seal(m, scrub.Unscrubbed([]byte(payload), "test fixture"), to)
 	if err != nil {
 		a.t.Fatal(err)
 	}

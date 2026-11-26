@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,7 +18,10 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/QuesmaOrg/quesma-shipper/internal/transforms"
+	"github.com/QuesmaOrg/quesma-shipper/scrub"
 )
+
+var update = flag.Bool("update", false, "regenerate the container conformance vectors")
 
 const vectorPath = "../../conformance/v1/seal/container.json"
 
@@ -106,7 +110,7 @@ func tarBytesFor(t *testing.T, manifestJSON, payload []byte) []byte {
 		t.Fatal(err)
 	}
 	id := identity(t)
-	obj, _, err := transforms.Seal(m, transforms.Unscrubbed(payload, "test fixture"), []age.Recipient{id.Recipient()})
+	obj, _, err := transforms.Seal(m, scrub.Unscrubbed(payload, "test fixture"), []age.Recipient{id.Recipient()})
 	if err != nil {
 		t.Fatal(err)
 	}

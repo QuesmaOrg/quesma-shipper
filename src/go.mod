@@ -5,6 +5,7 @@ go 1.27.4
 require (
 	filippo.io/age v1.3.2
 	github.com/Masterminds/semver/v3 v3.5.0
+	github.com/QuesmaOrg/quesma-shipper/scrub v0.0.0
 	github.com/QuesmaOrg/quesma-shipper/shipper-protocol v0.0.0
 	github.com/Shopify/toxiproxy/v2 v2.13.0
 	github.com/aws/aws-sdk-go-v2 v1.48.0
@@ -108,3 +109,5 @@ replace gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.5
 
 // The protocol module lives in this repository; consumers build against the tree, not a tag.
 replace github.com/QuesmaOrg/quesma-shipper/shipper-protocol => ../shipper-protocol
+
+replace github.com/QuesmaOrg/quesma-shipper/scrub => ../scrub
