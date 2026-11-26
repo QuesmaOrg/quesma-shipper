@@ -4,6 +4,8 @@ updates:
     directory: /src
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       go-deps:
         patterns: ["*"]
@@ -22,6 +24,8 @@ updates:
     directory: /fleet-manager
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       fleet-manager-go-deps:
         patterns: ["*"]
@@ -30,6 +34,8 @@ updates:
     directory: /shipper-protocol
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       shipper-protocol-go-deps:
         patterns: ["*"]
@@ -37,11 +43,17 @@ updates:
     directory: /fleet-manager
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: terraform
     directory: /fleet-manager/terraform/aws
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: terraform
     directory: /fleet-manager/terraform/gcp
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
