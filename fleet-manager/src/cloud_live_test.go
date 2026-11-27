@@ -54,7 +54,7 @@ func TestLiveObjectStoreConformance(t *testing.T) {
 		t.Fatalf("list: %#v %v", objects, err)
 	}
 	enabled, err := manager.store.VersioningEnabled(ctx)
-	if err != nil || !enabled {
+	if err != nil || enabled == manager.cannotVersion() {
 		t.Fatalf("versioning: %t %v", enabled, err)
 	}
 }

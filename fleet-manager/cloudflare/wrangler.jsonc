@@ -1,0 +1,22 @@
+// What `deploy.sh cloudflare` deploys: one Worker forwarding every request to one Durable Object,
+// which runs the fleet-manager image as its container. Storage is R2 through the r2 provider.
+{
+	"name": "fleet-manager",
+	"main": "src/index.js",
+	"compatibility_date": "2026-11-01",
+	"workers_dev": true,
+	"observability": { "enabled": true },
+	"containers": [
+		{
+			"class_name": "FleetManager",
+			"scheduling_policy": "durable_object",
+			"images": { "base": { "dockerfile": "./Dockerfile" } }
+		}
+	],
+	"durable_objects": {
+		"bindings": [{ "name": "FLEET_MANAGER", "class_name": "FleetManager" }]
+	},
+	"exports": {
+		"FleetManager": { "type": "durable-object", "storage": "sqlite" }
+	}
+}

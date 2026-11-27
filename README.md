@@ -69,8 +69,9 @@ To run a self-managed Quesma Shipper fleet that sends data to a bucket you own, 
 Fleet Manager in your cloud account. Fleet Manager is the shared service that enrolls developer
 machines, supplies their collection settings and encryption recipients, and authorizes uploads.
 
-The steps below walk you through a reference setup on **AWS ECS Express Mode with an S3 bucket**
-or **Google Cloud Run with a Cloud Storage (GCS) bucket**. The deployment script creates Fleet
+The steps below walk you through a reference setup on **AWS ECS Express Mode with an S3 bucket**,
+**Google Cloud Run with a Cloud Storage (GCS) bucket**, or **Cloudflare Containers with an R2
+bucket**. The deployment script creates Fleet
 Manager, the bucket, and the cloud permissions they need. You then use its admin UI to create
 your organisation and invite developers to join. Set this up once for your fleet; developers
 can then follow [the shipper installation steps](#developer-install-the-shipper-each-machine)
@@ -79,7 +80,9 @@ on each machine.
 1. **Have ready:** an AWS account or Google Cloud project you can create resources in, and on your
    laptop Terraform or OpenTofu, `curl`, `age`, `age-keygen`, `rclone`, Go, and the `aws` CLI signed
    in, or `gcloud` with `gcloud auth application-default login`. On AWS the Region needs a default
-   VPC.
+   VPC. On Cloudflare: a Workers Paid plan, Docker and Node.js instead of Terraform and a cloud CLI,
+   `CLOUDFLARE_API_TOKEN` set (or `npx wrangler login`), and for the first run the two
+   `FLEET_MANAGER_R2_*` keys of an R2 Object Read & Write token for the bucket.
 
 2. **Decide two things** before anything enrolls. Ask two custodians to each run `age-keygen -o
    name.agekey` and send you only their `age1…` public recipient (`age-keygen -y name.agekey`
@@ -95,14 +98,20 @@ on each machine.
 
    BUCKET_NAME=acme-trajectories   # has to be globally unique: no other AWS or Google Cloud customer has it
    GCLOUD_PROJECT_ID=acme-prod     # Google Cloud only: an existing project ID with a billing account linked
+   CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef   # Cloudflare only: the ID in the dashboard URL
 
    sh deploy.sh aws --bucket $BUCKET_NAME --region eu-central-1                                # AWS, or
-   sh deploy.sh gcp --bucket $BUCKET_NAME --project $GCLOUD_PROJECT_ID --region europe-central2  # Google Cloud
+   sh deploy.sh gcp --bucket $BUCKET_NAME --project $GCLOUD_PROJECT_ID --region europe-central2  # Google Cloud, or
+   sh deploy.sh cloudflare --bucket $BUCKET_NAME --account $CLOUDFLARE_ACCOUNT_ID              # Cloudflare
    ```
 
-   It shows the plan, asks for `yes`, and after a few minutes prints the service URL, the admin UI
-   address and the admin credential. Keep `~/.quesma/fleet-manager/<cloud>/` backed up, since the
-   Terraform state is there. Running the same command again applies the latest template; upgrading
+   R2 has no object versioning: on Cloudflare, a file uploaded again replaces the earlier copy
+   instead of keeping it ([OPERATIONS.md](fleet-manager/OPERATIONS.md) has what that gives up).
+
+   It shows the plan (on Cloudflare, what it will deploy), asks for `yes`, and after a few minutes
+   prints the service URL, the admin UI address and the admin credential. Keep
+   `~/.quesma/fleet-manager/<cloud>/` backed up: it holds the Terraform state, and on Cloudflare the
+   only copy of the admin credential. Running the same command again applies the latest template; upgrading
    the service image is in [OPERATIONS.md](fleet-manager/OPERATIONS.md). `sh deploy.sh aws output
    admin_credential` prints the credential again; `sh deploy.sh --help` lists the rest.
 
@@ -152,8 +161,10 @@ on each machine.
    download it again after the shipper updates. From an up-to-date clone,
    `(cd src && go run ./cmd/quesma-unseal open …)` does the same without the download.
 
-   On Google Cloud, `deploy.sh gcp output bucket` and a `gcs` remote; on Azure, the container name
-   and an `azureblob` remote. `$W/plain` holds `<install name> (<id prefix>)/<source>/<native path>`,
+   On Google Cloud, `deploy.sh gcp output bucket` and a `gcs` remote; on Cloudflare,
+   `deploy.sh cloudflare output bucket` and an R2 remote (`rclone config create r2 s3 provider
+   Cloudflare access_key_id … secret_access_key … endpoint https://<account>.r2.cloudflarestorage.com`);
+   on Azure, the container name and an `azureblob` remote. `$W/plain` holds `<install name> (<id prefix>)/<source>/<native path>`,
    or the install id when unnamed, each file beside a `.manifest.json` sidecar. Re-running both
    commands fetches and decrypts only changed objects. An object whose output moved, because its
    install was renamed or its session archived, leaves no copy at the old path; nothing else is

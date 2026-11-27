@@ -17,7 +17,8 @@ customer-managed bucket policy, lifecycle or replication dependency on those cla
 `lifecycle=ephemeral` tag on disposable control records remains in use.
 
 To deploy it in your own cloud, follow [Run Fleet Manager](../README.md#operator-set-up-fleet-manager-once) in the
-repository README, which is one script over the templates under [terraform/](terraform/); for
+repository README, which is one script over the templates under [terraform/](terraform/) and
+[cloudflare/](cloudflare/); for
 everything on a laptop, [On one machine](#on-one-machine) below. Once it runs,
 [OPERATIONS.md](OPERATIONS.md) covers operating it. This README covers what the service does and
 how to work on it.
@@ -166,10 +167,15 @@ Server flags can also be supplied with environment variables:
 
 | Flag | Environment | Use |
 | --- | --- | --- |
-| `--provider` | `FLEET_MANAGER_PROVIDER` | `aws`, `gcp`, or `azure` |
-| `--bucket` | `FLEET_MANAGER_BUCKET` | S3/GCS bucket or Azure container |
+| `--provider` | `FLEET_MANAGER_PROVIDER` | `aws`, `gcp`, `azure`, or `r2` |
+| `--bucket` | `FLEET_MANAGER_BUCKET` | S3/GCS/R2 bucket or Azure container |
 | `--region` | `FLEET_MANAGER_REGION` | AWS region |
-| `--account` | `FLEET_MANAGER_ACCOUNT` | GCP signing service account or Azure storage account |
+| `--account` | `FLEET_MANAGER_ACCOUNT` | GCP signing service account, Azure storage account, or Cloudflare account ID |
+
+R2 also requires `FLEET_MANAGER_R2_ACCESS_KEY_ID` and `FLEET_MANAGER_R2_SECRET_ACCESS_KEY` from an
+R2 Object Read & Write token, and takes `FLEET_MANAGER_R2_JURISDICTION` (`eu` or `fedramp`) for a
+bucket created in one. R2 has no object versioning, so this provider creates organizations without
+it; see [OPERATIONS.md](OPERATIONS.md) for what that gives up.
 
 Azure also requires `FLEET_MANAGER_AZURE_SUBSCRIPTION_ID` and
 `FLEET_MANAGER_AZURE_RESOURCE_GROUP` to verify object versioning through Azure Resource Manager.
@@ -347,7 +353,8 @@ the machine to the bucket, which this service never sees.
 Every write still leaves a superseded version in a versioned bucket. Both templates expire every
 superseded version seven days after it is superseded. On AWS the service also tags these objects
 `lifecycle=ephemeral` and the template expires theirs the next day; GCS has no tag-based lifecycle
-condition and its prefix conditions take no wildcard, so on GCP they wait the seven days.
+condition and its prefix conditions take no wildcard, so on GCP they wait the seven days. R2 keeps
+no versions, so these writes accumulate nothing there.
 
 The GCP runtime role includes `storage.objects.delete` only on every organization's control prefix
 and install-data prefix because GCS requires delete-plus-create to replace object bytes. Bucket

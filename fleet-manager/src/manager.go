@@ -20,6 +20,14 @@ type Manager struct {
 	transition func(string) error
 }
 
+// Implemented by a provider that cannot version (R2): the one way past the versioning check.
+type versionlessStore interface{ cannotVersion() bool }
+
+func (m *Manager) cannotVersion() bool {
+	store, ok := m.store.(versionlessStore)
+	return ok && store.cannotVersion()
+}
+
 func NewManager(store ObjectStore) (*Manager, error) {
 	if store == nil {
 		return nil, errors.New("object store is required")
@@ -150,12 +158,14 @@ func (m *Manager) Init(ctx context.Context, cfg FleetConfig) error {
 	if err := validateConfigForWrite(cfg); err != nil {
 		return err
 	}
-	enabled, err := m.store.VersioningEnabled(ctx)
-	if err != nil {
-		return fmt.Errorf("verify object versioning: %w", err)
-	}
-	if !enabled {
-		return errors.New("object versioning is required")
+	if !m.cannotVersion() {
+		enabled, err := m.store.VersioningEnabled(ctx)
+		if err != nil {
+			return fmt.Errorf("verify object versioning: %w", err)
+		}
+		if !enabled {
+			return errors.New("object versioning is required")
+		}
 	}
 	// Only an administrator creates an organization.
 	raw, err := m.prepareConfigWrite(ctx, configAuthorAdministrator, cfg)

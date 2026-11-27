@@ -411,10 +411,11 @@ client may therefore authorize a batch as often as it needs to retry it.
 
 There is no writer lease. `writer_id` is carried for audit. No writer is fenced out: two processes
 that run one install identity both authorize. This is safe because a ticket can only address a key
-inside the authenticated install's own prefix, and every write is unconditional onto a versioned
-bucket. Concurrent writers are last-writer-wins over an object whose earlier versions remain for
-the bucket's noncurrent-version retention, seven days under the Fleet Manager templates; an
-overwrite noticed later cannot be undone. Bucket versioning is therefore mandatory.
+inside the authenticated install's own prefix, and every write is unconditional. Concurrent
+writers are last-writer-wins. Bucket versioning is recommended: with it, the earlier versions
+remain for the bucket's noncurrent-version retention, seven days under the Fleet Manager
+templates, and an overwrite noticed later than that cannot be undone; without it, as on
+Cloudflare R2, the earlier object is lost.
 
 All protocol errors are `text/plain` bodies. There is no JSON error envelope.
 `/v2/uploads/authorize` never answers 409, because there is no reused identifier for a request to

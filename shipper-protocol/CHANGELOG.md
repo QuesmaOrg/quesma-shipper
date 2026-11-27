@@ -8,6 +8,10 @@ versioning. Wire versions (`/v1/`, `/v2/`) are immutable and are not tracked by 
 
 ### Changed
 
+- Bucket versioning is recommended rather than mandatory, so a Cloudflare R2 bucket, which cannot
+  version, is a valid sink. Without versioning, a concurrent or repeated write of one key replaces
+  the earlier object instead of keeping it as a version. No schema or fixture bytes change.
+
 - State that the "no writer lease" safety argument holds for the bucket's noncurrent-version
   retention, seven days under the Fleet Manager templates: a concurrent writer's overwrite can be
   recovered from the earlier version within that window only. No wire, schema or fixture bytes
